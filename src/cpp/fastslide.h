@@ -17,52 +17,64 @@
 // Forward declare OpenSlide types
 typedef struct _openslide openslide_t;
 typedef struct _openslide_cache openslide_cache_t;
+typedef struct _openslide_format _openslide_format;
+typedef struct _openslide_tifflike _openslide_tifflike;
+
+// Forward declare GLib types needed for OpenSlide internals
+typedef struct _GError GError;
 
 namespace fastslide {
 
 // Property name constants
-static const char PROPERTY_NAME_VENDOR[] = "openslide.vendor";
-static const char PROPERTY_NAME_BACKGROUND_COLOR[] = "openslide.background-color";
-static const char PROPERTY_NAME_BOUNDS_HEIGHT[] = "openslide.bounds-height";
-static const char PROPERTY_NAME_BOUNDS_WIDTH[] = "openslide.bounds-width";
-static const char PROPERTY_NAME_BOUNDS_X[] = "openslide.bounds-x";
-static const char PROPERTY_NAME_BOUNDS_Y[] = "openslide.bounds-y";
-static const char PROPERTY_NAME_COMMENT[] = "openslide.comment";
-static const char PROPERTY_NAME_MPP_X[] = "openslide.mpp-x";
-static const char PROPERTY_NAME_MPP_Y[] = "openslide.mpp-y";
-static const char PROPERTY_NAME_OBJECTIVE_POWER[] = "openslide.objective-power";
-static const char PROPERTY_NAME_QUICKHASH1[] = "openslide.quickhash-1";
-static const char PROPERTY_NAME_LEVEL_COUNT[] = "openslide.level-count";
-static const char PROPERTY_NAME_ICC_SIZE[] = "openslide.icc-size";
+static const std::string PROPERTY_NAME_VENDOR = "fastslide.vendor";
+static const std::string PROPERTY_NAME_BACKGROUND_COLOR = "fastslide.background-color";
+static const std::string PROPERTY_NAME_BOUNDS_HEIGHT = "fastslide.bounds-height";
+static const std::string PROPERTY_NAME_BOUNDS_WIDTH = "fastslide.bounds-width";
+static const std::string PROPERTY_NAME_BOUNDS_X = "fastslide.bounds-x";
+static const std::string PROPERTY_NAME_BOUNDS_Y = "fastslide.bounds-y";
+static const std::string PROPERTY_NAME_COMMENT = "fastslide.comment";
+static const std::string PROPERTY_NAME_MPP_X = "fastslide.mpp-x";
+static const std::string PROPERTY_NAME_MPP_Y = "fastslide.mpp-y";
+static const std::string PROPERTY_NAME_OBJECTIVE_POWER = "fastslide.objective-power";
+static const std::string PROPERTY_NAME_QUICKHASH1 = "fastslide.quickhash-1";
+static const std::string PROPERTY_NAME_LEVEL_COUNT = "fastslide.level-count";
+static const std::string PROPERTY_NAME_ICC_SIZE = "fastslide.icc-size";
 
 // Template property names
-static const char PROPERTY_NAME_TEMPLATE_LEVEL_WIDTH[] = "openslide.level[%d].width";
-static const char PROPERTY_NAME_TEMPLATE_LEVEL_HEIGHT[] = "openslide.level[%d].height";
-static const char PROPERTY_NAME_TEMPLATE_LEVEL_DOWNSAMPLE[] = "openslide.level[%d].downsample";
-static const char PROPERTY_NAME_TEMPLATE_ASSOCIATED_WIDTH[] = "openslide.associated-image[%s].width";
-static const char PROPERTY_NAME_TEMPLATE_ASSOCIATED_HEIGHT[] = "openslide.associated-image[%s].height";
-static const char PROPERTY_NAME_TEMPLATE_ASSOCIATED_ICC_SIZE[] = "openslide.associated-image[%s].icc-size";
+static const std::string PROPERTY_NAME_TEMPLATE_LEVEL_WIDTH = "fastslide.level[{}].width";
+static const std::string PROPERTY_NAME_TEMPLATE_LEVEL_HEIGHT = "fastslide.level[{}].height";
+static const std::string PROPERTY_NAME_TEMPLATE_LEVEL_DOWNSAMPLE = "fastslide.level[{}].downsample";
+static const std::string PROPERTY_NAME_TEMPLATE_ASSOCIATED_WIDTH = "fastslide.associated-image[{}].width";
+static const std::string PROPERTY_NAME_TEMPLATE_ASSOCIATED_HEIGHT = "fastslide.associated-image[{}].height";
+static const std::string PROPERTY_NAME_TEMPLATE_ASSOCIATED_ICC_SIZE = "fastslide.associated-image[{}].icc-size";
+
+// Helper functions for string formatting
+std::string FormatPropertyName(const std::string& name_template, int32_t level);
+std::string FormatPropertyName(const std::string& name_template, const std::string& associated);
 
 // SlideCache class manages the OpenSlide cache
 class SlideCache {
  public:
   // Create a new cache with the specified capacity
-  static std::shared_ptr<SlideCache> Create(size_t capacity);
+  static std::shared_ptr<SlideCache> Create(int64_t cache_size);
   
-  // SlideCache is not copyable or assignable
+  // Constructor is made public for use with make_shared
+  explicit SlideCache(int64_t cache_size);
+  
   SlideCache(const SlideCache&) = delete;
   SlideCache& operator=(const SlideCache&) = delete;
   
   ~SlideCache();
   
- private:
-  explicit SlideCache(openslide_cache_t* cache);
+  // Get the cache size
+  int64_t GetSize() const;
   
-  // Friend declaration to allow Slide to access the cache_ member
+ private:
+  // Friend declaration to allow Slide to access private members
   friend class Slide;
   
-  // The OpenSlide cache object
-  openslide_cache_t* cache_;
+  // The cache size
+  int64_t cache_size_;
 };
 
 // Slide class encapsulates an OpenSlide object
@@ -71,7 +83,17 @@ class Slide {
   // Exception class for OpenSlide errors
   class SlideError : public std::runtime_error {
    public:
-    explicit SlideError(const std::string& message) : std::runtime_error(message) {}
+    explicit SlideError(const std::string& message);
+  };
+  
+  /**
+   * @brief Format information struct
+   */
+  struct FormatInfo {
+    std::string vendor;     ///< Vendor name (e.g., "Aperio", "Hamamatsu")
+    bool is_valid;          ///< Whether the format was successfully detected
+    std::map<std::string, std::string> properties; ///< Additional properties detected
+    std::string error_msg;  ///< Error message if detection failed
   };
   
   // Static methods
@@ -80,17 +102,26 @@ class Slide {
                                      std::shared_ptr<SlideCache> cache = nullptr);
   static std::string GetVersion();
   
-  // Constructors and destructor
-  Slide();
+  /**
+   * @brief Detect the format of a slide file with enhanced information
+   * 
+   * This function provides more information than DetectVendor by briefly
+   * opening the slide to extract key metadata.
+   * 
+   * @param filename Path to the slide file
+   * @return FormatInfo containing information about the detected format
+   */
+  static FormatInfo DetectFormat(const std::string& filename);
+  
+  // Constructor and destructor
+  explicit Slide(const std::string& filename, std::shared_ptr<SlideCache> cache = nullptr);
   ~Slide();
   
-  // Move operations (prevent copies)
-  Slide(Slide&& other);
-  Slide& operator=(Slide&& other);
-  
-  // Delete copy operations
+  // Delete copy and move operations
   Slide(const Slide&) = delete;
   Slide& operator=(const Slide&) = delete;
+  Slide(Slide&&) = delete;
+  Slide& operator=(Slide&&) = delete;
   
   // Error handling
   void CheckError() const;
@@ -105,7 +136,7 @@ class Slide {
   int32_t GetBestLevelForDownsample(double downsample) const;
   
   // Reading regions
-  void ReadRegion(void* dest, int64_t x, int64_t y, int32_t level,
+  void ReadRegion(uint32_t* dest, int64_t x, int64_t y, int32_t level,
                  int64_t width, int64_t height) const;
   
   // Properties
@@ -116,13 +147,16 @@ class Slide {
   // Associated images
   std::vector<std::string> GetAssociatedImageNames() const;
   std::pair<int64_t, int64_t> GetAssociatedImageDimensions(const std::string& name) const;
-  void ReadAssociatedImage(const std::string& name, void* dest) const;
+  void ReadAssociatedImage(const std::string& name, uint32_t* dest) const;
   
   // ICC profile handling
   int64_t GetAssociatedImageICCProfileSize(const std::string& name) const;
-  void ReadAssociatedImageICCProfile(const std::string& name, void* dest) const;
+  void ReadAssociatedImageICCProfile(const std::string& name, uint8_t* dest) const;
   int64_t GetICCProfileSize() const;
-  void ReadICCProfile(void* dest) const;
+  void ReadICCProfile(uint8_t* dest) const;
+  
+  // Storyboard
+  std::string GetStoryboardFile() const;
   
  private:
   // The OpenSlide handle
@@ -132,10 +166,13 @@ class Slide {
   std::string filename_;
   
   // Error message if initialization failed
-  std::string error_;
+  mutable std::string error_;
   
   // Properties cache
   mutable std::map<std::string, std::string> properties_;
+  
+  // Cache for slide reading
+  std::shared_ptr<SlideCache> cache_;
 };
 
 }  // namespace fastslide

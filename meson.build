@@ -5,7 +5,7 @@ project(
   license : 'LGPL-2.1-only',
   default_options : [
     'buildtype=debugoptimized',
-    'cpp_std=c++17',  # Upgraded from c++20 to ensure compatibility with filesystem
+    'cpp_std=c++17',  # Use C++17 for better compatibility with Apple Clang
     'warning_level=3',
   ],
 )
@@ -19,13 +19,29 @@ add_project_arguments(
     '-pedantic',
     '-Wno-c++11-extensions',  # Suppress C++11 extension warnings
     '-Wno-c++17-extensions',  # Suppress C++17 extension warnings for structured bindings
+    '-Wno-deprecated-declarations',  # Suppress deprecation warnings
+    '-Wno-unused-parameter',  # Suppress unused parameter warnings
   ]),
   language : 'cpp'
 )
 
 # Dependencies
 openslide_dep = dependency('openslide')
+glib_dep = dependency('glib-2.0')  # Required for GError and other GLib types
 filesystem_dep = dependency('threads') # For std::filesystem support
+
+# Try to find fmt as a system dependency, if not available use subproject
+fmt_dep = dependency('fmt', required : false)
+if not fmt_dep.found()
+  fmt_proj = subproject('fmt')
+  fmt_dep = fmt_proj.get_variable('fmt_dep')
+endif
+
+# Add compiler flags for fmt
+add_project_arguments('-DFMT_USE_CONSTEXPR=0', language : 'cpp')  # Disable constexpr usage in fmt
+
+# Add a define to indicate we want to use OpenSlide internal APIs (risky)
+add_project_arguments('-D_OPENSLIDE_ALLOW_INTERNAL_ACCESS=1', language : 'cpp')
 
 # Include directories
 incdir = include_directories('src/cpp')
@@ -39,7 +55,7 @@ fastslide_sources = [
 fastslide_lib = library(
   'fastslide',
   fastslide_sources,
-  dependencies : [openslide_dep],
+  dependencies : [openslide_dep, glib_dep, fmt_dep],
   install : true,
   include_directories : incdir,
 )
@@ -48,6 +64,7 @@ fastslide_lib = library(
 fastslide_dep = declare_dependency(
   link_with : fastslide_lib,
   include_directories : incdir,
+  dependencies : [fmt_dep],
 )
 
 # Test executable
@@ -65,6 +82,6 @@ install_headers('src/cpp/fastslide.h')
 pkg = import('pkgconfig')
 pkg.generate(
   fastslide_lib,
-  description : 'Modern C++20 wrapper for OpenSlide library',
+  description : 'Modern C++17 wrapper for OpenSlide library',
   url : 'https://github.com/yourusername/fastslide',
 )

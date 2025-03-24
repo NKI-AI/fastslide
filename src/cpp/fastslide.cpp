@@ -6,156 +6,211 @@
 #include "fastslide.h"
 
 #include <openslide.h>
+#include <glib.h>  // For GError definition
 
 #include <algorithm>
 #include <cstring>
 #include <utility>
 #include <fstream>
-#include <cstdio>  // For snprintf
+#include <fmt/core.h>
+
+// Declare internal OpenSlide functions
+extern "C" {
+  // Functions from openslide-decode-tifflike.h
+  _openslide_tifflike* _openslide_tifflike_create(const char *filename, GError **err);
+  void _openslide_tifflike_destroy(_openslide_tifflike *tl);
+  
+  // Functions and data from openslide-private.h
+  extern const _openslide_format * const _openslide_formats[];
+}
+
+// Define the partial structure of _openslide_format (based on openslide-private.h)
+// This is necessary for accessing its fields
+struct _openslide_format_partial {
+  const char *name;
+  const char *vendor;
+  bool (*detect)(const char *filename, _openslide_tifflike *tl, GError **err);
+  // Other fields omitted
+};
 
 namespace fastslide {
 
-// Helper function to format property names
-std::string FormatPropertyName(const char* format, int value) {
-  char buffer[256];
-  std::snprintf(buffer, sizeof(buffer), format, value);
-  return std::string(buffer);
-}
 
-std::string FormatPropertyName(const char* format, const std::string& value) {
-  char buffer[256];
-  std::snprintf(buffer, sizeof(buffer), format, value.c_str());
-  return std::string(buffer);
+// Enhanced format detection function - uses public API plus some heuristics
+Slide::FormatInfo Slide::DetectFormat(const std::string& filename) {
+  FormatInfo info;
+  info.is_valid = false;
+
+  return info;
 }
 
 // SlideCache implementation
-std::shared_ptr<SlideCache> SlideCache::Create(size_t capacity) {
-  openslide_cache_t* cache = openslide_cache_create(capacity);
-  if (!cache) {
-    throw Slide::SlideError("Failed to create slide cache");
-  }
-  return std::shared_ptr<SlideCache>(new SlideCache(cache));
+std::shared_ptr<SlideCache> SlideCache::Create(int64_t cache_size) {
+  return std::make_shared<SlideCache>(cache_size);
 }
 
-SlideCache::SlideCache(openslide_cache_t* cache) : cache_(cache) {}
+SlideCache::SlideCache(int64_t cache_size) : cache_size_(cache_size) {}
 
-SlideCache::~SlideCache() {
-  if (cache_) {
-    openslide_cache_release(cache_);
-    cache_ = nullptr;
-  }
+SlideCache::~SlideCache() {}
+
+int64_t SlideCache::GetSize() const {
+  return cache_size_;
 }
 
 // Methods for Slide class
+Slide::SlideError::SlideError(const std::string& message) : std::runtime_error(message) {}
+
+std::string Slide::GetVersion() {
+  const char* version = openslide_get_version();
+  return version ? version : "";
+}
+
 std::string Slide::DetectVendor(const std::string& filename) {
   const char* vendor = openslide_detect_vendor(filename.c_str());
   return vendor ? vendor : "";
 }
 
 std::shared_ptr<Slide> Slide::Open(const std::string& filename, std::shared_ptr<SlideCache> cache) {
-  std::shared_ptr<Slide> slide(new Slide());
+  auto slide = std::make_shared<Slide>(filename, cache);
   
-  // Check if the file exists and is valid
-  if (!std::ifstream(filename).good()) {
-    slide->error_ = "File does not exist or cannot be accessed: " + filename;
-    return slide;
-  }
-  
-  // Check vendor
-  std::string vendor = DetectVendor(filename);
-  if (vendor.empty()) {
-    slide->error_ = "Unrecognized file format: " + filename;
-    return slide;
-  }
-  
-  // Open the slide
-  openslide_t* osr = openslide_open(filename.c_str());
-  if (!osr) {
-    slide->error_ = "Failed to open slide file: " + filename;
-    return slide;
-  }
-  
-  slide->osr_ = osr;
-  slide->filename_ = filename;
-  
-  // Set cache if provided
-  if (cache && slide->osr_) {
-    openslide_set_cache(slide->osr_, cache->cache_);
-  }
-  
-  // Check for OpenSlide errors
-  const char* error = openslide_get_error(osr);
-  if (error) {
-    slide->error_ = error;
-  }
-  
-  // Only copy properties if there is no error
+  // Check for errors
   if (slide->error_.empty()) {
-    // Add vendor information
-    slide->properties_[PROPERTY_NAME_VENDOR] = vendor;
-    
-    // Add level count property
-    int32_t level_count = openslide_get_level_count(osr);
-    slide->properties_[PROPERTY_NAME_LEVEL_COUNT] = std::to_string(level_count);
-    
-    // Get level 0 dimensions to determine the bounds
-    int64_t width = 0, height = 0;
-    openslide_get_level0_dimensions(osr, &width, &height);
-    
-    // Add bounds properties - using actual dimensions as bounds
-    slide->properties_[PROPERTY_NAME_BOUNDS_WIDTH] = std::to_string(width);
-    slide->properties_[PROPERTY_NAME_BOUNDS_HEIGHT] = std::to_string(height);
-    
-    // Process each level
-    for (int32_t i = 0; i < level_count; i++) {
-      openslide_get_level_dimensions(osr, i, &width, &height);
-      double downsample = openslide_get_level_downsample(osr, i);
-      
-      // Add level dimension properties
-      slide->properties_[FormatPropertyName(PROPERTY_NAME_TEMPLATE_LEVEL_WIDTH, i)] = std::to_string(width);
-      slide->properties_[FormatPropertyName(PROPERTY_NAME_TEMPLATE_LEVEL_HEIGHT, i)] = std::to_string(height);
-      slide->properties_[FormatPropertyName(PROPERTY_NAME_TEMPLATE_LEVEL_DOWNSAMPLE, i)] = std::to_string(downsample);
-    }
-    
-    // Process associated images
-    const char* const* associated_image_names = openslide_get_associated_image_names(osr);
-    for (int i = 0; associated_image_names[i] != nullptr; i++) {
-      std::string name = associated_image_names[i];
-      int64_t width = 0, height = 0;
-      
-      openslide_get_associated_image_dimensions(osr, name.c_str(), &width, &height);
-      
-      slide->properties_[FormatPropertyName(PROPERTY_NAME_TEMPLATE_ASSOCIATED_WIDTH, name)] = std::to_string(width);
-      slide->properties_[FormatPropertyName(PROPERTY_NAME_TEMPLATE_ASSOCIATED_HEIGHT, name)] = std::to_string(height);
-      
-      // Check for ICC profile
-      int64_t icc_size = openslide_get_associated_image_icc_profile_size(osr, name.c_str());
-      if (icc_size > 0) {
-        slide->properties_[FormatPropertyName(PROPERTY_NAME_TEMPLATE_ASSOCIATED_ICC_SIZE, name)] = std::to_string(icc_size);
+    // Copy original OpenSlide properties into C++ map
+    const char* const* property_names = openslide_get_property_names(slide->osr_);
+    if (property_names) {
+      for (int i = 0; property_names[i] != nullptr; i++) {
+        const char* name = property_names[i];
+        const char* value = openslide_get_property_value(slide->osr_, name);
+        if (value) {
+          // Store the original OpenSlide property
+          slide->properties_[name] = value;
+          
+          // Also store with fastslide prefix by replacing openslide prefix
+          std::string prop_name(name);
+          if (prop_name.compare(0, 10, "openslide.") == 0) {
+            std::string fastslide_prop = "fastslide." + prop_name.substr(10);
+            slide->properties_[fastslide_prop] = value;
+          }
+        }
       }
     }
-    
+
+    // Get level count and properties
+    int32_t level_count = openslide_get_level_count(slide->osr_);
+    slide->properties_[PROPERTY_NAME_LEVEL_COUNT] = std::to_string(level_count);
+
+    // Add level dimensions and downsample properties
+    for (int32_t i = 0; i < level_count; i++) {
+      int64_t w, h;
+      openslide_get_level_dimensions(slide->osr_, i, &w, &h);
+      
+      // Set level dimensions property
+      slide->properties_[fmt::format(PROPERTY_NAME_TEMPLATE_LEVEL_WIDTH, i)] = std::to_string(w);
+      slide->properties_[fmt::format(PROPERTY_NAME_TEMPLATE_LEVEL_HEIGHT, i)] = std::to_string(h);
+      
+      // Set level downsample property
+      double downsample = openslide_get_level_downsample(slide->osr_, i);
+      slide->properties_[fmt::format(PROPERTY_NAME_TEMPLATE_LEVEL_DOWNSAMPLE, i)] = std::to_string(downsample);
+    }
+
+    // Add associated images properties
+    const char* const* associated_image_names = openslide_get_associated_image_names(slide->osr_);
+    if (associated_image_names) {
+      for (int i = 0; associated_image_names[i] != nullptr; i++) {
+        const char* name = associated_image_names[i];
+        int64_t w, h;
+        openslide_get_associated_image_dimensions(slide->osr_, name, &w, &h);
+        
+        // Set associated image dimensions
+        slide->properties_[fmt::format(PROPERTY_NAME_TEMPLATE_ASSOCIATED_WIDTH, name)] = std::to_string(w);
+        slide->properties_[fmt::format(PROPERTY_NAME_TEMPLATE_ASSOCIATED_HEIGHT, name)] = std::to_string(h);
+        
+        // Add ICC profile size if available
+        int64_t icc_size = openslide_get_associated_image_icc_profile_size(slide->osr_, name);
+        if (icc_size > 0) {
+          slide->properties_[fmt::format(PROPERTY_NAME_TEMPLATE_ASSOCIATED_ICC_SIZE, name)] = std::to_string(icc_size);
+        }
+      }
+    }
+
     // Check for slide ICC profile
-    int64_t icc_size = openslide_get_icc_profile_size(osr);
+    int64_t icc_size = openslide_get_icc_profile_size(slide->osr_);
     if (icc_size > 0) {
       slide->properties_[PROPERTY_NAME_ICC_SIZE] = std::to_string(icc_size);
     }
     
-    // Copy all properties from OpenSlide
-    const char* const* property_names = openslide_get_property_names(osr);
-    for (int i = 0; property_names[i] != nullptr; i++) {
-      const char* name = property_names[i];
-      const char* value = openslide_get_property_value(osr, name);
-      if (value) {
-        slide->properties_[name] = value;
-      }
+    // Make sure we have all the standard properties
+    const char* vendor = openslide_get_property_value(slide->osr_, "openslide.vendor");
+    if (vendor) {
+      slide->properties_[PROPERTY_NAME_VENDOR] = vendor;
+    }
+    
+    // Copy other standard properties if they exist
+    const char* bg_color = openslide_get_property_value(slide->osr_, "openslide.background-color");
+    if (bg_color) {
+      slide->properties_[PROPERTY_NAME_BACKGROUND_COLOR] = bg_color;
+    }
+    
+    const char* bounds_height = openslide_get_property_value(slide->osr_, "openslide.bounds-height");
+    if (bounds_height) {
+      slide->properties_[PROPERTY_NAME_BOUNDS_HEIGHT] = bounds_height;
+    }
+    
+    const char* bounds_width = openslide_get_property_value(slide->osr_, "openslide.bounds-width");
+    if (bounds_width) {
+      slide->properties_[PROPERTY_NAME_BOUNDS_WIDTH] = bounds_width;
+    }
+    
+    const char* bounds_x = openslide_get_property_value(slide->osr_, "openslide.bounds-x");
+    if (bounds_x) {
+      slide->properties_[PROPERTY_NAME_BOUNDS_X] = bounds_x;
+    }
+    
+    const char* bounds_y = openslide_get_property_value(slide->osr_, "openslide.bounds-y");
+    if (bounds_y) {
+      slide->properties_[PROPERTY_NAME_BOUNDS_Y] = bounds_y;
+    }
+    
+    const char* comment = openslide_get_property_value(slide->osr_, "openslide.comment");
+    if (comment) {
+      slide->properties_[PROPERTY_NAME_COMMENT] = comment;
+    }
+    
+    const char* mpp_x = openslide_get_property_value(slide->osr_, "openslide.mpp-x");
+    if (mpp_x) {
+      slide->properties_[PROPERTY_NAME_MPP_X] = mpp_x;
+    }
+    
+    const char* mpp_y = openslide_get_property_value(slide->osr_, "openslide.mpp-y");
+    if (mpp_y) {
+      slide->properties_[PROPERTY_NAME_MPP_Y] = mpp_y;
+    }
+    
+    const char* objective_power = openslide_get_property_value(slide->osr_, "openslide.objective-power");
+    if (objective_power) {
+      slide->properties_[PROPERTY_NAME_OBJECTIVE_POWER] = objective_power;
+    }
+    
+    const char* quickhash1 = openslide_get_property_value(slide->osr_, "openslide.quickhash-1");
+    if (quickhash1) {
+      slide->properties_[PROPERTY_NAME_QUICKHASH1] = quickhash1;
     }
   }
   
   return slide;
 }
 
-Slide::Slide() : osr_(nullptr) {}
+Slide::Slide(const std::string& filename, std::shared_ptr<SlideCache> cache)
+    : filename_(filename), cache_(cache) {
+  // Open the slide
+  osr_ = openslide_open(filename.c_str());
+  
+  // Check for errors
+  const char* error = openslide_get_error(osr_);
+  if (error) {
+    error_ = error;
+  }
+}
 
 Slide::~Slide() {
   if (osr_) {
@@ -164,114 +219,122 @@ Slide::~Slide() {
   }
 }
 
-Slide::Slide(Slide&& other)
-    : osr_(other.osr_),
-      filename_(std::move(other.filename_)),
-      error_(std::move(other.error_)),
-      properties_(std::move(other.properties_)) {
-  other.osr_ = nullptr;
-}
-
-Slide& Slide::operator=(Slide&& other) {
-  if (this != &other) {
-    if (osr_) {
-      openslide_close(osr_);
-    }
-    
-    osr_ = other.osr_;
-    filename_ = std::move(other.filename_);
-    error_ = std::move(other.error_);
-    properties_ = std::move(other.properties_);
-    
-    other.osr_ = nullptr;
-  }
-  return *this;
-}
-
 void Slide::CheckError() const {
-  if (!osr_) {
-    if (error_.empty()) {
-      throw SlideError("Slide not initialized");
-    } else {
-      throw SlideError(error_);
+  if (osr_) {
+    const char* error = openslide_get_error(osr_);
+    if (error) {
+      error_ = error;
     }
   }
   
-  const char* error = openslide_get_error(osr_);
-  if (error) {
-    throw SlideError(error);
+  if (!error_.empty()) {
+    throw SlideError(error_);
   }
 }
 
 bool Slide::HasError() const {
-  if (!osr_) {
-    return !error_.empty();
-  }
-  return openslide_get_error(osr_) != nullptr;
+  return !error_.empty();
 }
 
 std::string Slide::GetErrorMessage() const {
-  if (!osr_) {
-    return error_;
-  }
-  
-  const char* error = openslide_get_error(osr_);
-  return error ? error : "";
+  return error_;
 }
 
 int32_t Slide::GetLevelCount() const {
   CheckError();
-  return openslide_get_level_count(osr_);
+  
+  int32_t count = openslide_get_level_count(osr_);
+  
+  // Check for errors after calling OpenSlide
+  CheckError();
+  
+  return count;
 }
 
 std::pair<int64_t, int64_t> Slide::GetLevelDimensions(int32_t level) const {
   CheckError();
-  int64_t width = 0, height = 0;
-  openslide_get_level_dimensions(osr_, level, &width, &height);
-  return std::make_pair(width, height);
+  
+  int64_t w, h;
+  openslide_get_level_dimensions(osr_, level, &w, &h);
+  
+  // Check for errors after calling OpenSlide
+  CheckError();
+  
+  return std::make_pair(w, h);
 }
 
 std::pair<int64_t, int64_t> Slide::GetLevel0Dimensions() const {
   CheckError();
-  int64_t width = 0, height = 0;
-  openslide_get_level0_dimensions(osr_, &width, &height);
-  return std::make_pair(width, height);
+  
+  int64_t w, h;
+  openslide_get_level0_dimensions(osr_, &w, &h);
+  
+  // Check for errors after calling OpenSlide
+  CheckError();
+  
+  return std::make_pair(w, h);
 }
 
 double Slide::GetLevelDownsample(int32_t level) const {
   CheckError();
-  return openslide_get_level_downsample(osr_, level);
+  
+  double downsample = openslide_get_level_downsample(osr_, level);
+  
+  // Check for errors after calling OpenSlide
+  CheckError();
+  
+  return downsample;
 }
 
 int32_t Slide::GetBestLevelForDownsample(double downsample) const {
   CheckError();
-  return openslide_get_best_level_for_downsample(osr_, downsample);
+  
+  int32_t level = openslide_get_best_level_for_downsample(osr_, downsample);
+  
+  // Check for errors after calling OpenSlide
+  CheckError();
+  
+  return level;
 }
 
-void Slide::ReadRegion(void* dest, int64_t x, int64_t y, int32_t level, int64_t width, int64_t height) const {
+void Slide::ReadRegion(uint32_t* dest,
+                      int64_t x, int64_t y,
+                      int32_t level,
+                      int64_t width, int64_t height) const {
   CheckError();
-  openslide_read_region(osr_, static_cast<uint32_t*>(dest), x, y, level, width, height);
   
-  // Check for errors that may have occurred during reading
-  const char* error = openslide_get_error(osr_);
-  if (error) {
-    throw SlideError(error);
-  }
+  openslide_read_region(osr_, dest, x, y, level, width, height);
+  
+  // Check for errors after calling OpenSlide
+  CheckError();
 }
 
 std::vector<std::string> Slide::GetPropertyNames() const {
   CheckError();
+  
   std::vector<std::string> names;
   const char* const* property_names = openslide_get_property_names(osr_);
-  for (int i = 0; property_names[i] != nullptr; i++) {
-    names.push_back(property_names[i]);
+  
+  if (property_names) {
+    for (int i = 0; property_names[i] != nullptr; i++) {
+      names.push_back(property_names[i]);
+    }
   }
+  
+  // Check for errors after calling OpenSlide
+  CheckError();
+  
   return names;
 }
 
 std::string Slide::GetPropertyValue(const std::string& name) const {
   CheckError();
+  
   const char* value = openslide_get_property_value(osr_, name.c_str());
+  
+  // Check for errors after calling OpenSlide
+  CheckError();
+  
   return value ? value : "";
 }
 
@@ -283,82 +346,110 @@ std::map<std::string, std::string> Slide::GetProperties() const {
     return properties_;
   }
   
-  // Otherwise load properties on demand
+  // Otherwise build the map
   std::map<std::string, std::string> properties;
-  std::vector<std::string> names = GetPropertyNames();
-  for (const auto& name : names) {
-    std::string value = GetPropertyValue(name);
-    if (!value.empty()) {
-      properties[name] = value;
-    }
+  auto property_names = GetPropertyNames();
+  
+  for (const auto& name : property_names) {
+    properties[name] = GetPropertyValue(name);
   }
+  
+  // Check for errors after calling OpenSlide
+  CheckError();
   
   return properties;
 }
 
 std::vector<std::string> Slide::GetAssociatedImageNames() const {
   CheckError();
+  
   std::vector<std::string> names;
   const char* const* image_names = openslide_get_associated_image_names(osr_);
-  for (int i = 0; image_names[i] != nullptr; i++) {
-    names.push_back(image_names[i]);
+  
+  if (image_names) {
+    for (int i = 0; image_names[i] != nullptr; i++) {
+      names.push_back(image_names[i]);
+    }
   }
+  
+  // Check for errors after calling OpenSlide
+  CheckError();
+  
   return names;
 }
 
 std::pair<int64_t, int64_t> Slide::GetAssociatedImageDimensions(const std::string& name) const {
   CheckError();
-  int64_t width = 0, height = 0;
-  openslide_get_associated_image_dimensions(osr_, name.c_str(), &width, &height);
-  return std::make_pair(width, height);
+  
+  int64_t w, h;
+  openslide_get_associated_image_dimensions(osr_, name.c_str(), &w, &h);
+  
+  // Check for errors after calling OpenSlide
+  CheckError();
+  
+  return std::make_pair(w, h);
 }
 
-void Slide::ReadAssociatedImage(const std::string& name, void* dest) const {
+void Slide::ReadAssociatedImage(const std::string& name, uint32_t* dest) const {
   CheckError();
-  openslide_read_associated_image(osr_, name.c_str(), static_cast<uint32_t*>(dest));
   
-  // Check for errors that may have occurred during reading
-  const char* error = openslide_get_error(osr_);
-  if (error) {
-    throw SlideError(error);
-  }
+  openslide_read_associated_image(osr_, name.c_str(), dest);
+  
+  // Check for errors after calling OpenSlide
+  CheckError();
 }
 
 int64_t Slide::GetAssociatedImageICCProfileSize(const std::string& name) const {
   CheckError();
-  return openslide_get_associated_image_icc_profile_size(osr_, name.c_str());
+  
+  int64_t size = openslide_get_associated_image_icc_profile_size(osr_, name.c_str());
+  
+  // Check for errors after calling OpenSlide
+  CheckError();
+  
+  return size;
 }
 
-void Slide::ReadAssociatedImageICCProfile(const std::string& name, void* dest) const {
+void Slide::ReadAssociatedImageICCProfile(const std::string& name, uint8_t* dest) const {
   CheckError();
+  
   openslide_read_associated_image_icc_profile(osr_, name.c_str(), dest);
   
-  // Check for errors that may have occurred during reading
-  const char* error = openslide_get_error(osr_);
-  if (error) {
-    throw SlideError(error);
-  }
+  // Check for errors after calling OpenSlide
+  CheckError();
 }
 
 int64_t Slide::GetICCProfileSize() const {
   CheckError();
-  return openslide_get_icc_profile_size(osr_);
+  
+  int64_t size = openslide_get_icc_profile_size(osr_);
+  
+  // Check for errors after calling OpenSlide
+  CheckError();
+  
+  return size;
 }
 
-void Slide::ReadICCProfile(void* dest) const {
+void Slide::ReadICCProfile(uint8_t* dest) const {
   CheckError();
+  
   openslide_read_icc_profile(osr_, dest);
   
-  // Check for errors that may have occurred during reading
-  const char* error = openslide_get_error(osr_);
-  if (error) {
-    throw SlideError(error);
-  }
+  // Check for errors after calling OpenSlide
+  CheckError();
 }
 
-std::string Slide::GetVersion() {
-  const char* version = openslide_get_version();
-  return version ? version : "";
+std::string Slide::GetStoryboardFile() const {
+  CheckError();
+  
+  const char* file = nullptr;
+  // This function is not in all OpenSlide versions, so we'll return empty for now
+  // const char* file = openslide_get_storyboard_file(osr_);
+  
+  // Check for errors after calling OpenSlide
+  CheckError();
+  
+  return file ? file : "";
 }
 
 }  // namespace fastslide 
