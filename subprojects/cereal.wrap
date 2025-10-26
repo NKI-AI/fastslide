@@ -1,0 +1,12 @@
+[wrap-file]
+directory = cereal-1.3.2
+source_url = https://github.com/USCiLab/cereal/archive/v1.3.2.tar.gz
+source_filename = cereal-1.3.2.tar.gz
+source_hash = 16a7ad9b31ba5880dac55d62b5d6f243c3ebc8d46a3514149e56b5e7ea81f85f
+patch_filename = cereal_1.3.2-1_patch.zip
+patch_url = https://wrapdb.mesonbuild.com/v2/cereal_1.3.2-1/get_patch
+patch_hash = fd2f047a40a0d291c643fdafe4ce743f0eadbef667b6afe43a332e1ba0862603
+
+[provide]
+cereal = cereal_dep
+

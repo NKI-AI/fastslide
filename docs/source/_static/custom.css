@@ -1,0 +1,49 @@
+/* Custom CSS for FastSlide Documentation with RTD Theme */
+
+/* Improve code block readability */
+.rst-content pre.literal-block,
+.rst-content div[class^="highlight"] pre {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* Add some breathing room to the content */
+.rst-content {
+  max-width: 100%;
+}
+
+/* Style for external links to Doxygen */
+a[href*="doxygen"]::after {
+  content: " 📚";
+  font-size: 0.8em;
+}
+
+/* Improve table styling */
+.rst-content table.docutils {
+  border: none;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.rst-content table.docutils thead {
+  background-color: #2980b9;
+  color: white;
+}
+
+/* Better spacing for admonitions */
+.rst-content .admonition {
+  margin: 1.5rem 0;
+}
+
+/* Improve code snippet visibility */
+.rst-content code.literal {
+  background-color: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  padding: 2px 4px;
+  border-radius: 3px;
+}
+
+/* Style for version badge */
+.version-badge {
+  display: inline-block;
+  margin-right: 0.5em;
+}

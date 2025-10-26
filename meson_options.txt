@@ -1,0 +1,42 @@
+# FastSlide Meson Build Options
+# Configuration options for the FastSlide build system with static linking
+
+# Note: default_library, warning_level, werror are built-in Meson options
+# They can be set via: meson setup builddir -Ddefault_library=static -Dwarning_level=3
+
+# Feature options
+option('enable_tests', type: 'boolean', value: true,
+       description: 'Enable building and running tests')
+
+option('enable_python_bindings', type: 'boolean', value: true,
+       description: 'Enable Python bindings (requires pybind11)')
+
+option('enable_c_api', type: 'boolean', value: true,
+       description: 'Enable C API library')
+
+option('enable_tools', type: 'boolean', value: true,
+       description: 'Enable building tools (slidetool)')
+
+# Static linking options
+option('static_linking', type: 'boolean', value: true,
+       description: 'Enable static linking for monolithic shared library')
+
+# Note: b_staticpic is a built-in Meson option
+# Set via: meson setup builddir -Db_staticpic=true
+
+# Installation options
+option('install_headers', type: 'boolean', value: true,
+       description: 'Install header files')
+
+option('install_pkgconfig', type: 'boolean', value: true,
+       description: 'Install pkg-config files')
+
+# Development options
+option('enable_debug', type: 'boolean', value: false,
+       description: 'Enable debug symbols and assertions')
+
+option('enable_coverage', type: 'boolean', value: false,
+       description: 'Enable code coverage instrumentation')
+
+option('enable_sanitizers', type: 'combo', choices: ['none', 'address', 'thread', 'undefined'], value: 'none',
+       description: 'Enable sanitizers for debugging')
