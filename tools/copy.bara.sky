@@ -9,11 +9,12 @@
 #   - The 'origin_files' glob restricts the sync to the specific part of the project you want to mirror. Adjust it 
 #   (e.g., "sync_folder/**") as necessary.
 
-REFERENCE_REPO_URL = "git@github.com:NKI-AI/aiforoncology-internal.git" # The source repository URL to sync from.
+REFERENCE_REPO_URL = "file:///Users/jonasteuwen/Code/aifo-simpletiff" # Local repository for testing
+# REFERENCE_REPO_URL = "git@github.com:NKI-AI/aiforoncology-internal.git" # The source repository URL to sync from.
 REFERENCE_BRANCH = "feature/simpletiff-integration"  # The branch in the source repository to sync from.
 
 TARGET_REPO_URL = "git@github.com:NKI-AI/fastslide.git" # The destination repository URL to sync to.
-TARGET_BRANCH = "sync/monorepo-internal"  # The branch in the destination repository to sync to.
+TARGET_BRANCH = "sync/monorepo/internal"  # The branch in the destination repository to sync to.
 
 # Configurable list of files (e.g. README.md)
 GENERAL_FILES = [
@@ -25,6 +26,13 @@ GENERAL_FILES = [
     "aifo/fastslide/pyproject.toml",
     "aifo/fastslide/requirements_linux.txt",
     "aifo/fastslide/requirements_darwin.txt",
+    "aifo/simpletiff/meson.build",
+    "aifo/simpletiff/meson_options.txt",
+    "aifo/simpletiff/LICENSE",
+    "aifo/simpletiff/README.md",
+    "aifo/aifocore/meson.build",
+    "aifo/aifocore/LICENSE",
+    "aifo/aifocore/README.md",
 ]
 
 # Configurable list of source globs (e.g. src/python)
@@ -34,6 +42,9 @@ SRC_GLOBS = [
     "aifo/fastslide/python/**",
     "aifo/aifocore/src/**",
     "aifo/aifocore/include/**",
+    "aifo/simpletiff/src/**",
+    "aifo/simpletiff/include/**",
+    "aifo/simpletiff/python/**",
     "aifo/jpeg-compressor/**",
     "third_party/lodepng/**",
 ]
@@ -45,19 +56,25 @@ OTHER_GLOBS = [
     "aifo/fastslide/examples/**",
     "aifo/fastslide/tests/**",
     "aifo/fastslide/tools/**",
-    "aifo/fastslide/subprojects/**",
+    "aifo/fastslide/subprojects/*.wrap",  # Only wrap files from subprojects
+    "aifo/simpletiff/benchmarks/**",
+    "aifo/simpletiff/examples/**",
+    "aifo/simpletiff/tests/**",
+    "aifo/simpletiff/subprojects/*.wrap",  # Only wrap files from subprojects
 ]
 
 EXCLUDED_FILES = [
     "**/*.bazel",
     "**/*.BUILD",
-    # Exclude Meson subproject symlinks (monorepo only)
-    "aifo/fastslide/subprojects/simpletiff",
-    "aifo/fastslide/subprojects/jpeg-compressor",
-    "aifo/fastslide/subprojects/aifocore",
-    "aifo/simpletiff/subprojects/jpeg-compressor",
     # Exclude Meson build directories
     "**/builddir/**",
+    # Exclude .gitignore files (they're monorepo-specific)
+    "**/.gitignore",
+    # Exclude symlinks from monorepo (we use wrap files in copybara version)
+    "aifo/fastslide/subprojects/simpletiff",
+    "aifo/fastslide/subprojects/aifocore",
+    "aifo/fastslide/subprojects/jpeg-compressor",
+    "aifo/simpletiff/subprojects/jpeg-compressor",
 ]
 
 core.workflow(
@@ -81,10 +98,6 @@ core.workflow(
             after = "src/fastslide/"
         ),
         core.move(
-            before = "aifo/aifocore/src/",
-            after = "src/aifocore/"
-        ),
-        core.move(
             before = "aifo/jpeg-compressor/",
             after = "third_party/jpeg-compressor/"
         ),
@@ -92,15 +105,30 @@ core.workflow(
             before = "aifo/fastslide/",
             after = ""
         ),
+        # Move simpletiff to third_party for copybara-translated version
+        core.move(
+            before = "aifo/simpletiff/",
+            after = "third_party/simpletiff/",
+        ),
+        # Move aifocore to third_party for copybara-translated version
         core.move(
             before = "aifo/aifocore/",
-            after = ""
+            after = "third_party/aifocore/"
         ),
         core.replace(
             before = "\"aifo/fastslide/src/",
             after = "\"src/fastslide/",
             regex_groups = {},
             paths = glob(["**/*.cpp", "**/*.h"])
+        ),
+        core.transform(
+            [core.replace(
+                before = "\"aifo/simpletiff/src/",
+                after = "\"third_party/simpletiff/",
+                regex_groups = {},
+                paths = glob(["**/*.cpp", "**/*.h"])
+            )],
+            noop_behavior = "IGNORE_NOOP"
         ),
         core.move(
             before = "README_PUBLIC.md",
