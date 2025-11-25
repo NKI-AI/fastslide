@@ -26,7 +26,7 @@
 // Highway SIMD implementation for FinalizeLinearToSrgb8
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE \
-  "src/fastslide/runtime/tile_writer/blended/accumulate.cpp"
+  "src/runtime/tile_writer/blended/accumulate.cpp"
 #include "hwy/foreach_target.h"  // IWYU pragma: keep
 #include "hwy/highway.h"
 

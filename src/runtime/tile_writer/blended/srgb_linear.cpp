@@ -25,7 +25,7 @@
 // Highway SIMD implementation for ConvertSrgb8ToLinearPlanar
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE \
-  "src/fastslide/runtime/tile_writer/blended/srgb_linear.cpp"
+  "src/runtime/tile_writer/blended/srgb_linear.cpp"
 #include "hwy/foreach_target.h"  // IWYU pragma: keep
 #include "hwy/highway.h"
 

@@ -9,8 +9,10 @@
 #   - The 'origin_files' glob restricts the sync to the specific part of the project you want to mirror. Adjust it 
 #   (e.g., "sync_folder/**") as necessary.
 
-REFERENCE_REPO_URL = "file:///Users/jonasteuwen/Code/aifo-simpletiff" # Local repository for testing
-# REFERENCE_REPO_URL = "git@github.com:NKI-AI/aiforoncology-internal.git" # The source repository URL to sync from.
+# For local testing, use a file:// URL (update path as needed):
+# REFERENCE_REPO_URL = "file:///path/to/your/local/aifo-simpletiff"
+# For production, use the remote repository:
+REFERENCE_REPO_URL = "git@github.com:NKI-AI/aiforoncology-internal.git"
 REFERENCE_BRANCH = "feature/simpletiff-integration"  # The branch in the source repository to sync from.
 
 TARGET_REPO_URL = "git@github.com:NKI-AI/fastslide.git" # The destination repository URL to sync to.
@@ -118,12 +120,6 @@ core.workflow(
         core.replace(
             before = "\"aifo/fastslide/src/",
             after = "\"src/fastslide/",
-            regex_groups = {},
-            paths = glob(["**/*.cpp", "**/*.h"])
-        ),
-        core.replace(
-            before = "\"aifo/simpletiff/src/",
-            after = "\"simpletiff/",
             regex_groups = {},
             paths = glob(["**/*.cpp", "**/*.h"])
         ),

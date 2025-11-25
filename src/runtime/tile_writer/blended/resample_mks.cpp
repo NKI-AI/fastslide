@@ -24,7 +24,7 @@
 // Highway SIMD implementation for convolution
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE \
-  "src/fastslide/runtime/tile_writer/blended/resample_mks.cpp"
+  "src/runtime/tile_writer/blended/resample_mks.cpp"
 #include "hwy/foreach_target.h"  // IWYU pragma: keep
 #include "hwy/highway.h"
 
