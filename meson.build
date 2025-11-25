@@ -127,6 +127,14 @@ liblzma_proj = subproject('liblzma', default_options: [
 ])
 liblzma_dep = dependency('liblzma', fallback: ['liblzma'], static: false)
 
+# zlib (required for MRXS format decompression)
+zlib_proj = subproject('zlib', default_options: [
+  'default_library=static',
+  'prefer_static=true',
+  'warning_level=0'
+])
+zlib_dep = dependency('zlib', fallback: ['zlib'], static: true)
+
 # SimpleTIFF - our custom TIFF library
 # Available via wrap file which handles both monorepo and copybara-translated locations
 simpletiff_proj = subproject('simpletiff', default_options: [
@@ -416,6 +424,7 @@ fastslide_static = static_library('fastslide',
     zstd_dep,
     libwebp_dep,
     liblzma_dep,
+    zlib_dep,
     jpeg_dep,
     pugixml_dep,
     fmt_dep,
@@ -447,6 +456,7 @@ fastslide_shared = shared_library('fastslide',
     zstd_dep,
     libwebp_dep,
     liblzma_dep,
+    zlib_dep,
     jpeg_dep,
     pugixml_dep,
     fmt_dep,
@@ -556,6 +566,7 @@ if python3.found() and pybind11_dep.found()
       zstd_dep,
       libwebp_dep,
       liblzma_dep,
+      zlib_dep,
       highway_dep,
     ],
     link_args: python_link_args,
@@ -611,6 +622,7 @@ if gtest_dep.found() and gtest_main_dep.found()
     zstd_dep,
     libwebp_dep,
     liblzma_dep,
+    zlib_dep,
     simpletiff_dep,
     highway_dep,
   ]
