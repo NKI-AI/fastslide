@@ -29,19 +29,19 @@
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/qptiff/metadata_parser.h"
 #include "fastslide/utilities/colors.h"
+#include "simpletiff/tiff_constants.h"
 
 namespace fastslide {
 
 absl::Status QptiffMetadataLoader::LoadMetadata(
-    TiffFile& tiff_file, SlideMetadata& metadata,
+    const simpletiff::TiffIndex& tiff_index, SlideMetadata& metadata,
     std::vector<QpTiffChannelInfo>& channels,
     std::vector<QpTiffLevelInfo>& pyramid,
     std::map<std::string, QpTiffAssociatedInfo>& associated_images,
     ImageFormat& format) {
 
   // Get total number of directories upfront
-  uint16_t total_pages = 0;
-  ASSIGN_OR_RETURN(total_pages, tiff_file.GetDirectoryCount());
+  uint16_t total_pages = static_cast<uint16_t>(tiff_index.NumPages());
 
   if (total_pages < 4) {
     return MAKE_STATUS(
@@ -52,7 +52,7 @@ absl::Status QptiffMetadataLoader::LoadMetadata(
   // Process full resolution channels
   uint16_t thumbnail_start_page;
   ASSIGN_OR_RETURN(thumbnail_start_page,
-                   ProcessFullResolutionChannels(tiff_file, total_pages,
+                   ProcessFullResolutionChannels(tiff_index, total_pages,
                                                  metadata, channels, format),
                    "Failed to process full resolution channels");
 
@@ -76,7 +76,7 @@ absl::Status QptiffMetadataLoader::LoadMetadata(
 
   // Process thumbnail and reduced levels
   RETURN_IF_ERROR(ProcessThumbnailAndReducedLevels(
-                      tiff_file, thumbnail_start_page, total_pages,
+                      tiff_index, thumbnail_start_page, total_pages,
                       channels.size(), pyramid, associated_images),
                   "Failed to process thumbnail and reduced levels");
 
@@ -84,28 +84,25 @@ absl::Status QptiffMetadataLoader::LoadMetadata(
 }
 
 absl::StatusOr<uint16_t> QptiffMetadataLoader::ProcessFullResolutionChannels(
-    TiffFile& tiff_file, uint16_t total_pages, SlideMetadata& metadata,
-    std::vector<QpTiffChannelInfo>& channels, ImageFormat& format) {
+    const simpletiff::TiffIndex& tiff_index, uint16_t total_pages,
+    SlideMetadata& metadata, std::vector<QpTiffChannelInfo>& channels,
+    ImageFormat& format) {
 
   uint16_t thumbnail_page = 0;
 
   // Process full resolution channels until we hit thumbnail
   for (auto page :
        std::views::iota(0u, total_pages) | std::views::take_while([&](auto p) {
-         return !IsThumbnailPage(tiff_file, p);
+         return !IsThumbnailPage(tiff_index, p);
        })) {
 
-    RETURN_IF_ERROR(tiff_file.SetDirectory(page),
-                    "Failed to set directory " + std::to_string(page));
+    const auto& page_header = tiff_index.Page(page);
 
     // Get basic directory info
-    std::array<uint32_t, 2> image_dims;
-    ASSIGN_OR_RETURN(
-        image_dims, tiff_file.GetImageDimensions(),
-        "Failed to get image dimensions for page " + std::to_string(page));
+    std::array<uint32_t, 2> image_dims{page_header.width, page_header.height};
 
     // Get XML metadata
-    auto desc_result = tiff_file.GetImageDescription();
+    const std::string& desc_result = page_header.description;
     if (desc_result.empty()) {
       continue;  // Skip pages without XML
     }
@@ -131,13 +128,10 @@ absl::StatusOr<uint16_t> QptiffMetadataLoader::ProcessFullResolutionChannels(
     // This should be a full resolution channel
     if (image_type == "FullResolution" || image_type.empty()) {
       // Check if this is an RGB image
-      auto photometric_result = tiff_file.GetPhotometric();
-      auto samples_per_pixel_result = tiff_file.GetSamplesPerPixel();
-
-      bool is_rgb_image = photometric_result.ok() &&
-                          samples_per_pixel_result.ok() &&
-                          photometric_result.value() == TiffPhotometric::RGB &&
-                          samples_per_pixel_result.value() == 3;
+      bool is_rgb_image =
+          page_header.photometric ==
+              simpletiff::ToPhotometricCode(simpletiff::Photometric::kRgb) &&
+          page_header.samples_per_pixel == 3;
 
       if (is_rgb_image) {
         // This is an RGB image - treat as a single channel with RGB format
@@ -153,14 +147,15 @@ absl::StatusOr<uint16_t> QptiffMetadataLoader::ProcessFullResolutionChannels(
           channel.page = page;
           channel.width = image_dims[0];
           channel.height = image_dims[1];
-          channel.tiled = tiff_file.IsTiled();
+          channel.tiled = (page_header.storage == simpletiff::Storage::kTiles);
           channel.allow_random_access = channel.tiled;
 
           channels.push_back(std::move(channel));
 
           // Extract metadata from page 0
-          RETURN_IF_ERROR(ExtractResolutionMetadata(tiff_file, metadata, &root),
-                          "Failed to extract resolution metadata from page 0");
+          RETURN_IF_ERROR(
+              ExtractResolutionMetadata(page_header, metadata, &root),
+              "Failed to extract resolution metadata from page 0");
         }
         // Skip additional RGB pages
       } else {
@@ -182,15 +177,16 @@ absl::StatusOr<uint16_t> QptiffMetadataLoader::ProcessFullResolutionChannels(
         channel.page = page;
         channel.width = image_dims[0];
         channel.height = image_dims[1];
-        channel.tiled = tiff_file.IsTiled();
+        channel.tiled = (page_header.storage == simpletiff::Storage::kTiles);
         channel.allow_random_access = channel.tiled;
 
         channels.push_back(std::move(channel));
 
         // Extract metadata from page 0
         if (page == 0) {
-          RETURN_IF_ERROR(ExtractResolutionMetadata(tiff_file, metadata, &root),
-                          "Failed to extract resolution metadata from page 0");
+          RETURN_IF_ERROR(
+              ExtractResolutionMetadata(page_header, metadata, &root),
+              "Failed to extract resolution metadata from page 0");
         }
       }
     }
@@ -202,38 +198,34 @@ absl::StatusOr<uint16_t> QptiffMetadataLoader::ProcessFullResolutionChannels(
 }
 
 absl::Status QptiffMetadataLoader::ProcessThumbnailAndReducedLevels(
-    TiffFile& tiff_file, uint16_t thumbnail_start_page, uint16_t total_pages,
-    size_t num_channels, std::vector<QpTiffLevelInfo>& pyramid,
+    const simpletiff::TiffIndex& tiff_index, uint16_t thumbnail_start_page,
+    uint16_t total_pages, size_t num_channels,
+    std::vector<QpTiffLevelInfo>& pyramid,
     std::map<std::string, QpTiffAssociatedInfo>& associated_images) {
 
   // Find and process the thumbnail page
   for (uint16_t current_page = thumbnail_start_page; current_page < total_pages;
        ++current_page) {
-    if (IsThumbnailPage(tiff_file, current_page)) {
-      RETURN_IF_ERROR(tiff_file.SetDirectory(current_page),
-                      "Failed to set directory for thumbnail");
-
-      auto image_dims_result = tiff_file.GetImageDimensions();
-      if (image_dims_result.ok()) {
-        const auto& image_dims = image_dims_result.value();
-        associated_images["Thumbnail"] = QpTiffAssociatedInfo{
-            .page = current_page, .size = {image_dims[0], image_dims[1]}};
-      }
+    if (IsThumbnailPage(tiff_index, current_page)) {
+      const auto& page_header = tiff_index.Page(current_page);
+      associated_images["Thumbnail"] =
+          QpTiffAssociatedInfo{.page = current_page,
+                               .size = {page_header.width, page_header.height}};
       thumbnail_start_page = current_page;
       break;
     }
   }
 
-  // Process remaining pages after thumbnail: reduced levels followed by associated images
+  // Process remaining pages after thumbnail: reduced levels followed by
+  // associated images
   uint16_t current_page = thumbnail_start_page + 1;
   std::vector<uint16_t> current_level_pages;
 
   while (current_page < total_pages) {
-    RETURN_IF_ERROR(tiff_file.SetDirectory(current_page),
-                    "Failed to set directory " + std::to_string(current_page));
+    const auto& page_header = tiff_index.Page(current_page);
 
     // Get XML metadata to determine image type
-    auto desc_result = tiff_file.GetImageDescription();
+    const std::string& desc_result = page_header.description;
     std::string image_type;
 
     if (!desc_result.empty()) {
@@ -258,11 +250,12 @@ absl::Status QptiffMetadataLoader::ProcessThumbnailAndReducedLevels(
         reduced_level.pages = current_level_pages;
 
         // Get dimensions from first page of this level
-        RETURN_IF_ERROR(tiff_file.SetDirectory(current_level_pages[0]),
-                        "Failed to set directory for reduced level");
-        ASSIGN_OR_RETURN(reduced_level.size, tiff_file.GetImageDimensions());
+        const auto& first_page_header = tiff_index.Page(current_level_pages[0]);
+        reduced_level.size = {first_page_header.width,
+                              first_page_header.height};
 
-        reduced_level.tiled = tiff_file.IsTiled();
+        reduced_level.tiled =
+            (first_page_header.storage == simpletiff::Storage::kTiles);
         reduced_level.allow_random_access = reduced_level.tiled;
 
         pyramid.push_back(std::move(reduced_level));
@@ -270,9 +263,7 @@ absl::Status QptiffMetadataLoader::ProcessThumbnailAndReducedLevels(
       }
     } else {
       // This is an associated image
-      ImageDimensions dims;
-      ASSIGN_OR_RETURN(dims, tiff_file.GetImageDimensions(),
-                       "Failed to get image dimensions for associated image");
+      ImageDimensions dims{page_header.width, page_header.height};
 
       std::string assoc_name =
           image_type.empty() ? "Associated_" + std::to_string(current_page)
@@ -295,12 +286,14 @@ absl::Status QptiffMetadataLoader::ProcessThumbnailAndReducedLevels(
   return absl::OkStatus();
 }
 
-bool QptiffMetadataLoader::IsThumbnailPage(TiffFile& tiff_file, uint16_t page) {
-  if (tiff_file.SetDirectory(page) != absl::OkStatus()) {
+bool QptiffMetadataLoader::IsThumbnailPage(
+    const simpletiff::TiffIndex& tiff_index, uint16_t page) {
+  if (page >= tiff_index.NumPages()) {
     return true;  // Stop iteration on error
   }
 
-  auto desc_result = tiff_file.GetImageDescription();
+  const auto& page_header = tiff_index.Page(page);
+  const std::string& desc_result = page_header.description;
   if (desc_result.empty()) {
     return false;  // Not a thumbnail, continue
   }
@@ -321,12 +314,15 @@ bool QptiffMetadataLoader::IsThumbnailPage(TiffFile& tiff_file, uint16_t page) {
 }
 
 absl::Status QptiffMetadataLoader::ExtractResolutionMetadata(
-    TiffFile& tiff_file, SlideMetadata& metadata, const void* xml_root) {
+    const simpletiff::PageHeader& page_header, SlideMetadata& metadata,
+    const void* xml_root) {
 
   // Extract MPP from TIFF tags
-  auto x_res = tiff_file.GetXResolution();
-  auto y_res = tiff_file.GetYResolution();
-  uint16_t res_unit = tiff_file.GetResolutionUnit();
+  auto x_res = page_header.x_resolution;
+  auto y_res = page_header.y_resolution;
+
+  // Default to centimeter if not specified (TIFF default)
+  uint16_t res_unit = page_header.resolution_unit.value_or(3);
 
   if (!x_res.has_value() || !y_res.has_value()) {
     return MAKE_STATUS(absl::StatusCode::kNotFound,
@@ -337,11 +333,11 @@ absl::Status QptiffMetadataLoader::ExtractResolutionMetadata(
   double mpp_x = 0.0;
   double mpp_y = 0.0;
   switch (res_unit) {
-    case RESUNIT_INCH:
+    case 2:                             // RESUNIT_INCH
       mpp_x = 25400.0 / x_res.value();  // 25400 microns per inch
       mpp_y = 25400.0 / y_res.value();
       break;
-    case RESUNIT_CENTIMETER:
+    case 3:                             // RESUNIT_CENTIMETER (default)
       mpp_x = 10000.0 / x_res.value();  // 10000 microns per cm
       mpp_y = 10000.0 / y_res.value();
       break;

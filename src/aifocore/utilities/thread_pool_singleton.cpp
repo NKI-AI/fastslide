@@ -48,13 +48,14 @@ std::size_t GetThreadCountFromEnv() {
     return 0;
   }
 
-  // Return the parsed value (0 will be interpreted as hardware_concurrency by BS::thread_pool)
+  // Return the parsed value (0 will be interpreted as hardware_concurrency by
+  // BS::thread_pool)
   return static_cast<std::size_t>(value);
 }
 
 }  // namespace
 
-BS::light_thread_pool& ThreadPoolManager::GetInstance() {
+InlineThreadPool& ThreadPoolManager::GetInstance() {
   return GetPool(0);
 }
 
@@ -62,11 +63,11 @@ void ThreadPoolManager::SetThreadCount(std::size_t count) {
   GetPool(count).reset(count);
 }
 
-BS::light_thread_pool& ThreadPoolManager::GetPool(std::size_t count) {
+InlineThreadPool& ThreadPoolManager::GetPool(std::size_t count) {
   // Thread-safe static initialization (C++11 guaranteed)
   // On first call, check environment variable for thread count override
   static const std::size_t env_thread_count = GetThreadCountFromEnv();
-  static BS::light_thread_pool pool(count == 0 ? env_thread_count : count);
+  static InlineThreadPool pool(count == 0 ? env_thread_count : count);
   return pool;
 }
 

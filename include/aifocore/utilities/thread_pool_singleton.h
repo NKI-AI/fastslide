@@ -16,10 +16,118 @@
 #define AIFO_AIFOCORE_INCLUDE_AIFOCORE_UTILITIES_THREAD_POOL_SINGLETON_H_
 
 #include <cstddef>
+#include <future>
+#include <type_traits>
 
 #include "aifocore/utilities/bs_thread_pool.h"
 
 namespace aifocore {
+
+/// @brief Thread pool wrapper that executes tasks inline when submitted from
+/// worker threads
+///
+/// Prevents deadlocks by detecting when a task is submitted from a worker
+/// thread of the same pool and executing it immediately instead of queuing it.
+/// This is critical for preventing thread pool exhaustion when tasks
+/// recursively submit more tasks (e.g., fimage calling fastslide which submits
+/// tile reading tasks).
+class InlineThreadPool : public BS::light_thread_pool {
+ public:
+  using BS::light_thread_pool::light_thread_pool;
+
+  /// @brief Submit task with inline execution detection
+  /// @param task Function to execute
+  /// @param priority Task priority (only for queued tasks)
+  /// @note Executes inline if called from a worker thread of this pool
+  template <typename F>
+  void detach_task(F&& task, const BS::priority_t priority = 0) {
+    if (BS::this_thread::get_pool() == static_cast<void*>(this)) {
+      task();  // Execute inline if called from worker thread
+      return;
+    }
+    BS::light_thread_pool::detach_task(std::forward<F>(task), priority);
+  }
+
+  /// @brief Submit task with future, inline execution detection
+  /// @param task Function to execute
+  /// @param priority Task priority (only for queued tasks)
+  /// @return Future for the task result
+  /// @note Executes inline if called from a worker thread of this pool
+  template <typename F, typename R = std::invoke_result_t<std::decay_t<F>>>
+  [[nodiscard]] std::future<R> submit_task(F&& task,
+                                           const BS::priority_t priority = 0) {
+    if (BS::this_thread::get_pool() == static_cast<void*>(this)) {
+      // Execute inline and wrap result in ready future
+      std::promise<R> promise;
+      std::future<R> future = promise.get_future();
+      if constexpr (std::is_void_v<R>) {
+        task();
+        promise.set_value();
+      } else {
+        promise.set_value(task());
+      }
+      return future;
+    }
+    return BS::light_thread_pool::submit_task(std::forward<F>(task), priority);
+  }
+
+  /// @brief Parallelize loop with inline execution detection
+  /// @param first_index First loop index
+  /// @param index_after_last Index after last loop index
+  /// @param loop Function to call for each index
+  /// @param num_blocks Number of blocks to split into (0 = use thread count)
+  /// @param priority Task priority (only for queued tasks)
+  /// @note Executes sequentially inline if called from a worker thread of this
+  /// pool
+  template <typename T1, typename T2,
+            typename T = BS::common_index_type_t<T1, T2>, typename F>
+  void detach_loop(const T1 first_index, const T2 index_after_last, F&& loop,
+                   const std::size_t num_blocks = 0,
+                   const BS::priority_t priority = 0) {
+    if (BS::this_thread::get_pool() == static_cast<void*>(this)) {
+      // Execute inline sequentially
+      for (T i = static_cast<T>(first_index);
+           i < static_cast<T>(index_after_last); ++i) {
+        loop(i);
+      }
+      return;
+    }
+    BS::light_thread_pool::detach_loop(first_index, index_after_last,
+                                       std::forward<F>(loop), num_blocks,
+                                       priority);
+  }
+
+  /// @brief Parallelize loop with future, inline execution detection
+  /// @param first_index First loop index
+  /// @param index_after_last Index after last loop index
+  /// @param loop Function to call for each index
+  /// @param num_blocks Number of blocks to split into (0 = use thread count)
+  /// @param priority Task priority (only for queued tasks)
+  /// @return Multi-future for all blocks
+  /// @note Executes sequentially inline if called from a worker thread of this
+  /// pool
+  template <typename T1, typename T2,
+            typename T = BS::common_index_type_t<T1, T2>, typename F>
+  [[nodiscard]] BS::multi_future<void> submit_loop(
+      const T1 first_index, const T2 index_after_last, F&& loop,
+      const std::size_t num_blocks = 0, const BS::priority_t priority = 0) {
+    if (BS::this_thread::get_pool() == static_cast<void*>(this)) {
+      // Execute inline sequentially and return ready future
+      for (T i = static_cast<T>(first_index);
+           i < static_cast<T>(index_after_last); ++i) {
+        loop(i);
+      }
+      BS::multi_future<void> result;
+      std::promise<void> promise;
+      promise.set_value();
+      result.push_back(promise.get_future());
+      return result;
+    }
+    return BS::light_thread_pool::submit_loop(first_index, index_after_last,
+                                              std::forward<F>(loop), num_blocks,
+                                              priority);
+  }
+};
 
 /// @brief Global thread pool manager for aifocore libraries
 ///
@@ -39,15 +147,18 @@ namespace aifocore {
 /// Alternatively, call SetThreadCount() before first use.
 class ThreadPoolManager {
  public:
-  /// @brief Get the global thread pool instance
+  /// @brief Get the global thread pool instance with inline execution
   ///
   /// Returns a reference to the singleton thread pool. The pool is created
   /// on first access with a default thread count determined by:
   /// 1. NUM_THREADS environment variable (if set)
   /// 2. Hardware concurrency (number of logical cores) otherwise
   ///
-  /// @return Reference to the global BS::light_thread_pool
-  static BS::light_thread_pool& GetInstance();
+  /// The returned pool automatically executes tasks inline when submitted
+  /// from worker threads, preventing deadlocks from nested task submission.
+  ///
+  /// @return Reference to the global InlineThreadPool
+  static InlineThreadPool& GetInstance();
 
   /// @brief Set the number of threads in the pool
   ///
@@ -67,7 +178,7 @@ class ThreadPoolManager {
   /// @brief Get or create the thread pool instance
   /// @param count Thread count (0 = hardware concurrency)
   /// @return Reference to the thread pool
-  static BS::light_thread_pool& GetPool(std::size_t count = 0);
+  static InlineThreadPool& GetPool(std::size_t count = 0);
 };
 
 }  // namespace aifocore

@@ -25,53 +25,54 @@
 #include "fastslide/readers/qptiff/qptiff.h"
 #include "fastslide/readers/tiff_based_tile_executor.h"
 #include "fastslide/runtime/tile_writer.h"
-#include "fastslide/utilities/tiff/tiff_file.h"
+#include "simpletiff/index.h"
 
 /**
  * @file qptiff_tile_executor.h
  * @brief QPTIFF tile plan executor with thread-local buffer optimization
- * 
+ *
  * This header defines QptiffTileExecutor, a helper class for executing
  * tile reading plans for QPTIFF images. This is stage 2 of the two-stage
  * pipeline, which performs I/O and decoding based on a prepared plan.
- * 
+ *
  * **Responsibilities:**
  * - Read compressed tile data from TIFF pages
- * - Decompress tiles via libtiff
+ * - Decompress tiles via simpletiff
  * - Handle multi-channel data (RGB or spectral)
  * - Apply transformations (crop, scale, channel selection)
  * - Write decoded data to the destination writer
- * 
+ *
  * **QPTIFF Specifics:**
  * - Reads from multiple TIFF pages for multi-channel images
  * - Supports both planar (separated) and interleaved layouts
  * - Handles channel-specific tile sizes
  * - Efficiently processes only visible channels
- * 
+ *
  * **Performance:**
  * - Thread-local buffers eliminate per-tile allocations
  * - Improved cache locality from buffer reuse
  * - Can leverage tile cache to skip I/O for cached tiles
  * - Sequential execution with optimized memory management
- * 
+ *
  * @see QptiffPlanBuilder for stage 1 (plan creation)
  * @see QpTiffReader for the main reader class
  */
 
 namespace fastslide {
 
-/// @brief Helper class for executing QPTIFF tile read operations with thread-local buffers
+/// @brief Helper class for executing QPTIFF tile read operations with
+/// thread-local buffers
 class QptiffTileExecutor : public TiffBasedTileExecutor<QptiffTileExecutor> {
  public:
   /// @brief Execute a tile plan
   /// @param plan The tile plan to execute
   /// @param pyramid Pyramid levels information
-  /// @param tiff_file TiffFile instance for reading
+  /// @param tiff_index SimpleTiff index for reading
   /// @param writer Tile writer for output
   /// @return Status indicating success or failure
   static absl::Status ExecutePlan(const core::TilePlan& plan,
                                   const std::vector<QpTiffLevelInfo>& pyramid,
-                                  TiffFile& tiff_file,
+                                  const simpletiff::TiffIndex& tiff_index,
                                   runtime::TileWriter& writer);
 
  private:
@@ -88,37 +89,36 @@ class QptiffTileExecutor : public TiffBasedTileExecutor<QptiffTileExecutor> {
   /// @brief Execute a single tile operation
   /// @param op The tile operation to execute
   /// @param level_info Level information
-  /// @param tiff_file TiffFile instance
+  /// @param tiff_index SimpleTiff index
   /// @param writer Tile writer
   /// @param page_state Current page state (updated if needed)
   /// @return Status indicating success or failure
-  static absl::Status ExecuteTileOperation(const core::TileReadOp& op,
-                                           const QpTiffLevelInfo& level_info,
-                                           TiffFile& tiff_file,
-                                           runtime::TileWriter& writer,
-                                           PageState& page_state);
+  static absl::Status ExecuteTileOperation(
+      const core::TileReadOp& op, const QpTiffLevelInfo& level_info,
+      const simpletiff::TiffIndex& tiff_index, runtime::TileWriter& writer,
+      PageState& page_state);
 
   /// @brief Update page state if page changed
   /// @param page New page number
   /// @param level_info Level information
-  /// @param tiff_file TiffFile instance
+  /// @param tiff_index SimpleTiff index
   /// @param page_state Page state to update
   /// @return Status indicating success or failure
   static absl::Status UpdatePageState(uint16_t page,
                                       const QpTiffLevelInfo& level_info,
-                                      TiffFile& tiff_file,
+                                      const simpletiff::TiffIndex& tiff_index,
                                       PageState& page_state);
 
-  /// @brief Read tile data from TIFF file
+  /// @brief Read tile data from TIFF file via simpletiff
   /// @param op The tile operation
-  /// @param tiff_file TiffFile instance
+  /// @param tiff_index SimpleTiff index
   /// @param page_state Current page state
   /// @return Span view of tile data in thread-local buffer or error
   /// @note The returned span is valid until the next call to this function on
   ///       the same thread. Uses thread-local buffers to eliminate per-tile
   ///       allocation overhead.
   static absl::StatusOr<std::span<const uint8_t>> ReadTileData(
-      const core::TileReadOp& op, TiffFile& tiff_file,
+      const core::TileReadOp& op, const simpletiff::TiffIndex& tiff_index,
       const PageState& page_state);
 
   /// @brief Extract region from tile buffer to thread-local crop buffer

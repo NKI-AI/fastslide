@@ -14,8 +14,6 @@
 
 #include "fastslide/readers/qptiff/qptiff_tile_executor.h"
 
-#include <tiffio.h>
-
 #include <cstring>
 #include <limits>
 #include <span>
@@ -25,12 +23,15 @@
 #include "absl/status/status.h"
 #include "absl/strings/str_format.h"
 #include "aifocore/status/status_macros.h"
+#include "aifocore/utilities/fmt.h"
+#include "simpletiff/index.h"
+#include "simpletiff/reader.h"
 
 namespace fastslide {
 
 absl::Status QptiffTileExecutor::ExecutePlan(
     const core::TilePlan& plan, const std::vector<QpTiffLevelInfo>& pyramid,
-    TiffFile& tiff_file, runtime::TileWriter& writer) {
+    const simpletiff::TiffIndex& tiff_index, runtime::TileWriter& writer) {
 
   if (plan.operations.empty()) {
     // No tiles to read - fill with background color
@@ -50,7 +51,7 @@ absl::Status QptiffTileExecutor::ExecutePlan(
   // Process each tile operation
   for (const auto& op : plan.operations) {
     RETURN_IF_ERROR(
-        ExecuteTileOperation(op, level_info, tiff_file, writer, page_state),
+        ExecuteTileOperation(op, level_info, tiff_index, writer, page_state),
         "Failed to execute tile operation");
   }
 
@@ -59,17 +60,18 @@ absl::Status QptiffTileExecutor::ExecutePlan(
 
 absl::Status QptiffTileExecutor::ExecuteTileOperation(
     const core::TileReadOp& op, const QpTiffLevelInfo& level_info,
-    TiffFile& tiff_file, runtime::TileWriter& writer, PageState& page_state) {
+    const simpletiff::TiffIndex& tiff_index, runtime::TileWriter& writer,
+    PageState& page_state) {
 
   const uint16_t page = op.source_id;
   const size_t ch_idx = op.tile_coord.x;  // Channel index stored in X coord
 
   // Update page state if needed
-  RETURN_IF_ERROR(UpdatePageState(page, level_info, tiff_file, page_state),
+  RETURN_IF_ERROR(UpdatePageState(page, level_info, tiff_index, page_state),
                   "Failed to update page state");
 
   // Read tile data (returns span view of thread-local buffer)
-  auto tile_data_or = ReadTileData(op, tiff_file, page_state);
+  auto tile_data_or = ReadTileData(op, tiff_index, page_state);
   if (!tile_data_or.ok()) {
     LOG(WARNING) << "Failed to read tile for channel " << ch_idx << ": "
                  << tile_data_or.status();
@@ -107,40 +109,31 @@ absl::Status QptiffTileExecutor::ExecuteTileOperation(
 }
 
 absl::Status QptiffTileExecutor::UpdatePageState(
-    uint16_t page, const QpTiffLevelInfo& level_info, TiffFile& tiff_file,
-    PageState& page_state) {
+    uint16_t page, const QpTiffLevelInfo& level_info,
+    const simpletiff::TiffIndex& tiff_index, PageState& page_state) {
 
   if (page != page_state.current_page) {
-    RETURN_IF_ERROR(tiff_file.SetDirectory(page),
-                    "Failed to set directory for page " + std::to_string(page));
+    if (page >= tiff_index.NumPages()) {
+      return absl::InvalidArgumentError(
+          absl::StrFormat("Page %d out of range", page));
+    }
+
+    const auto& page_header = tiff_index.Page(page);
 
     page_state.current_page = page;
-    page_state.is_tiled = tiff_file.IsTiled();
+    page_state.is_tiled = (page_header.storage == simpletiff::Storage::kTiles);
 
     // Get bits per sample
-    auto bits_result = tiff_file.GetBitsPerSample();
-    if (bits_result.ok()) {
-      page_state.bits_per_sample = *bits_result;
-    } else {
-      page_state.bits_per_sample = 8;  // Default
-    }
+    page_state.bits_per_sample = page_header.bits_per_sample;
     page_state.bytes_per_sample = (page_state.bits_per_sample + 7) / 8;
 
     // Get samples per pixel (should be 1 for spectral, 3 for RGB)
-    auto samples_result = tiff_file.GetSamplesPerPixel();
-    if (samples_result.ok()) {
-      page_state.samples_per_pixel = *samples_result;
-    } else {
-      page_state.samples_per_pixel = 1;  // Default
-    }
+    page_state.samples_per_pixel = page_header.samples_per_pixel;
 
     // Get tile dimensions
     if (page_state.is_tiled) {
-      auto tile_dims_result = tiff_file.GetTileDimensions();
-      if (!tile_dims_result.ok()) {
-        return tile_dims_result.status();
-      }
-      page_state.tile_width = (*tile_dims_result)[0];
+      const auto& tiles = tiff_index.Tiles(page_header.payload_id);
+      page_state.tile_width = tiles.tile_w;
     } else {
       page_state.tile_width = level_info.size[0];
     }
@@ -150,38 +143,62 @@ absl::Status QptiffTileExecutor::UpdatePageState(
 }
 
 absl::StatusOr<std::span<const uint8_t>> QptiffTileExecutor::ReadTileData(
-    const core::TileReadOp& op, TiffFile& tiff_file,
+    const core::TileReadOp& op, const simpletiff::TiffIndex& tiff_index,
     const PageState& page_state) {
 
-  TIFF* tif = tiff_file.GetHandle();
+  // Each worker thread uses its own DecodeContext for decompression
+  // This is thread-safe and avoids per-tile allocations
+  static thread_local simpletiff::DecodeContext decode_ctx;
+  static thread_local std::vector<uint8_t> tile_buffer;
 
-  // Read the TIFF tile/strip
-  tmsize_t tile_size =
-      page_state.is_tiled ? TIFFTileSize(tif) : TIFFStripSize(tif);
-  if (tile_size <= 0) {
-    return absl::InternalError(
-        absl::StrFormat("Invalid tile size for channel %d", op.tile_coord.x));
-  }
+  const uint16_t page = page_state.current_page;
+  const uint32_t tile_index = static_cast<uint32_t>(op.byte_offset);
 
-  // Use thread-local buffer from CRTP base class
-  // This eliminates per-tile allocation overhead
-  uint8_t* tile_data = GetBuffers().GetTileBuffer(tile_size);
+  // Get page info for debugging
+  const auto& page_header = tiff_index.Page(page);
 
-  tmsize_t bytes_read;
+  VLOG(1) << "Worker reading " << (page_state.is_tiled ? "tile" : "strip")
+          << " index " << tile_index << " from page " << page
+          << " (compression=" << page_header.compression
+          << ", storage=" << static_cast<int>(page_header.storage)
+          << ", width=" << page_header.width
+          << ", height=" << page_header.height << ")";
+
+  // Use appropriate simpletiff function based on storage type
+  simpletiff::Result<void> result;
+  int out_width = 0;
+  int out_height = 0;
+
   if (page_state.is_tiled) {
-    bytes_read = TIFFReadEncodedTile(tif, op.byte_offset, tile_data, tile_size);
+    // Read tile for tiled pages
+    result = simpletiff::ReadTile(tiff_index, page, tile_index, decode_ctx,
+                                  tile_buffer, out_width, out_height);
   } else {
-    bytes_read =
-        TIFFReadEncodedStrip(tif, op.byte_offset, tile_data, tile_size);
+    // Read strip for striped pages
+    result = simpletiff::ReadStripe(tiff_index, page, tile_index, decode_ctx,
+                                    tile_buffer);
+    // For strips, we need to set dimensions manually since ReadStripe doesn't
+    // return them
+    out_width = static_cast<int>(page_state.tile_width);
+    // Height is implicitly handled by the buffer size
   }
 
-  if (bytes_read <= 0) {
-    return absl::InternalError(
-        absl::StrFormat("Failed to read tile for channel %d", op.tile_coord.x));
+  if (!result) {
+    LOG(ERROR) << "Failed to read " << (page_state.is_tiled ? "tile" : "strip")
+               << " index " << tile_index << " from page " << page
+               << ": compression=" << page_header.compression
+               << ", storage=" << static_cast<int>(page_header.storage)
+               << ", error=" << result.error().message;
+    return MAKE_STATUS(
+        absl::StatusCode::kInternal,
+        aifocore::fmt::format("Failed to read {} index {}: {}",
+                              page_state.is_tiled ? "tile" : "strip",
+                              tile_index, result.error().message));
   }
 
-  // Return span view of thread-local buffer (valid until next call on this thread)
-  return std::span<const uint8_t>(tile_data, bytes_read);
+  // Return span view of thread-local buffer (valid until next call on this
+  // thread)
+  return std::span<const uint8_t>(tile_buffer.data(), tile_buffer.size());
 }
 
 std::span<const uint8_t> QptiffTileExecutor::ExtractRegionFromTile(
@@ -220,7 +237,8 @@ std::span<const uint8_t> QptiffTileExecutor::ExtractRegionFromTile(
     }
   }
 
-  // Return span view of thread-local buffer (valid until next call on this thread)
+  // Return span view of thread-local buffer (valid until next call on this
+  // thread)
   return std::span<const uint8_t>(cropped_data, crop_size);
 }
 

@@ -14,7 +14,6 @@
 
 #include "fastslide/readers/aperio/aperio_plan_builder.h"
 
-#include <tiffio.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -27,7 +26,7 @@
 #include "fastslide/core/tile_request.h"
 #include "fastslide/readers/aperio/aperio.h"
 #include "fastslide/slide_reader.h"
-#include "fastslide/utilities/tiff/tiff_file.h"
+#include "simpletiff/index.h"
 
 namespace fastslide {
 
@@ -145,26 +144,19 @@ absl::Status AperioPlanBuilder::QueryTiffStructure(
   // Store page number
   tiff_metadata.page = page;
 
-  // Get TIFF file handle to query tile structure
-  auto tiff_file_result = TiffFile::Create(reader.GetHandlePool());
-  if (!tiff_file_result.ok()) {
-    return tiff_file_result.status();
+  // Get SimpleTiff index to query structure
+  const auto& tiff_index = reader.GetTiffIndex();
+  if (page >= tiff_index.NumPages()) {
+    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
+                       aifocore::fmt::format("Page {} out of range", page));
   }
-  auto tiff_file = std::move(tiff_file_result.value());
 
-  auto status = tiff_file.SetDirectory(page);
-  if (!status.ok()) {
-    return status;
-  }
+  const auto& page_header = tiff_index.Page(page);
 
   // Query TIFF channel information
   // Aperio is typically RGB (3 channels), but we query the actual value
   // to handle edge cases (associated images, malformed files, etc.)
-  uint16_t samples_per_pixel = 3;  // Default to RGB
-  auto samples_result = tiff_file.GetSamplesPerPixel();
-  if (samples_result.ok()) {
-    samples_per_pixel = *samples_result;
-  }
+  uint16_t samples_per_pixel = page_header.samples_per_pixel;
 
   // Validate channel count to prevent bad_array_new_length
   if (samples_per_pixel == 0 || samples_per_pixel > 100) {
@@ -176,26 +168,24 @@ absl::Status AperioPlanBuilder::QueryTiffStructure(
   tiff_metadata.samples_per_pixel = samples_per_pixel;
 
   // Get TIFF tile/strip dimensions
-  const bool is_tiled = tiff_file.IsTiled();
+  const bool is_tiled = (page_header.storage == simpletiff::Storage::kTiles);
   tiff_metadata.is_tiled = is_tiled;
 
   if (is_tiled) {
-    auto tile_dims_result = tiff_file.GetTileDimensions();
-    if (!tile_dims_result.ok()) {
-      return tile_dims_result.status();
-    }
-    tiff_metadata.tile_width = (*tile_dims_result)[0];
-    tiff_metadata.tile_height = (*tile_dims_result)[1];
-  } else {
+    const auto& tiles = tiff_index.Tiles(page_header.payload_id);
+    tiff_metadata.tile_width = tiles.tile_w;
+    tiff_metadata.tile_height = tiles.tile_h;
+  } else if (page_header.storage == simpletiff::Storage::kStrips) {
     // For strips, tile_width = image width, tile_height = rows per strip
     tiff_metadata.tile_width = level_info.dimensions[0];
-    TIFF* tif = tiff_file.GetHandle();
-    uint32_t rows_per_strip = 0;
-    if (!TIFFGetField(tif, TIFFTAG_ROWSPERSTRIP, &rows_per_strip) ||
-        rows_per_strip == 0) {
-      rows_per_strip = level_info.dimensions[1];  // Single strip
+    const auto& strips = tiff_index.Strips(page_header.payload_id);
+    tiff_metadata.tile_height = strips.rows_per_strip;
+    if (tiff_metadata.tile_height == 0) {
+      tiff_metadata.tile_height = level_info.dimensions[1];  // Single strip
     }
-    tiff_metadata.tile_height = rows_per_strip;
+  } else {
+    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
+                       "Unsupported storage type for page");
   }
 
   return absl::OkStatus();

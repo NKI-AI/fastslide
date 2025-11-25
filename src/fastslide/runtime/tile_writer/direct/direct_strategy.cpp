@@ -22,6 +22,7 @@
 #include <string>
 #include <utility>
 
+#include "absl/log/log.h"
 #include "absl/status/status.h"
 #include "absl/status/statusor.h"
 #include "absl/strings/str_format.h"
@@ -43,19 +44,21 @@ DirectStrategy::DirectStrategy(const TileWriter::Config& config)
   }
 
   // Create appropriate Image based on channels
+  ImageFormat format;
   if (config_.channels == 3) {
-    output_image_ =
-        std::make_unique<Image>(config_.dimensions, ImageFormat::kRGB,
-                                config_.data_type, config_.planar_config);
+    format = ImageFormat::kRGB;
+    output_image_ = std::make_unique<Image>(
+        config_.dimensions, format, config_.data_type, config_.planar_config);
   } else if (config_.channels == 4) {
-    output_image_ =
-        std::make_unique<Image>(config_.dimensions, ImageFormat::kRGBA,
-                                config_.data_type, config_.planar_config);
+    format = ImageFormat::kRGBA;
+    output_image_ = std::make_unique<Image>(
+        config_.dimensions, format, config_.data_type, config_.planar_config);
   } else if (config_.channels == 1) {
-    output_image_ =
-        std::make_unique<Image>(config_.dimensions, ImageFormat::kGray,
-                                config_.data_type, config_.planar_config);
+    format = ImageFormat::kGray;
+    output_image_ = std::make_unique<Image>(
+        config_.dimensions, format, config_.data_type, config_.planar_config);
   } else {
+    format = ImageFormat::kSpectral;
     output_image_ =
         std::make_unique<Image>(config_.dimensions, config_.channels,
                                 config_.data_type, config_.planar_config);

@@ -13,11 +13,14 @@ project('fastslide', 'cpp', 'c',
   ]
 )
 
+# Import filesystem module for path checks
+fs = import('fs')
+
 # Compiler and language settings
 cpp = meson.get_compiler('cpp')
 cpp_std = cpp.get_argument_syntax() == 'msvc' ? 'c++20' : 'c++20'
 
-# Add warning suppressions for third-party libraries (abseil, pybind11, libtiff, etc.)
+# Add warning suppressions for third-party libraries (abseil, pybind11, etc.)
 if cpp.get_id() == 'clang' or cpp.get_id() == 'appleclang'
   add_project_arguments([
     '-Wno-nullability-extension',       # Abseil nullability warnings
@@ -38,7 +41,7 @@ add_project_arguments([
   '-Wno-implicit-fallthrough',        # Third-party switch fallthrough
 ], language: 'cpp')
 
-# Suppress warnings for C libraries (libtiff, libjpeg-turbo, etc.)
+# Suppress warnings for C libraries (libjpeg-turbo, etc.)
 add_project_arguments([
   '-Wno-deprecated-declarations',
   '-Wno-unused-parameter',
@@ -57,7 +60,6 @@ endif
 
 # Include directories
 incdir = include_directories('include')
-aifocore_incdir = include_directories('include')  # aifocore headers are in the same include dir
 
 # ============================================================================
 # External Dependencies
@@ -67,14 +69,27 @@ aifocore_incdir = include_directories('include')  # aifocore headers are in the 
 # Use subproject() with default_options to force static linking
 # The wraps will override the dependency names automatically
 
-# libjpeg-turbo from wrap (statically linked)
+# libjpeg-turbo from wrap (statically linked) OR jpgd (jpeg-compressor)
 # The wrap provides 'libjpeg' as dependency_names
-libjpeg_turbo_proj = subproject('libjpeg-turbo', default_options: [
-  'default_library=static',
-  'prefer_static=true',
-  'warning_level=0'  # Suppress all warnings from libjpeg-turbo
-])
-jpeg_dep = dependency('libjpeg', fallback: ['libjpeg-turbo'], static: true)
+use_jpgd = get_option('use_jpgd')
+
+if use_jpgd
+  # Use jpeg-compressor (jpgd) - available via wrap file
+  # The wrap file handles both monorepo and copybara-translated locations
+  jpgd_proj = subproject('jpeg-compressor', default_options: [
+    'default_library=static',
+    'warning_level=0'
+  ])
+  jpgd_dep = jpgd_proj.get_variable('jpgd_dep')
+  jpeg_dep = jpgd_dep
+else
+  libjpeg_turbo_proj = subproject('libjpeg-turbo', default_options: [
+    'default_library=static',
+    'prefer_static=true',
+    'warning_level=0'  # Suppress all warnings from libjpeg-turbo
+  ])
+  jpeg_dep = dependency('libjpeg', fallback: ['libjpeg-turbo'], static: true)
+endif
 
 # abseil-cpp from wrap (statically linked)
 abseil_proj = subproject('abseil-cpp', default_options: [
@@ -87,11 +102,8 @@ absl_status_dep = dependency('absl_status', fallback: ['abseil-cpp'], static: tr
 absl_strings_dep = dependency('absl_strings', fallback: ['abseil-cpp'], static: true)
 absl_flags_dep = dependency('absl_flags', fallback: ['abseil-cpp'], static: true)
 
-# Build libtiff dependencies BEFORE libtiff and force them as fallbacks
-# This ensures libtiff uses our wrapped static versions instead of system libs
-
-# Step 1: Build all dependencies that libtiff needs
-# zstd (required by libtiff) - provides 'libzstd'
+# Build dependencies for simpletiff and other libraries
+# zstd (required by simpletiff and others) - provides 'libzstd'
 zstd_proj = subproject('zstd', default_options: [
   'default_library=shared',
   'prefer_static=false',
@@ -99,7 +111,7 @@ zstd_proj = subproject('zstd', default_options: [
 ])
 zstd_dep = dependency('libzstd', fallback: ['zstd'], static: false)
 
-# libwebp (required by libtiff) - provides multiple webp libraries
+# libwebp (required by simpletiff and others) - provides multiple webp libraries
 libwebp_proj = subproject('libwebp', default_options: [
   'default_library=static',
   'prefer_static=true',
@@ -115,29 +127,17 @@ liblzma_proj = subproject('liblzma', default_options: [
 ])
 liblzma_dep = dependency('liblzma', fallback: ['liblzma'], static: false)
 
-# Step 2: Build libtiff with wrap-mode=forcefallback for its dependencies
-# This tells libtiff to use subprojects instead of system libraries
-libtiff_proj = subproject('libtiff', default_options: [
+# SimpleTIFF - our custom TIFF library
+# Available via wrap file which handles both monorepo and copybara-translated locations
+simpletiff_proj = subproject('simpletiff', default_options: [
   'default_library=static',
-  'prefer_static=true',
-  'zstd=enabled',
-  'webp=enabled',
-  'jpeg=enabled',
-  'lzma=enabled',
-  'jbig=disabled',
-  'lerc=disabled',
-  'wrap_mode=forcefallback',  # Force using subprojects for dependencies
-  'warning_level=0'  # Suppress all warnings from libtiff
+  'warning_level=0',
+  'use_jpgd=' + (use_jpgd ? 'true' : 'false'),  # Pass jpgd option to simpletiff
+  'build_tests=false',
+  'build_benchmarks=false',
+  'build_python_bindings=false'
 ])
-libtiff_dep = dependency('libtiff-4', fallback: ['libtiff'], static: true)
-
-# zlib (required by libtiff and others) - use wrap subproject
-zlib_proj = subproject('zlib', default_options: [
-  'default_library=shared',
-  'warning_level=0'
-])
-zlib_dep = zlib_proj.get_variable('zlib_dep')
-
+simpletiff_dep = simpletiff_proj.get_variable('simpletiff_dep')
 
 # Python dependencies (for bindings)
 python3 = import('python').find_installation('python3', required: false)
@@ -159,6 +159,14 @@ gtest_main_dep = dependency('gtest_main', fallback: ['gtest'], static: true, req
 # ============================================================================
 # Internal Dependencies (AIFO Core)
 # ============================================================================
+
+# aifocore - available via subproject (symlink in monorepo, actual directory after copybara)
+# This provides the thread pool singleton and header-only utilities
+aifocore_proj = subproject('aifocore', default_options: [
+  'default_library=static',
+  'warning_level=0'
+])
+aifocore_dep = aifocore_proj.get_variable('aifocore_dep')
 
 # FastSlide only needs specific parts of aifocore (all header-only):
 # 1. aifocore/concepts/numeric.h - Provides Size type used throughout fastslide
@@ -208,37 +216,27 @@ cereal_proj = subproject('cereal', default_options: [
 ])
 cereal_dep = dependency('cereal', fallback: ['cereal'], static: true)
 
-# Now define aifocore dependencies with fmt and cereal
-aifocore_concepts_dep = declare_dependency(
-  include_directories: incdir,
-  dependencies: [fmt_dep, cereal_dep],
-  compile_args: ['-DAIFOCORE_CONCEPTS_ONLY']
-)
-
-aifocore_status_dep = declare_dependency(
-  include_directories: incdir,
-  compile_args: ['-DAIFOCORE_STATUS_ONLY']
-)
-
-aifocore_utilities_dep = declare_dependency(
-  include_directories: incdir,
-  dependencies: [fmt_dep],
-  compile_args: ['-DAIFOCORE_UTILITIES_ONLY']
-)
-
-# Combined dependency for convenience
-aifocore_dep = declare_dependency(
-  include_directories: incdir,
-  dependencies: [aifocore_concepts_dep, aifocore_status_dep, aifocore_utilities_dep, fmt_dep, cereal_dep]
-)
-
 # ============================================================================
 # Third-party vendored dependencies
 # ============================================================================
 
-lodepng_incdir = include_directories('third_party/lodepng/upstream')
+# lodepng - detect location (monorepo vs copybara)
+# Monorepo: ../../third_party/lodepng/upstream
+# Copybara: third_party/lodepng/upstream
+lodepng_base_path = ''
+if fs.is_dir('../../third_party/lodepng/upstream')
+  message('Found lodepng in monorepo location: ../../third_party/lodepng/upstream')
+  lodepng_base_path = '../../third_party/lodepng/upstream'
+elif fs.is_dir('third_party/lodepng/upstream')
+  message('Found lodepng in copybara location: third_party/lodepng/upstream')
+  lodepng_base_path = 'third_party/lodepng/upstream'
+else
+  error('lodepng not found. Please ensure it exists in ../../third_party/lodepng/upstream or third_party/lodepng/upstream')
+endif
+
+lodepng_incdir = include_directories(lodepng_base_path)
 lodepng_lib = static_library('lodepng',
-  'third_party/lodepng/upstream/lodepng/lodepng.cpp',
+  lodepng_base_path / 'lodepng/lodepng.cpp',
   include_directories: lodepng_incdir,
   pic: true,
   override_options: ['warning_level=0']  # Suppress warnings for third-party code
@@ -252,80 +250,91 @@ lodepng_dep = declare_dependency(
 # All Source Files (Monolithic Build)
 # ============================================================================
 
+# Detect fastslide source location prefix
+# Monorepo: src/
+# Copybara: src/fastslide/
+src_prefix = ''
+if fs.is_file('src/fastslide/image.cpp')
+  message('Found fastslide sources in copybara location (src/fastslide/)')
+  src_prefix = 'src/fastslide/'
+elif fs.is_file('src/image.cpp')
+  message('Found fastslide sources in monorepo location (src/)')
+  src_prefix = 'src/'
+else
+  error('fastslide source files not found')
+endif
+
 # Collect all source files for monolithic build
 fastslide_sources = [
-  # aifocore sources (needed for ThreadPoolManager)
-  'src/aifocore/utilities/thread_pool_singleton.cc',
-  
   # Core sources
-  'src/fastslide/image.cpp',
-  'src/fastslide/slide_reader.cpp',
+  src_prefix + 'image.cpp',
+  src_prefix + 'slide_reader.cpp',
   
   # Utilities
-  'src/fastslide/utilities/cache.cpp',
-  'src/fastslide/utilities/colors.cpp',
-  'src/fastslide/utilities/hash.cpp',
-  'src/fastslide/utilities/sha-256.c',
-  'src/fastslide/utilities/tile_cache_manager.cpp',
-  
-  # TIFF utilities
-  'src/fastslide/utilities/tiff/directory_processor.cpp',
-  'src/fastslide/utilities/tiff/planar_interleaver.cpp',
-  'src/fastslide/utilities/tiff/tiff_cache_service.cpp',
-  'src/fastslide/utilities/tiff/tiff_file.cpp',
-  'src/fastslide/utilities/tiff/tiff_pool.cpp',
-  'src/fastslide/utilities/tiff/tile_utilities.cpp',
-  
+  src_prefix + 'utilities/cache.cpp',
+  src_prefix + 'utilities/colors.cpp',
+  src_prefix + 'utilities/hash.cpp',
+  src_prefix + 'utilities/sha-256.c',
+  src_prefix + 'utilities/tile_cache_manager.cpp',
+    
   # Runtime
-  'src/fastslide/runtime/global_cache_manager.cpp',
-  'src/fastslide/runtime/io/binary_utils.cpp',
-  'src/fastslide/runtime/io/file_reader.cpp',
-  'src/fastslide/runtime/lru_tile_cache.cpp',
-  'src/fastslide/runtime/plugin_loader.cpp',
-  'src/fastslide/runtime/reader_registry.cpp',
-  'src/fastslide/runtime/register_builtin_formats.cpp',
-  'src/fastslide/runtime/tile_writer.cpp',
+  src_prefix + 'runtime/global_cache_manager.cpp',
+  src_prefix + 'runtime/io/binary_utils.cpp',
+  src_prefix + 'runtime/io/file_reader.cpp',
+  src_prefix + 'runtime/lru_tile_cache.cpp',
+  src_prefix + 'runtime/plugin_loader.cpp',
+  src_prefix + 'runtime/reader_registry.cpp',
+  src_prefix + 'runtime/register_builtin_formats.cpp',
+  src_prefix + 'runtime/tile_writer.cpp',
   
   # Runtime tile writer strategies
-  'src/fastslide/runtime/tile_writer/direct/direct_strategy.cpp',
-  'src/fastslide/runtime/tile_writer/direct/fills.cpp',
-  'src/fastslide/runtime/tile_writer/direct/copy_rgb8.cpp',
-  'src/fastslide/runtime/tile_writer/direct/copy_planar.cpp',
-  'src/fastslide/runtime/tile_writer/blended/blended_strategy.cpp',
-  'src/fastslide/runtime/tile_writer/blended/accumulate.cpp',
-  'src/fastslide/runtime/tile_writer/blended/srgb_linear.cpp',
-  'src/fastslide/runtime/tile_writer/blended/resample_mks.cpp',
-  'src/fastslide/runtime/tile_writer/blended/mks_kernel.cpp',
+  src_prefix + 'runtime/tile_writer/direct/direct_strategy.cpp',
+  src_prefix + 'runtime/tile_writer/direct/fills.cpp',
+  src_prefix + 'runtime/tile_writer/direct/copy_rgb8.cpp',
+  src_prefix + 'runtime/tile_writer/direct/copy_planar.cpp',
+  src_prefix + 'runtime/tile_writer/blended/blended_strategy.cpp',
+  src_prefix + 'runtime/tile_writer/blended/accumulate.cpp',
+  src_prefix + 'runtime/tile_writer/blended/srgb_linear.cpp',
+  src_prefix + 'runtime/tile_writer/blended/resample_mks.cpp',
+  src_prefix + 'runtime/tile_writer/blended/mks_kernel.cpp',
   
   # Readers
-  'src/fastslide/readers/tiff_based_reader.cpp',
+  src_prefix + 'readers/tiff_based_reader.cpp',
   
   # Aperio format
-  'src/fastslide/readers/aperio/aperio_format_plugin.cpp',
-  'src/fastslide/readers/aperio/metadata_parser.cpp',
-  'src/fastslide/readers/aperio/aperio.cpp',
-  'src/fastslide/readers/aperio/aperio_plan_builder.cpp',
-  'src/fastslide/readers/aperio/aperio_tile_executor.cpp',
+  src_prefix + 'readers/aperio/aperio_format_plugin.cpp',
+  src_prefix + 'readers/aperio/metadata_parser.cpp',
+  src_prefix + 'readers/aperio/aperio.cpp',
+  src_prefix + 'readers/aperio/aperio_plan_builder.cpp',
+  src_prefix + 'readers/aperio/aperio_tile_executor.cpp',
   
   # QPTIFF format
-  'src/fastslide/readers/qptiff/metadata_parser.cpp',
-  'src/fastslide/readers/qptiff/qptiff_format_plugin.cpp',
-  'src/fastslide/readers/qptiff/qptiff.cpp',
-  'src/fastslide/readers/qptiff/qptiff_metadata_loader.cpp',
-  'src/fastslide/readers/qptiff/qptiff_plan_builder.cpp',
-  'src/fastslide/readers/qptiff/qptiff_tile_executor.cpp',
+  src_prefix + 'readers/qptiff/metadata_parser.cpp',
+  src_prefix + 'readers/qptiff/qptiff_format_plugin.cpp',
+  src_prefix + 'readers/qptiff/qptiff.cpp',
+  src_prefix + 'readers/qptiff/qptiff_metadata_loader.cpp',
+  src_prefix + 'readers/qptiff/qptiff_plan_builder.cpp',
+  src_prefix + 'readers/qptiff/qptiff_tile_executor.cpp',
   
-  # MRXS format
-  'src/fastslide/readers/mrxs/mrxs_decoder.cpp',
-  'src/fastslide/readers/mrxs/mrxs_format_plugin.cpp',
-  'src/fastslide/readers/mrxs/mrxs_ini_parser.cpp',
-  'src/fastslide/readers/mrxs/mrxs.cpp',
-  'src/fastslide/readers/mrxs/spatial_index.cpp',
-  'src/fastslide/readers/mrxs/mrxs_plan_builder.cpp',
-  'src/fastslide/readers/mrxs/mrxs_tile_executor.cpp',
-  'src/fastslide/readers/mrxs/mrxs_data_reader.cpp',
-  'src/fastslide/readers/mrxs/mrxs_index_reader.cpp',
+  # MRXS format - conditional JPEG decoder
+  src_prefix + 'readers/mrxs/mrxs_format_plugin.cpp',
+  src_prefix + 'readers/mrxs/mrxs_ini_parser.cpp',
+  src_prefix + 'readers/mrxs/mrxs.cpp',
+  src_prefix + 'readers/mrxs/spatial_index.cpp',
+  src_prefix + 'readers/mrxs/mrxs_plan_builder.cpp',
+  src_prefix + 'readers/mrxs/mrxs_tile_executor.cpp',
+  src_prefix + 'readers/mrxs/mrxs_data_reader.cpp',
+  src_prefix + 'readers/mrxs/mrxs_index_reader.cpp',
 ]
+
+# Add conditional JPEG decoder implementation
+if use_jpgd
+  fastslide_sources += src_prefix + 'readers/mrxs/mrxs_decoder_jpgd.cpp'
+else
+  fastslide_sources += src_prefix + 'readers/mrxs/mrxs_decoder.cpp'
+endif
+
+fastslide_sources_list = fastslide_sources
 
 # All header files
 fastslide_headers = [
@@ -387,19 +396,26 @@ fastslide_headers = [
 
 # Build both static and shared versions explicitly
 # Static library (all deps embedded)
+# Add parent directories to include path for Highway's foreach_target.h
+# which needs to find 'aifo/fastslide/src/...' paths
 fastslide_static = static_library('fastslide',
   fastslide_sources,
-  include_directories: [incdir, lodepng_incdir],
+  include_directories: [
+    incdir,
+    lodepng_incdir,
+    include_directories('../..'),  # Access aifo/fastslide/... paths for Highway
+  ],
   dependencies: [
+    # Internal dependencies
+    aifocore_dep,
     # External dependencies
     absl_log_dep,
     absl_status_dep,
     absl_strings_dep,
-    libtiff_dep,
+    simpletiff_dep,  # Using simpletiff instead of libtiff
     zstd_dep,
     libwebp_dep,
     liblzma_dep,
-    zlib_dep,
     jpeg_dep,
     pugixml_dep,
     fmt_dep,
@@ -412,19 +428,25 @@ fastslide_static = static_library('fastslide',
 )
 
 # Shared library (all deps embedded)
+# Add parent directories to include path for Highway's foreach_target.h
 fastslide_shared = shared_library('fastslide',
   fastslide_sources,
-  include_directories: [incdir, lodepng_incdir],
+  include_directories: [
+    incdir,
+    lodepng_incdir,
+    include_directories('../..'),  # Access aifo/fastslide/... paths for Highway
+  ],
   dependencies: [
+    # Internal dependencies
+    aifocore_dep,
     # External dependencies
     absl_log_dep,
     absl_status_dep,
     absl_strings_dep,
-    libtiff_dep,
+    simpletiff_dep,
     zstd_dep,
     libwebp_dep,
     liblzma_dep,
-    zlib_dep,
     jpeg_dep,
     pugixml_dep,
     fmt_dep,
@@ -448,11 +470,11 @@ fastslide_lib = fastslide_shared
 
 # C API sources
 c_api_sources = [
-  'src/fastslide/c/fastslide.cpp',
-  'src/fastslide/c/image.cpp',
-  'src/fastslide/c/registry.cpp',
-  'src/fastslide/c/slide_reader.cpp',
-  'src/fastslide/c/utilities.cpp',
+  src_prefix + 'c/fastslide.cpp',
+  src_prefix + 'c/image.cpp',
+  src_prefix + 'c/registry.cpp',
+  src_prefix + 'c/slide_reader.cpp',
+  src_prefix + 'c/utilities.cpp',
 ]
 
 # C API headers
@@ -466,6 +488,7 @@ c_api_headers = [
 
 # C API library dependencies
 c_api_deps = [
+  aifocore_dep,
   absl_log_dep,
   absl_status_dep,
   absl_strings_dep,
@@ -493,9 +516,9 @@ fastslide_c_lib = library('fastslide_c',
 
 # Python binding sources
 python_sources = [
-  'src/fastslide/python/cache.cpp',
-  'src/fastslide/python/fastslide.cpp',
-  'src/fastslide/python/reader.cpp',
+  src_prefix + 'python/cache.cpp',
+  src_prefix + 'python/fastslide.cpp',
+  src_prefix + 'python/reader.cpp',
 ]
 
 # Python binding headers
@@ -521,14 +544,15 @@ if python3.found() and pybind11_dep.found()
   fastslide_python_ext = python3.extension_module('_fastslide',
     python_sources,
     include_directories: [incdir],
-    dependencies: [
-      pybind11_dep,
-      absl_log_dep,
+  dependencies: [
+    pybind11_dep,
+    aifocore_dep,
+    absl_log_dep,
       absl_status_dep,
       absl_strings_dep,
       fmt_dep,
       cereal_dep,
-      libtiff_dep,
+      simpletiff_dep,  # Using simpletiff instead of libtiff
       zstd_dep,
       libwebp_dep,
       liblzma_dep,
@@ -557,6 +581,7 @@ slidetool_exe = executable('fastslidetool',
   'tools/fastslidetool.cpp',
   include_directories: [incdir],
   dependencies: [
+    aifocore_dep,
     absl_flags_dep,
     absl_log_dep,
     fmt_dep,
@@ -577,6 +602,7 @@ if gtest_dep.found() and gtest_main_dep.found()
   test_deps = [
     gtest_dep,
     gtest_main_dep,
+    aifocore_dep,
     absl_log_dep,
     absl_status_dep,
     absl_strings_dep,
@@ -585,13 +611,13 @@ if gtest_dep.found() and gtest_main_dep.found()
     zstd_dep,
     libwebp_dep,
     liblzma_dep,
-    libtiff_dep,
+    simpletiff_dep,
     highway_dep,
   ]
   
   # Core tests
   image_test = executable('image_test',
-    'src/fastslide/image_test.cpp',
+    src_prefix + 'image_test.cpp',
     include_directories: [incdir],
     dependencies: test_deps,
     link_with: fastslide_lib
@@ -599,7 +625,7 @@ if gtest_dep.found() and gtest_main_dep.found()
   test('image_test', image_test)
 
   slide_reader_test = executable('slide_reader_test',
-    'src/fastslide/slide_reader_test.cpp',
+    src_prefix + 'slide_reader_test.cpp',
     include_directories: [incdir],
     dependencies: test_deps,
     link_with: fastslide_lib
@@ -607,7 +633,7 @@ if gtest_dep.found() and gtest_main_dep.found()
   test('slide_reader_test', slide_reader_test)
 
   channel_selection_test = executable('channel_selection_test',
-    'src/fastslide/channel_selection_test.cpp',
+    src_prefix + 'channel_selection_test.cpp',
     include_directories: [incdir],
     dependencies: test_deps,
     link_with: fastslide_lib
@@ -616,7 +642,7 @@ if gtest_dep.found() and gtest_main_dep.found()
 
   # Core component tests
   tile_request_test = executable('tile_request_test',
-    'src/fastslide/core/tile_request_test.cpp',
+    src_prefix + 'core/tile_request_test.cpp',
     include_directories: [incdir],
     dependencies: test_deps,
     link_with: fastslide_lib
@@ -624,7 +650,7 @@ if gtest_dep.found() and gtest_main_dep.found()
   test('tile_request_test', tile_request_test)
 
   tile_plan_test = executable('tile_plan_test',
-    'src/fastslide/core/tile_plan_test.cpp',
+    src_prefix + 'core/tile_plan_test.cpp',
     include_directories: [incdir],
     dependencies: test_deps,
     link_with: fastslide_lib
@@ -632,7 +658,7 @@ if gtest_dep.found() and gtest_main_dep.found()
   test('tile_plan_test', tile_plan_test)
 
   region_conversion_test = executable('region_conversion_test',
-    'src/fastslide/core/region_conversion_test.cpp',
+    src_prefix + 'core/region_conversion_test.cpp',
     include_directories: [incdir],
     dependencies: test_deps,
     link_with: fastslide_lib
@@ -641,7 +667,7 @@ if gtest_dep.found() and gtest_main_dep.found()
 
   # Runtime tests
   tile_writer_test = executable('tile_writer_test',
-    'src/fastslide/runtime/tile_writer_test.cpp',
+    src_prefix + 'runtime/tile_writer_test.cpp',
     include_directories: [incdir],
     dependencies: test_deps,
     link_with: fastslide_lib
@@ -649,7 +675,7 @@ if gtest_dep.found() and gtest_main_dep.found()
   test('tile_writer_test', tile_writer_test)
 
   reader_registry_test = executable('reader_registry_test',
-    'src/fastslide/runtime/reader_registry_test.cpp',
+    src_prefix + 'runtime/reader_registry_test.cpp',
     include_directories: [incdir],
     dependencies: test_deps,
     link_with: fastslide_lib
@@ -657,7 +683,7 @@ if gtest_dep.found() and gtest_main_dep.found()
   test('reader_registry_test', reader_registry_test)
 
   lru_tile_cache_test = executable('lru_tile_cache_test',
-    'src/fastslide/runtime/lru_tile_cache_test.cpp',
+    src_prefix + 'runtime/lru_tile_cache_test.cpp',
     include_directories: [incdir],
     dependencies: test_deps,
     link_with: fastslide_lib
@@ -665,7 +691,7 @@ if gtest_dep.found() and gtest_main_dep.found()
   test('lru_tile_cache_test', lru_tile_cache_test)
 
   cache_types_test = executable('cache_types_test',
-    'src/fastslide/runtime/cache_types_test.cpp',
+    src_prefix + 'runtime/cache_types_test.cpp',
     include_directories: [incdir],
     dependencies: test_deps,
     link_with: fastslide_lib
@@ -674,40 +700,16 @@ if gtest_dep.found() and gtest_main_dep.found()
 
   # Utilities tests
   cache_test = executable('cache_test',
-    'src/fastslide/utilities/cache_test.cpp',
+    src_prefix + 'utilities/cache_test.cpp',
     include_directories: [incdir],
     dependencies: test_deps,
     link_with: fastslide_lib
   )
   test('cache_test', cache_test)
 
-  tiff_pool_test = executable('tiff_pool_test',
-    'src/fastslide/utilities/tiff/tiff_pool_test.cpp',
-    include_directories: [incdir],
-    dependencies: test_deps,
-    link_with: fastslide_lib
-  )
-  test('tiff_pool_test', tiff_pool_test)
-
-  tiff_file_test = executable('tiff_file_test',
-    'src/fastslide/utilities/tiff/tiff_file_test.cpp',
-    include_directories: [incdir],
-    dependencies: test_deps,
-    link_with: fastslide_lib
-  )
-  test('tiff_file_test', tiff_file_test)
-
-  tile_utilities_test = executable('tile_utilities_test',
-    'src/fastslide/utilities/tiff/tile_utilities_test.cpp',
-    include_directories: [incdir],
-    dependencies: test_deps,
-    link_with: fastslide_lib
-  )
-  test('tile_utilities_test', tile_utilities_test)
-
   # Format tests
   aperio_metadata_parser_test = executable('aperio_metadata_parser_test',
-    'src/fastslide/readers/aperio/metadata_parser_test.cpp',
+    src_prefix + 'readers/aperio/metadata_parser_test.cpp',
     include_directories: [incdir],
     dependencies: test_deps,
     link_with: fastslide_lib
@@ -715,7 +717,7 @@ if gtest_dep.found() and gtest_main_dep.found()
   test('aperio_metadata_parser_test', aperio_metadata_parser_test)
 
   qptiff_metadata_parser_test = executable('qptiff_metadata_parser_test',
-    'src/fastslide/readers/qptiff/metadata_parser_test.cpp',
+    src_prefix + 'readers/qptiff/metadata_parser_test.cpp',
     include_directories: [incdir],
     dependencies: test_deps,
     link_with: fastslide_lib

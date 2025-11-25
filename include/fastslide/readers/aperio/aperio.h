@@ -28,6 +28,8 @@
 #include "fastslide/readers/aperio/metadata_parser.h"
 #include "fastslide/readers/tiff_based_reader.h"
 #include "fastslide/readers/tiff_reader_factory.h"
+#include "simpletiff/index.h"
+#include "simpletiff/reader.h"
 
 /**
  * @file aperio.h
@@ -44,7 +46,7 @@
  * - Associated images (thumbnail, macro, label) stored as TIFF directories
  *
  * **Features:**
- * - Fast tile-based reading with JPEG decompression via libtiff
+ * - Fast tile-based reading with JPEG decompression via simpletiff
  * - OpenSlide-compatible quickhash computation
  * - Two-stage pipeline (PrepareRequest + ExecutePlan)
  * - Support for both tiled and stripped TIFF formats
@@ -69,9 +71,6 @@
 namespace fs = std::filesystem;
 
 namespace fastslide {
-
-// Forward declarations
-class TIFFHandlePool;
 
 /// @brief Pyramid level metadata for Aperio
 struct AperioLevelInfo {
@@ -153,10 +152,10 @@ class AperioReader : public TiffBasedReader,
     return associated_images_;
   }
 
-  /// @brief Get handle pool for TIFF operations
-  /// @return Raw pointer to handle pool
-  [[nodiscard]] TIFFHandlePool* GetHandlePool() const {
-    return handle_pool_.get();
+  /// @brief Get TIFF index for structure queries
+  /// @return Const reference to TIFF index
+  [[nodiscard]] const simpletiff::TiffIndex& GetTiffIndex() const {
+    return *tiff_index_;
   }
 
  private:
@@ -171,6 +170,9 @@ class AperioReader : public TiffBasedReader,
       aperio_metadata_;                          ///< Aperio-specific metadata
   std::vector<AperioLevelInfo> pyramid_levels_;  ///< Pyramid levels
   std::vector<AperioAssociatedInfo> associated_images_;  ///< Associated images
+
+  /// @brief SimpleTiff index for thread-safe TIFF operations
+  std::unique_ptr<simpletiff::TiffIndex> tiff_index_;
 
   /// @brief Cached TIFF structure metadata from most recent PrepareRequest call
   /// @note Mutable to allow caching in const PrepareRequest method

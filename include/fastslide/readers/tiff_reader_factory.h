@@ -28,22 +28,22 @@
 /**
  * @file tiff_reader_factory.h
  * @brief CRTP factory mixin for TIFF-based readers
- * 
+ *
  * This header defines the TiffReaderFactory template class that consolidates
  * the common Create() flow shared by TIFF-based readers (Aperio, QPTIFF, etc.).
- * 
+ *
  * The factory implements the Curiously Recurring Template Pattern (CRTP) to
  * provide compile-time polymorphism without virtual function overhead. It
  * eliminates boilerplate initialization code while allowing format-specific
  * customization through hook methods.
- * 
+ *
  * **Key Features:**
  * - Zero runtime overhead (all resolved at compile time)
  * - Type-safe factory pattern via CRTP
  * - Standardized initialization flow for all TIFF readers
  * - Format-specific hooks for metadata parsing
  * - Automatic error handling and validation
- * 
+ *
  * **Design Pattern:**
  * The factory follows a template method pattern with these steps:
  * 1. Allocate the concrete reader object
@@ -52,7 +52,7 @@
  * 4. Call format-specific ProcessMetadata() hook
  * 5. Call format-specific PopulateSlideProperties() hook
  * 6. Return the fully initialized reader
- * 
+ *
  * @see TiffBasedReader for the base class all TIFF readers inherit from
  * @see AperioReader for an example of a reader using this factory
  * @see QpTiffReader for another example of a reader using this factory
@@ -88,9 +88,11 @@ namespace fastslide {
 /// ```
 ///
 /// **Derived Class Requirements:**
-/// - Must inherit from TiffBasedReader (for ValidateTiffFile, InitializeHandlePool)
+/// - Must inherit from TiffBasedReader (for ValidateTiffFile,
+/// InitializeHandlePool)
 /// - Must declare TiffReaderFactory<Derived> as a friend
-/// - Must have a private constructor accepting filename (string_view or fs::path)
+/// - Must have a private constructor accepting filename (string_view or
+/// fs::path)
 /// - Must implement `absl::Status ProcessMetadata()`
 /// - Must implement `void PopulateSlideProperties()`
 ///
@@ -99,7 +101,8 @@ namespace fastslide {
 /// 2. Validate the TIFF file before opening tiles
 /// 3. Initialize the thread-safe TIFF handle pool
 /// 4. Call format-specific metadata parsing (ProcessMetadata hook)
-/// 5. Convert metadata to common SlideProperties view (PopulateSlideProperties hook)
+/// 5. Convert metadata to common SlideProperties view (PopulateSlideProperties
+/// hook)
 /// 6. Return the fully initialized reader
 ///
 /// All calls are resolved at compile time via `static_cast<Derived*>`,
@@ -114,10 +117,12 @@ class TiffReaderFactory {
   /// This template method implements the common creation flow for all
   /// TIFF-based readers:
   /// 1. Allocate the derived reader using its private constructor
-  /// 2. Validate the TIFF file
-  /// 3. Initialize the TIFF handle pool
-  /// 4. Process format-specific metadata (calls Derived::ProcessMetadata)
-  /// 5. Populate common slide properties (calls Derived::PopulateSlideProperties)
+  /// 2. Process format-specific metadata (calls Derived::ProcessMetadata)
+  /// 3. Populate common slide properties (calls
+  /// Derived::PopulateSlideProperties)
+  ///
+  /// @note File validation is now done within each reader's constructor using
+  ///       simpletiff, eliminating the need for separate validation steps.
   ///
   /// @tparam PathType The path type (auto-deduced from filename)
   /// @param filename Path to the TIFF file (string_view or fs::path)
@@ -129,24 +134,6 @@ class TiffReaderFactory {
     // Use unique_ptr with new to call private constructor
     auto reader = std::unique_ptr<Derived>(new Derived(filename));
 
-    // Get the underlying TiffBasedReader to access protected methods
-    TiffBasedReader* base = static_cast<TiffBasedReader*>(reader.get());
-
-    // Validate TIFF file before opening tiles
-    // Convert PathType to fs::path for ValidateTiffFile
-    fs::path file_path;
-    if constexpr (std::is_same_v<PathType, std::string_view>) {
-      file_path = fs::path(std::string(filename));
-    } else {
-      file_path = filename;
-    }
-    RETURN_IF_ERROR(TiffBasedReader::ValidateTiffFile(file_path),
-                    "Failed to validate TIFF file");
-
-    // Initialize thread-safe TIFF handle pool
-    RETURN_IF_ERROR(base->InitializeHandlePool(),
-                    "Failed to initialize handle pool");
-
     // Call format-specific metadata parsing
     RETURN_IF_ERROR(reader->ProcessMetadata(), "Failed to process metadata");
 
@@ -156,17 +143,20 @@ class TiffReaderFactory {
     return reader;
   }
 
-  /// @brief Protected constructor (only derived classes can instantiate via CRTP)
+  /// @brief Protected constructor (only derived classes can instantiate via
+  /// CRTP)
   TiffReaderFactory() = default;
 
   /// @brief Protected destructor (not polymorphic - no virtual needed)
   ~TiffReaderFactory() = default;
 
-  /// @brief Delete copy constructor and assignment (CRTP mixin should not be copied)
+  /// @brief Delete copy constructor and assignment (CRTP mixin should not be
+  /// copied)
   TiffReaderFactory(const TiffReaderFactory&) = delete;
   TiffReaderFactory& operator=(const TiffReaderFactory&) = delete;
 
-  /// @brief Delete move constructor and assignment (CRTP mixin should not be moved)
+  /// @brief Delete move constructor and assignment (CRTP mixin should not be
+  /// moved)
   TiffReaderFactory(TiffReaderFactory&&) = delete;
   TiffReaderFactory& operator=(TiffReaderFactory&&) = delete;
 };

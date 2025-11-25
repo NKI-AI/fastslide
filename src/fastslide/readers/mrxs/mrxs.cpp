@@ -506,7 +506,6 @@ absl::StatusOr<SlideBounds> MrxsReader::CalculateBounds() {
 
   // Handle case where no valid tiles were found
   if (active_tiles == 0) {
-    LOG(INFO) << "CalculateBounds: No active tiles found";
     return SlideBounds();
   }
 

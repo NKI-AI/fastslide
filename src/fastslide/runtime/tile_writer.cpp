@@ -164,7 +164,6 @@ TileWriter::Config TileWriter::AnalyzePlan(const core::TilePlan& plan) {
   }
 
   config.planar_config = plan.output.planar_config;
-
   config.background.values.clear();
   config.background.values.reserve(std::min(config.channels, 4u));
 

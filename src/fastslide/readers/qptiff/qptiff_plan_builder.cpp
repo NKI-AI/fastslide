@@ -14,8 +14,6 @@
 
 #include "fastslide/readers/qptiff/qptiff_plan_builder.h"
 
-#include <tiffio.h>
-
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -26,13 +24,15 @@
 #include "absl/status/status.h"
 #include "absl/strings/str_format.h"
 #include "aifocore/status/status_macros.h"
+#include "simpletiff/index.h"
 
 namespace fastslide {
 
 absl::StatusOr<core::TilePlan> QptiffPlanBuilder::BuildPlan(
     const core::TileRequest& request,
     const std::vector<QpTiffLevelInfo>& pyramid,
-    PlanarConfig output_planar_config, TiffFile& tiff_file) {
+    PlanarConfig output_planar_config,
+    const simpletiff::TiffIndex& tiff_index) {
 
   core::TilePlan plan;
   plan.request = request;
@@ -44,16 +44,21 @@ absl::StatusOr<core::TilePlan> QptiffPlanBuilder::BuildPlan(
   const QpTiffLevelInfo& level_info = pyramid[request.level];
   const size_t num_channels = level_info.pages.size();
 
-  // Set directory to first channel to query TIFF structure
-  RETURN_IF_ERROR(tiff_file.SetDirectory(level_info.pages[0]),
-                  "Failed to set directory");
+  // Get page header from first channel to query TIFF structure
+  const auto& page_header = tiff_index.Page(level_info.pages[0]);
+
+  // Determine output channel count based on planar configuration:
+  // - For kContiguous (RGB interleaved): use samples_per_pixel (e.g., 3 for
+  // RGB)
+  // - For kSeparate (Spectral planar): use num_channels (e.g., 32 separate
+  // pages)
+  const size_t output_channels =
+      (output_planar_config == PlanarConfig::kContiguous)
+          ? page_header.samples_per_pixel
+          : num_channels;
 
   // Get bits per sample to determine pixel format and bytes per pixel
-  uint16_t bits_per_sample = 8;  // Default to 8-bit
-  auto bits_result = tiff_file.GetBitsPerSample();
-  if (bits_result.ok()) {
-    bits_per_sample = *bits_result;
-  }
+  uint16_t bits_per_sample = page_header.bits_per_sample;
   const uint32_t bytes_per_sample = (bits_per_sample + 7) / 8;
 
   // Convert bits per sample to pixel format
@@ -97,7 +102,7 @@ absl::StatusOr<core::TilePlan> QptiffPlanBuilder::BuildPlan(
   // Get tile dimensions
   uint32_t tile_width, tile_height;
   bool is_tiled;
-  RETURN_IF_ERROR(GetTileDimensions(tiff_file, level_info, tile_width,
+  RETURN_IF_ERROR(GetTileDimensions(tiff_index, level_info, tile_width,
                                     tile_height, is_tiled),
                   "Failed to get tile dimensions");
 
@@ -113,7 +118,7 @@ absl::StatusOr<core::TilePlan> QptiffPlanBuilder::BuildPlan(
 
   // Set output specification
   plan.output.dimensions = {width, height};
-  plan.output.channels = static_cast<uint32_t>(num_channels);
+  plan.output.channels = static_cast<uint32_t>(output_channels);
   plan.output.pixel_format = pixel_format;
   plan.output.planar_config = output_planar_config;
   plan.output.background = {0, 0, 0, 255};  // Black background
@@ -182,25 +187,24 @@ void QptiffPlanBuilder::DetermineRegionBounds(const core::TileRequest& request,
 }
 
 absl::Status QptiffPlanBuilder::GetTileDimensions(
-    TiffFile& tiff_file, const QpTiffLevelInfo& level_info,
+    const simpletiff::TiffIndex& tiff_index, const QpTiffLevelInfo& level_info,
     uint32_t& tile_width, uint32_t& tile_height, bool& is_tiled) {
 
-  is_tiled = tiff_file.IsTiled();
+  // Get page header from first page of this level
+  const auto& page_header = tiff_index.Page(level_info.pages[0]);
+
+  is_tiled = (page_header.storage == simpletiff::Storage::kTiles);
 
   if (is_tiled) {
-    auto tile_dims_result = tiff_file.GetTileDimensions();
-    if (!tile_dims_result.ok()) {
-      return tile_dims_result.status();
-    }
-    tile_width = (*tile_dims_result)[0];
-    tile_height = (*tile_dims_result)[1];
+    const auto& tiles = tiff_index.Tiles(page_header.payload_id);
+    tile_width = tiles.tile_w;
+    tile_height = tiles.tile_h;
   } else {
     // For strips, tile_width = image width, tile_height = rows per strip
     tile_width = level_info.size[0];
-    TIFF* tif = tiff_file.GetHandle();
-    uint32_t rows_per_strip = 0;
-    if (!TIFFGetField(tif, TIFFTAG_ROWSPERSTRIP, &rows_per_strip) ||
-        rows_per_strip == 0) {
+    const auto& strips = tiff_index.Strips(page_header.payload_id);
+    uint32_t rows_per_strip = strips.rows_per_strip;
+    if (rows_per_strip == 0) {
       rows_per_strip = level_info.size[1];  // Single strip
     }
     tile_height = rows_per_strip;

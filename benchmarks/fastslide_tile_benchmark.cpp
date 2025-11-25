@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <random>
 #include <string>
@@ -27,16 +28,28 @@
 
 namespace {
 
-constexpr const char* kTestFile =
-    "/Users/jonasteuwen/data/T82-06575 H2 HE.mrxs";
+// Get benchmark file path from environment variable
+// Usage: FASTSLIDE_BENCHMARK_FILE=/path/to/file.svs bazelisk run
+// //aifo/fastslide/benchmarks:fastslide_tile_benchmark
+const char *GetBenchmarkFilePath() {
+  static const char *cached_path = nullptr;
+  if (cached_path == nullptr) {
+    const char *env_path = std::getenv("FASTSLIDE_BENCHMARK_FILE");
+    if (env_path == nullptr) {
+      return nullptr; // Error: environment variable not set
+    }
+    cached_path = env_path;
+  }
+  return cached_path;
+}
 
 // Fixed seed for reproducible random access benchmarks
 constexpr uint32_t kRandomSeed = 42;
 
 /// @brief FastSlide wrapper for benchmarking
 class FastSlideReader {
- public:
-  explicit FastSlideReader(const std::string& filename) : filename_(filename) {}
+public:
+  explicit FastSlideReader(const std::string &filename) : filename_(filename) {}
 
   bool Open() {
     auto reader_or =
@@ -69,17 +82,22 @@ class FastSlideReader {
     return reader_->ReadRegion(region);
   }
 
- private:
+private:
   std::string filename_;
   std::unique_ptr<fastslide::SlideReader> reader_;
 };
 
 /// @brief Benchmark fixture for FastSlide sequential tile reading
 class FastSlideSequentialFixture : public benchmark::Fixture {
- public:
-  void SetUp(const ::benchmark::State& state) override {
+public:
+  void SetUp(const ::benchmark::State &state) override {
     if (!reader_) {
-      reader_ = std::make_unique<FastSlideReader>(kTestFile);
+      const char *filename = GetBenchmarkFilePath();
+      if (filename == nullptr) {
+        init_success_ = false;
+        return;
+      }
+      reader_ = std::make_unique<FastSlideReader>(filename);
       init_success_ = reader_->Open();
       if (!init_success_) {
         return;
@@ -106,9 +124,9 @@ class FastSlideSequentialFixture : public benchmark::Fixture {
     total_tiles_ = tiles_x_ * tiles_y_;
   }
 
-  void TearDown(const ::benchmark::State& state) override {}
+  void TearDown(const ::benchmark::State &state) override {}
 
- protected:
+protected:
   std::unique_ptr<FastSlideReader> reader_;
   bool init_success_{false};
   int tile_size_{256};
@@ -123,9 +141,10 @@ class FastSlideSequentialFixture : public benchmark::Fixture {
 /// @brief FastSlide row-major tile reading benchmark
 BENCHMARK_DEFINE_F(FastSlideSequentialFixture, RowMajor)
 
-(benchmark::State& state) {
+(benchmark::State &state) {
   if (!init_success_) {
-    state.SkipWithError("Failed to initialize FastSlide reader");
+    state.SkipWithError("Failed to initialize FastSlide reader (check "
+                        "FASTSLIDE_BENCHMARK_FILE environment variable)");
     return;
   }
 
@@ -170,9 +189,10 @@ BENCHMARK_DEFINE_F(FastSlideSequentialFixture, RowMajor)
 /// @brief FastSlide column-major tile reading benchmark
 BENCHMARK_DEFINE_F(FastSlideSequentialFixture, ColumnMajor)
 
-(benchmark::State& state) {
+(benchmark::State &state) {
   if (!init_success_) {
-    state.SkipWithError("Failed to initialize FastSlide reader");
+    state.SkipWithError("Failed to initialize FastSlide reader (check "
+                        "FASTSLIDE_BENCHMARK_FILE environment variable)");
     return;
   }
 
@@ -217,9 +237,10 @@ BENCHMARK_DEFINE_F(FastSlideSequentialFixture, ColumnMajor)
 /// @brief FastSlide random access tile reading benchmark
 BENCHMARK_DEFINE_F(FastSlideSequentialFixture, RandomAccess)
 
-(benchmark::State& state) {
+(benchmark::State &state) {
   if (!init_success_) {
-    state.SkipWithError("Failed to initialize FastSlide reader");
+    state.SkipWithError("Failed to initialize FastSlide reader (check "
+                        "FASTSLIDE_BENCHMARK_FILE environment variable)");
     return;
   }
 
@@ -409,6 +430,6 @@ BENCHMARK_REGISTER_F(FastSlideSequentialFixture, RandomAccess)
     ->Args({512, 8})
     ->Unit(benchmark::kMicrosecond);
 
-}  // namespace
+} // namespace
 
 BENCHMARK_MAIN();

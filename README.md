@@ -214,14 +214,17 @@ We welcome contributions! See [CONTRIBUTING.md](../../CONTRIBUTING.md) for guide
 FastSlide incorporates the following third-party software:
 
 - **SHA-256 implementation** from [sha-2](https://github.com/amosnier/sha-2) by Alain Mosnier
+
   - Licensed under: The Unlicense or Zero Clause BSD license
   - Used for: Quick hash computation compatible with OpenSlide
 
 - **unordered_dense** from [martinus/unordered_dense](https://github.com/martinus/unordered_dense) by Martin Leitner-Ankerl
+
   - Licensed under: MIT License
   - Used for: Fast hashmap/hashset for spatial lookup in the Mirax format
 
 - **lodepng** from [vandeve/lodepng](https://github.com/lvandeve/lodepng) by Lode Vandevenne
+
   - Licensed under: Zlib License
   - Used for: Decoding PNG in file formats and to write png in examples.
 

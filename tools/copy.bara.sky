@@ -10,10 +10,10 @@
 #   (e.g., "sync_folder/**") as necessary.
 
 REFERENCE_REPO_URL = "git@github.com:NKI-AI/aiforoncology-internal.git" # The source repository URL to sync from.
-REFERENCE_BRANCH = "feature/release-fastslide"  # The branch in the source repository to sync from.
+REFERENCE_BRANCH = "feature/simpletiff-integration"  # The branch in the source repository to sync from.
 
 TARGET_REPO_URL = "git@github.com:NKI-AI/fastslide.git" # The destination repository URL to sync to.
-TARGET_BRANCH = "sync/monorepo/internal"  # The branch in the destination repository to sync to.
+TARGET_BRANCH = "sync/monorepo-internal"  # The branch in the destination repository to sync to.
 
 # Configurable list of files (e.g. README.md)
 GENERAL_FILES = [
@@ -34,6 +34,7 @@ SRC_GLOBS = [
     "aifo/fastslide/python/**",
     "aifo/aifocore/src/**",
     "aifo/aifocore/include/**",
+    "aifo/jpeg-compressor/**",
     "third_party/lodepng/**",
 ]
 
@@ -50,6 +51,13 @@ OTHER_GLOBS = [
 EXCLUDED_FILES = [
     "**/*.bazel",
     "**/*.BUILD",
+    # Exclude Meson subproject symlinks (monorepo only)
+    "aifo/fastslide/subprojects/simpletiff",
+    "aifo/fastslide/subprojects/jpeg-compressor",
+    "aifo/fastslide/subprojects/aifocore",
+    "aifo/simpletiff/subprojects/jpeg-compressor",
+    # Exclude Meson build directories
+    "**/builddir/**",
 ]
 
 core.workflow(
@@ -75,6 +83,10 @@ core.workflow(
         core.move(
             before = "aifo/aifocore/src/",
             after = "src/aifocore/"
+        ),
+        core.move(
+            before = "aifo/jpeg-compressor/",
+            after = "third_party/jpeg-compressor/"
         ),
         core.move(
             before = "aifo/fastslide/",

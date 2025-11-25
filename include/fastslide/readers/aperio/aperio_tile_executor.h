@@ -37,11 +37,10 @@ struct TiffStructureMetadata;
 ///
 /// Provides sequential tile reading and decoding for Aperio slides with optimized
 /// memory management:
-/// 1. Acquires TIFF handle from the pool (thread-safe)
-/// 2. Sets directory to the correct page (optimized to skip if already set)
-/// 3. Reads and decodes JPEG-compressed tiles via libtiff
-/// 4. Extracts sub-regions if needed using thread-local buffers
-/// 5. Writes to the output buffer
+/// 1. Uses simpletiff for thread-safe TIFF access
+/// 2. Reads and decodes JPEG-compressed tiles via simpletiff
+/// 3. Extracts sub-regions if needed using thread-local buffers
+/// 4. Writes to the output buffer
 ///
 /// Thread-local buffers eliminate per-tile allocations and improve cache locality,
 /// providing performance benefits in both sequential and parallel contexts.

@@ -28,39 +28,41 @@
 #include "fastslide/readers/tiff_based_reader.h"
 #include "fastslide/readers/tiff_reader_factory.h"
 #include "fastslide/utilities/colors.h"
+#include "simpletiff/index.h"
+#include "simpletiff/reader.h"
 
 /**
  * @file qptiff.h
  * @brief PerkinElmer QPTIFF slide reader
- * 
+ *
  * This header defines the QpTiffReader class for reading PerkinElmer QPTIFF
  * (Quantitative Pathology TIFF) whole slide images. QPTIFF is used for
  * multiplex immunofluorescence and spectral imaging.
- * 
+ *
  * **Format Details:**
  * - Multi-page TIFF with one page per channel per pyramid level
  * - XML metadata embedded in ImageDescription tags
  * - Supports both RGB brightfield and multi-channel fluorescence
  * - Channel metadata includes biomarker info, exposure times, and colors
  * - Optional pyramid levels for each channel
- * 
+ *
  * **Features:**
  * - Multi-channel spectral image support
  * - Flexible planar configuration (interleaved or separated)
  * - Selective channel loading for performance
  * - Two-stage pipeline (PrepareRequest + ExecutePlan)
  * - Per-channel metadata (biomarkers, colors, exposure times)
- * 
+ *
  * **Channel Handling:**
  * QPTIFF supports two image formats:
  * - RGB: Single 3-channel brightfield image
  * - Spectral: Multiple single-channel fluorescence images
- * 
+ *
  * For spectral images, channels can be:
  * - Loaded individually or in combination
  * - Displayed with custom colors
  * - Processed separately for quantitative analysis
- * 
+ *
  * **Usage:**
  * ```cpp
  * auto reader_or = QpTiffReader::Create("/path/to/file.qptiff");
@@ -68,15 +70,15 @@
  *   // Handle error
  * }
  * auto reader = std::move(*reader_or);
- * 
+ *
  * // Set visible channels for fluorescence images
  * reader->SetVisibleChannels({0, 2, 4});  // Load channels 0, 2, 4 only
- * 
+ *
  * auto image = reader->ReadRegion({.top_left = {0, 0},
  *                                   .size = {512, 512},
  *                                   .level = 0});
  * ```
- * 
+ *
  * @see TiffBasedReader for the base class
  * @see TiffReaderFactory for the CRTP factory pattern used
  */
@@ -218,6 +220,12 @@ class QpTiffReader : public TiffBasedReader,
     return metadata_;
   }
 
+  /// @brief Get TIFF index for structure queries
+  /// @return Const reference to TIFF index
+  [[nodiscard]] const simpletiff::TiffIndex& GetTiffIndex() const {
+    return *tiff_index_;
+  }
+
   /// @brief Set output planar configuration for ReadRegion
   /// @param config Planar configuration (kContig for interleaved,
   /// kSeparate for channel-separated)
@@ -234,10 +242,11 @@ class QpTiffReader : public TiffBasedReader,
     return output_planar_config_;
   }
 
-  /// @brief Get the actual number of channels that will be in the resulting image
+  /// @brief Get the actual number of channels that will be in the resulting
+  /// image
   /// @return Actual channel count (3 for RGB, logical count for spectral)
-  /// @details For RGB images, returns 3 even though there's only 1 logical channel.
-  /// For spectral images, returns the number of spectral channels.
+  /// @details For RGB images, returns 3 even though there's only 1 logical
+  /// channel. For spectral images, returns the number of spectral channels.
   [[nodiscard]] uint32_t GetActualChannelCount() const;
 
   /// @brief Extract text of a simple child XML tag
@@ -266,6 +275,9 @@ class QpTiffReader : public TiffBasedReader,
       PlanarConfig::kSeparate;  ///< Default to kSeparate for spectral images
   ImageFormat format_ =
       ImageFormat::kSpectral;  ///< Image format (RGB or Spectral)
+
+  /// @brief SimpleTiff index for thread-safe TIFF operations
+  std::unique_ptr<simpletiff::TiffIndex> tiff_index_;
 
   /// @brief Process TIFF metadata and build pyramid structure
   /// @return Status indicating success or failure

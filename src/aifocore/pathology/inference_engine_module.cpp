@@ -11,12 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
+#include <pybind11/detail/common.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
-#include <pybind11/stl/filesystem.h>
 
-#include <filesystem>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -51,7 +49,6 @@ PYBIND11_MODULE(inference_engine, m) {
 
   m.doc() = "Python bindings for ahcore InferenceEngine";
 
-  m.def("hello_world", []() { return "Hello, World!"; });
   py::class_<InferenceConfig>(m, "InferenceConfig")
       .def(py::init<>([]() { return InferenceConfig{}; }))
       .def(py::init<>(

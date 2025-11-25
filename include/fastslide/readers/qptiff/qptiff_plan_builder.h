@@ -21,30 +21,30 @@
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
 #include "fastslide/readers/qptiff/qptiff.h"
-#include "fastslide/utilities/tiff/tiff_file.h"
+#include "simpletiff/index.h"
 
 /**
  * @file qptiff_plan_builder.h
  * @brief QPTIFF tile plan builder (two-stage pipeline stage 1)
- * 
+ *
  * This header defines QptiffPlanBuilder, a helper class for creating
  * tile reading plans for QPTIFF images. This is stage 1 of the two-stage
  * pipeline, which analyzes the request and creates a plan without performing
  * any I/O.
- * 
+ *
  * **Responsibilities:**
  * - Determine which TIFF pages contain the requested channels
  * - Calculate tile intersections with the requested region
  * - Handle multi-channel spectral images
  * - Support both planar (separated) and interleaved channel layouts
  * - Estimate I/O costs for cache optimization
- * 
+ *
  * **QPTIFF Specifics:**
  * - One TIFF page per channel per pyramid level
  * - Channels may have different tile sizes
  * - Supports selective channel loading
  * - Handles both RGB and spectral image formats
- * 
+ *
  * @see QptiffTileExecutor for stage 2 (plan execution)
  * @see QpTiffReader for the main reader class
  */
@@ -58,12 +58,13 @@ class QptiffPlanBuilder {
   /// @param request The tile request
   /// @param pyramid Pyramid levels information
   /// @param output_planar_config Planar configuration for output
-  /// @param tiff_file TiffFile instance for querying tile structure
+  /// @param tiff_index SimpleTiff index for querying tile structure
   /// @return Tile plan or error status
   static absl::StatusOr<core::TilePlan> BuildPlan(
       const core::TileRequest& request,
       const std::vector<QpTiffLevelInfo>& pyramid,
-      PlanarConfig output_planar_config, TiffFile& tiff_file);
+      PlanarConfig output_planar_config,
+      const simpletiff::TiffIndex& tiff_index);
 
  private:
   /// @brief Validate the request parameters
@@ -86,14 +87,14 @@ class QptiffPlanBuilder {
                                     double& x, double& y, uint32_t& width,
                                     uint32_t& height);
 
-  /// @brief Get tile dimensions from TIFF file
-  /// @param tiff_file TiffFile instance
+  /// @brief Get tile dimensions from TIFF index
+  /// @param tiff_index SimpleTiff index
   /// @param level_info Level information
   /// @param tile_width Output tile width
   /// @param tile_height Output tile height
   /// @param is_tiled Output whether pages are tiled
   /// @return Status indicating success or failure
-  static absl::Status GetTileDimensions(TiffFile& tiff_file,
+  static absl::Status GetTileDimensions(const simpletiff::TiffIndex& tiff_index,
                                         const QpTiffLevelInfo& level_info,
                                         uint32_t& tile_width,
                                         uint32_t& tile_height, bool& is_tiled);

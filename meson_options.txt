@@ -17,6 +17,10 @@ option('enable_c_api', type: 'boolean', value: true,
 option('enable_tools', type: 'boolean', value: true,
        description: 'Enable building tools (slidetool)')
 
+# Codec options
+option('use_jpgd', type: 'boolean', value: false,
+       description: 'Use jpgd (jpeg-compressor) instead of libjpeg-turbo for JPEG decompression')
+
 # Static linking options
 option('static_linking', type: 'boolean', value: true,
        description: 'Enable static linking for monolithic shared library')

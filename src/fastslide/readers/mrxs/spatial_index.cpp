@@ -322,12 +322,13 @@ std::vector<size_t> MrxsSpatialIndex::QueryRegion(double x, double y,
 
         // Branchless intersection test using bitwise OR.
         // Returns true (1) if separated, false (0) if intersecting.
-        // The | operator ensures all comparisons execute without branching.
+        // The || operator ensures all comparisons execute without branching.
         // Float comparisons compile to comiss (compare scalar single-precision)
         // which has lower latency than comisd (double-precision).
         const bool separated =
-            (bbox_max_x_[idx] <= fx0) | (bbox_min_x_[idx] >= fx1) |
-            (bbox_max_y_[idx] <= fy0) | (bbox_min_y_[idx] >= fy1);
+            (bbox_max_x_[idx] <= fx0) ||
+            (bbox_min_x_[idx] >= fx1) | (bbox_max_y_[idx] <= fy0) ||
+            (bbox_min_y_[idx] >= fy1);
 
         if (!separated) {
           seen_epoch_[idx] = epoch;

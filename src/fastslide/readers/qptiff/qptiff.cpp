@@ -14,8 +14,6 @@
 
 #include "fastslide/readers/qptiff/qptiff.h"
 
-#include <tiffio.h>
-
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -44,6 +42,9 @@
 #include "fastslide/runtime/tile_writer.h"
 #include "fastslide/slide_reader.h"
 #include "fastslide/utilities/colors.h"
+#include "simpletiff/index.h"
+#include "simpletiff/reader.h"
+#include "simpletiff/tiff_parser.h"
 
 namespace fastslide {
 
@@ -56,7 +57,13 @@ absl::StatusOr<std::unique_ptr<QpTiffReader>> QpTiffReader::Create(
 
 QpTiffReader::QpTiffReader(std::string_view filename)
     : TiffBasedReader(std::string(filename)) {
-  // Constructor is now private - initialization is done in Create()
+  // Initialize SimpleTiff index during construction
+  tiff_index_ = std::make_unique<simpletiff::TiffIndex>();
+  int fd = -1;
+  if (!simpletiff::OpenTiff(std::string(filename), *tiff_index_, fd)) {
+    // Note: Error will be caught during ProcessMetadata() if index is invalid
+  } else {
+  }
 }
 
 // SlideReader interface implementations
@@ -162,16 +169,37 @@ absl::StatusOr<RGBImage> QpTiffReader::ReadAssociatedImage(
 
   const QpTiffAssociatedInfo& info = associated_images_.at(std::string(name));
 
-  // Create TiffFile wrapper once
-  auto tiff_file_result = TiffFile::Create(handle_pool_.get());
-  if (!tiff_file_result.ok()) {
-    return MAKE_STATUSOR(RGBImage, absl::StatusCode::kInternal,
-                         "Failed to create TiffFile wrapper");
+  // Use simpletiff to read the associated image page
+  if (!tiff_index_ || info.page >= tiff_index_->NumPages()) {
+    return MAKE_STATUSOR(
+        RGBImage, absl::StatusCode::kInternal,
+        aifocore::fmt::format("Invalid page {} for associated image '{}'",
+                              info.page, name));
   }
-  auto tiff_file = std::move(tiff_file_result.value());
 
-  return ReadAssociatedImageFromPageWithFile(tiff_file, info.page, info.size[0],
-                                             info.size[1], std::string(name));
+  const auto& page_header = tiff_index_->Page(info.page);
+  const uint32_t width = info.size[0];
+  const uint32_t height = info.size[1];
+  const uint16_t samples_per_pixel = page_header.samples_per_pixel;
+
+  // Create RGBImage with proper dimensions
+  RGBImage rgb_image({width, height}, ImageFormat::kRGB, DataType::kUInt8);
+
+  // Read the page using simpletiff directly into the image buffer
+  simpletiff::DecodeContext ctx;
+  simpletiff::Roi roi{0, 0, width, height};
+  const int stride = static_cast<int>(width) * samples_per_pixel;
+  auto result = simpletiff::ReadPage(*tiff_index_, info.page, roi, ctx,
+                                     rgb_image.GetData(), stride);
+
+  if (!result) {
+    return MAKE_STATUSOR(
+        RGBImage, absl::StatusCode::kInternal,
+        aifocore::fmt::format("Failed to read associated image '{}': {}", name,
+                              result.error().message));
+  }
+
+  return rgb_image;
 }
 
 // TODO(jonasteuwen): This function could fail,
@@ -182,25 +210,20 @@ ImageDimensions QpTiffReader::GetTileSize() const {
     return ImageDimensions{512, 512};  // Default for QPTIFF
   }
 
-  // Get tile dimensions from the first page of level 0
-  auto tiff_file_result = TiffFile::Create(handle_pool_.get());
-  if (!tiff_file_result.ok()) {
-    return ImageDimensions{512, 512};  // Default fallback
-  }
-  auto tiff_file = std::move(tiff_file_result.value());
-
-  auto status = tiff_file.SetDirectory(pyramid_[0].pages[0]);
-
-  if (!status.ok()) {
+  if (!tiff_index_) {
     return ImageDimensions{512, 512};  // Default fallback
   }
 
-  if (tiff_file.IsTiled()) {
-    auto tile_dims_result = tiff_file.GetTileDimensions();
-    if (tile_dims_result.ok()) {
-      const auto& dims = tile_dims_result.value();
-      return ImageDimensions{dims[0], dims[1]};
-    }
+  const uint16_t page = pyramid_[0].pages[0];
+  if (page >= tiff_index_->NumPages()) {
+    return ImageDimensions{512, 512};  // Default fallback
+  }
+
+  const auto& page_header = tiff_index_->Page(page);
+
+  if (page_header.storage == simpletiff::Storage::kTiles) {
+    const auto& tiles = tiff_index_->Tiles(page_header.payload_id);
+    return ImageDimensions{tiles.tile_w, tiles.tile_h};
   }
 
   return ImageDimensions{512, 512};  // Default for QPTIFF
@@ -233,29 +256,15 @@ Metadata QpTiffReader::GetMetadata() const {
 
 absl::StatusOr<core::TilePlan> QpTiffReader::PrepareRequest(
     const core::TileRequest& request) const {
-  // Create TiffFile wrapper for querying tile structure
-  auto tiff_file_result = TiffFile::Create(handle_pool_.get());
-  if (!tiff_file_result.ok()) {
-    return tiff_file_result.status();
-  }
-  auto tiff_file = std::move(tiff_file_result.value());
-
-  // Use the plan builder helper to create the plan
+  // Use the plan builder helper to create the plan with tiff_index_
   return QptiffPlanBuilder::BuildPlan(request, pyramid_, output_planar_config_,
-                                      tiff_file);
+                                      *tiff_index_);
 }
 
 absl::Status QpTiffReader::ExecutePlan(const core::TilePlan& plan,
                                        runtime::TileWriter& writer) const {
-  // Create TiffFile wrapper for reading
-  auto tiff_file_result = TiffFile::Create(handle_pool_.get());
-  if (!tiff_file_result.ok()) {
-    return absl::InternalError("Failed to create TiffFile wrapper");
-  }
-  auto tiff_file = std::move(tiff_file_result.value());
-
-  // Use the tile executor helper to execute the plan
-  return QptiffTileExecutor::ExecutePlan(plan, pyramid_, tiff_file, writer);
+  // Use the tile executor helper to execute the plan with tiff_index_
+  return QptiffTileExecutor::ExecutePlan(plan, pyramid_, *tiff_index_, writer);
 }
 
 void QpTiffReader::PopulateSlideProperties() {
@@ -278,23 +287,16 @@ void QpTiffReader::PopulateSlideProperties() {
 // Utility methods and implementation
 
 absl::Status QpTiffReader::ProcessMetadata() {
-  // Create TiffFile wrapper using the handle pool
-  auto tiff_file_result = TiffFile::Create(handle_pool_.get());
-  if (!tiff_file_result.ok()) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
-                       "Failed to create TiffFile wrapper");
-  }
-  auto tiff_file = std::move(tiff_file_result.value());
-
-  // Use the metadata loader helper to process metadata
+  // Use the metadata loader helper to process metadata with tiff_index_
   RETURN_IF_ERROR(
-      QptiffMetadataLoader::LoadMetadata(tiff_file, metadata_, channels_,
+      QptiffMetadataLoader::LoadMetadata(*tiff_index_, metadata_, channels_,
                                          pyramid_, associated_images_, format_),
       "Failed to load metadata");
 
   // Set output planar config based on format
   if (format_ == ImageFormat::kRGB) {
     output_planar_config_ = PlanarConfig::kContiguous;  // RGB is interleaved
+  } else {
   }
 
   return absl::OkStatus();
