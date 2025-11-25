@@ -108,12 +108,12 @@ core.workflow(
         # Move simpletiff to third_party for copybara-translated version
         core.move(
             before = "aifo/simpletiff/",
-            after = "third_party/simpletiff/",
+            after = "subprojects/simpletiff/",
         ),
         # Move aifocore to third_party for copybara-translated version
         core.move(
             before = "aifo/aifocore/",
-            after = "third_party/aifocore/"
+            after = "subprojects/aifocore/"
         ),
         core.replace(
             before = "\"aifo/fastslide/src/",
@@ -121,14 +121,11 @@ core.workflow(
             regex_groups = {},
             paths = glob(["**/*.cpp", "**/*.h"])
         ),
-        core.transform(
-            [core.replace(
-                before = "\"aifo/simpletiff/src/",
-                after = "\"third_party/simpletiff/",
-                regex_groups = {},
-                paths = glob(["**/*.cpp", "**/*.h"])
-            )],
-            noop_behavior = "IGNORE_NOOP"
+        core.replace(
+            before = "\"aifo/simpletiff/src/",
+            after = "\"simpletiff/",
+            regex_groups = {},
+            paths = glob(["**/*.cpp", "**/*.h"])
         ),
         core.move(
             before = "README_PUBLIC.md",
