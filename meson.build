@@ -20,6 +20,18 @@ fs = import('fs')
 cpp = meson.get_compiler('cpp')
 cpp_std = cpp.get_argument_syntax() == 'msvc' ? 'c++20' : 'c++20'
 
+# Detect WASM environment
+is_wasm = host_machine.cpu_family() == 'wasm32' or host_machine.cpu_family() == 'wasm64'
+if is_wasm
+  message('Building for WebAssembly')
+  add_project_arguments(['-fexceptions', '-UNDEBUG'], language: ['cpp'])
+  
+  # Override thread dependency to avoid -pthread in WASM
+  # We use declare_dependency() so it is "found" but adds no flags
+  # This prevents the linker from trying to use shared memory/atomics
+  meson.override_dependency('threads', declare_dependency())
+endif
+
 # Add warning suppressions for third-party libraries (abseil, pybind11, etc.)
 if cpp.get_id() == 'clang' or cpp.get_id() == 'appleclang'
   add_project_arguments([
@@ -104,12 +116,14 @@ absl_flags_dep = dependency('absl_flags', fallback: ['abseil-cpp'], static: true
 
 # Build dependencies for simpletiff and other libraries
 # zstd (required by simpletiff and others) - provides 'libzstd'
-zstd_proj = subproject('zstd', default_options: [
-  'default_library=shared',
+zstd_opts = [
   'prefer_static=false',
-  'warning_level=0'
-])
-zstd_dep = dependency('libzstd', fallback: ['zstd'], static: false)
+  'warning_level=0',
+  'default_library=static'
+]
+
+zstd_proj = subproject('zstd', default_options: zstd_opts)
+zstd_dep = dependency('libzstd', fallback: ['zstd'], static: true)
 
 # libwebp (required by simpletiff and others) - provides multiple webp libraries
 libwebp_proj = subproject('libwebp', default_options: [
@@ -120,12 +134,14 @@ libwebp_proj = subproject('libwebp', default_options: [
 libwebp_dep = dependency('libwebp', fallback: ['libwebp'], static: true)
 
 # liblzma (xz)
-liblzma_proj = subproject('liblzma', default_options: [
-  'default_library=shared',
+liblzma_opts = [
   'prefer_static=false',
-  'warning_level=0'
-])
-liblzma_dep = dependency('liblzma', fallback: ['liblzma'], static: false)
+  'warning_level=0',
+  'default_library=static'
+]
+
+liblzma_proj = subproject('liblzma', default_options: liblzma_opts)
+liblzma_dep = dependency('liblzma', fallback: ['liblzma'], static: is_wasm)
 
 # zlib (required for MRXS format decompression)
 zlib_proj = subproject('zlib', default_options: [
@@ -143,6 +159,7 @@ simpletiff_proj = subproject('simpletiff', default_options: [
   'use_jpgd=' + (use_jpgd ? 'true' : 'false'),  # Pass jpgd option to simpletiff
   'build_tests=false',
   'build_benchmarks=false',
+  'build_examples=false',  # Disable examples (especially for WASM)
   'build_python_bindings=false'
 ])
 simpletiff_dep = simpletiff_proj.get_variable('simpletiff_dep')
@@ -258,21 +275,8 @@ lodepng_dep = declare_dependency(
 # All Source Files (Monolithic Build)
 # ============================================================================
 
-# Detect fastslide source location prefix
-# Monorepo: src/
-# Copybara: src/fastslide/
-src_prefix = ''
-if fs.is_file('src/fastslide/image.cpp')
-  message('Found fastslide sources in copybara location (src/fastslide/)')
-  src_prefix = 'src/fastslide/'
-elif fs.is_file('src/image.cpp')
-  message('Found fastslide sources in monorepo location (src/)')
-  src_prefix = 'src/'
-else
-  error('fastslide source files not found')
-endif
-
 # Collect all source files for monolithic build
+src_prefix = 'src/'
 fastslide_sources = [
   # Core sources
   src_prefix + 'image.cpp',
@@ -436,43 +440,48 @@ fastslide_static = static_library('fastslide',
   install: false  # Static library only used for building, not installed
 )
 
-# Shared library (all deps embedded)
-# Add parent directories to include path for Highway's foreach_target.h
-fastslide_shared = shared_library('fastslide',
-  fastslide_sources,
-  include_directories: [
-    incdir,
-    lodepng_incdir,
-    include_directories('../..'),  # Access aifo/fastslide/... paths for Highway
-  ],
-  dependencies: [
-    # Internal dependencies
-    aifocore_dep,
-    # External dependencies
-    absl_log_dep,
-    absl_status_dep,
-    absl_strings_dep,
-    simpletiff_dep,
-    zstd_dep,
-    libwebp_dep,
-    liblzma_dep,
-    zlib_dep,
-    jpeg_dep,
-    pugixml_dep,
-    fmt_dep,
-    cereal_dep,
-    lodepng_dep,
-    highway_dep,
-    # Internal dependencies (header-only)
-  ],
-  install: true,
-  version: meson.project_version(),
-  soversion: '2',
-  install_dir: python3.found() ? python3.get_install_dir() / 'fastslide' : get_option('libdir')
-)
+if is_wasm
+  # WASM builds only use static library
+  fastslide_lib = fastslide_static
+else
+  # Shared library (all deps embedded)
+  # Add parent directories to include path for Highway's foreach_target.h
+  fastslide_shared = shared_library('fastslide',
+    fastslide_sources,
+    include_directories: [
+      incdir,
+      lodepng_incdir,
+      include_directories('../..'),  # Access aifo/fastslide/... paths for Highway
+    ],
+    dependencies: [
+      # Internal dependencies
+      aifocore_dep,
+      # External dependencies
+      absl_log_dep,
+      absl_status_dep,
+      absl_strings_dep,
+      simpletiff_dep,
+      zstd_dep,
+      libwebp_dep,
+      liblzma_dep,
+      zlib_dep,
+      jpeg_dep,
+      pugixml_dep,
+      fmt_dep,
+      cereal_dep,
+      lodepng_dep,
+      highway_dep,
+      # Internal dependencies (header-only)
+    ],
+    install: true,
+    version: meson.project_version(),
+    soversion: '2',
+    install_dir: python3.found() ? python3.get_install_dir() / 'fastslide' : get_option('libdir')
+  )
 
-# Use shared library as default for linking
-fastslide_lib = fastslide_shared
+  # Use shared library as default for linking
+  fastslide_lib = fastslide_shared
+endif
 
 # ============================================================================
 # C API Library
@@ -538,7 +547,7 @@ python_headers = [
 ]
 
 # Python extension module (statically linked)
-if python3.found() and pybind11_dep.found()
+if not is_wasm and python3.found() and pybind11_dep.found()
   # Use shared_module for Python extensions
   # Note: Python extensions need explicit dependencies and includes since they don't get them from link_with
   # On macOS, we need to explicitly export the PyInit symbol
@@ -587,28 +596,76 @@ endif
 # Executables
 # ============================================================================
 
-# Slide information tool
-slidetool_exe = executable('fastslidetool',
-  'tools/fastslidetool.cpp',
-  include_directories: [incdir],
-  dependencies: [
-    aifocore_dep,
-    absl_flags_dep,
-    absl_log_dep,
-    fmt_dep,
-    cereal_dep,
-    lodepng_dep,
-    highway_dep
-  ],
-  link_with: fastslide_lib,
-  install: true
-)
+# WASM Wrapper
+if is_wasm
+  executable('fastslide_multiplex',
+    'wasm/fastslide_wrapper.cpp',
+    include_directories: [incdir],
+    dependencies: [
+      aifocore_dep,
+      absl_log_dep,
+      absl_status_dep,
+      absl_strings_dep,
+      fmt_dep,
+      cereal_dep,
+      simpletiff_dep,
+      zstd_dep,
+      libwebp_dep,
+      liblzma_dep,
+      zlib_dep,
+      highway_dep,
+    ],
+    link_with: fastslide_lib,
+    link_args: [
+      '-sWASM=1',
+      '-sEXPORT_ES6=1',
+      '-sMODULARIZE=1',
+      '-sENVIRONMENT=web,worker,node',
+      '-sNO_EXIT_RUNTIME=1',
+      '-sALLOW_MEMORY_GROWTH=1',
+      '-sINITIAL_MEMORY=134217728',
+      '-sMAXIMUM_MEMORY=4294967296',
+      '-sFILESYSTEM=1',
+      '-sFORCE_FILESYSTEM=1',
+      '-sEXPORT_NAME=createFastSlideModule',
+      '-sEXPORTED_RUNTIME_METHODS=[\'FS\',\'WORKERFS\']',
+      '-lembind',
+      '-lworkerfs.js',
+      '-fexceptions',
+      '-sASSERTIONS=1',
+      '-sDISABLE_EXCEPTION_CATCHING=0',
+      '-sUSE_PTHREADS=0',  # Explicitly disable pthreads
+      '-O2'
+    ],
+    name_suffix: 'js',
+    install: true
+  )
+endif
+
+# Slide information tool (not built for WASM)
+if not is_wasm
+  slidetool_exe = executable('fastslidetool',
+    'tools/fastslidetool.cpp',
+    include_directories: [incdir],
+    dependencies: [
+      aifocore_dep,
+      absl_flags_dep,
+      absl_log_dep,
+      fmt_dep,
+      cereal_dep,
+      lodepng_dep,
+      highway_dep
+    ],
+    link_with: fastslide_lib,
+    install: true
+  )
+endif
 
 # ============================================================================
-# Tests
+# Tests (disabled for WASM builds)
 # ============================================================================
 
-if gtest_dep.found() and gtest_main_dep.found()
+if not is_wasm and gtest_dep.found() and gtest_main_dep.found()
   # Common test dependencies
   test_deps = [
     gtest_dep,
@@ -736,15 +793,3 @@ if gtest_dep.found() and gtest_main_dep.found()
   )
   test('qptiff_metadata_parser_test', qptiff_metadata_parser_test)
 endif
-
-# ============================================================================
-# Installation
-# ============================================================================
-# Only install runtime components (shared lib, tool, Python extension)
-# Development files (headers, static libs, pkg-config) are not installed
-# to keep the Python package lightweight
-
-# NOTE: Headers and pkg-config files are intentionally not installed.
-# This is a Python package first, and the C++ library is embedded.
-# If you need the C++ development files, install from source with:
-#   meson setup builddir -Dinstall_dev_files=true

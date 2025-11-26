@@ -96,10 +96,6 @@ core.workflow(
     destination_files = glob(["**"]),
     transformations = [
         core.move(
-            before = "aifo/fastslide/src/",
-            after = "src/fastslide/"
-        ),
-        core.move(
             before = "aifo/jpeg-compressor/",
             after = "third_party/jpeg-compressor/"
         ),
@@ -119,7 +115,7 @@ core.workflow(
         ),
         core.replace(
             before = "\"aifo/fastslide/src/",
-            after = "\"src/fastslide/",
+            after = "\"src/",
             regex_groups = {},
             paths = glob(["**/*.cpp", "**/*.h"])
         ),

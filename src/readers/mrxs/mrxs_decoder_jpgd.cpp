@@ -214,3 +214,4 @@ absl::StatusOr<RGBImage> DecodeBmp(const std::vector<uint8_t>& data) {
 
 }  // namespace fastslide::mrxs::internal
 
+
