@@ -19,7 +19,6 @@
 #include <memory>
 #include <string_view>
 
-#include "absl/status/statusor.h"
 #include "fastslide/runtime/format_descriptor.h"
 #include "fastslide/slide_reader.h"
 

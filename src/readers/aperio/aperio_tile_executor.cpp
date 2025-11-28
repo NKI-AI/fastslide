@@ -18,9 +18,7 @@
 #include <span>
 #include <vector>
 
-#include "absl/log/log.h"
-#include "absl/status/status.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/readers/aperio/aperio.h"
@@ -31,47 +29,47 @@
 
 namespace fastslide {
 
-absl::Status AperioTileExecutor::ExecutePlan(
-    const core::TilePlan& plan, const AperioReader& reader,
-    runtime::TileWriter& writer, const TiffStructureMetadata& tiff_metadata) {
+aifocore::Status AperioTileExecutor::ExecutePlan(
+    const core::TilePlan &plan, const AperioReader &reader,
+    runtime::TileWriter &writer, const TiffStructureMetadata &tiff_metadata) {
   if (plan.operations.empty()) {
     // No tiles to read - fill with background color
-    const auto& bg = plan.output.background;
+    const auto &bg = plan.output.background;
     return writer.FillWithColor(bg.r, bg.g, bg.b);
   }
 
   // Execute all tiles sequentially
   // Thread-local buffers provide cache locality benefits without parallelism
   // overhead
-  for (const auto& op : plan.operations) {
+  for (const auto &op : plan.operations) {
     auto status = ExecuteTileOperation(
         op, reader, tiff_metadata.page, tiff_metadata.tile_width,
         tiff_metadata.tile_height, tiff_metadata.samples_per_pixel,
         tiff_metadata.is_tiled, writer);
     if (!status.ok()) {
-      LOG(WARNING) << "Tile at (" << op.tile_coord.x << ", " << op.tile_coord.y
-                   << ") failed: " << status;
+      std::cerr << "Tile at (" << op.tile_coord.x << ", " << op.tile_coord.y
+                << ") failed: " << status.ToString();
       // Continue processing remaining tiles
     }
   }
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-absl::Status AperioTileExecutor::ExecuteTileOperation(
-    const core::TileReadOp& op, const AperioReader& reader, uint16_t page,
+aifocore::Status AperioTileExecutor::ExecuteTileOperation(
+    const core::TileReadOp &op, const AperioReader &reader, uint16_t page,
     uint32_t tile_width, uint32_t tile_height, uint16_t samples_per_pixel,
-    bool is_tiled, runtime::TileWriter& writer) {
+    bool is_tiled, runtime::TileWriter &writer) {
   // Read and decode the tile (returns span view of thread-local buffer)
   auto tile_data_or = ReadAndDecodeTile(
       op, reader, page, tile_width, tile_height, samples_per_pixel, is_tiled);
   if (!tile_data_or.ok()) {
-    LOG(WARNING) << "Failed to read/decode tile at (" << op.tile_coord.x << ", "
-                 << op.tile_coord.y << "): " << tile_data_or.status();
-    return absl::OkStatus();  // Continue processing other tiles
+    std::cerr << "Failed to read/decode tile at (" << op.tile_coord.x << ", "
+              << op.tile_coord.y << "): " << tile_data_or.status().ToString();
+    return aifocore::Status::OkStatus(); // Continue processing other tiles
   }
 
-  const auto& tile_data = *tile_data_or;  // span reference, not vector copy
+  const auto &tile_data = *tile_data_or; // span reference, not vector copy
 
   // Extract sub-region if needed
   const uint32_t src_x = op.transform.source.x;
@@ -82,8 +80,8 @@ absl::Status AperioTileExecutor::ExecuteTileOperation(
 
   // Use thread-local buffer from CRTP base class
   // This eliminates the second per-tile allocation
-  uint8_t* cropped_data = GetBuffers().GetCropBuffer(crop_size);
-  std::memset(cropped_data, 0, crop_size);  // Zero initialize
+  uint8_t *cropped_data = GetBuffers().GetCropBuffer(crop_size);
+  std::memset(cropped_data, 0, crop_size); // Zero initialize
 
   // Extract the region from the tile buffer
   // IMPORTANT: Use tile_width as stride because TIFF tiles are always
@@ -98,11 +96,11 @@ absl::Status AperioTileExecutor::ExecuteTileOperation(
       std::memcpy(cropped_data + dst_offset, tile_data.data() + tile_offset,
                   bytes_to_copy);
     } else {
-      LOG(ERROR) << "Tile bounds check failed at row " << y << " for tile ("
-                 << op.tile_coord.x << ", " << op.tile_coord.y
-                 << "): tile_offset=" << tile_offset
-                 << " + bytes_to_copy=" << bytes_to_copy
-                 << " > tile_data.size()=" << tile_data.size();
+      std::cerr << "Tile bounds check failed at row " << y << " for tile ("
+                << op.tile_coord.x << ", " << op.tile_coord.y
+                << "): tile_offset=" << tile_offset
+                << " + bytes_to_copy=" << bytes_to_copy
+                << " > tile_data.size()=" << tile_data.size();
     }
   }
 
@@ -120,27 +118,26 @@ absl::Status AperioTileExecutor::ExecuteTileOperation(
       src_height, samples_per_pixel);
 
   if (!write_status.ok()) {
-    LOG(WARNING) << "Failed to write tile: " << write_status;
-    return absl::OkStatus();  // Continue processing other tiles
+    std::cerr << "Failed to write tile: " << write_status.ToString();
+    return aifocore::Status::OkStatus(); // Continue processing other tiles
   }
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-absl::StatusOr<std::span<const uint8_t>> AperioTileExecutor::ReadAndDecodeTile(
-    const core::TileReadOp& op, const AperioReader& reader, uint16_t page,
-    uint32_t tile_width, uint32_t tile_height, uint16_t samples_per_pixel,
-    bool is_tiled) {
+aifocore::Result<std::span<const uint8_t>>
+AperioTileExecutor::ReadAndDecodeTile(const core::TileReadOp &op,
+                                      const AperioReader &reader, uint16_t page,
+                                      uint32_t tile_width, uint32_t tile_height,
+                                      uint16_t samples_per_pixel,
+                                      bool is_tiled) {
   // Each worker thread uses its own DecodeContext for decompression
   // This is thread-safe and avoids per-tile allocations
   static thread_local simpletiff::DecodeContext decode_ctx;
   static thread_local std::vector<uint8_t> tile_buffer;
 
-  VLOG(1) << "Worker reading tile (" << op.tile_coord.x << ", "
-          << op.tile_coord.y << ") from page " << page;
-
   // Get TiffIndex from reader
-  const auto& tiff_index = reader.GetTiffIndex();
+  const auto &tiff_index = reader.GetTiffIndex();
 
   // op.byte_offset is actually the linear tile index (tile_y * tiles_across +
   // tile_x)
@@ -153,17 +150,18 @@ absl::StatusOr<std::span<const uint8_t>> AperioTileExecutor::ReadAndDecodeTile(
                                      tile_buffer, out_width, out_height);
 
   if (!result) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
-                       aifocore::fmt::format("Failed to read tile ({}, {}): {}",
-                                             op.tile_coord.x, op.tile_coord.y,
-                                             result.error().message));
+    return aifocore::Status(
+        aifocore::StatusCode::kInternal,
+        aifocore::fmt::format("Failed to read tile ({}, {}): {}",
+                              op.tile_coord.x, op.tile_coord.y,
+                              result.error().message()));
   }
 
   // Verify dimensions match expectations
   if (static_cast<uint32_t>(out_width) != tile_width ||
       static_cast<uint32_t>(out_height) != tile_height) {
-    LOG(WARNING) << "Tile dimension mismatch: expected " << tile_width << "x"
-                 << tile_height << ", got " << out_width << "x" << out_height;
+    std::cerr << "Tile dimension mismatch: expected " << tile_width << "x"
+              << tile_height << ", got " << out_width << "x" << out_height;
   }
 
   // Return span view of thread-local buffer (valid until next call on this
@@ -171,4 +169,4 @@ absl::StatusOr<std::span<const uint8_t>> AperioTileExecutor::ReadAndDecodeTile(
   return std::span<const uint8_t>(tile_buffer.data(), tile_buffer.size());
 }
 
-}  // namespace fastslide
+} // namespace fastslide

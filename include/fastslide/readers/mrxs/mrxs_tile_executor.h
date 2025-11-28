@@ -15,8 +15,10 @@
 #ifndef AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_TILE_EXECUTOR_H_
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_TILE_EXECUTOR_H_
 
-#include "absl/status/status.h"
-#include "absl/synchronization/mutex.h"
+#include <vector>
+
+#include "aifocore/status/result.h"
+#include <mutex>
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/image.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
@@ -29,58 +31,58 @@ class MrxsReader;
 
 /// @brief Helper class for executing MRXS tile read operations
 class MrxsTileExecutor {
- public:
+public:
   /// @brief Execute a tile plan
   /// @param plan The tile plan to execute
-  /// @param reader The MRXS reader instance (for accessing tile reading
-  /// methods)
+  /// @param reader MRXS reader instance
   /// @param writer Tile writer for output
   /// @return Status indicating success or failure
-  static absl::Status ExecutePlan(const core::TilePlan& plan,
-                                  const MrxsReader& reader,
-                                  runtime::TileWriter& writer);
+  static aifocore::Status ExecutePlan(const core::TilePlan &plan,
+                                      const MrxsReader &reader,
+                                      runtime::TileWriter &writer);
 
- private:
+private:
   /// @brief Execute a single tile operation
   /// @param op The tile operation to execute
-  /// @param reader The MRXS reader instance
-  /// @param zoom_level The zoom level info
+  /// @param reader MRXS reader instance
+  /// @param zoom_level Zoom level metadata
   /// @param writer Tile writer
   /// @param accumulator_mutex Mutex for thread-safe accumulation
   /// @return Status indicating success or failure
-  static absl::Status ExecuteTileOperation(
-      const core::TileReadOp& op, const MrxsReader& reader,
-      const mrxs::SlideZoomLevel& zoom_level, runtime::TileWriter& writer,
-      absl::Mutex& accumulator_mutex);
+  static aifocore::Status
+  ExecuteTileOperation(const core::TileReadOp &op, const MrxsReader &reader,
+                       const mrxs::SlideZoomLevel &zoom_level,
+                       runtime::TileWriter &writer,
+                       std::mutex &accumulator_mutex);
 
-  /// @brief Read and decode tile data
+  /// @brief Read and decode a single tile
   /// @param op The tile operation
-  /// @param reader The MRXS reader instance
-  /// @param zoom_level The zoom level info
-  /// @return Decoded image or error
-  static absl::StatusOr<RGBImage> ReadAndDecodeTile(
-      const core::TileReadOp& op, const MrxsReader& reader,
-      const mrxs::SlideZoomLevel& zoom_level);
+  /// @param reader MRXS reader instance
+  /// @param zoom_level Zoom level metadata
+  /// @return Decoded RGB image or error status
+  static aifocore::Result<RGBImage>
+  ReadAndDecodeTile(const core::TileReadOp &op, const MrxsReader &reader,
+                    const mrxs::SlideZoomLevel &zoom_level);
 
-  /// @brief Extract sub-region from decoded tile if needed
-  /// @param image Full decoded image
-  /// @param op Tile operation with transform information
-  /// @return Extracted tile region
-  static RGBImage ExtractSubRegion(const RGBImage& image,
-                                   const core::TileReadOp& op);
+  /// @brief Extract sub-region from decoded tile
+  /// @param image Decoded tile image
+  /// @param op Tile operation with crop information
+  /// @return Extracted sub-region
+  static RGBImage ExtractSubRegion(const RGBImage &image,
+                                   const core::TileReadOp &op);
 
   /// @brief Check if sub-region extraction is needed
-  /// @param image_width Full image width
-  /// @param image_height Full image height
-  /// @param expected_width Expected tile width
-  /// @param expected_height Expected tile height
-  /// @return true if extraction is needed
+  /// @param image_width Decoded image width
+  /// @param image_height Decoded image height
+  /// @param expected_width Expected output width
+  /// @param expected_height Expected output height
+  /// @return True if extraction is needed
   static bool NeedsSubRegionExtraction(uint32_t image_width,
                                        uint32_t image_height,
                                        uint32_t expected_width,
                                        uint32_t expected_height);
 };
 
-}  // namespace fastslide
+} // namespace fastslide
 
-#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_TILE_EXECUTOR_H_
+#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_TILE_EXECUTOR_H_

@@ -17,16 +17,16 @@
 
 #include <cstddef>
 #include <memory>
+#include <mutex>
 
-#include "absl/status/status.h"
-#include "absl/synchronization/mutex.h"
+#include "aifocore/status/result.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/lru_tile_cache.h"
 
 /**
  * @file global_cache_manager.h
  * @brief Global cache manager singleton for application-wide tile caching
- * 
+ *
  * This header provides a singleton manager for the global tile cache,
  * enabling all readers in an application to share a single cache instance.
  * This is the recommended approach for most applications as it maximizes
@@ -58,7 +58,7 @@ namespace runtime {
 /// auto reader = registry.CreateReader("slide.mrxs");
 /// @endcode
 class GlobalCacheManager {
- public:
+public:
   /// @brief Get the singleton instance
   ///
   /// Returns the global singleton instance of the cache manager. The instance
@@ -66,7 +66,7 @@ class GlobalCacheManager {
   ///
   /// @return Reference to the global cache manager
   /// @note Thread-safe
-  static GlobalCacheManager& Instance();
+  static GlobalCacheManager &Instance();
 
   /// @brief Get the global tile cache
   ///
@@ -95,7 +95,7 @@ class GlobalCacheManager {
   /// @param capacity New cache capacity (number of tiles)
   /// @return Status indicating success or failure
   /// @note Thread-safe. Clears the existing cache.
-  [[nodiscard]] absl::Status SetCapacity(size_t capacity);
+  [[nodiscard]] aifocore::Status SetCapacity(size_t capacity);
 
   /// @brief Get current cache capacity
   /// @return Maximum number of tiles that can be cached
@@ -119,7 +119,7 @@ class GlobalCacheManager {
   /// @note Thread-safe
   void Clear();
 
- private:
+private:
   /// @brief Private constructor for singleton
   GlobalCacheManager();
 
@@ -127,20 +127,20 @@ class GlobalCacheManager {
   ~GlobalCacheManager() = default;
 
   // Non-copyable, non-movable
-  GlobalCacheManager(const GlobalCacheManager&) = delete;
-  GlobalCacheManager& operator=(const GlobalCacheManager&) = delete;
-  GlobalCacheManager(GlobalCacheManager&&) = delete;
-  GlobalCacheManager& operator=(GlobalCacheManager&&) = delete;
+  GlobalCacheManager(const GlobalCacheManager &) = delete;
+  GlobalCacheManager &operator=(const GlobalCacheManager &) = delete;
+  GlobalCacheManager(GlobalCacheManager &&) = delete;
+  GlobalCacheManager &operator=(GlobalCacheManager &&) = delete;
 
-  mutable absl::Mutex mutex_;          ///< Mutex for thread safety
-  std::shared_ptr<ITileCache> cache_;  ///< The global cache instance
+  mutable std::mutex mutex_;          ///< Mutex for thread safety
+  std::shared_ptr<ITileCache> cache_; ///< The global cache instance
 };
 
-}  // namespace runtime
+} // namespace runtime
 
 // Import into fastslide namespace
 using runtime::GlobalCacheManager;
 
-}  // namespace fastslide
+} // namespace fastslide
 
-#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_RUNTIME_GLOBAL_CACHE_MANAGER_H_
+#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_RUNTIME_GLOBAL_CACHE_MANAGER_H_

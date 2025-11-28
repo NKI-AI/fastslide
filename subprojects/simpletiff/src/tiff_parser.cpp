@@ -14,9 +14,7 @@
 
 #include "simpletiff/tiff_parser.h"
 
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include "aifocore/platform/portability.h"
 
 #include <algorithm>
 #include <cstring>
@@ -673,15 +671,16 @@ bool ParseTiff(int fd, size_t file_size, TiffIndex& index) {
 }
 
 bool OpenTiff(std::string_view filepath, TiffIndex& index, int& out_fd) {
-  const int fd = ::open(std::string(filepath).c_str(), O_RDONLY);
+  const int fd = aifocore::portable_open(std::string(filepath).c_str(),
+                                         O_RDONLY | O_BINARY);
   if (fd < 0) {
     return false;
   }
 
-  struct stat st {};
+  portable_stat_struct st{};
 
-  if (::fstat(fd, &st) != 0) {
-    ::close(fd);
+  if (aifocore::portable_fstat(fd, &st) != 0) {
+    aifocore::portable_close(fd);
     return false;
   }
 
@@ -689,7 +688,7 @@ bool OpenTiff(std::string_view filepath, TiffIndex& index, int& out_fd) {
 
   // Parse the TIFF file using pread
   if (!ParseTiff(fd, file_size, index)) {
-    ::close(fd);
+    aifocore::portable_close(fd);
     return false;
   }
 

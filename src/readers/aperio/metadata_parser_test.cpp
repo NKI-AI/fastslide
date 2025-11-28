@@ -14,6 +14,7 @@
 
 #include "fastslide/readers/aperio/metadata_parser.h"
 
+#include "aifocore/status/result.h"
 #include "gtest/gtest.h"
 
 namespace fastslide {
@@ -57,7 +58,7 @@ TEST_F(AperioMetadataParserTest, ParseInvalidDescription) {
       AperioMetadataParser::ParseFromDescription(description, metadata);
 
   EXPECT_FALSE(status.ok());
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(status.code(), aifocore::StatusCode::kInvalidArgument);
 }
 
 TEST_F(AperioMetadataParserTest, ParseAperioDescriptionWithoutMetadata) {
@@ -68,7 +69,7 @@ TEST_F(AperioMetadataParserTest, ParseAperioDescriptionWithoutMetadata) {
       AperioMetadataParser::ParseFromDescription(description, metadata);
 
   EXPECT_FALSE(status.ok());
-  EXPECT_EQ(status.code(), absl::StatusCode::kNotFound);
+  EXPECT_EQ(status.code(), aifocore::StatusCode::kNotFound);
 }
 
 TEST_F(AperioMetadataParserTest, IsAperioFormatDetection) {

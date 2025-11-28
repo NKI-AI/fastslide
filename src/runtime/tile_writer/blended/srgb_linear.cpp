@@ -20,8 +20,6 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "absl/log/check.h"
-
 // Highway SIMD implementation for ConvertSrgb8ToLinearPlanar
 #undef HWY_TARGET_INCLUDE
 #define HWY_TARGET_INCLUDE \
@@ -62,10 +60,10 @@ inline const std::array<float, 256>& Srgb8ToLinearLut() {
 void ConvertSrgb8ToLinearPlanar(const uint8_t* src_interleaved, int w, int h,
                                 float* dst_linear_planar) {
   // Debug: verify dimensions and pointers
-  DCHECK_GT(w, 0);
-  DCHECK_GT(h, 0);
-  DCHECK_NE(src_interleaved, nullptr);
-  DCHECK_NE(dst_linear_planar, nullptr);
+  // DCHECK_GT(w, 0);
+  // DCHECK_GT(h, 0);
+  // DCHECK_NE(src_interleaved, nullptr);
+  // DCHECK_NE(dst_linear_planar, nullptr);
 
   const auto& lut = Srgb8ToLinearLut();
   const size_t plane = static_cast<size_t>(w) * h;
@@ -126,8 +124,8 @@ void ConvertSrgb8ToLinearPlanar(const uint8_t* src_interleaved, int w, int h,
 void GainCorrectionLinearPlanar(float* linear_planar, size_t plane_size,
                                 float gain) {
   // Debug: verify pointer and dimensions
-  DCHECK_NE(linear_planar, nullptr);
-  DCHECK_GT(plane_size, 0);
+  // DCHECK_NE(linear_planar, nullptr);
+  // DCHECK_GT(plane_size, 0);
 
   const hn::ScalableTag<float> d;
   const size_t total_size = plane_size * 3;

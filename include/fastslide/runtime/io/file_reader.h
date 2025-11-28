@@ -21,8 +21,7 @@
 #include <memory>
 #include <vector>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 
 namespace fs = std::filesystem;
 
@@ -50,8 +49,8 @@ class FileReader {
   /// @param path Path to file
   /// @param mode File open mode ("rb", "wb", etc.)
   /// @return FileReader instance or error
-  /// @retval absl::NotFoundError if file cannot be opened
-  static absl::StatusOr<FileReader> Open(const fs::path& path,
+  /// @retval NotFoundError if file cannot be opened
+  static aifocore::Result<FileReader> Open(const fs::path& path,
                                          const char* mode);
 
   /// @brief Move constructor
@@ -77,26 +76,26 @@ class FileReader {
   /// @param offset Byte offset
   /// @param whence SEEK_SET, SEEK_CUR, or SEEK_END
   /// @return OkStatus or error
-  absl::Status Seek(int64_t offset, int whence = SEEK_SET) const;
+  aifocore::Status Seek(int64_t offset, int whence = SEEK_SET) const;
 
   /// @brief Get file size
   /// @return File size in bytes or error
-  absl::StatusOr<int64_t> GetSize() const;
+  aifocore::Result<int64_t> GetSize() const;
 
   /// @brief Read data from file
   /// @param buffer Buffer to read into
   /// @param size Number of bytes to read
   /// @return OkStatus or error
-  absl::Status Read(void* buffer, size_t size) const;
+  aifocore::Status Read(void* buffer, size_t size) const;
 
   /// @brief Read data into vector
   /// @param size Number of bytes to read
   /// @return Vector of bytes or error
-  absl::StatusOr<std::vector<uint8_t>> ReadBytes(size_t size) const;
+  aifocore::Result<std::vector<uint8_t>> ReadBytes(size_t size) const;
 
   /// @brief Get current file position
   /// @return Current position or error
-  absl::StatusOr<int64_t> Tell() const;
+  aifocore::Result<int64_t> Tell() const;
 
  private:
   /// @brief Private constructor (use Open factory method)

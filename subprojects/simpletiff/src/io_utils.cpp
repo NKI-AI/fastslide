@@ -14,7 +14,8 @@
 #include "simpletiff/io_utils.h"
 
 #include <jpeglib.h>
-#include <unistd.h>
+
+#include "aifocore/platform/portability.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -116,9 +117,9 @@ bool ReadBytes(int fd, size_t file_size, uint64_t offset, uint64_t length,
   // Resize buffer to fit data
   out.resize(static_cast<size_t>(length));
 
-  // Use pread for all platforms
-  const ssize_t bytes_read = ::pread(
-      fd, out.data(), static_cast<size_t>(length), static_cast<off_t>(offset));
+  // Use portable pread
+  const ssize_t bytes_read = aifocore::portable_pread(
+      fd, out.data(), static_cast<size_t>(length), offset);
 
   if (bytes_read < 0) {
     return false;

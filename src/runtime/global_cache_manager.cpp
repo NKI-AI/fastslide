@@ -16,10 +16,10 @@
 
 #include <cstddef>
 #include <memory>
+#include <mutex>
 #include <utility>
 
-#include "absl/status/status.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/lru_tile_cache.h"
 
@@ -37,23 +37,23 @@ GlobalCacheManager::GlobalCacheManager() {
   }
 }
 
-GlobalCacheManager& GlobalCacheManager::Instance() {
+GlobalCacheManager &GlobalCacheManager::Instance() {
   static GlobalCacheManager instance;
   return instance;
 }
 
 std::shared_ptr<ITileCache> GlobalCacheManager::GetCache() {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   return cache_;
 }
 
 void GlobalCacheManager::SetCache(std::shared_ptr<ITileCache> cache) {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   cache_ = std::move(cache);
 }
 
-absl::Status GlobalCacheManager::SetCapacity(size_t capacity) {
-  absl::MutexLock lock(&mutex_);
+aifocore::Status GlobalCacheManager::SetCapacity(size_t capacity) {
+  std::lock_guard<std::mutex> lock(mutex_);
 
   // Create new LRU cache with new capacity
   auto cache_result = LRUTileCache::Create(capacity);
@@ -62,21 +62,21 @@ absl::Status GlobalCacheManager::SetCapacity(size_t capacity) {
   }
   cache_ = std::move(*cache_result);
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
 size_t GlobalCacheManager::GetCapacity() const {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   return cache_ ? cache_->GetCapacity() : 0;
 }
 
 size_t GlobalCacheManager::GetSize() const {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   return cache_ ? cache_->GetSize() : 0;
 }
 
 ITileCache::Stats GlobalCacheManager::GetStats() const {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   if (cache_) {
     return cache_->GetStats();
   }
@@ -84,11 +84,11 @@ ITileCache::Stats GlobalCacheManager::GetStats() const {
 }
 
 void GlobalCacheManager::Clear() {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   if (cache_) {
     cache_->Clear();
   }
 }
 
-}  // namespace runtime
-}  // namespace fastslide
+} // namespace runtime
+} // namespace fastslide

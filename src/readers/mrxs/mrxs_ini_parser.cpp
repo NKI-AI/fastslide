@@ -22,18 +22,17 @@
 /// - Comments starting with ; or #
 /// - No support for multi-line values or complex quoting
 ///
-/// The format is straightforward and this parser does not use a full INI library
-/// to avoid unnecessary dependencies and maintain precise control over parsing.
+/// The format is straightforward and this parser does not use a full INI
+/// library to avoid unnecessary dependencies and maintain precise control over
+/// parsing.
 
 #include "fastslide/readers/mrxs/mrxs_ini_parser.h"
 
 #include <fstream>
 #include <string>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
-#include "absl/strings/str_format.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
+#include "aifocore/utilities/fmt.h"
 
 namespace fastslide {
 namespace mrxs {
@@ -47,13 +46,16 @@ namespace internal {
 /// Comments starting with ; or # are ignored.
 ///
 /// @param path Filesystem path to the INI file
-/// @return StatusOr containing parsed IniFile object or error
-/// @retval absl::NotFoundError if file cannot be opened
-absl::StatusOr<IniFile> IniFile::Load(const fs::path& path) {
+/// @return Result containing parsed IniFile object or error
+/// @retval NotFound if file cannot be opened
+aifocore::Result<IniFile> IniFile::Load(const fs::path &path) {
+  // Standard ifstream handles fs::path correctly on modern platforms (including
+  // Windows with MSVC)
   std::ifstream file{path};
   if (!file.is_open()) {
-    return MAKE_STATUS(absl::StatusCode::kNotFound,
-                       absl::StrFormat("Cannot open file: %s", path.string()));
+    return aifocore::Status(
+        aifocore::StatusCode::kNotFound,
+        aifocore::fmt::format("Cannot open file: {}", path.string()));
   }
 
   IniFile ini;
@@ -73,7 +75,12 @@ absl::StatusOr<IniFile> IniFile::Load(const fs::path& path) {
 
     // Trim whitespace
     line.erase(0, line.find_first_not_of(" \t\r\n"));
-    line.erase(line.find_last_not_of(" \t\r\n") + 1);
+    if (size_t last = line.find_last_not_of(" \t\r\n");
+        last != std::string::npos) {
+      line.erase(last + 1);
+    } else {
+      line.clear(); // All whitespace
+    }
 
     // Skip empty lines and comments
     if (line.empty() || line[0] == ';' || line[0] == '#') {
@@ -85,7 +92,12 @@ absl::StatusOr<IniFile> IniFile::Load(const fs::path& path) {
       current_section = line.substr(1, line.length() - 2);
       // Trim section name
       current_section.erase(0, current_section.find_first_not_of(" \t\r\n"));
-      current_section.erase(current_section.find_last_not_of(" \t\r\n") + 1);
+      if (size_t last = current_section.find_last_not_of(" \t\r\n");
+          last != std::string::npos) {
+        current_section.erase(last + 1);
+      } else {
+        current_section.clear();
+      }
     } else {
       // Parse key=value pair
       size_t eq_pos = line.find('=');
@@ -93,8 +105,19 @@ absl::StatusOr<IniFile> IniFile::Load(const fs::path& path) {
         std::string key = line.substr(0, eq_pos);
         std::string value = line.substr(eq_pos + 1);
         // Trim key and value
-        key.erase(key.find_last_not_of(" \t\r\n") + 1);
+        if (size_t last = key.find_last_not_of(" \t\r\n");
+            last != std::string::npos) {
+          key.erase(last + 1);
+        } else {
+          key.clear();
+        }
         value.erase(0, value.find_first_not_of(" \t\r\n"));
+        if (size_t last = value.find_last_not_of(" \t\r\n");
+            last != std::string::npos) {
+          value.erase(last + 1);
+        } else {
+          value.clear();
+        }
         ini.data_[current_section][key] = value;
       }
     }
@@ -109,21 +132,22 @@ absl::StatusOr<IniFile> IniFile::Load(const fs::path& path) {
 ///
 /// @param section Section name
 /// @param key Key name within the section
-/// @return StatusOr containing the string value or error
-/// @retval absl::NotFoundError if section or key does not exist
-absl::StatusOr<std::string> IniFile::GetString(std::string_view section,
-                                               std::string_view key) const {
+/// @return Result containing the string value or error
+/// @retval NotFound if section or key does not exist
+aifocore::Result<std::string> IniFile::GetString(std::string_view section,
+                                                 std::string_view key) const {
   auto section_it = data_.find(std::string(section));
   if (section_it == data_.end()) {
-    return MAKE_STATUS(absl::StatusCode::kNotFound,
-                       absl::StrFormat("Section not found: %s", section));
+    return aifocore::Status(
+        aifocore::StatusCode::kNotFound,
+        aifocore::fmt::format("Section not found: {}", section));
   }
 
   auto key_it = section_it->second.find(std::string(key));
   if (key_it == section_it->second.end()) {
-    return MAKE_STATUS(
-        absl::StatusCode::kNotFound,
-        absl::StrFormat("Key not found: %s in section %s", key, section));
+    return aifocore::Status(
+        aifocore::StatusCode::kNotFound,
+        aifocore::fmt::format("Key not found: {} in section {}", key, section));
   }
 
   return key_it->second;
@@ -136,21 +160,22 @@ absl::StatusOr<std::string> IniFile::GetString(std::string_view section,
 ///
 /// @param section Section name
 /// @param key Key name within the section
-/// @return StatusOr containing the integer value or error
-/// @retval absl::NotFoundError if section or key does not exist
-/// @retval absl::InvalidArgumentError if value cannot be parsed as integer
-absl::StatusOr<int> IniFile::GetInt(std::string_view section,
-                                    std::string_view key) const {
+/// @return Result containing the integer value or error
+/// @retval NotFound if section or key does not exist
+/// @retval InvalidArgument if value cannot be parsed as integer
+aifocore::Result<int> IniFile::GetInt(std::string_view section,
+                                      std::string_view key) const {
   std::string str_result;
-  ASSIGN_OR_RETURN(str_result, GetString(section, key));
+  AIFOCORE_ASSIGN_OR_RETURN(str_result, GetString(section, key));
 
   try {
     return std::stoi(str_result);
-  } catch (const std::exception& e) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat("Cannot parse integer for key %s in section %s: %s",
-                        key, section, e.what()));
+  } catch (const std::exception &e) {
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format(
+            "Cannot parse integer for key {} in section {}: {}", key, section,
+            e.what()));
   }
 }
 
@@ -161,21 +186,22 @@ absl::StatusOr<int> IniFile::GetInt(std::string_view section,
 ///
 /// @param section Section name
 /// @param key Key name within the section
-/// @return StatusOr containing the double value or error
-/// @retval absl::NotFoundError if section or key does not exist
-/// @retval absl::InvalidArgumentError if value cannot be parsed as double
-absl::StatusOr<double> IniFile::GetDouble(std::string_view section,
-                                          std::string_view key) const {
+/// @return Result containing the double value or error
+/// @retval NotFound if section or key does not exist
+/// @retval InvalidArgument if value cannot be parsed as double
+aifocore::Result<double> IniFile::GetDouble(std::string_view section,
+                                            std::string_view key) const {
   std::string str_result;
-  ASSIGN_OR_RETURN(str_result, GetString(section, key));
+  AIFOCORE_ASSIGN_OR_RETURN(str_result, GetString(section, key));
 
   try {
     return std::stod(str_result);
-  } catch (const std::exception& e) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat("Cannot parse double for key %s in section %s: %s", key,
-                        section, e.what()));
+  } catch (const std::exception &e) {
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format(
+            "Cannot parse double for key {} in section {}: {}", key, section,
+            e.what()));
   }
 }
 
@@ -187,6 +213,6 @@ bool IniFile::HasSection(std::string_view section) const {
   return data_.find(std::string(section)) != data_.end();
 }
 
-}  // namespace internal
-}  // namespace mrxs
-}  // namespace fastslide
+} // namespace internal
+} // namespace mrxs
+} // namespace fastslide

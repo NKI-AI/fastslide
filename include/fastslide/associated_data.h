@@ -20,7 +20,6 @@
 #include <variant>
 #include <vector>
 
-#include "absl/status/statusor.h"
 #include "fastslide/image.h"
 
 namespace fastslide {

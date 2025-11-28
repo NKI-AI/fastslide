@@ -28,12 +28,12 @@ namespace {
 // Get benchmark file path from environment variable
 // Usage: FASTSLIDE_BENCHMARK_FILE=/path/to/file.svs bazelisk run
 // //aifo/fastslide/benchmarks:openslide_tile_benchmark
-const char *GetBenchmarkFilePath() {
-  static const char *cached_path = nullptr;
+const char* GetBenchmarkFilePath() {
+  static const char* cached_path = nullptr;
   if (cached_path == nullptr) {
-    const char *env_path = std::getenv("FASTSLIDE_BENCHMARK_FILE");
+    const char* env_path = std::getenv("FASTSLIDE_BENCHMARK_FILE");
     if (env_path == nullptr) {
-      return nullptr; // Error: environment variable not set
+      return nullptr;  // Error: environment variable not set
     }
     cached_path = env_path;
   }
@@ -45,8 +45,8 @@ constexpr uint32_t kRandomSeed = 42;
 
 /// @brief OpenSlide wrapper for benchmarking
 class OpenSlideReader {
-public:
-  explicit OpenSlideReader(const std::string &filename)
+ public:
+  explicit OpenSlideReader(const std::string& filename)
       : filename_(filename), slide_(nullptr) {}
 
   ~OpenSlideReader() {
@@ -61,7 +61,7 @@ public:
       return false;
     }
 
-    const char *error = openslide_get_error(slide_);
+    const char* error = openslide_get_error(slide_);
     if (error) {
       openslide_close(slide_);
       slide_ = nullptr;
@@ -69,7 +69,7 @@ public:
     }
 
     // Disable cache for pure read performance measurement
-    openslide_cache_t *no_cache = openslide_cache_create(0);
+    openslide_cache_t* no_cache = openslide_cache_create(0);
     openslide_set_cache(slide_, no_cache);
     openslide_cache_release(no_cache);
 
@@ -80,7 +80,7 @@ public:
     return slide_ ? openslide_get_level_count(slide_) : 0;
   }
 
-  void GetLevelDimensions(int level, int64_t *width, int64_t *height) const {
+  void GetLevelDimensions(int level, int64_t* width, int64_t* height) const {
     if (slide_) {
       openslide_get_level_dimensions(slide_, level, width, height);
     }
@@ -90,7 +90,7 @@ public:
     return slide_ ? openslide_get_level_downsample(slide_, level) : 1.0;
   }
 
-  bool ReadRegion(uint32_t *buffer, int64_t x, int64_t y, int level,
+  bool ReadRegion(uint32_t* buffer, int64_t x, int64_t y, int level,
                   int64_t width, int64_t height) {
     if (!slide_) {
       return false;
@@ -98,21 +98,21 @@ public:
 
     openslide_read_region(slide_, buffer, x, y, level, width, height);
 
-    const char *error = openslide_get_error(slide_);
+    const char* error = openslide_get_error(slide_);
     return error == nullptr;
   }
 
-private:
+ private:
   std::string filename_;
-  openslide_t *slide_;
+  openslide_t* slide_;
 };
 
 /// @brief Benchmark fixture for OpenSlide sequential tile reading
 class OpenSlideSequentialFixture : public benchmark::Fixture {
-public:
-  void SetUp(const ::benchmark::State &state) override {
+ public:
+  void SetUp(const ::benchmark::State& state) override {
     if (!reader_) {
-      const char *filename = GetBenchmarkFilePath();
+      const char* filename = GetBenchmarkFilePath();
       if (filename == nullptr) {
         init_success_ = false;
         return;
@@ -139,9 +139,9 @@ public:
     buffer_.resize(tile_size_ * tile_size_);
   }
 
-  void TearDown(const ::benchmark::State &state) override { buffer_.clear(); }
+  void TearDown(const ::benchmark::State& state) override { buffer_.clear(); }
 
-protected:
+ protected:
   std::unique_ptr<OpenSlideReader> reader_;
   std::vector<uint32_t> buffer_;
   bool init_success_{false};
@@ -157,10 +157,11 @@ protected:
 /// @brief OpenSlide row-major tile reading benchmark
 BENCHMARK_DEFINE_F(OpenSlideSequentialFixture, RowMajor)
 
-(benchmark::State &state) {
+(benchmark::State& state) {
   if (!init_success_) {
-    state.SkipWithError("Failed to initialize OpenSlide reader (check "
-                        "FASTSLIDE_BENCHMARK_FILE environment variable)");
+    state.SkipWithError(
+        "Failed to initialize OpenSlide reader (check "
+        "FASTSLIDE_BENCHMARK_FILE environment variable)");
     return;
   }
 
@@ -209,10 +210,11 @@ BENCHMARK_DEFINE_F(OpenSlideSequentialFixture, RowMajor)
 /// @brief OpenSlide column-major tile reading benchmark
 BENCHMARK_DEFINE_F(OpenSlideSequentialFixture, ColumnMajor)
 
-(benchmark::State &state) {
+(benchmark::State& state) {
   if (!init_success_) {
-    state.SkipWithError("Failed to initialize OpenSlide reader (check "
-                        "FASTSLIDE_BENCHMARK_FILE environment variable)");
+    state.SkipWithError(
+        "Failed to initialize OpenSlide reader (check "
+        "FASTSLIDE_BENCHMARK_FILE environment variable)");
     return;
   }
 
@@ -261,10 +263,11 @@ BENCHMARK_DEFINE_F(OpenSlideSequentialFixture, ColumnMajor)
 /// @brief OpenSlide random access tile reading benchmark
 BENCHMARK_DEFINE_F(OpenSlideSequentialFixture, RandomAccess)
 
-(benchmark::State &state) {
+(benchmark::State& state) {
   if (!init_success_) {
-    state.SkipWithError("Failed to initialize OpenSlide reader (check "
-                        "FASTSLIDE_BENCHMARK_FILE environment variable)");
+    state.SkipWithError(
+        "Failed to initialize OpenSlide reader (check "
+        "FASTSLIDE_BENCHMARK_FILE environment variable)");
     return;
   }
 
@@ -458,6 +461,6 @@ BENCHMARK_REGISTER_F(OpenSlideSequentialFixture, RandomAccess)
     ->Args({512, 8})
     ->Unit(benchmark::kMicrosecond);
 
-} // namespace
+}  // namespace
 
 BENCHMARK_MAIN();

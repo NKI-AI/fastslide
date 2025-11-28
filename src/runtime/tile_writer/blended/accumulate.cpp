@@ -19,15 +19,14 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "absl/log/check.h"
 #include "aifocore/utilities/thread_pool_singleton.h"
 #include "fastslide/runtime/tile_writer/blended/srgb_linear.h"
 
 // Highway SIMD implementation for FinalizeLinearToSrgb8
 #undef HWY_TARGET_INCLUDE
-#define HWY_TARGET_INCLUDE \
+#define HWY_TARGET_INCLUDE                                                     \
   "src/runtime/tile_writer/blended/accumulate.cpp"
-#include "hwy/foreach_target.h"  // IWYU pragma: keep
+#include "hwy/foreach_target.h" // IWYU pragma: keep
 #include "hwy/highway.h"
 
 HWY_BEFORE_NAMESPACE();
@@ -49,11 +48,10 @@ namespace hn = hwy::HWY_NAMESPACE;
 /// @param d Highway descriptor for vector type
 /// @param w Input vector (weights)
 /// @return Approximate reciprocal 1/w
-template <class D>
-HWY_INLINE hn::Vec<D> ReciprocalFast(D d, hn::Vec<D> w) {
+template <class D> HWY_INLINE hn::Vec<D> ReciprocalFast(D d, hn::Vec<D> w) {
   const auto two = hn::Set(d, 2.0f);
-  auto r = hn::ApproximateReciprocal(w);        // r0
-  r = hn::Mul(r, hn::Sub(two, hn::Mul(w, r)));  // one NR iteration
+  auto r = hn::ApproximateReciprocal(w);       // r0
+  r = hn::Mul(r, hn::Sub(two, hn::Mul(w, r))); // one NR iteration
   // Zero-protect:
   const auto zero = hn::Zero(d);
   const auto nz = hn::Gt(w, zero);
@@ -61,12 +59,12 @@ HWY_INLINE hn::Vec<D> ReciprocalFast(D d, hn::Vec<D> w) {
 }
 
 /// @brief Float copy of the uint8 LUT so we can vector-gather directly
-inline const float* LinearToSrgb8LutF32() {
+inline const float *LinearToSrgb8LutF32() {
   static float kLutF32[kLinearToSrgbLutSize + 1];
   static std::atomic<bool> init{false};
   if (!init.load(std::memory_order_acquire)) {
     for (int i = 0; i <= kLinearToSrgbLutSize; ++i) {
-      kLutF32[i] = static_cast<float>(kLinearToSrgb8Lut[i]);  // 0..255 as float
+      kLutF32[i] = static_cast<float>(kLinearToSrgb8Lut[i]); // 0..255 as float
     }
     init.store(true, std::memory_order_release);
   }
@@ -101,15 +99,15 @@ HWY_INLINE hn::Vec<D> LinearToSrgb8VecF32(D d, hn::Vec<D> v) {
   const auto idx = hn::Min(hn::ConvertTo(I32(), scaled),
                            hn::Set(I32(), kLinearToSrgbLutSize));
 
-  const float* lut = LinearToSrgb8LutF32();
-  return hn::GatherIndex(d, lut, idx);  // lanes are float 0..255
+  const float *lut = LinearToSrgb8LutF32();
+  return hn::GatherIndex(d, lut, idx); // lanes are float 0..255
 }
 
 // Highway-optimized version with cache-blocking for planar input
-void FinalizeLinearToSrgb8(const float* accumulator_r,
-                           const float* accumulator_g,
-                           const float* accumulator_b, const float* weight_sum,
-                           int img_w, int img_h, uint8_t* out_interleaved) {
+void FinalizeLinearToSrgb8(const float *accumulator_r,
+                           const float *accumulator_g,
+                           const float *accumulator_b, const float *weight_sum,
+                           int img_w, int img_h, uint8_t *out_interleaved) {
 
   const hn::ScalableTag<float> df;
   const hn::Rebind<uint8_t, decltype(df)> du8;
@@ -127,7 +125,7 @@ void FinalizeLinearToSrgb8(const float* accumulator_r,
   const int total_tiles = num_tiles_y * num_tiles_x;
 
   // Get thread pool for parallel tile processing
-  auto& pool = aifocore::ThreadPoolManager::GetInstance();
+  auto &pool = aifocore::ThreadPoolManager::GetInstance();
 
   // Process tiles in parallel (no mutex needed - non-overlapping writes)
   auto futures = pool.submit_sequence(0, total_tiles, [&](size_t tile_idx) {
@@ -208,11 +206,11 @@ void FinalizeLinearToSrgb8(const float* accumulator_r,
 }
 
 // Highway-optimized tile accumulation with planar output
-void AccumulateLinearTile(const float* linear_planar, int w, int h, int base_x,
-                          int base_y, float weight, float* accumulator_r,
-                          float* accumulator_g, float* accumulator_b,
-                          float* weight_sum, int img_w, int img_h,
-                          absl::Mutex& accumulator_mutex) {
+void AccumulateLinearTile(const float *linear_planar, int w, int h, int base_x,
+                          int base_y, float weight, float *accumulator_r,
+                          float *accumulator_g, float *accumulator_b,
+                          float *weight_sum, int img_w, int img_h,
+                          std::mutex &accumulator_mutex) {
   // Clip intersection once - no per-pixel bounds checks!
   const int x0 = std::max(0, -base_x);
   const int y0 = std::max(0, -base_y);
@@ -220,23 +218,23 @@ void AccumulateLinearTile(const float* linear_planar, int w, int h, int base_x,
   const int y1 = std::min(h, img_h - base_y);
 
   if (x0 >= x1 || y0 >= y1)
-    return;  // No intersection
+    return; // No intersection
 
   const size_t plane = static_cast<size_t>(w) * h;
   const int span_width = x1 - x0;
 
   // Debug: verify dimensions are valid
-  DCHECK_GT(img_w, 0);
-  DCHECK_GT(img_h, 0);
-  DCHECK_GE(base_x + x0, 0);
-  DCHECK_GE(base_y + y0, 0);
-  DCHECK_LE(base_x + x1, img_w);
-  DCHECK_LE(base_y + y1, img_h);
+  // DCHECK_GT(img_w, 0);
+  // DCHECK_GT(img_h, 0);
+  // DCHECK_GE(base_x + x0, 0);
+  // DCHECK_GE(base_y + y0, 0);
+  // DCHECK_LE(base_x + x1, img_w);
+  // DCHECK_LE(base_y + y1, img_h);
 
   // Hoist per-channel plane pointers from source
-  const float* srcR = linear_planar + 0 * plane;
-  const float* srcG = linear_planar + 1 * plane;
-  const float* srcB = linear_planar + 2 * plane;
+  const float *srcR = linear_planar + 0 * plane;
+  const float *srcG = linear_planar + 1 * plane;
+  const float *srcB = linear_planar + 2 * plane;
 
   const hn::ScalableTag<float> df;
   const size_t N = hn::Lanes(df);
@@ -244,7 +242,7 @@ void AccumulateLinearTile(const float* linear_planar, int w, int h, int base_x,
 
   // Branch-free row-by-row accumulation with mutex protection
   // Lock once per tile instead of per-pixel to minimize overhead
-  absl::MutexLock lock(&accumulator_mutex);
+  std::lock_guard<std::mutex> lock(accumulator_mutex);
 
   for (int ty = y0; ty < y1; ++ty) {
     const size_t src_base = ty * w + x0;
@@ -297,9 +295,9 @@ void AccumulateLinearTile(const float* linear_planar, int w, int h, int base_x,
   }
 }
 
-}  // namespace HWY_NAMESPACE
-}  // namespace runtime
-}  // namespace fastslide
+} // namespace HWY_NAMESPACE
+} // namespace runtime
+} // namespace fastslide
 
 HWY_AFTER_NAMESPACE();
 
@@ -310,25 +308,25 @@ namespace runtime {
 HWY_EXPORT(AccumulateLinearTile);
 HWY_EXPORT(FinalizeLinearToSrgb8);
 
-void AccumulateLinearTile(const float* linear_planar, int w, int h, int base_x,
-                          int base_y, float weight, float* accumulator_r,
-                          float* accumulator_g, float* accumulator_b,
-                          float* weight_sum, int img_w, int img_h,
-                          absl::Mutex& accumulator_mutex) {
+void AccumulateLinearTile(const float *linear_planar, int w, int h, int base_x,
+                          int base_y, float weight, float *accumulator_r,
+                          float *accumulator_g, float *accumulator_b,
+                          float *weight_sum, int img_w, int img_h,
+                          std::mutex &accumulator_mutex) {
   HWY_DYNAMIC_DISPATCH(AccumulateLinearTile)
   (linear_planar, w, h, base_x, base_y, weight, accumulator_r, accumulator_g,
    accumulator_b, weight_sum, img_w, img_h, accumulator_mutex);
 }
 
-void FinalizeLinearToSrgb8(const float* accumulator_r,
-                           const float* accumulator_g,
-                           const float* accumulator_b, const float* weight_sum,
-                           int img_w, int img_h, uint8_t* out_interleaved) {
+void FinalizeLinearToSrgb8(const float *accumulator_r,
+                           const float *accumulator_g,
+                           const float *accumulator_b, const float *weight_sum,
+                           int img_w, int img_h, uint8_t *out_interleaved) {
   HWY_DYNAMIC_DISPATCH(FinalizeLinearToSrgb8)
   (accumulator_r, accumulator_g, accumulator_b, weight_sum, img_w, img_h,
    out_interleaved);
 }
 
-}  // namespace runtime
-}  // namespace fastslide
-#endif  // HWY_ONCE
+} // namespace runtime
+} // namespace fastslide
+#endif // HWY_ONCE

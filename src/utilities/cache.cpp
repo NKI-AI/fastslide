@@ -15,30 +15,27 @@
 #include "fastslide/utilities/cache.h"
 
 #include <memory>
-#include <stdexcept>
+#include <mutex>
 #include <utility>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
-#include "aifocore/concepts/numeric.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
 
 namespace fastslide {
 
 // TileCache implementation
-absl::StatusOr<TileCache> TileCache::Create(size_t capacity) {
+aifocore::Result<TileCache> TileCache::Create(size_t capacity) {
   if (capacity == 0) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       "Cache capacity must be greater than 0");
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "Cache capacity must be greater than 0");
   }
-  return absl::StatusOr<TileCache>(std::in_place, capacity);
+  return aifocore::Result<TileCache>(std::in_place, capacity);
 }
 
-absl::StatusOr<std::shared_ptr<TileCache>> TileCache::CreateShared(
-    size_t capacity) {
+aifocore::Result<std::shared_ptr<TileCache>>
+TileCache::CreateShared(size_t capacity) {
   if (capacity == 0) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       "Cache capacity must be greater than 0");
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "Cache capacity must be greater than 0");
   }
   return std::shared_ptr<TileCache>(new TileCache(capacity));
 }
@@ -49,8 +46,8 @@ TileCache::TileCache(size_t capacity)
   // Constructor assumes valid capacity for compatibility
 }
 
-std::shared_ptr<CachedTile> TileCache::Get(const TileKey& key) {
-  absl::MutexLock lock(&mutex_);
+std::shared_ptr<CachedTile> TileCache::Get(const TileKey &key) {
+  std::lock_guard<std::mutex> lock(mutex_);
 
   auto iter = cache_.find(key);
   if (iter == cache_.end()) {
@@ -71,12 +68,12 @@ std::shared_ptr<CachedTile> TileCache::Get(const TileKey& key) {
   return iter->second.tile;
 }
 
-void TileCache::Put(const TileKey& key, std::shared_ptr<CachedTile> tile) {
+void TileCache::Put(const TileKey &key, std::shared_ptr<CachedTile> tile) {
   if (!tile) {
-    return;  // Don't cache null tiles
+    return; // Don't cache null tiles
   }
 
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
 
   // Check if already exists
   auto iter = cache_.find(key);
@@ -104,7 +101,7 @@ void TileCache::Put(const TileKey& key, std::shared_ptr<CachedTile> tile) {
 }
 
 void TileCache::Clear() {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   cache_.clear();
   lru_list_.clear();
   hits_ = 0;
@@ -122,7 +119,7 @@ void TileCache::EvictLru() {
 }
 
 TileCache::Stats TileCache::GetStats() const {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
 
   double hit_ratio = 0.0;
   size_t total_accesses = hits_ + misses_;
@@ -132,7 +129,7 @@ TileCache::Stats TileCache::GetStats() const {
 
   // Calculate total memory usage
   size_t memory_usage_bytes = 0;
-  for (const auto& entry : cache_) {
+  for (const auto &entry : cache_) {
     if (entry.second.tile) {
       memory_usage_bytes += entry.second.tile->data.size();
     }
@@ -147,20 +144,20 @@ TileCache::Stats TileCache::GetStats() const {
 }
 
 size_t TileCache::GetCapacity() const {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   return capacity_;
 }
 
 size_t TileCache::GetSize() const {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   return cache_.size();
 }
 
 size_t TileCache::GetMemoryUsage() const {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
 
   size_t memory_usage_bytes = 0;
-  for (const auto& entry : cache_) {
+  for (const auto &entry : cache_) {
     if (entry.second.tile) {
       memory_usage_bytes += entry.second.tile->data.size();
     }
@@ -169,13 +166,13 @@ size_t TileCache::GetMemoryUsage() const {
   return memory_usage_bytes;
 }
 
-absl::Status TileCache::SetCapacity(size_t capacity) {
+aifocore::Status TileCache::SetCapacity(size_t capacity) {
   if (capacity == 0) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       "Cache capacity must be greater than 0");
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "Cache capacity must be greater than 0");
   }
 
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
 
   // Clear existing cache and update capacity
   cache_.clear();
@@ -184,36 +181,36 @@ absl::Status TileCache::SetCapacity(size_t capacity) {
   hits_ = 0;
   misses_ = 0;
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
 // GlobalTileCache implementation
 GlobalTileCache::GlobalTileCache()
     : cache_(std::make_unique<TileCache>(1000)) {}
 
-GlobalTileCache& GlobalTileCache::Instance() {
+GlobalTileCache &GlobalTileCache::Instance() {
   static GlobalTileCache instance;
   return instance;
 }
 
-TileCache& GlobalTileCache::GetCache() {
-  absl::MutexLock lock(&mutex_);
+TileCache &GlobalTileCache::GetCache() {
+  std::lock_guard<std::mutex> lock(mutex_);
   return *cache_;
 }
 
-const TileCache& GlobalTileCache::GetCache() const {
-  absl::MutexLock lock(&mutex_);
+const TileCache &GlobalTileCache::GetCache() const {
+  std::lock_guard<std::mutex> lock(mutex_);
   return *cache_;
 }
 
-absl::Status GlobalTileCache::SetCapacity(size_t capacity) {
-  absl::MutexLock lock(&mutex_);
+aifocore::Status GlobalTileCache::SetCapacity(size_t capacity) {
+  std::lock_guard<std::mutex> lock(mutex_);
   return cache_->SetCapacity(capacity);
 }
 
 size_t GlobalTileCache::GetCapacity() const {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   return cache_->GetCapacity();
 }
 
-}  // namespace fastslide
+} // namespace fastslide

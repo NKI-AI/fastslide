@@ -23,9 +23,7 @@
 #include <utility>
 #include <vector>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/readers.h"
 #include "fastslide/runtime/reader_registry.h"
@@ -41,13 +39,14 @@ struct SemanticVersion {
   int minor = 0;
   int patch = 0;
 
-  static absl::StatusOr<SemanticVersion> Parse(std::string_view version_str) {
+  static aifocore::Result<SemanticVersion> Parse(std::string_view version_str) {
     std::regex version_regex(R"((\d+)\.(\d+)\.(\d+))");
     std::string version_string(version_str);
     std::smatch match;
 
     if (!std::regex_search(version_string, match, version_regex)) {
-      return absl::InvalidArgumentError(
+      return aifocore::Status(
+          aifocore::StatusCode::kInvalidArgument,
           aifocore::fmt::format("Invalid version string: {}", version_str));
     }
 
@@ -59,7 +58,7 @@ struct SemanticVersion {
     return version;
   }
 
-  [[nodiscard]] bool operator>=(const SemanticVersion& other) const {
+  [[nodiscard]] bool operator>=(const SemanticVersion &other) const {
     if (major != other.major)
       return major >= other.major;
     if (minor != other.minor)
@@ -67,7 +66,7 @@ struct SemanticVersion {
     return patch >= other.patch;
   }
 
-  [[nodiscard]] bool operator<=(const SemanticVersion& other) const {
+  [[nodiscard]] bool operator<=(const SemanticVersion &other) const {
     if (major != other.major)
       return major <= other.major;
     if (minor != other.minor)
@@ -76,7 +75,7 @@ struct SemanticVersion {
   }
 };
 
-}  // namespace
+} // namespace
 
 // ============================================================================
 // VersionConstraint implementation
@@ -91,7 +90,7 @@ bool VersionConstraint::IsSatisfiedBy(std::string_view version) const {
 
   // Parse constraint
   if (constraint.empty()) {
-    return true;  // No constraint means any version
+    return true; // No constraint means any version
   }
 
   // Simple ">=" constraint
@@ -124,8 +123,8 @@ bool VersionConstraint::IsSatisfiedBy(std::string_view version) const {
   return v.major == cv.major && v.minor == cv.minor && v.patch == cv.patch;
 }
 
-absl::StatusOr<VersionConstraint> VersionConstraint::Parse(
-    std::string_view constraint_str) {
+aifocore::Result<VersionConstraint>
+VersionConstraint::Parse(std::string_view constraint_str) {
   VersionConstraint constraint;
   constraint.constraint = std::string(constraint_str);
   return constraint;
@@ -176,15 +175,15 @@ std::vector<FormatDescriptor> BuiltInPluginsInitializer::GetDescriptors() {
   return readers::GetBuiltinFormats();
 }
 
-std::vector<FormatDescriptor> BuiltInPluginsInitializer::GetDescriptors(
-    const PluginLoadContext& context) {
+std::vector<FormatDescriptor>
+BuiltInPluginsInitializer::GetDescriptors(const PluginLoadContext &context) {
   auto all_descriptors = GetDescriptors();
   std::vector<FormatDescriptor> filtered;
 
-  for (auto& descriptor : all_descriptors) {
+  for (auto &descriptor : all_descriptors) {
     // Check if all required capabilities are available
     bool can_load = true;
-    for (const auto& required_cap : descriptor.required_capabilities) {
+    for (const auto &required_cap : descriptor.required_capabilities) {
       if (!context.HasCapability(required_cap)) {
         can_load = false;
         break;
@@ -199,38 +198,41 @@ std::vector<FormatDescriptor> BuiltInPluginsInitializer::GetDescriptors(
   return filtered;
 }
 
-absl::Status BuiltInPluginsInitializer::RegisterAll(ReaderRegistry& registry) {
+aifocore::Status
+BuiltInPluginsInitializer::RegisterAll(ReaderRegistry &registry) {
   auto descriptors = GetDescriptors();
-  for (auto& descriptor : descriptors) {
+  for (auto &descriptor : descriptors) {
     registry.RegisterFormat(std::move(descriptor));
   }
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-absl::Status BuiltInPluginsInitializer::RegisterAll(
-    ReaderRegistry& registry, const PluginLoadContext& context) {
+aifocore::Status
+BuiltInPluginsInitializer::RegisterAll(ReaderRegistry &registry,
+                                       const PluginLoadContext &context) {
   auto descriptors = GetDescriptors(context);
 
   if (descriptors.empty()) {
-    return absl::FailedPreconditionError(
+    return aifocore::Status(
+        aifocore::StatusCode::kFailedPrecondition,
         "No built-in formats can be loaded with available capabilities");
   }
 
-  for (auto& descriptor : descriptors) {
+  for (auto &descriptor : descriptors) {
     registry.RegisterFormat(std::move(descriptor));
   }
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
 bool BuiltInPluginsInitializer::CanLoadFormat(
-    std::string_view format_name, const PluginLoadContext& context) {
+    std::string_view format_name, const PluginLoadContext &context) {
   auto descriptors = GetDescriptors();
 
-  for (const auto& descriptor : descriptors) {
+  for (const auto &descriptor : descriptors) {
     if (descriptor.format_name == format_name) {
       // Check if all required capabilities are available
-      for (const auto& required_cap : descriptor.required_capabilities) {
+      for (const auto &required_cap : descriptor.required_capabilities) {
         if (!context.HasCapability(required_cap)) {
           return false;
         }
@@ -246,5 +248,5 @@ bool BuiltInPluginsInitializer::CanLoadFormat(
 // Plugin loader implementations
 // ============================================================================
 
-}  // namespace runtime
-}  // namespace fastslide
+} // namespace runtime
+} // namespace fastslide

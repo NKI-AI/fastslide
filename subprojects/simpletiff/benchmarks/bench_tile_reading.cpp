@@ -14,7 +14,7 @@
 
 #include <benchmark/benchmark.h>
 #include <tiffio.h>
-#include <unistd.h>
+#include "aifocore/platform/portability.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -31,12 +31,12 @@ namespace {
 // Get benchmark file path from environment variable
 // Usage: SIMPLETIFF_BENCHMARK_FILENAME=/path/to/file.svs bazelisk run
 // //aifo/simpletiff/benchmarks:bench_tile_reading
-const char *GetBenchmarkFilePath() {
-  static const char *cached_path = nullptr;
+const char* GetBenchmarkFilePath() {
+  static const char* cached_path = nullptr;
   if (cached_path == nullptr) {
-    const char *env_path = std::getenv("SIMPLETIFF_BENCHMARK_FILE");
+    const char* env_path = std::getenv("SIMPLETIFF_BENCHMARK_FILE");
     if (env_path == nullptr) {
-      return nullptr; // Error: environment variable not set
+      return nullptr;  // Error: environment variable not set
     }
     cached_path = env_path;
   }
@@ -47,8 +47,8 @@ const char *GetBenchmarkFilePath() {
 // SimpleTIFF Benchmarks
 // -----------------------------------------------------------
 
-static void BM_SimpleTIFF_SequentialTiles(benchmark::State &state) {
-  const char *filename = GetBenchmarkFilePath();
+static void BM_SimpleTIFF_SequentialTiles(benchmark::State& state) {
+  const char* filename = GetBenchmarkFilePath();
   if (filename == nullptr) {
     state.SkipWithError(
         "SIMPLETIFF_BENCHMARK_FILENAME environment variable not set");
@@ -71,8 +71,8 @@ static void BM_SimpleTIFF_SequentialTiles(benchmark::State &state) {
     return;
   }
 
-  const auto &page = index.Page(0);
-  const auto &tiles = index.Tiles(page.payload_id);
+  const auto& page = index.Page(0);
+  const auto& tiles = index.Tiles(page.payload_id);
   const uint32_t total_tiles = tiles.tiles_x * tiles.tiles_y;
 
   // Reusable output buffer (thread_local buffers used internally)
@@ -104,8 +104,8 @@ static void BM_SimpleTIFF_SequentialTiles(benchmark::State &state) {
                                                benchmark::Counter::kIsRate);
 }
 
-static void BM_SimpleTIFF_RandomTiles(benchmark::State &state) {
-  const char *filename = GetBenchmarkFilePath();
+static void BM_SimpleTIFF_RandomTiles(benchmark::State& state) {
+  const char* filename = GetBenchmarkFilePath();
   if (filename == nullptr) {
     state.SkipWithError(
         "SIMPLETIFF_BENCHMARK_FILENAME environment variable not set");
@@ -128,8 +128,8 @@ static void BM_SimpleTIFF_RandomTiles(benchmark::State &state) {
     return;
   }
 
-  const auto &page = index.Page(0);
-  const auto &tiles = index.Tiles(page.payload_id);
+  const auto& page = index.Page(0);
+  const auto& tiles = index.Tiles(page.payload_id);
   const uint32_t total_tiles = tiles.tiles_x * tiles.tiles_y;
 
   // Generate random tile order (fixed seed for reproducibility)
@@ -138,7 +138,7 @@ static void BM_SimpleTIFF_RandomTiles(benchmark::State &state) {
     tile_order[i] = i;
   }
 
-  std::mt19937 rng(42); // Fixed seed
+  std::mt19937 rng(42);  // Fixed seed
   std::shuffle(tile_order.begin(), tile_order.end(), rng);
 
   // Reusable output buffer (thread_local buffers used internally)
@@ -174,15 +174,15 @@ static void BM_SimpleTIFF_RandomTiles(benchmark::State &state) {
 // libtiff Benchmarks
 // -----------------------------------------------------------
 
-static void BM_LibTIFF_SequentialTiles(benchmark::State &state) {
-  const char *filename = GetBenchmarkFilePath();
+static void BM_LibTIFF_SequentialTiles(benchmark::State& state) {
+  const char* filename = GetBenchmarkFilePath();
   if (filename == nullptr) {
     state.SkipWithError(
         "SIMPLETIFF_BENCHMARK_FILENAME environment variable not set");
     return;
   }
 
-  TIFF *tif = TIFFOpen(filename, "r");
+  TIFF* tif = TIFFOpen(filename, "r");
   if (!tif) {
     state.SkipWithError("Could not open test file");
     return;
@@ -219,15 +219,15 @@ static void BM_LibTIFF_SequentialTiles(benchmark::State &state) {
                                                benchmark::Counter::kIsRate);
 }
 
-static void BM_LibTIFF_RandomTiles(benchmark::State &state) {
-  const char *filename = GetBenchmarkFilePath();
+static void BM_LibTIFF_RandomTiles(benchmark::State& state) {
+  const char* filename = GetBenchmarkFilePath();
   if (filename == nullptr) {
     state.SkipWithError(
         "SIMPLETIFF_BENCHMARK_FILENAME environment variable not set");
     return;
   }
 
-  TIFF *tif = TIFFOpen(filename, "r");
+  TIFF* tif = TIFFOpen(filename, "r");
   if (!tif) {
     state.SkipWithError("Could not open test file");
     return;
@@ -242,7 +242,7 @@ static void BM_LibTIFF_RandomTiles(benchmark::State &state) {
     tile_order[i] = i;
   }
 
-  std::mt19937 rng(42); // Fixed seed - same as SimpleTIFF benchmark
+  std::mt19937 rng(42);  // Fixed seed - same as SimpleTIFF benchmark
   std::shuffle(tile_order.begin(), tile_order.end(), rng);
 
   std::vector<uint8_t> tile_buffer(tile_size);
@@ -277,8 +277,8 @@ static void BM_LibTIFF_RandomTiles(benchmark::State &state) {
 // Random Tiles with File Open/Close per Tile
 // -----------------------------------------------------------
 
-static void BM_SimpleTIFF_RandomTiles_OpenClose(benchmark::State &state) {
-  const char *filename = GetBenchmarkFilePath();
+static void BM_SimpleTIFF_RandomTiles_OpenClose(benchmark::State& state) {
+  const char* filename = GetBenchmarkFilePath();
   if (filename == nullptr) {
     state.SkipWithError(
         "SIMPLETIFF_BENCHMARK_FILENAME environment variable not set");
@@ -296,15 +296,15 @@ static void BM_SimpleTIFF_RandomTiles_OpenClose(benchmark::State &state) {
 
   if (index_template.NumPages() == 0 ||
       index_template.Page(0).storage != simpletiff::Storage::kTiles) {
-    ::close(fd_temp);
+    aifocore::portable_close(fd_temp);
     state.SkipWithError("First page is not tiled");
     return;
   }
 
-  const auto &page = index_template.Page(0);
-  const auto &tiles = index_template.Tiles(page.payload_id);
+  const auto& page = index_template.Page(0);
+  const auto& tiles = index_template.Tiles(page.payload_id);
   const uint32_t total_tiles = tiles.tiles_x * tiles.tiles_y;
-  ::close(fd_temp);
+  aifocore::portable_close(fd_temp);
 
   // Generate random tile order (fixed seed for reproducibility)
   std::vector<uint32_t> tile_order(total_tiles);
@@ -312,7 +312,7 @@ static void BM_SimpleTIFF_RandomTiles_OpenClose(benchmark::State &state) {
     tile_order[i] = i;
   }
 
-  std::mt19937 rng(42); // Fixed seed
+  std::mt19937 rng(42);  // Fixed seed
   std::shuffle(tile_order.begin(), tile_order.end(), rng);
 
   std::vector<uint8_t> tile_data;
@@ -337,7 +337,7 @@ static void BM_SimpleTIFF_RandomTiles_OpenClose(benchmark::State &state) {
           tiles_read++;
           benchmark::DoNotOptimize(tile_data.data());
         }
-        ::close(fd);
+        aifocore::portable_close(fd);
       }
     }
   }
@@ -348,8 +348,8 @@ static void BM_SimpleTIFF_RandomTiles_OpenClose(benchmark::State &state) {
                                                benchmark::Counter::kIsRate);
 }
 
-static void BM_LibTIFF_RandomTiles_OpenClose(benchmark::State &state) {
-  const char *filename = GetBenchmarkFilePath();
+static void BM_LibTIFF_RandomTiles_OpenClose(benchmark::State& state) {
+  const char* filename = GetBenchmarkFilePath();
   if (filename == nullptr) {
     state.SkipWithError(
         "SIMPLETIFF_BENCHMARK_FILENAME environment variable not set");
@@ -357,7 +357,7 @@ static void BM_LibTIFF_RandomTiles_OpenClose(benchmark::State &state) {
   }
 
   // Get tile count
-  TIFF *tif_temp = TIFFOpen(filename, "r");
+  TIFF* tif_temp = TIFFOpen(filename, "r");
   if (!tif_temp) {
     state.SkipWithError("Could not open test file");
     return;
@@ -373,7 +373,7 @@ static void BM_LibTIFF_RandomTiles_OpenClose(benchmark::State &state) {
     tile_order[i] = i;
   }
 
-  std::mt19937 rng(42); // Fixed seed - same as SimpleTIFF benchmark
+  std::mt19937 rng(42);  // Fixed seed - same as SimpleTIFF benchmark
   std::shuffle(tile_order.begin(), tile_order.end(), rng);
 
   std::vector<uint8_t> tile_buffer(tile_size);
@@ -384,7 +384,7 @@ static void BM_LibTIFF_RandomTiles_OpenClose(benchmark::State &state) {
   for (auto _ : state) {
     // Read tiles in random order, opening/closing file each time
     for (int tile_idx : tile_order) {
-      TIFF *tif = TIFFOpen(filename, "r");
+      TIFF* tif = TIFFOpen(filename, "r");
       if (tif) {
         tsize_t bytes =
             TIFFReadEncodedTile(tif, tile_idx, tile_buffer.data(), tile_size);
@@ -412,6 +412,6 @@ BENCHMARK(BM_LibTIFF_SequentialTiles)->Unit(benchmark::kMillisecond);
 BENCHMARK(BM_LibTIFF_RandomTiles)->Unit(benchmark::kMillisecond);
 BENCHMARK(BM_LibTIFF_RandomTiles_OpenClose)->Unit(benchmark::kMillisecond);
 
-} // namespace
+}  // namespace
 
 BENCHMARK_MAIN();

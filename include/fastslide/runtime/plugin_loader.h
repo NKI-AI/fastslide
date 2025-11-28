@@ -22,7 +22,7 @@
 #include <string_view>
 #include <vector>
 
-#include "absl/status/status.h"
+#include "aifocore/status/result.h"
 #include "fastslide/runtime/format_descriptor.h"
 
 /**
@@ -58,7 +58,7 @@ struct VersionConstraint {
   /// @brief Parse a constraint string
   /// @param constraint_str Constraint string
   /// @return Parsed constraint or error
-  [[nodiscard]] static absl::StatusOr<VersionConstraint> Parse(
+  [[nodiscard]] static aifocore::Result<VersionConstraint> Parse(
       std::string_view constraint_str);
 };
 
@@ -128,7 +128,7 @@ class PluginLoader {
   /// @param registry Registry to register plugins with
   /// @param context Loading context (available capabilities, version)
   /// @return Status indicating success or failure
-  [[nodiscard]] virtual absl::Status LoadPlugins(
+  [[nodiscard]] virtual aifocore::Status LoadPlugins(
       ReaderRegistry& registry, const PluginLoadContext& context) = 0;
 
   /// @brief Check if loader can provide plugins in current context
@@ -166,13 +166,13 @@ class BuiltInPluginsInitializer {
   /// @brief Register built-in plugins with a registry
   /// @param registry Registry to register with
   /// @return Status indicating success or any errors
-  [[nodiscard]] static absl::Status RegisterAll(ReaderRegistry& registry);
+  [[nodiscard]] static aifocore::Status RegisterAll(ReaderRegistry& registry);
 
   /// @brief Register built-in plugins with capability filtering
   /// @param registry Registry to register with
   /// @param context Loading context for filtering
   /// @return Status indicating success or any errors
-  [[nodiscard]] static absl::Status RegisterAll(
+  [[nodiscard]] static aifocore::Status RegisterAll(
       ReaderRegistry& registry, const PluginLoadContext& context);
 
   /// @brief Check if a format can be loaded in the current context

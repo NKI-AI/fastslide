@@ -37,7 +37,7 @@ namespace runtime {
 float Srgb8ToLinear(uint8_t srgb) {
   // Create a 1x1 tile with the single sRGB value in RGB format
   uint8_t srgb_data[3] = {srgb, srgb, srgb};
-  hwy::AlignedVector<float> linear_data(3 + 16);  // 3 channels + padding
+  hwy::AlignedVector<float> linear_data(3 + 16); // 3 channels + padding
 
   // Use the actual conversion function from the codebase
   ConvertSrgb8ToLinearPlanar(srgb_data, 1, 1, linear_data.data());
@@ -47,9 +47,7 @@ float Srgb8ToLinear(uint8_t srgb) {
 }
 
 /// @brief Convert linear float [0,1] to sRGB uint8
-uint8_t LinearToSrgb8(float linear) {
-  return LinearToSrgb8Fast(linear);
-}
+uint8_t LinearToSrgb8(float linear) { return LinearToSrgb8Fast(linear); }
 
 /// @brief Create test linear RGB data in planar format
 /// Returns vector with R plane, G plane, B plane sequentially
@@ -57,9 +55,9 @@ hwy::AlignedVector<float> CreateTestLinearPlanar(int width, int height) {
   const size_t plane_size = static_cast<size_t>(width) * height;
   hwy::AlignedVector<float> data(plane_size * 3);
 
-  float* r_plane = data.data();
-  float* g_plane = data.data() + plane_size;
-  float* b_plane = data.data() + 2 * plane_size;
+  float *r_plane = data.data();
+  float *g_plane = data.data() + plane_size;
+  float *b_plane = data.data() + 2 * plane_size;
 
   for (int y = 0; y < height; ++y) {
     for (int x = 0; x < width; ++x) {
@@ -81,9 +79,9 @@ hwy::AlignedVector<float> CreateUniformLinearPlanar(int width, int height,
   const size_t plane_size = static_cast<size_t>(width) * height;
   hwy::AlignedVector<float> data(plane_size * 3);
 
-  float* r_plane = data.data();
-  float* g_plane = data.data() + plane_size;
-  float* b_plane = data.data() + 2 * plane_size;
+  float *r_plane = data.data();
+  float *g_plane = data.data() + plane_size;
+  float *b_plane = data.data() + 2 * plane_size;
 
   std::fill_n(r_plane, plane_size, r);
   std::fill_n(g_plane, plane_size, g);
@@ -114,7 +112,7 @@ TEST(AccumulateLinearTileTest, SingleTileFullCoverage) {
   hwy::AlignedVector<float> acc_b(pixel_count + kPadding, 0.0f);
   hwy::AlignedVector<float> weight_sum(pixel_count + kPadding, 0.0f);
 
-  absl::Mutex mutex;
+  std::mutex mutex;
 
   // Accumulate tile at (0, 0)
   AccumulateLinearTile(tile_data.data(), tile_w, tile_h, 0, 0, weight,
@@ -148,7 +146,7 @@ TEST(AccumulateLinearTileTest, PartialTilePlacement) {
   hwy::AlignedVector<float> acc_b(pixel_count + kPadding, 0.0f);
   hwy::AlignedVector<float> weight_sum(pixel_count + kPadding, 0.0f);
 
-  absl::Mutex mutex;
+  std::mutex mutex;
 
   // Accumulate tile at (32, 32) - should be in center
   AccumulateLinearTile(tile_data.data(), tile_w, tile_h, 32, 32, weight,
@@ -190,9 +188,9 @@ TEST(AccumulateLinearTileTest, OverlappingTilesWithWeights) {
 
   // Create two different tiles
   auto tile1 =
-      CreateUniformLinearPlanar(tile_w, tile_h, 1.0f, 0.0f, 0.0f);  // Red
+      CreateUniformLinearPlanar(tile_w, tile_h, 1.0f, 0.0f, 0.0f); // Red
   auto tile2 =
-      CreateUniformLinearPlanar(tile_w, tile_h, 0.0f, 1.0f, 0.0f);  // Green
+      CreateUniformLinearPlanar(tile_w, tile_h, 0.0f, 1.0f, 0.0f); // Green
 
   // Create output accumulators
   const size_t pixel_count = img_w * img_h;
@@ -202,7 +200,7 @@ TEST(AccumulateLinearTileTest, OverlappingTilesWithWeights) {
   hwy::AlignedVector<float> acc_b(pixel_count + kPadding, 0.0f);
   hwy::AlignedVector<float> weight_sum(pixel_count + kPadding, 0.0f);
 
-  absl::Mutex mutex;
+  std::mutex mutex;
 
   // Accumulate first tile at (0, 0) with weight 0.6
   AccumulateLinearTile(tile1.data(), tile_w, tile_h, 0, 0, 0.6f, acc_r.data(),
@@ -229,7 +227,7 @@ TEST(AccumulateLinearTileTest, OverlappingTilesWithWeights) {
 TEST(AccumulateLinearTileTest, ClippingAtImageBoundary) {
   const int img_w = 64;
   const int img_h = 64;
-  const int tile_w = 80;  // Larger than image
+  const int tile_w = 80; // Larger than image
   const int tile_h = 80;
 
   auto tile_data = CreateUniformLinearPlanar(tile_w, tile_h, 0.5f, 0.5f, 0.5f);
@@ -241,7 +239,7 @@ TEST(AccumulateLinearTileTest, ClippingAtImageBoundary) {
   hwy::AlignedVector<float> acc_b(pixel_count + kPadding, 0.0f);
   hwy::AlignedVector<float> weight_sum(pixel_count + kPadding, 0.0f);
 
-  absl::Mutex mutex;
+  std::mutex mutex;
 
   // Tile placed at (-10, -10) - should be clipped
   AccumulateLinearTile(tile_data.data(), tile_w, tile_h, -10, -10, 1.0f,
@@ -302,11 +300,11 @@ TEST(FinalizeLinearToSrgb8Test, WithWeightedNormalization) {
   // Create accumulators with weight = 2.0
   constexpr size_t kPadding = 16;
   hwy::AlignedVector<float> acc_r(pixel_count + kPadding,
-                                  1.0f);  // 1.0 / 2.0 = 0.5
+                                  1.0f); // 1.0 / 2.0 = 0.5
   hwy::AlignedVector<float> acc_g(pixel_count + kPadding,
-                                  0.6f);  // 0.6 / 2.0 = 0.3
+                                  0.6f); // 0.6 / 2.0 = 0.3
   hwy::AlignedVector<float> acc_b(pixel_count + kPadding,
-                                  1.6f);  // 1.6 / 2.0 = 0.8
+                                  1.6f); // 1.6 / 2.0 = 0.8
   hwy::AlignedVector<float> weight_sum(pixel_count + kPadding, 2.0f);
 
   std::vector<uint8_t> output(pixel_count * 3);
@@ -405,7 +403,7 @@ TEST(FinalizeLinearToSrgb8Test, CacheBlockingLargeImage) {
 
 TEST(FinalizeLinearToSrgb8Test, NonStandardDimensions) {
   // Test with dimensions not aligned to SIMD width or cache block size
-  const int img_w = 63;  // Not power of 2
+  const int img_w = 63; // Not power of 2
   const int img_h = 127;
   const size_t pixel_count = img_w * img_h;
 
@@ -455,7 +453,7 @@ TEST(AccumulateFinalizeIntegrationTest, EndToEndPipeline) {
   hwy::AlignedVector<float> acc_b(pixel_count + kPadding, 0.0f);
   hwy::AlignedVector<float> weight_sum(pixel_count + kPadding, 0.0f);
 
-  absl::Mutex mutex;
+  std::mutex mutex;
 
   // Accumulate tiles in 2x2 grid pattern
   AccumulateLinearTile(tile1.data(), tile_w, tile_h, 0, 0, 1.0f, acc_r.data(),
@@ -508,5 +506,5 @@ TEST(AccumulateFinalizeIntegrationTest, EndToEndPipeline) {
   EXPECT_EQ(output[idx_br + 2], 0);
 }
 
-}  // namespace runtime
-}  // namespace fastslide
+} // namespace runtime
+} // namespace fastslide

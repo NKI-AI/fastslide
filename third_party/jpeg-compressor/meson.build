@@ -63,7 +63,7 @@ jpgd_lib = static_library('jpgd',
 
 jpgd_dep = declare_dependency(
   link_with: jpgd_lib,
-  include_directories: include_directories('.'),
+  include_directories: include_directories('..'),  # Parent directory to allow jpeg-compressor/ prefix
   dependencies: [jpgd_color_highway_dep, jpgd_idct_highway_dep]
 )
 

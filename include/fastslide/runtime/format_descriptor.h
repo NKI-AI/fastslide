@@ -23,7 +23,7 @@
 #include <string_view>
 #include <vector>
 
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 #include "fastslide/runtime/cache_interface.h"
 
 /**
@@ -109,7 +109,7 @@ struct FormatDescriptor {
   ///
   /// Creates a new reader instance for the given file. The cache parameter
   /// provides optional tile caching support.
-  std::function<absl::StatusOr<std::unique_ptr<SlideReader>>(
+  std::function<aifocore::Result<std::unique_ptr<SlideReader>>(
       std::shared_ptr<ITileCache>, std::string_view filename)>
       factory;
 

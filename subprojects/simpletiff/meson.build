@@ -4,6 +4,7 @@ project('simpletiff', 'cpp',
 
 # Dependencies
 threads_dep = dependency('threads')
+aifocore_dep = dependency('aifocore')
 zstd_dep = dependency('libzstd', fallback : ['zstd', 'libzstd_dep'])
 png_dep = dependency('libpng',
   fallback : ['libpng', 'libpng_dep'],
@@ -35,7 +36,6 @@ simpletiff_sources = [
   'src/predictor.cpp',
   'src/zstd.cpp',
   'src/index.cpp',
-  'src/io_utils.cpp',
 ]
 
 # Add conditional JPEG I/O implementation
@@ -46,7 +46,7 @@ else
 endif
 
 # Optional PNG writer
-simpletiff_deps = [threads_dep, jpeg_dep, zstd_dep]
+simpletiff_deps = [threads_dep, jpeg_dep, zstd_dep, aifocore_dep]
 if png_dep.found()
   simpletiff_sources += 'src/image_writer.cpp'
   simpletiff_deps += png_dep
@@ -70,7 +70,6 @@ headers_to_install = [
   'include/simpletiff/lzw.h',
   'include/simpletiff/predictor.h',
   'include/simpletiff/zstd.h',
-  'include/simpletiff/result.h',
   'include/simpletiff/tiff_constants.h',
   'include/simpletiff/errors.h',
 ]
@@ -113,7 +112,7 @@ if get_option('build_python_bindings')
   py.extension_module('_simpletiff',
     'python/simpletiff_bindings.cpp',
     include_directories : inc,
-    dependencies : [pybind11_dep, py_dep, threads_dep, jpeg_dep, zstd_dep],
+    dependencies : [pybind11_dep, py_dep, threads_dep, jpeg_dep, zstd_dep, aifocore_dep],
     link_with : simpletiff_lib,
     install : true,
     subdir : 'simpletiff'

@@ -20,14 +20,14 @@
 #include <string>
 #include <vector>
 
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 #include "fastslide/utilities/cache.h"
 
 namespace fastslide {
 
 /// @brief Function type for loading tiles when cache misses occur
 /// @return StatusOr containing the loaded tile data, or an error status
-using TileLoader = std::function<absl::StatusOr<std::shared_ptr<CachedTile>>()>;
+using TileLoader = std::function<aifocore::Result<std::shared_ptr<CachedTile>>()>;
 
 /// @brief Manager for tile caching that abstracts cache operations
 ///
@@ -61,7 +61,7 @@ class TileCacheManager {
   /// @param tile_coords Tile coordinates for cache key
   /// @param loader Function to load tile data on cache miss
   /// @return StatusOr containing the cached tile or an error status
-  absl::StatusOr<std::shared_ptr<CachedTile>> GetTile(
+  aifocore::Result<std::shared_ptr<CachedTile>> GetTile(
       const std::string& filename, uint16_t level,
       const aifocore::Size<uint32_t, 2>& tile_coords, TileLoader loader);
 

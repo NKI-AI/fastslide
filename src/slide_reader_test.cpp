@@ -29,8 +29,7 @@
 #include <utility>
 #include <vector>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 #include "fastslide/runtime/tile_writer.h"
 
 namespace fastslide {
@@ -49,9 +48,9 @@ class TestSlideReader : public SlideReader {
   // Minimal implementation to satisfy abstract base class
   [[nodiscard]] int GetLevelCount() const override { return 0; }
 
-  [[nodiscard]] absl::StatusOr<LevelInfo> GetLevelInfo(
+  [[nodiscard]] aifocore::Result<LevelInfo> GetLevelInfo(
       int level) const override {
-    return absl::UnimplementedError("Test class");
+    return aifocore::Status(aifocore::StatusCode::kUnimplemented, "Test class");
   }
 
   [[nodiscard]] const SlideProperties& GetProperties() const override {
@@ -64,16 +63,16 @@ class TestSlideReader : public SlideReader {
     return {};
   }
 
-  [[nodiscard]] absl::StatusOr<ImageDimensions> GetAssociatedImageDimensions(
+  [[nodiscard]] aifocore::Result<ImageDimensions> GetAssociatedImageDimensions(
       std::string_view name) const override {
-    return absl::UnimplementedError("Test class");
+    return aifocore::Status(aifocore::StatusCode::kUnimplemented, "Test class");
   }
 
   // Don't override ReadRegion - it's final
 
-  [[nodiscard]] absl::StatusOr<Image> ReadAssociatedImage(
+  [[nodiscard]] aifocore::Result<Image> ReadAssociatedImage(
       std::string_view name) const override {
-    return absl::UnimplementedError("Test class");
+    return aifocore::Status(aifocore::StatusCode::kUnimplemented, "Test class");
   }
 
   [[nodiscard]] int GetBestLevelForDownsample(
@@ -103,10 +102,10 @@ class MockSlideReader : public SlideReader {
 
   [[nodiscard]] int GetLevelCount() const override { return 1; }
 
-  [[nodiscard]] absl::StatusOr<LevelInfo> GetLevelInfo(
+  [[nodiscard]] aifocore::Result<LevelInfo> GetLevelInfo(
       int level) const override {
     if (level != 0) {
-      return absl::InvalidArgumentError("Invalid level");
+      return aifocore::Status(aifocore::StatusCode::kInvalidArgument, "Invalid level");
     }
     LevelInfo info;
     info.dimensions = ImageDimensions{1024, 768};
@@ -128,7 +127,7 @@ class MockSlideReader : public SlideReader {
     return {"thumbnail", "macro"};
   }
 
-  [[nodiscard]] absl::StatusOr<ImageDimensions> GetAssociatedImageDimensions(
+  [[nodiscard]] aifocore::Result<ImageDimensions> GetAssociatedImageDimensions(
       std::string_view name) const override {
     if (name == "thumbnail") {
       return ImageDimensions{128, 96};
@@ -136,15 +135,15 @@ class MockSlideReader : public SlideReader {
     if (name == "macro") {
       return ImageDimensions{512, 384};
     }
-    return absl::NotFoundError("Associated image not found");
+    return aifocore::Status(aifocore::StatusCode::kNotFound, "Associated image not found");
   }
 
   // Implement two-stage pipeline instead of overriding
   // ReadRegion (which is final)
-  [[nodiscard]] absl::StatusOr<core::TilePlan> PrepareRequest(
+  [[nodiscard]] aifocore::Result<core::TilePlan> PrepareRequest(
       const core::TileRequest& request) const override {
     if (!request.IsValid()) {
-      return absl::InvalidArgumentError("Invalid request");
+      return aifocore::Status(aifocore::StatusCode::kInvalidArgument, "Invalid request");
     }
 
     core::TilePlan plan;
@@ -172,13 +171,13 @@ class MockSlideReader : public SlideReader {
     return plan;
   }
 
-  [[nodiscard]] absl::Status ExecutePlan(
+  [[nodiscard]] aifocore::Status ExecutePlan(
       const core::TilePlan& plan, runtime::TileWriter& writer) const override {
     // Simple mock implementation - finalize with empty data
     return writer.Finalize();
   }
 
-  [[nodiscard]] absl::StatusOr<Image> ReadAssociatedImage(
+  [[nodiscard]] aifocore::Result<Image> ReadAssociatedImage(
       std::string_view name) const override {
     auto dims_result = GetAssociatedImageDimensions(name);
     if (!dims_result.ok()) {
@@ -233,9 +232,9 @@ class FailingMockSlideReader : public SlideReader {
 
   [[nodiscard]] int GetLevelCount() const override { return 0; }
 
-  [[nodiscard]] absl::StatusOr<LevelInfo> GetLevelInfo(
+  [[nodiscard]] aifocore::Result<LevelInfo> GetLevelInfo(
       int level) const override {
-    return absl::InternalError("Mock failure");
+    return aifocore::Status(aifocore::StatusCode::kInternal, "Mock failure");
   }
 
   [[nodiscard]] const SlideProperties& GetProperties() const override {
@@ -248,25 +247,25 @@ class FailingMockSlideReader : public SlideReader {
     return {};
   }
 
-  [[nodiscard]] absl::StatusOr<ImageDimensions> GetAssociatedImageDimensions(
+  [[nodiscard]] aifocore::Result<ImageDimensions> GetAssociatedImageDimensions(
       std::string_view name) const override {
-    return absl::InternalError("Mock failure");
+    return aifocore::Status(aifocore::StatusCode::kInternal, "Mock failure");
   }
 
   // Failing implementation via two-stage pipeline
-  [[nodiscard]] absl::StatusOr<core::TilePlan> PrepareRequest(
+  [[nodiscard]] aifocore::Result<core::TilePlan> PrepareRequest(
       const core::TileRequest& request) const override {
-    return absl::InternalError("Mock failure");
+    return aifocore::Status(aifocore::StatusCode::kInternal, "Mock failure");
   }
 
-  [[nodiscard]] absl::Status ExecutePlan(
+  [[nodiscard]] aifocore::Status ExecutePlan(
       const core::TilePlan& plan, runtime::TileWriter& writer) const override {
-    return absl::InternalError("Mock failure");
+    return aifocore::Status(aifocore::StatusCode::kInternal, "Mock failure");
   }
 
-  [[nodiscard]] absl::StatusOr<Image> ReadAssociatedImage(
+  [[nodiscard]] aifocore::Result<Image> ReadAssociatedImage(
       std::string_view name) const override {
-    return absl::InternalError("Mock failure");
+    return aifocore::Status(aifocore::StatusCode::kInternal, "Mock failure");
   }
 
   [[nodiscard]] int GetBestLevelForDownsample(

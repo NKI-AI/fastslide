@@ -19,7 +19,7 @@
 #include <string>
 #include <vector>
 
-#include "absl/status/status.h"
+#include "aifocore/status/result.h"
 #include "fastslide/readers/qptiff/qptiff.h"
 #include "simpletiff/index.h"
 
@@ -62,7 +62,7 @@ namespace fastslide {
 /// @brief Helper class for loading QPTIFF metadata and building pyramid
 /// structure
 class QptiffMetadataLoader {
- public:
+public:
   /// @brief Load metadata from QPTIFF file
   /// @param tiff_index SimpleTiff index to read from
   /// @param metadata Output slide metadata
@@ -71,14 +71,14 @@ class QptiffMetadataLoader {
   /// @param associated_images Output associated images
   /// @param format Output image format (RGB or spectral)
   /// @return Status indicating success or failure
-  static absl::Status LoadMetadata(
-      const simpletiff::TiffIndex& tiff_index, SlideMetadata& metadata,
-      std::vector<QpTiffChannelInfo>& channels,
-      std::vector<QpTiffLevelInfo>& pyramid,
-      std::map<std::string, QpTiffAssociatedInfo>& associated_images,
-      ImageFormat& format);
+  static aifocore::Status
+  LoadMetadata(const simpletiff::TiffIndex &tiff_index, SlideMetadata &metadata,
+               std::vector<QpTiffChannelInfo> &channels,
+               std::vector<QpTiffLevelInfo> &pyramid,
+               std::map<std::string, QpTiffAssociatedInfo> &associated_images,
+               ImageFormat &format);
 
- private:
+private:
   /// @brief Process full resolution channels
   /// @param tiff_index SimpleTiff index
   /// @param total_pages Total number of pages in file
@@ -86,10 +86,11 @@ class QptiffMetadataLoader {
   /// @param channels Output channel information
   /// @param format Output image format
   /// @return Page number where thumbnail starts, or error
-  static absl::StatusOr<uint16_t> ProcessFullResolutionChannels(
-      const simpletiff::TiffIndex& tiff_index, uint16_t total_pages,
-      SlideMetadata& metadata, std::vector<QpTiffChannelInfo>& channels,
-      ImageFormat& format);
+  static aifocore::Result<uint16_t>
+  ProcessFullResolutionChannels(const simpletiff::TiffIndex &tiff_index,
+                                uint16_t total_pages, SlideMetadata &metadata,
+                                std::vector<QpTiffChannelInfo> &channels,
+                                ImageFormat &format);
 
   /// @brief Process thumbnail and reduced resolution levels
   /// @param tiff_index SimpleTiff index
@@ -99,17 +100,17 @@ class QptiffMetadataLoader {
   /// @param pyramid Output pyramid levels
   /// @param associated_images Output associated images
   /// @return Status indicating success or failure
-  static absl::Status ProcessThumbnailAndReducedLevels(
-      const simpletiff::TiffIndex& tiff_index, uint16_t thumbnail_start_page,
+  static aifocore::Status ProcessThumbnailAndReducedLevels(
+      const simpletiff::TiffIndex &tiff_index, uint16_t thumbnail_start_page,
       uint16_t total_pages, size_t num_channels,
-      std::vector<QpTiffLevelInfo>& pyramid,
-      std::map<std::string, QpTiffAssociatedInfo>& associated_images);
+      std::vector<QpTiffLevelInfo> &pyramid,
+      std::map<std::string, QpTiffAssociatedInfo> &associated_images);
 
   /// @brief Check if a page is a thumbnail
   /// @param tiff_index SimpleTiff index
   /// @param page Page number to check
   /// @return true if page is a thumbnail
-  static bool IsThumbnailPage(const simpletiff::TiffIndex& tiff_index,
+  static bool IsThumbnailPage(const simpletiff::TiffIndex &tiff_index,
                               uint16_t page);
 
   /// @brief Extract resolution metadata from TIFF tags
@@ -117,11 +118,12 @@ class QptiffMetadataLoader {
   /// @param metadata Output metadata structure
   /// @param xml_root Optional XML root node for validation
   /// @return Status indicating success or failure
-  static absl::Status ExtractResolutionMetadata(
-      const simpletiff::PageHeader& page_header, SlideMetadata& metadata,
-      const void* xml_root = nullptr);
+  static aifocore::Status
+  ExtractResolutionMetadata(const simpletiff::PageHeader &page_header,
+                            SlideMetadata &metadata,
+                            const void *xml_root = nullptr);
 };
 
-}  // namespace fastslide
+} // namespace fastslide
 
-#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_QPTIFF_QPTIFF_METADATA_LOADER_H_
+#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_QPTIFF_QPTIFF_METADATA_LOADER_H_

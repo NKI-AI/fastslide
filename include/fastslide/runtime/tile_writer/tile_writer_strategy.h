@@ -20,8 +20,7 @@
 #include <span>
 #include <string>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/image.h"
 
@@ -32,15 +31,15 @@ class ITileWriterStrategy {
  public:
   virtual ~ITileWriterStrategy() = default;
 
-  virtual absl::Status WriteTile(const core::TileReadOp& op,
+  virtual aifocore::Status WriteTile(const core::TileReadOp& op,
                                  std::span<const uint8_t> pixel_data,
                                  uint32_t tile_width, uint32_t tile_height,
                                  uint32_t tile_channels) = 0;
 
-  virtual absl::Status Finalize() = 0;
+  virtual aifocore::Status Finalize() = 0;
   virtual ImageDimensions GetDimensions() const = 0;
   virtual uint32_t GetChannels() const = 0;
-  virtual absl::StatusOr<Image> GetOutput() = 0;
+  virtual aifocore::Result<Image> GetOutput() = 0;
   virtual std::string GetName() const = 0;
 
   virtual uint8_t* GetOutputBuffer() = 0;

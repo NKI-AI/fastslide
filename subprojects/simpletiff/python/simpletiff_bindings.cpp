@@ -8,7 +8,6 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 
-#include <unistd.h>
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
@@ -16,6 +15,7 @@
 #include <stdexcept>
 #include <tuple>
 #include <vector>
+#include "aifocore/platform/portability.h"
 
 namespace py = pybind11;
 
@@ -30,7 +30,7 @@ struct ReaderState {
 
   ~ReaderState() {
     if (fd >= 0) {
-      ::close(fd);
+      aifocore::portable_close(fd);
       fd = -1;
     }
   }
@@ -201,7 +201,7 @@ class SimpleTiffPage {
                                        ctx, tile_data, tile_w, tile_h);
     if (!result) {
       throw std::runtime_error("Failed to read tile: " +
-                               result.error().message);
+                               result.error().message());
     }
 
     // Create numpy array based on bits_per_sample
@@ -232,7 +232,7 @@ class SimpleTiffPage {
                                        buffer.data(), static_cast<int>(stride));
     if (!result) {
       throw std::runtime_error("Failed to read page region: " +
-                               result.error().message);
+                               result.error().message());
     }
 
     // Create numpy array based on bits_per_sample

@@ -18,7 +18,7 @@
 #include <optional>
 #include <vector>
 
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 #include "fastslide/core/slide_descriptor.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
@@ -41,7 +41,7 @@ class MrxsPlanBuilder {
   /// @param request The tile request
   /// @param reader The MRXS reader instance (for accessing slide info and spatial index)
   /// @return Tile plan or error status
-  static absl::StatusOr<core::TilePlan> BuildPlan(
+  static aifocore::Result<core::TilePlan> BuildPlan(
       const core::TileRequest& request, const MrxsReader& reader);
 
  private:
@@ -49,7 +49,7 @@ class MrxsPlanBuilder {
   /// @param request The tile request
   /// @param reader The MRXS reader instance
   /// @return Status indicating success or failure
-  static absl::Status ValidateRequest(const core::TileRequest& request,
+  static aifocore::Status ValidateRequest(const core::TileRequest& request,
                                       const MrxsReader& reader);
 
   /// @brief Determine region bounds from request

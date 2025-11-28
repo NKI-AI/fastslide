@@ -17,20 +17,19 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
 
 namespace fastslide {
 namespace runtime {
 
-absl::StatusOr<std::shared_ptr<LRUTileCache>> LRUTileCache::Create(
-    size_t capacity) {
+aifocore::Result<std::shared_ptr<LRUTileCache>>
+LRUTileCache::Create(size_t capacity) {
   if (capacity == 0) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       "Cache capacity must be greater than 0");
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "Cache capacity must be greater than 0");
   }
   return std::make_shared<LRUTileCache>(capacity);
 }
@@ -38,8 +37,8 @@ absl::StatusOr<std::shared_ptr<LRUTileCache>> LRUTileCache::Create(
 LRUTileCache::LRUTileCache(size_t capacity)
     : capacity_(capacity), cache_{}, lru_list_{}, hits_(0), misses_(0) {}
 
-std::shared_ptr<CachedTileData> LRUTileCache::Get(const TileKey& key) {
-  absl::MutexLock lock(&mutex_);
+std::shared_ptr<CachedTileData> LRUTileCache::Get(const TileKey &key) {
+  std::lock_guard<std::mutex> lock(mutex_);
 
   auto iter = cache_.find(key);
   if (iter == cache_.end()) {
@@ -57,13 +56,13 @@ std::shared_ptr<CachedTileData> LRUTileCache::Get(const TileKey& key) {
   return iter->second.tile;
 }
 
-void LRUTileCache::Put(const TileKey& key,
+void LRUTileCache::Put(const TileKey &key,
                        std::shared_ptr<CachedTileData> tile) {
   if (!tile) {
-    return;  // Don't cache null tiles
+    return; // Don't cache null tiles
   }
 
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
 
   // Check if already exists
   auto iter = cache_.find(key);
@@ -90,7 +89,7 @@ void LRUTileCache::Put(const TileKey& key,
 }
 
 void LRUTileCache::Clear() {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   cache_.clear();
   lru_list_.clear();
   hits_ = 0;
@@ -108,20 +107,20 @@ void LRUTileCache::EvictLru() {
 }
 
 size_t LRUTileCache::GetSize() const {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   return cache_.size();
 }
 
 size_t LRUTileCache::GetCapacity() const {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
   return capacity_;
 }
 
 size_t LRUTileCache::GetMemoryUsage() const {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
 
   size_t memory_usage_bytes = 0;
-  for (const auto& [key, entry] : cache_) {
+  for (const auto &[key, entry] : cache_) {
     if (entry.tile) {
       memory_usage_bytes += entry.tile->GetMemoryUsage();
     }
@@ -131,7 +130,7 @@ size_t LRUTileCache::GetMemoryUsage() const {
 }
 
 ITileCache::Stats LRUTileCache::GetStats() const {
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
 
   double hit_ratio = 0.0;
   size_t total_accesses = hits_ + misses_;
@@ -140,7 +139,7 @@ ITileCache::Stats LRUTileCache::GetStats() const {
   }
 
   size_t memory_usage_bytes = 0;
-  for (const auto& [key, entry] : cache_) {
+  for (const auto &[key, entry] : cache_) {
     if (entry.tile) {
       memory_usage_bytes += entry.tile->GetMemoryUsage();
     }
@@ -154,13 +153,13 @@ ITileCache::Stats LRUTileCache::GetStats() const {
                .memory_usage_bytes = memory_usage_bytes};
 }
 
-absl::Status LRUTileCache::SetCapacity(size_t capacity) {
+aifocore::Status LRUTileCache::SetCapacity(size_t capacity) {
   if (capacity == 0) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       "Cache capacity must be greater than 0");
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "Cache capacity must be greater than 0");
   }
 
-  absl::MutexLock lock(&mutex_);
+  std::lock_guard<std::mutex> lock(mutex_);
 
   // Clear existing cache and update capacity
   cache_.clear();
@@ -169,8 +168,8 @@ absl::Status LRUTileCache::SetCapacity(size_t capacity) {
   hits_ = 0;
   misses_ = 0;
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-}  // namespace runtime
-}  // namespace fastslide
+} // namespace runtime
+} // namespace fastslide

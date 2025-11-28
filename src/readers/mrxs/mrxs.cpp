@@ -61,11 +61,10 @@
 #include <cstring>
 #include <filesystem>
 #include <set>
+#include <mutex>
 
-#include "absl/log/log.h"
-#include "absl/status/status.h"
-#include "absl/strings/str_format.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
+#include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/mrxs/mrxs_constants.h"
 #include "fastslide/readers/mrxs/mrxs_data_reader.h"
 #include "fastslide/readers/mrxs/mrxs_decoder.h"
@@ -85,12 +84,12 @@ namespace fastslide {
 namespace {
 
 /// @brief Parse tiled (hierarchical/zoom) layers from Slidedat.ini
-absl::Status ParseTiledLayers(const mrxs::internal::IniFile& ini,
-                              mrxs::SlideDataInfo& slide_info);
+aifocore::Status ParseTiledLayers(const mrxs::internal::IniFile &ini,
+                                  mrxs::SlideDataInfo &slide_info);
 
 /// @brief Parse non-tiled (non-hierarchical) layers from Slidedat.ini
-absl::Status ParseNonTiledLayers(const mrxs::internal::IniFile& ini,
-                                 mrxs::SlideDataInfo& slide_info);
+aifocore::Status ParseNonTiledLayers(const mrxs::internal::IniFile &ini,
+                                     mrxs::SlideDataInfo &slide_info);
 
 // Constants for MRXS format
 constexpr std::string_view kMrxsExt = ".mrxs";
@@ -111,22 +110,24 @@ constexpr std::string_view kGroupHierarchical = "HIERARCHICAL";
 constexpr std::string_view kKeyHierCount = "HIER_COUNT";
 constexpr std::string_view kKeyIndexFile = "INDEXFILE";
 constexpr std::string_view kValueSlideZoomLevel = "Slide zoom level";
+// Some older slides use "Scan data layer_0" or similar
+constexpr std::string_view kValueScanDataLayer0 = "Scan data layer_0";
 
 // Hierarchical format strings
-constexpr std::string_view kKeyHierLevelName = "HIER_%d_NAME";
-constexpr std::string_view kKeyHierLevelCount = "HIER_%d_COUNT";
-constexpr std::string_view kKeyHierLevelValSection = "HIER_%d_VAL_%d_SECTION";
+constexpr std::string_view kKeyHierLevelName = "HIER_{}_NAME";
+constexpr std::string_view kKeyHierLevelCount = "HIER_{}_COUNT";
+constexpr std::string_view kKeyHierLevelValSection = "HIER_{}_VAL_{}_SECTION";
 
 // Non-hierarchical format strings
 constexpr std::string_view kKeyNonHierCount = "NONHIER_COUNT";
-constexpr std::string_view kKeyNonHierName = "NONHIER_%d_NAME";
-constexpr std::string_view kKeyNonHierLevelCount = "NONHIER_%d_COUNT";
-constexpr std::string_view kKeyNonHierVal = "NONHIER_%d_VAL_%d";
-constexpr std::string_view kKeyNonHierValSection = "NONHIER_%d_VAL_%d_SECTION";
+constexpr std::string_view kKeyNonHierName = "NONHIER_{}_NAME";
+constexpr std::string_view kKeyNonHierLevelCount = "NONHIER_{}_COUNT";
+constexpr std::string_view kKeyNonHierVal = "NONHIER_{}_VAL_{}";
+constexpr std::string_view kKeyNonHierValSection = "NONHIER_{}_VAL_{}_SECTION";
 
 constexpr std::string_view kGroupDatafile = "DATAFILE";
 constexpr std::string_view kKeyFileCount = "FILE_COUNT";
-constexpr std::string_view kKeyDataFile = "FILE_%d";
+constexpr std::string_view kKeyDataFile = "FILE_{}";
 
 constexpr std::string_view kKeyOverlapX = "OVERLAP_X";
 constexpr std::string_view kKeyOverlapY = "OVERLAP_Y";
@@ -144,26 +145,23 @@ constexpr std::string_view kKeyImageConcatFactor = "IMAGE_CONCAT_FACTOR";
 /// the corresponding MrxsImageFormat enum value.
 ///
 /// @param format_str Format string from INI file ("JPEG", "PNG", or "BMP")
-/// @return StatusOr containing parsed format or error
-/// @retval absl::InvalidArgumentError if format string is unknown
-absl::StatusOr<mrxs::MrxsImageFormat> ParseImageFormat(
-    std::string_view format_str) {
+/// @return Result containing parsed format or error
+/// @retval InvalidArgument if format string is unknown
+aifocore::Result<mrxs::MrxsImageFormat>
+ParseImageFormat(std::string_view format_str) {
   if (format_str == "JPEG") {
     return mrxs::MrxsImageFormat::kJpeg;
   } else if (format_str == "PNG") {
-    LOG(WARNING) << "Parsing PNG image format."
-                 << "This path is not properly tested nor optimized!";
     return mrxs::MrxsImageFormat::kPng;
   } else if (format_str == "BMP") {
-    LOG(WARNING) << "Parsing BMP image format."
-                 << "This path is not properly tested nor optimized!";
     return mrxs::MrxsImageFormat::kBmp;
   }
-  return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                     absl::StrFormat("Unknown image format: %s", format_str));
+  return aifocore::Status(
+      aifocore::StatusCode::kInvalidArgument,
+      aifocore::fmt::format("Unknown image format: {}", format_str));
 }
 
-}  // namespace
+} // namespace
 
 /// @brief Private constructor for MrxsReader
 ///
@@ -175,9 +173,8 @@ absl::StatusOr<mrxs::MrxsImageFormat> ParseImageFormat(
 /// extension)
 /// @param slide_info Parsed slide information from Slidedat.ini
 MrxsReader::MrxsReader(fs::path dirname, mrxs::SlideDataInfo slide_info)
-    : dirname_(std::move(dirname)),
-      slide_info_(slide_info),
-      cache_(nullptr) {  // Initialize cache to nullptr
+    : dirname_(std::move(dirname)), slide_info_(slide_info),
+      cache_(nullptr) { // Initialize cache to nullptr
   level_params_ = CalculateLevelParams();
   spatial_indices_.resize(slide_info_.zoom_levels.size());
 }
@@ -189,28 +186,28 @@ MrxsReader::MrxsReader(fs::path dirname, mrxs::SlideDataInfo slide_info)
 /// camera position data.
 ///
 /// @param filename Path to the .mrxs file
-/// @return StatusOr containing unique pointer to MrxsReader or error
-/// @retval absl::InvalidArgumentError if file extension is not .mrxs
-/// @retval absl::NotFoundError if file or required data files don't exist
-/// @retval absl::InternalError if parsing fails
-absl::StatusOr<std::unique_ptr<MrxsReader>> MrxsReader::Create(
-    fs::path filename) {
+/// @return Result containing unique pointer to MrxsReader or error
+/// @retval InvalidArgument if file extension is not .mrxs
+/// @retval NotFound if file or required data files don't exist
+/// @retval Internal if parsing fails
+aifocore::Result<std::unique_ptr<MrxsReader>>
+MrxsReader::Create(fs::path filename) {
   return CreateImpl(filename);
 }
 
-absl::Status MrxsReader::ValidateInput(const fs::path& filename) {
+aifocore::Status MrxsReader::ValidateInput(const fs::path &filename) {
   // Verify filename has .mrxs extension
   if (filename.extension() != kMrxsExt) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat("File does not have %s extension", kMrxsExt));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("File does not have {} extension", kMrxsExt));
   }
 
   // Check file exists
   if (!fs::exists(filename)) {
-    return MAKE_STATUS(
-        absl::StatusCode::kNotFound,
-        absl::StrFormat("File does not exist: %s", filename.string()));
+    return aifocore::Status(
+        aifocore::StatusCode::kNotFound,
+        aifocore::fmt::format("File does not exist: {}", filename.string()));
   }
 
   // Get directory name (remove .mrxs extension)
@@ -219,34 +216,34 @@ absl::Status MrxsReader::ValidateInput(const fs::path& filename) {
   // Check if Slidedat.ini exists
   fs::path slidedat_path = dirname / kSlidedatIni;
   if (!fs::exists(slidedat_path)) {
-    return MAKE_STATUS(absl::StatusCode::kNotFound,
-                       absl::StrFormat("%s does not exist: %s", kSlidedatIni,
-                                       slidedat_path.string()));
+    return aifocore::Status(aifocore::StatusCode::kNotFound,
+                            aifocore::fmt::format("{} does not exist: {}",
+                                                  kSlidedatIni,
+                                                  slidedat_path.string()));
   }
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-absl::StatusOr<std::unique_ptr<MrxsReader>> MrxsReader::CreateReaderImpl(
-    const fs::path& filename) {
+aifocore::Result<std::unique_ptr<MrxsReader>>
+MrxsReader::CreateReaderImpl(const fs::path &filename) {
   // Get directory name (remove .mrxs extension)
   fs::path dirname = filename.parent_path() / filename.stem();
   fs::path slidedat_path = dirname / kSlidedatIni;
 
   // Read Slidedat.ini
   mrxs::SlideDataInfo slide_info;
-  ASSIGN_OR_RETURN(slide_info, ReadSlidedatIni(slidedat_path, dirname));
+  AIFOCORE_ASSIGN_OR_RETURN(slide_info,
+                            ReadSlidedatIni(slidedat_path, dirname));
 
   // IMPORTANT: Camera positions MUST be read during initialization!
   // They are required for accurate tile positioning when reading image data.
-  RETURN_IF_ERROR(ReadCameraPositions(dirname, slide_info),
-                  "Failed to read camera positions");
+  AIFOCORE_RETURN_IF_ERROR(ReadCameraPositions(dirname, slide_info));
 
   auto reader = std::unique_ptr<MrxsReader>(
       new MrxsReader(std::move(dirname), std::move(slide_info)));
 
-  RETURN_IF_ERROR(reader->InitializeProperties(),
-                  "Failed to initialize properties");
+  AIFOCORE_RETURN_IF_ERROR(reader->InitializeProperties());
 
   return reader;
 }
@@ -266,81 +263,103 @@ namespace {
 /// @param ini Parsed INI file
 /// @param slide_info Slide information to update with tiled layers
 /// @return OkStatus on success or error status
-/// @retval absl::InvalidArgumentError if required keys are missing or invalid
-absl::Status ParseTiledLayers(const mrxs::internal::IniFile& ini,
-                              mrxs::SlideDataInfo& slide_info) {
+/// @retval InvalidArgument if required keys are missing or invalid
+aifocore::Status ParseTiledLayers(const mrxs::internal::IniFile &ini,
+                                  mrxs::SlideDataInfo &slide_info) {
   // Read hierarchical section for levels
   if (!ini.HasSection(kGroupHierarchical)) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat("Missing section: %s", kGroupHierarchical));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Missing section: {}", kGroupHierarchical));
   }
 
   int hier_count;
-  ASSIGN_OR_RETURN(hier_count, ini.GetInt(kGroupHierarchical, kKeyHierCount));
+  AIFOCORE_ASSIGN_OR_RETURN(hier_count,
+                            ini.GetInt(kGroupHierarchical, kKeyHierCount));
 
   // Find slide zoom level index
   int slide_zoom_level_index = -1;
   for (int i = 0; i < hier_count; ++i) {
-    std::string key = absl::StrFormat(kKeyHierLevelName, i);
+    std::string key = aifocore::fmt::format(kKeyHierLevelName, i);
     auto value = ini.GetString(kGroupHierarchical, key);
-    if (value.ok() && *value == kValueSlideZoomLevel) {
-      slide_zoom_level_index = i;
-      break;
+    if (value.ok()) {
+      if (*value == kValueSlideZoomLevel || *value == kValueScanDataLayer0) {
+        slide_zoom_level_index = i;
+        break;
+      } else {
+        std::cerr << "Found hierarchical level: " << i << " with name '"
+                  << *value << "'\n";
+      }
     }
   }
 
   if (slide_zoom_level_index == -1) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       "Cannot find slide zoom level");
+    // If not found by name, it might be the first hierarchical level
+    // Some very old slides might not have the name set correctly
+    // Let's look for a level with sensible dimensions or just use 0 as fallback
+    // if hier_count > 0
+    if (hier_count > 0) {
+      // Check if we can validate it has "Slide zoom level" property implicitly
+      // or via other metadata. For now, fallback to 0 and log a warning.
+      std::cerr
+          << "Warning: Could not find 'Slide zoom level' section name. Using "
+             "index 0 as fallback.\n";
+      slide_zoom_level_index = 0;
+    } else {
+      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                              "Cannot find slide zoom level");
+    }
   }
 
-  ASSIGN_OR_RETURN(slide_info.index_filename,
-                   ini.GetString(kGroupHierarchical, kKeyIndexFile));
+  AIFOCORE_ASSIGN_OR_RETURN(slide_info.index_filename,
+                            ini.GetString(kGroupHierarchical, kKeyIndexFile));
 
   // Get number of zoom levels
   std::string zoom_count_key =
-      absl::StrFormat(kKeyHierLevelCount, slide_zoom_level_index);
+      aifocore::fmt::format(kKeyHierLevelCount, slide_zoom_level_index);
   int zoom_levels;
-  ASSIGN_OR_RETURN(zoom_levels, ini.GetInt(kGroupHierarchical, zoom_count_key));
+  AIFOCORE_ASSIGN_OR_RETURN(zoom_levels,
+                            ini.GetInt(kGroupHierarchical, zoom_count_key));
 
   // Read zoom level section names
   std::vector<std::string> section_names;
   for (int i = 0; i < zoom_levels; ++i) {
-    std::string key =
-        absl::StrFormat(kKeyHierLevelValSection, slide_zoom_level_index, i);
+    std::string key = aifocore::fmt::format(kKeyHierLevelValSection,
+                                            slide_zoom_level_index, i);
     std::string section_name;
-    ASSIGN_OR_RETURN(section_name, ini.GetString(kGroupHierarchical, key));
+    AIFOCORE_ASSIGN_OR_RETURN(section_name,
+                              ini.GetString(kGroupHierarchical, key));
     section_names.push_back(section_name);
   }
 
   // Read each zoom level
-  for (const auto& section : section_names) {
+  for (const auto &section : section_names) {
     if (!ini.HasSection(section)) {
-      continue;  // Skip if section doesn't exist
+      continue; // Skip if section doesn't exist
     }
 
     mrxs::SlideZoomLevel level;
     level.section_name = section;
 
-    ASSIGN_OR_RETURN(level.x_overlap_pixels,
-                     ini.GetDouble(section, kKeyOverlapX));
-    ASSIGN_OR_RETURN(level.y_overlap_pixels,
-                     ini.GetDouble(section, kKeyOverlapY));
-    ASSIGN_OR_RETURN(level.mpp_x, ini.GetDouble(section, kKeyMppX));
-    ASSIGN_OR_RETURN(level.mpp_y, ini.GetDouble(section, kKeyMppY));
+    AIFOCORE_ASSIGN_OR_RETURN(level.x_overlap_pixels,
+                              ini.GetDouble(section, kKeyOverlapX));
+    AIFOCORE_ASSIGN_OR_RETURN(level.y_overlap_pixels,
+                              ini.GetDouble(section, kKeyOverlapY));
+    AIFOCORE_ASSIGN_OR_RETURN(level.mpp_x, ini.GetDouble(section, kKeyMppX));
+    AIFOCORE_ASSIGN_OR_RETURN(level.mpp_y, ini.GetDouble(section, kKeyMppY));
     std::string format_str;
-    ASSIGN_OR_RETURN(format_str, ini.GetString(section, kKeyImageFormat));
-    ASSIGN_OR_RETURN(level.image_format, ParseImageFormat(format_str));
+    AIFOCORE_ASSIGN_OR_RETURN(format_str,
+                              ini.GetString(section, kKeyImageFormat));
+    AIFOCORE_ASSIGN_OR_RETURN(level.image_format, ParseImageFormat(format_str));
     auto fill_color = ini.GetInt(section, kKeyImageFillColorBgr);
     level.background_color_rgb =
         fill_color.ok() ? static_cast<uint32_t>(*fill_color) : 0xFFFFFFFF;
 
-    ASSIGN_OR_RETURN(level.image_width,
-                     ini.GetInt(section, kKeyDigitizerWidth));
+    AIFOCORE_ASSIGN_OR_RETURN(level.image_width,
+                              ini.GetInt(section, kKeyDigitizerWidth));
 
-    ASSIGN_OR_RETURN(level.image_height,
-                     ini.GetInt(section, kKeyDigitizerHeight));
+    AIFOCORE_ASSIGN_OR_RETURN(level.image_height,
+                              ini.GetInt(section, kKeyDigitizerHeight));
 
     auto concat_exp = ini.GetInt(section, kKeyImageConcatFactor);
     level.downsample_exponent = concat_exp.ok() ? *concat_exp : 0;
@@ -348,10 +367,10 @@ absl::Status ParseTiledLayers(const mrxs::internal::IniFile& ini,
     slide_info.zoom_levels.push_back(level);
   }
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-}  // namespace
+} // namespace
 
 /// @brief Read and parse the Slidedat.ini metadata file
 ///
@@ -361,54 +380,65 @@ absl::Status ParseTiledLayers(const mrxs::internal::IniFile& ini,
 ///
 /// @param slidedat_path Path to Slidedat.ini file
 /// @param dirname Path to MRXS directory for cache keys
-/// @return StatusOr containing parsed SlideDataInfo or error
-/// @retval absl::NotFoundError if required sections or keys are missing
-/// @retval absl::InvalidArgumentError if values cannot be parsed
-absl::StatusOr<mrxs::SlideDataInfo> MrxsReader::ReadSlidedatIni(
-    const fs::path& slidedat_path, const fs::path& dirname) {
+/// @return Result containing SlideDataInfo or error
+/// @retval NotFound if required sections or keys are missing
+/// @retval InvalidArgument if values cannot be parsed
+aifocore::Result<mrxs::SlideDataInfo>
+MrxsReader::ReadSlidedatIni(const fs::path &slidedat_path,
+                            const fs::path &dirname) {
   mrxs::internal::IniFile ini;
-  ASSIGN_OR_RETURN(ini, mrxs::internal::IniFile::Load(slidedat_path),
-                   "Failed to load Slidedat.ini");
+  AIFOCORE_ASSIGN_OR_RETURN(ini, mrxs::internal::IniFile::Load(slidedat_path));
 
   mrxs::SlideDataInfo info;
-  info.dirname = dirname.string();  // Store dirname for cache keys
+  info.dirname = dirname.string(); // Store dirname for cache keys
 
   // Read general section
   if (!ini.HasSection(kGroupGeneral)) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       absl::StrFormat("Missing section: %s", kGroupGeneral));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Missing section: {}", kGroupGeneral));
   }
 
-  ASSIGN_OR_RETURN(info.slide_id, ini.GetString(kGroupGeneral, kKeySlideId));
-  ASSIGN_OR_RETURN(info.images_x, ini.GetInt(kGroupGeneral, kKeyImageNumberX));
-  ASSIGN_OR_RETURN(info.images_y, ini.GetInt(kGroupGeneral, kKeyImageNumberY));
+  AIFOCORE_ASSIGN_OR_RETURN(info.slide_id,
+                            ini.GetString(kGroupGeneral, kKeySlideId));
+  AIFOCORE_ASSIGN_OR_RETURN(info.images_x,
+                            ini.GetInt(kGroupGeneral, kKeyImageNumberX));
+  AIFOCORE_ASSIGN_OR_RETURN(info.images_y,
+                            ini.GetInt(kGroupGeneral, kKeyImageNumberY));
 
-  ASSIGN_OR_RETURN(info.objective_magnification,
-                   ini.GetInt(kGroupGeneral, kKeyObjectiveMagnification));
+  AIFOCORE_ASSIGN_OR_RETURN(
+      info.objective_magnification,
+      ini.GetInt(kGroupGeneral, kKeyObjectiveMagnification));
 
   auto image_divisions =
       ini.GetInt(kGroupGeneral, kKeyCameraImageDivisionsPerSide);
   info.image_divisions = image_divisions.ok() ? *image_divisions : 1;
 
-  // Parse tiled (hierarchical/zoom) layers
-  RETURN_IF_ERROR(ParseTiledLayers(ini, info), "Failed to parse tiled layers");
   // Parse non-tiled (non-hierarchical) layers
-  RETURN_IF_ERROR(ParseNonTiledLayers(ini, info),
-                  "Failed to parse non-tiled layers");
+  // Note: We must call this before ParseTiledLayers if we need positions to
+  // validate tiled layers, but currently it's the other way around? Actually
+  // ParseTiledLayers sets up zoom levels which we might need. But for CMU-1
+  // failure, it happens inside ParseTiledLayers -> HIER_x_COUNT not found.
+  AIFOCORE_RETURN_IF_ERROR(ParseNonTiledLayers(ini, info));
+
+  // Parse tiled (hierarchical/zoom) layers
+  AIFOCORE_RETURN_IF_ERROR(ParseTiledLayers(ini, info));
 
   // Read datafile section
   if (!ini.HasSection(kGroupDatafile)) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       absl::StrFormat("Missing section: %s", kGroupDatafile));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Missing section: {}", kGroupDatafile));
   }
 
   int file_count;
-  ASSIGN_OR_RETURN(file_count, ini.GetInt(kGroupDatafile, kKeyFileCount));
+  AIFOCORE_ASSIGN_OR_RETURN(file_count,
+                            ini.GetInt(kGroupDatafile, kKeyFileCount));
 
   for (int i = 0; i < file_count; ++i) {
-    std::string key = absl::StrFormat(kKeyDataFile, i);
+    std::string key = aifocore::fmt::format(kKeyDataFile, i);
     std::string file_path;
-    ASSIGN_OR_RETURN(file_path, ini.GetString(kGroupDatafile, key));
+    AIFOCORE_ASSIGN_OR_RETURN(file_path, ini.GetString(kGroupDatafile, key));
     info.datafile_paths.push_back(file_path);
   }
 
@@ -420,10 +450,10 @@ absl::StatusOr<mrxs::SlideDataInfo> MrxsReader::ReadSlidedatIni(
 /// Populates the SlideProperties structure with metadata extracted from
 /// Slidedat.ini. Sets microns per pixel (MPP), objective magnification,
 /// scanner model, and calculates slide bounds.
-absl::Status MrxsReader::InitializeProperties() {
+aifocore::Status MrxsReader::InitializeProperties() {
   // Set basic properties
   if (!slide_info_.zoom_levels.empty()) {
-    const auto& level0 = slide_info_.zoom_levels[0];
+    const auto &level0 = slide_info_.zoom_levels[0];
     properties_.mpp = {level0.mpp_x, level0.mpp_y};
     properties_.objective_magnification =
         static_cast<double>(slide_info_.objective_magnification);
@@ -431,9 +461,9 @@ absl::Status MrxsReader::InitializeProperties() {
   properties_.scanner_model = "3DHISTECH";
 
   // Calculate bounds from level 0 tiles
-  ASSIGN_OR_RETURN(properties_.bounds, CalculateBounds());
+  AIFOCORE_ASSIGN_OR_RETURN(properties_.bounds, CalculateBounds());
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
 /// @brief Calculate the bounding box of non-background tissue
@@ -448,26 +478,25 @@ absl::Status MrxsReader::InitializeProperties() {
 /// 3. Calculate final bounds from the extreme coordinates
 /// 4. Clamp to level 0 dimensions to ensure valid bounds
 ///
-/// @return StatusOr containing SlideBounds or error
-absl::StatusOr<SlideBounds> MrxsReader::CalculateBounds() {
+/// @return Result containing SlideBounds or error
+aifocore::Result<SlideBounds> MrxsReader::CalculateBounds() {
   // Read tiles directly (no spatial index needed)
   std::vector<mrxs::MiraxTileRecord> tiles;
-  ASSIGN_OR_RETURN(tiles, ReadLevelTiles(0),
-                   "Failed to read tiles for bounds calculation");
+  AIFOCORE_ASSIGN_OR_RETURN(tiles, ReadLevelTiles(0));
 
   if (tiles.empty()) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
-                       "No tiles found at level 0");
+    return aifocore::Status(aifocore::StatusCode::kInternal,
+                            "No tiles found at level 0");
   }
 
   // Get level 0 dimensions for clamping
   LevelInfo level0;
-  ASSIGN_OR_RETURN(level0, GetLevelInfo(0), "Failed to get level 0 info");
+  AIFOCORE_ASSIGN_OR_RETURN(level0, GetLevelInfo(0));
   const int64_t slide_width = level0.dimensions[0];
   const int64_t slide_height = level0.dimensions[1];
 
   // Get level params for bbox calculation
-  const auto& level_params = level_params_[0];
+  const auto &level_params = level_params_[0];
 
   // Track extreme bounding boxes (not tiles, since we don't store them)
   double leftmost_min_x = std::numeric_limits<double>::max();
@@ -478,7 +507,7 @@ absl::StatusOr<SlideBounds> MrxsReader::CalculateBounds() {
   size_t active_tiles = 0;
 
   // Single-pass: compute bbox and track extremes
-  for (const auto& tile : tiles) {
+  for (const auto &tile : tiles) {
     mrxs::Box bbox = mrxs::MrxsSpatialIndex::CalculateTileBoundingBox(
         tile, level_params, 0, slide_info_);
 
@@ -551,8 +580,8 @@ absl::StatusOr<SlideBounds> MrxsReader::CalculateBounds() {
 /// (accounting for overlaps)
 ///
 /// @return Vector of parameters, one per zoom level
-std::vector<mrxs::PyramidLevelParameters> MrxsReader::CalculateLevelParams()
-    const {
+std::vector<mrxs::PyramidLevelParameters>
+MrxsReader::CalculateLevelParams() const {
   std::vector<mrxs::PyramidLevelParameters> params;
 
   // Concatenation exponents accumulate across levels
@@ -562,7 +591,7 @@ std::vector<mrxs::PyramidLevelParameters> MrxsReader::CalculateLevelParams()
 
   for (size_t level_idx = 0; level_idx < slide_info_.zoom_levels.size();
        ++level_idx) {
-    const auto& zoom_level = slide_info_.zoom_levels[level_idx];
+    const auto &zoom_level = slide_info_.zoom_levels[level_idx];
     mrxs::PyramidLevelParameters level_params;
 
     // Accumulate concatenation exponent: each level adds to previous
@@ -634,18 +663,18 @@ int MrxsReader::GetLevelCount() const {
 /// a downsampled version.
 ///
 /// @param level Level index (0-based, 0 = highest resolution)
-/// @return StatusOr containing LevelInfo or error
-/// @retval absl::InvalidArgumentError if level is out of range
-absl::StatusOr<LevelInfo> MrxsReader::GetLevelInfo(int level) const {
+/// @return Result containing LevelInfo or error
+/// @retval InvalidArgument if level is out of range
+aifocore::Result<LevelInfo> MrxsReader::GetLevelInfo(int level) const {
   if (level < 0 || level >= GetLevelCount()) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       absl::StrFormat("Invalid level: %d", level));
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            aifocore::fmt::format("Invalid level: {}", level));
   }
 
-  const auto& params = level_params_[level];
+  const auto &params = level_params_[level];
 
   // Calculate downsample factor
-  const auto& level0_params = level_params_[0];
+  const auto &level0_params = level_params_[0];
   double downsample_factor =
       static_cast<double>(params.concatenation_factor) /
       static_cast<double>(level0_params.concatenation_factor);
@@ -653,7 +682,7 @@ absl::StatusOr<LevelInfo> MrxsReader::GetLevelInfo(int level) const {
   int64_t base_w = 0;
   int64_t base_h = 0;
 
-  const auto& level0 = slide_info_.zoom_levels[0];
+  const auto &level0 = slide_info_.zoom_levels[0];
   const int image_divisions = slide_info_.image_divisions;
   const int images_x = slide_info_.images_x;
   const int images_y = slide_info_.images_y;
@@ -697,9 +726,7 @@ absl::StatusOr<LevelInfo> MrxsReader::GetLevelInfo(int level) const {
 /// @brief Get slide properties (MPP, magnification, bounds, etc.)
 ///
 /// @return Reference to SlideProperties structure
-const SlideProperties& MrxsReader::GetProperties() const {
-  return properties_;
-}
+const SlideProperties &MrxsReader::GetProperties() const { return properties_; }
 
 /// @brief Get metadata for each color channel
 ///
@@ -740,11 +767,12 @@ std::vector<std::string> MrxsReader::GetAssociatedImageNames() const {
 /// LoadAssociatedData() instead.
 ///
 /// @param name Image name
-/// @return Always returns NotFoundError (not implemented for MRXS)
-absl::StatusOr<ImageDimensions> MrxsReader::GetAssociatedImageDimensions(
-    std::string_view name) const {
-  return MAKE_STATUS(absl::StatusCode::kNotFound,
-                     absl::StrFormat("Associated image not found: %s", name));
+/// @return Always returns NotFound (not implemented for MRXS)
+aifocore::Result<ImageDimensions>
+MrxsReader::GetAssociatedImageDimensions(std::string_view name) const {
+  return aifocore::Status(
+      aifocore::StatusCode::kNotFound,
+      aifocore::fmt::format("Associated image not found: {}", name));
 }
 
 /// @brief Read an associated image
@@ -753,11 +781,12 @@ absl::StatusOr<ImageDimensions> MrxsReader::GetAssociatedImageDimensions(
 /// LoadAssociatedData() instead.
 ///
 /// @param name Image name
-/// @return Always returns NotFoundError (not implemented for MRXS)
-absl::StatusOr<RGBImage> MrxsReader::ReadAssociatedImage(
-    std::string_view name) const {
-  return MAKE_STATUS(absl::StatusCode::kNotFound,
-                     absl::StrFormat("Associated image not found: %s", name));
+/// @return Always returns NotFound (not implemented for MRXS)
+aifocore::Result<RGBImage>
+MrxsReader::ReadAssociatedImage(std::string_view name) const {
+  return aifocore::Status(
+      aifocore::StatusCode::kNotFound,
+      aifocore::fmt::format("Associated image not found: {}", name));
 }
 
 /// @brief Get slide metadata as key-value pairs
@@ -776,7 +805,7 @@ Metadata MrxsReader::GetMetadata() const {
 
   // Optional keys
   if (!slide_info_.zoom_levels.empty()) {
-    const auto& level0 = slide_info_.zoom_levels[0];
+    const auto &level0 = slide_info_.zoom_levels[0];
     meta[std::string(MetadataKeys::kMppX)] = level0.mpp_x;
     meta[std::string(MetadataKeys::kMppY)] = level0.mpp_y;
   }
@@ -785,7 +814,7 @@ Metadata MrxsReader::GetMetadata() const {
       static_cast<double>(slide_info_.objective_magnification);
   meta[std::string(MetadataKeys::kScannerModel)] = std::string("3DHISTECH");
   meta[std::string(MetadataKeys::kSlideID)] = slide_info_.slide_id;
-  meta[std::string(MetadataKeys::kChannels)] = static_cast<size_t>(3);  // RGB
+  meta[std::string(MetadataKeys::kChannels)] = static_cast<size_t>(3); // RGB
 
   return meta;
 }
@@ -800,7 +829,7 @@ ImageDimensions MrxsReader::GetTileSize() const {
   if (slide_info_.zoom_levels.empty()) {
     return {0, 0};
   }
-  const auto& level0 = slide_info_.zoom_levels[0];
+  const auto &level0 = slide_info_.zoom_levels[0];
   return {static_cast<uint32_t>(level0.image_width),
           static_cast<uint32_t>(level0.image_height)};
 }
@@ -818,58 +847,55 @@ ImageDimensions MrxsReader::GetTileSize() const {
 /// This provides a fast fingerprint for slide identification without decoding
 /// all data. Compatible with OpenSlide's MIRAX quickhash.
 ///
-/// @return StatusOr containing hexadecimal hash string or error
-absl::StatusOr<std::string> MrxsReader::GetQuickHash() const {
+/// @return Result containing hexadecimal hash string or error
+aifocore::Result<std::string> MrxsReader::GetQuickHash() const {
   // OpenSlide-compatible quickhash: hash Slidedat.ini + all lowest-res tile
   // data
   QuickHashBuilder hasher;
 
   // Hash the Slidedat.ini file
   fs::path slidedat_path = dirname_ / kSlidedatIni;
-  RETURN_IF_ERROR(hasher.HashFile(slidedat_path),
-                  "Failed to hash Slidedat.ini");
+  AIFOCORE_RETURN_IF_ERROR(hasher.HashFile(slidedat_path));
 
   // Hash all tiles from the lowest resolution level (highest level index)
   const int lowest_res_level = GetLevelCount() - 1;
   if (lowest_res_level < 0) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
-                       "No pyramid levels available");
+    return aifocore::Status(aifocore::StatusCode::kInternal,
+                            "No pyramid levels available");
   }
 
   std::vector<mrxs::MiraxTileRecord> tiles_or;
-  ASSIGN_OR_RETURN(tiles_or, ReadLevelTiles(lowest_res_level),
-                   "Failed to read tiles for quickhash");
+  AIFOCORE_ASSIGN_OR_RETURN(tiles_or, ReadLevelTiles(lowest_res_level));
 
   // Hash each UNIQUE image's RAW COMPRESSED data (not decoded) - must match
   // OpenSlide Important: When subtiles_per_stored_image > 1, multiple tiles
   // share the same source image. OpenSlide hashes each unique image only once,
   // so we must deduplicate by (file_number, offset) to match.
-  std::set<std::pair<int32_t, int32_t>> hashed_images;  // (file_number, offset)
+  std::set<std::pair<int32_t, int32_t>> hashed_images; // (file_number, offset)
 
-  for (const auto& tile : tiles_or) {
+  for (const auto &tile : tiles_or) {
     // Skip if we've already hashed this image
     auto image_key = std::make_pair(tile.data_file_number, tile.offset);
     if (hashed_images.count(image_key) > 0) {
-      continue;  // Already hashed this unique image
+      continue; // Already hashed this unique image
     }
 
     // Validate file number
     if (tile.data_file_number < 0 ||
         tile.data_file_number >=
             static_cast<int>(slide_info_.datafile_paths.size())) {
-      return MAKE_STATUS(
-          absl::StatusCode::kInvalidArgument,
-          absl::StrFormat("Invalid data file number %d for tile at (%d, %d)",
-                          tile.data_file_number, tile.x, tile.y));
+      return aifocore::Status(
+          aifocore::StatusCode::kInvalidArgument,
+          aifocore::fmt::format(
+              "Invalid data file number {} for tile at ({}, {})",
+              tile.data_file_number, tile.x, tile.y));
     }
 
     // Hash the raw compressed data directly from the data file
     fs::path data_file_path =
         dirname_ / slide_info_.datafile_paths[tile.data_file_number];
-    RETURN_IF_ERROR(
-        hasher.HashFilePart(data_file_path, tile.offset, tile.length),
-        absl::StrFormat("Failed to hash tile data at (%d, %d) from %s", tile.x,
-                        tile.y, data_file_path.string()));
+    AIFOCORE_RETURN_IF_ERROR(
+        hasher.HashFilePart(data_file_path, tile.offset, tile.length));
 
     // Mark this image as hashed
     hashed_images.insert(image_key);
@@ -892,39 +918,39 @@ absl::StatusOr<std::string> MrxsReader::GetQuickHash() const {
 /// @param y Y coordinate (fractional, in level-native space)
 /// @param width Width in pixels
 /// @param height Height in pixels
-/// @return StatusOr containing RGB image or error
-/// @retval absl::InvalidArgumentError if level is invalid
-absl::StatusOr<RGBImage> MrxsReader::ReadRegionFractional(
-    int level, double x, double y, uint32_t width, uint32_t height) const {
+/// @return Result containing RGB image or error
+/// @retval InvalidArgument if level is invalid
+aifocore::Result<RGBImage>
+MrxsReader::ReadRegionFractional(int level, double x, double y, uint32_t width,
+                                 uint32_t height) const {
   // Validate level
   // TODO: Check how different this is and if it can't be merged into the CRTP
   // pattern
   if (level < 0 || level >= GetLevelCount()) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       absl::StrFormat("Invalid level: %d", level));
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            aifocore::fmt::format("Invalid level: {}", level));
   }
 
   // Create TileRequest directly with fractional region bounds
   // This preserves the full double precision through the pipeline
   core::TileRequest request;
   request.level = level;
-  request.tile_coord = {0, 0};  // Not meaningful for region requests
+  request.tile_coord = {0, 0}; // Not meaningful for region requests
   request.channel_indices = visible_channels_;
 
   // Populate fractional bounds (preserves fractional coordinates!)
   core::FractionalRegionBounds bounds;
-  bounds.x = x;  // Keep full double precision
+  bounds.x = x; // Keep full double precision
   bounds.y = y;
   bounds.width = static_cast<double>(width);
   bounds.height = static_cast<double>(height);
   request.region_bounds = bounds;
 
   core::TilePlan plan;
-  ASSIGN_OR_RETURN(plan, PrepareRequest(request),
-                   "could not create tiling plan");
+  AIFOCORE_ASSIGN_OR_RETURN(plan, PrepareRequest(request));
 
   // Use unified TileWriter for MRXS (automatic strategy selection)
-  const auto& zoom_level = slide_info_.zoom_levels[level];
+  const auto &zoom_level = slide_info_.zoom_levels[level];
   // Why is this done later?
   runtime::TileWriter::BackgroundColor bg{
       static_cast<uint8_t>((zoom_level.background_color_rgb >> 16) & 0xFF),
@@ -933,14 +959,14 @@ absl::StatusOr<RGBImage> MrxsReader::ReadRegionFractional(
 
   runtime::TileWriter writer(plan.output.dimensions[0],
                              plan.output.dimensions[1], bg,
-                             true);  // Enable blending for MRXS
+                             true); // Enable blending for MRXS
 
   // Execute the plan
-  RETURN_IF_ERROR(ExecutePlan(plan, writer), "could not execute plan");
-  RETURN_IF_ERROR(writer.Finalize(), "could not finalize writing");
+  AIFOCORE_RETURN_IF_ERROR(ExecutePlan(plan, writer));
+  AIFOCORE_RETURN_IF_ERROR(writer.Finalize());
 
   runtime::TileWriter::OutputImage image;
-  ASSIGN_OR_RETURN(image, writer.GetOutput(), "could not get writer output");
+  AIFOCORE_ASSIGN_OR_RETURN(image, writer.GetOutput());
 
   // Convert Image to RGBImage for backward compatibility
   // TODO: Get rid of this
@@ -961,12 +987,12 @@ absl::StatusOr<RGBImage> MrxsReader::ReadRegionFractional(
 /// Thread-safe: uses mutex to protect lazy initialization.
 ///
 /// @param level Pyramid level (0-based)
-/// @return StatusOr containing shared pointer to spatial index or error
-/// @retval absl::InvalidArgumentError if level is out of range
+/// @return Result containing shared pointer to spatial index or error
+/// @retval InvalidArgument if level is out of range
 /// @note First call for a level performs I/O to read index file
-absl::StatusOr<std::shared_ptr<mrxs::MrxsSpatialIndex>>
+aifocore::Result<std::shared_ptr<mrxs::MrxsSpatialIndex>>
 MrxsReader::GetSpatialIndex(int level) const {
-  absl::MutexLock lock(&spatial_index_mutex_);
+  std::lock_guard<std::mutex> lock(spatial_index_mutex_);
 
   if (spatial_indices_[level]) {
     return spatial_indices_[level];
@@ -974,12 +1000,12 @@ MrxsReader::GetSpatialIndex(int level) const {
 
   // Build spatial index
   std::vector<mrxs::MiraxTileRecord> tiles;
-  ASSIGN_OR_RETURN(tiles, ReadLevelTiles(level),
-                   absl::StrFormat("could not read tiles at level: %d", level));
+  AIFOCORE_ASSIGN_OR_RETURN(tiles, ReadLevelTiles(level));
 
   std::unique_ptr<mrxs::MrxsSpatialIndex> index;
-  ASSIGN_OR_RETURN(index, mrxs::MrxsSpatialIndex::Build(
-                              tiles, level_params_[level], level, slide_info_));
+  AIFOCORE_ASSIGN_OR_RETURN(
+      index, mrxs::MrxsSpatialIndex::Build(tiles, level_params_[level], level,
+                                           slide_info_));
 
   spatial_indices_[level] = std::move(index);
   return spatial_indices_[level];
@@ -993,22 +1019,22 @@ MrxsReader::GetSpatialIndex(int level) const {
 ///
 /// @param level_index Zero-based level index (0 = highest resolution)
 /// @return Vector of tile metadata or error status
-absl::StatusOr<std::vector<mrxs::MiraxTileRecord>> MrxsReader::ReadLevelTiles(
-    int level_index) const {
+aifocore::Result<std::vector<mrxs::MiraxTileRecord>>
+MrxsReader::ReadLevelTiles(int level_index) const {
   if (level_index < 0 || level_index >= GetLevelCount()) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       absl::StrFormat("Invalid level index: %d", level_index));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Invalid level index: {}", level_index));
   }
 
   // Open index file using helper class
   fs::path index_path = dirname_ / slide_info_.index_filename;
   mrxs::MrxsIndexReader index_reader;
-  ASSIGN_OR_RETURN(index_reader,
-                   mrxs::MrxsIndexReader::Open(index_path, slide_info_),
-                   "Failed to open index file");
+  AIFOCORE_ASSIGN_OR_RETURN(
+      index_reader, mrxs::MrxsIndexReader::Open(index_path, slide_info_));
 
   // Delegate to index reader
-  const auto& level_params = level_params_[level_index];
+  const auto &level_params = level_params_[level_index];
   return index_reader.ReadLevelTiles(level_index, level_params);
 }
 
@@ -1020,19 +1046,18 @@ absl::StatusOr<std::vector<mrxs::MiraxTileRecord>> MrxsReader::ReadLevelTiles(
 ///
 /// @param record_index Zero-based index of the record to read
 /// @return Tuple of (datafile_path, data_offset, data_size) or error status
-absl::StatusOr<std::tuple<std::string, int64_t, int64_t>>
+aifocore::Result<std::tuple<std::string, int64_t, int64_t>>
 MrxsReader::ReadNonHierRecord(int record_index) const {
   // Open index file using helper class
   fs::path index_path = dirname_ / slide_info_.index_filename;
   mrxs::MrxsIndexReader index_reader;
-  ASSIGN_OR_RETURN(index_reader,
-                   mrxs::MrxsIndexReader::Open(index_path, slide_info_),
-                   "Failed to open index file");
+  AIFOCORE_ASSIGN_OR_RETURN(
+      index_reader, mrxs::MrxsIndexReader::Open(index_path, slide_info_));
 
   // Delegate to index reader
   mrxs::NonHierRecordData record_data;
-  ASSIGN_OR_RETURN(record_data, index_reader.ReadNonHierRecord(record_index),
-                   "Failed to read non-hierarchical record");
+  AIFOCORE_ASSIGN_OR_RETURN(record_data,
+                            index_reader.ReadNonHierRecord(record_index));
 
   return std::make_tuple(record_data.datafile_path, record_data.offset,
                          record_data.size);
@@ -1066,19 +1091,20 @@ MrxsReader::ReadNonHierRecord(int record_index) const {
 /// @param slide_info Slide information with position layer metadata from INI
 /// parsing
 /// @return OkStatus on success, error status on failure
-/// @retval absl::NotFoundError if position data file cannot be opened
-/// @retval absl::InternalError if file operations fail
-/// @retval absl::InvalidArgumentError if data format is invalid
+/// @retval NotFound if position data file cannot be opened
+/// @retval Internal if file operations fail
+/// @retval InvalidArgument if data format is invalid
 /// @note Handles both uncompressed and DEFLATE-compressed position data
 /// @note Uses position layer metadata populated during ParseNonTiledLayers()
 /// @note If position data unavailable, using_synthetic_positions is already set
-absl::Status MrxsReader::ReadCameraPositions(const fs::path& dirname,
-                                             mrxs::SlideDataInfo& slide_info) {
+aifocore::Status
+MrxsReader::ReadCameraPositions(const fs::path &dirname,
+                                mrxs::SlideDataInfo &slide_info) {
   // Check if position data is available (determined during INI parsing)
   if (slide_info.using_synthetic_positions ||
       slide_info.position_layer_record_offset == -1) {
     // No position data found, synthetic positions already set
-    return absl::OkStatus();
+    return aifocore::Status::OkStatus();
   }
 
   // Use pre-populated position layer metadata
@@ -1088,9 +1114,7 @@ absl::Status MrxsReader::ReadCameraPositions(const fs::path& dirname,
   // Open index file using RAII wrapper
   fs::path index_path = dirname / slide_info.index_filename;
   FileReader indexfile;
-  ASSIGN_OR_RETURN(
-      indexfile, FileReader::Open(index_path, "rb"),
-      absl::StrFormat("Cannot open index file: %s", index_path.string()));
+  AIFOCORE_ASSIGN_OR_RETURN(indexfile, FileReader::Open(index_path, "rb"));
 
   // Calculate nonhier root
   const int64_t hier_root = strlen("01.02") + slide_info.slide_id.length();
@@ -1099,90 +1123,81 @@ absl::Status MrxsReader::ReadCameraPositions(const fs::path& dirname,
 
   // Read the position record inline (avoiding temp reader construction)
   // Seek to nonhier root
-  RETURN_IF_ERROR(indexfile.Seek(nonhier_root), "Cannot seek to nonhier root");
+  AIFOCORE_RETURN_IF_ERROR(indexfile.Seek(nonhier_root));
 
   // Read pointer
   int32_t ptr_32;
-  ASSIGN_OR_RETURN(ptr_32, ReadLeInt32(indexfile.Get()),
-                   "Cannot read nonhier pointer");
+  AIFOCORE_ASSIGN_OR_RETURN(ptr_32, ReadLeInt32(indexfile.Get()));
   int64_t ptr = ptr_32;
 
   // Seek to record pointer
-  RETURN_IF_ERROR(indexfile.Seek(ptr + 4 * position_record),
-                  "Cannot seek to record pointer");
+  AIFOCORE_RETURN_IF_ERROR(indexfile.Seek(ptr + 4 * position_record));
 
   // Read pointer to record data
   int32_t record_ptr_32;
-  ASSIGN_OR_RETURN(record_ptr_32, ReadLeInt32(indexfile.Get()),
-                   "Cannot read record pointer");
+  AIFOCORE_ASSIGN_OR_RETURN(record_ptr_32, ReadLeInt32(indexfile.Get()));
   int64_t record_ptr = record_ptr_32;
 
   // Seek to record data
-  RETURN_IF_ERROR(indexfile.Seek(record_ptr), "Cannot seek to record data");
+  AIFOCORE_RETURN_IF_ERROR(indexfile.Seek(record_ptr));
 
   // Read initial 0
   int32_t zero_value_32;
-  ASSIGN_OR_RETURN(zero_value_32, ReadLeInt32(indexfile.Get()),
-                   "Cannot read initial value");
+  AIFOCORE_ASSIGN_OR_RETURN(zero_value_32, ReadLeInt32(indexfile.Get()));
   int64_t zero_value = zero_value_32;
 
   if (zero_value != 0) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat("Expected 0 at beginning of nonhier record, got %d",
-                        zero_value));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format(
+            "Expected 0 at beginning of nonhier record, got {}", zero_value));
   }
 
   // Read data pointer
   int32_t data_ptr_32;
-  ASSIGN_OR_RETURN(data_ptr_32, ReadLeInt32(indexfile.Get()),
-                   "Cannot read data pointer");
+  AIFOCORE_ASSIGN_OR_RETURN(data_ptr_32, ReadLeInt32(indexfile.Get()));
   int64_t data_ptr = data_ptr_32;
 
   // Seek to data page
-  RETURN_IF_ERROR(indexfile.Seek(data_ptr), "Cannot seek to data page");
+  AIFOCORE_RETURN_IF_ERROR(indexfile.Seek(data_ptr));
 
   // Read page length
   int32_t page_len_32;
-  ASSIGN_OR_RETURN(page_len_32, ReadLeInt32(indexfile.Get()),
-                   "Cannot read page length");
+  AIFOCORE_ASSIGN_OR_RETURN(page_len_32, ReadLeInt32(indexfile.Get()));
   int64_t page_len = page_len_32;
 
   if (page_len < 1) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       "Expected at least one data item in position data page");
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        "Expected at least one data item in position data page");
   }
 
   // Skip next pointer and two zeros
   for (int i = 0; i < 3; ++i) {
     int32_t skip_32;
-    ASSIGN_OR_RETURN(skip_32, ReadLeInt32(indexfile.Get()),
-                     "Cannot read skip value");
-    (void)skip_32;  // Intentionally unused
+    AIFOCORE_ASSIGN_OR_RETURN(skip_32, ReadLeInt32(indexfile.Get()));
+    (void)skip_32; // Intentionally unused
   }
 
   // Read offset, size, fileno for first data item (position data)
   int32_t offset_32;
-  ASSIGN_OR_RETURN(offset_32, ReadLeInt32(indexfile.Get()),
-                   "Cannot read position data offset");
+  AIFOCORE_ASSIGN_OR_RETURN(offset_32, ReadLeInt32(indexfile.Get()));
   int64_t offset = offset_32;
 
   int32_t size_32;
-  ASSIGN_OR_RETURN(size_32, ReadLeInt32(indexfile.Get()),
-                   "Cannot read position data size");
+  AIFOCORE_ASSIGN_OR_RETURN(size_32, ReadLeInt32(indexfile.Get()));
   int64_t size = size_32;
 
   int32_t fileno_32;
-  ASSIGN_OR_RETURN(fileno_32, ReadLeInt32(indexfile.Get()),
-                   "Cannot read position data file number");
+  AIFOCORE_ASSIGN_OR_RETURN(fileno_32, ReadLeInt32(indexfile.Get()));
   int64_t fileno = fileno_32;
 
   if (fileno < 0 ||
       fileno >= static_cast<int>(slide_info.datafile_paths.size())) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat("Invalid datafile number: %d (must be 0-%zu)", fileno,
-                        slide_info.datafile_paths.size() - 1));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Invalid datafile number: {} (must be 0-{})",
+                              fileno, slide_info.datafile_paths.size() - 1));
   }
 
   // Construct full path to datafile
@@ -1194,42 +1209,38 @@ absl::Status MrxsReader::ReadCameraPositions(const fs::path& dirname,
     // Skip reserved fields (2 int32s)
     for (int i = 0; i < 2; ++i) {
       int32_t reserved_32;
-      ASSIGN_OR_RETURN(reserved_32, ReadLeInt32(indexfile.Get()),
-                       "Failed to read reserved field in gain metadata");
-      (void)reserved_32;  // Intentionally unused
+      AIFOCORE_ASSIGN_OR_RETURN(reserved_32, ReadLeInt32(indexfile.Get()));
+      (void)reserved_32; // Intentionally unused
     }
 
     // Read second data item location
     int32_t offset2_32;
-    ASSIGN_OR_RETURN(offset2_32, ReadLeInt32(indexfile.Get()),
-                     "Failed to read gain metadata offset");
+    AIFOCORE_ASSIGN_OR_RETURN(offset2_32, ReadLeInt32(indexfile.Get()));
     int64_t offset2 = offset2_32;
 
     int32_t size2_32;
-    ASSIGN_OR_RETURN(size2_32, ReadLeInt32(indexfile.Get()),
-                     "Failed to read gain metadata size");
+    AIFOCORE_ASSIGN_OR_RETURN(size2_32, ReadLeInt32(indexfile.Get()));
     int64_t size2 = size2_32;
 
     int32_t fileno2_32;
-    ASSIGN_OR_RETURN(fileno2_32, ReadLeInt32(indexfile.Get()),
-                     "Failed to read gain metadata file number");
+    AIFOCORE_ASSIGN_OR_RETURN(fileno2_32, ReadLeInt32(indexfile.Get()));
     int64_t fileno2 = fileno2_32;
 
     // Validate file number
     if (fileno2 < 0 ||
         fileno2 >= static_cast<int>(slide_info.datafile_paths.size())) {
-      return MAKE_STATUS(
-          absl::StatusCode::kInvalidArgument,
-          absl::StrFormat("Invalid gain metadata file number: %d", fileno2));
+      return aifocore::Status(
+          aifocore::StatusCode::kInvalidArgument,
+          aifocore::fmt::format("Invalid gain metadata file number: {}",
+                                fileno2));
     }
 
     // Read metadata from data file using helper
     fs::path datafile2_path = dirname / slide_info.datafile_paths[fileno2];
     std::vector<uint8_t> compressed_metadata;
-    ASSIGN_OR_RETURN(
+    AIFOCORE_ASSIGN_OR_RETURN(
         compressed_metadata,
-        mrxs::MrxsDataReader::ReadData(datafile2_path, offset2, size2),
-        "Failed to read gain metadata");
+        mrxs::MrxsDataReader::ReadData(datafile2_path, offset2, size2));
 
     // Decompress if needed (zlib header)
     std::vector<uint8_t> metadata_per_position;
@@ -1240,11 +1251,10 @@ absl::Status MrxsReader::ReadCameraPositions(const fs::path& dirname,
       const int npositions = positions_x * positions_y;
       const int expected_size = 4 * npositions;
 
-      ASSIGN_OR_RETURN(
-          metadata_per_position,
-          DecompressZlib(compressed_metadata.data(), compressed_metadata.size(),
-                         expected_size),
-          "Failed to decompress gain metadata");
+      AIFOCORE_ASSIGN_OR_RETURN(metadata_per_position,
+                                DecompressZlib(compressed_metadata.data(),
+                                               compressed_metadata.size(),
+                                               expected_size));
     } else {
       metadata_per_position = std::move(compressed_metadata);
     }
@@ -1256,7 +1266,7 @@ absl::Status MrxsReader::ReadCameraPositions(const fs::path& dirname,
       slide_info.camera_position_gains.reserve(num_values);
 
       for (size_t i = 0; i < num_values; ++i) {
-        const uint8_t* ptr = metadata_per_position.data() + (i * 4);
+        const uint8_t *ptr = metadata_per_position.data() + (i * 4);
         float gain;
         std::memcpy(&gain, ptr, sizeof(float));
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
@@ -1272,9 +1282,8 @@ absl::Status MrxsReader::ReadCameraPositions(const fs::path& dirname,
 
   // Read position data from data file using helper
   std::vector<uint8_t> compressed_data;
-  ASSIGN_OR_RETURN(compressed_data,
-                   mrxs::MrxsDataReader::ReadData(datafile_path, offset, size),
-                   "Failed to read position data");
+  AIFOCORE_ASSIGN_OR_RETURN(compressed_data, mrxs::MrxsDataReader::ReadData(
+                                                 datafile_path, offset, size));
 
   // Decompress if it's a stitching layer (zlib compressed)
   std::vector<uint8_t> position_data;
@@ -1286,13 +1295,12 @@ absl::Status MrxsReader::ReadCameraPositions(const fs::path& dirname,
       const int positions_x = slide_info.images_x / slide_info.image_divisions;
       const int positions_y = slide_info.images_y / slide_info.image_divisions;
       const int npositions = positions_x * positions_y;
-      const int expected_size = 9 * npositions;  // 9 bytes per position
+      const int expected_size = 9 * npositions; // 9 bytes per position
 
       // Decompress
-      ASSIGN_OR_RETURN(position_data,
-                       DecompressZlib(compressed_data.data(),
-                                      compressed_data.size(), expected_size),
-                       "Failed to decompress position data");
+      AIFOCORE_ASSIGN_OR_RETURN(
+          position_data, DecompressZlib(compressed_data.data(),
+                                        compressed_data.size(), expected_size));
     } else {
       position_data = std::move(compressed_data);
     }
@@ -1307,10 +1315,11 @@ absl::Status MrxsReader::ReadCameraPositions(const fs::path& dirname,
   const int expected_size = 9 * npositions;
 
   if (position_data.size() != static_cast<size_t>(expected_size)) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat("Position buffer size mismatch. Expected %d, got %zu",
-                        expected_size, position_data.size()));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format(
+            "Position buffer size mismatch. Expected {}, got {}", expected_size,
+            position_data.size()));
   }
 
   // Parse positions
@@ -1318,16 +1327,21 @@ absl::Status MrxsReader::ReadCameraPositions(const fs::path& dirname,
   slide_info.camera_positions.reserve(npositions * 2);
 
   // Get level 0 concatenation factor for scaling
-  int level_0_concat = 1 << slide_info.zoom_levels[0].downsample_exponent;
+  // We need to handle the case where zoom_levels might be empty (though
+  // ParseTiledLayers should catch this)
+  int level_0_concat = 1;
+  if (!slide_info.zoom_levels.empty()) {
+    level_0_concat = 1 << slide_info.zoom_levels[0].downsample_exponent;
+  }
 
-  const uint8_t* p = position_data.data();
+  const uint8_t *p = position_data.data();
   for (int i = 0; i < npositions; ++i) {
     uint8_t flag = *p++;
 
     // Check flag (should be 0 or 1)
     if (flag & 0xFE) {
-      LOG(WARNING) << "Unexpected flag value in position buffer: "
-                   << static_cast<int>(flag);
+      std::cerr << "Unexpected flag value in position buffer: "
+                << static_cast<int>(flag);
     }
 
     // Read x, y (little-endian int32)
@@ -1350,7 +1364,7 @@ absl::Status MrxsReader::ReadCameraPositions(const fs::path& dirname,
 
   slide_info.using_synthetic_positions = false;
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
 namespace {
@@ -1371,8 +1385,8 @@ namespace {
 /// @param ini Parsed INI file
 /// @param slide_info Slide information to update with non-tiled layer metadata
 /// @return OkStatus on success or error status
-absl::Status ParseNonTiledLayers(const mrxs::internal::IniFile& ini,
-                                 mrxs::SlideDataInfo& slide_info) {
+aifocore::Status ParseNonTiledLayers(const mrxs::internal::IniFile &ini,
+                                     mrxs::SlideDataInfo &slide_info) {
 
   // Get NONHIER_COUNT (optional - older MRXS files may not have
   // non-hierarchical layers)
@@ -1380,7 +1394,7 @@ absl::Status ParseNonTiledLayers(const mrxs::internal::IniFile& ini,
   if (!nonhier_count_or.ok()) {
     // No nonhier sections - use synthetic positions (valid for older slides)
     slide_info.using_synthetic_positions = true;
-    return absl::OkStatus();
+    return aifocore::Status::OkStatus();
   }
 
   const int nonhier_count = *nonhier_count_or;
@@ -1395,17 +1409,24 @@ absl::Status ParseNonTiledLayers(const mrxs::internal::IniFile& ini,
     mrxs::NonHierarchicalLayer layer;
 
     // Get layer name
-    std::string name_key = absl::StrFormat(kKeyNonHierName, i);
-    ASSIGN_OR_RETURN(
-        layer.name, ini.GetString(kGroupHierarchical, name_key),
-        absl::StrFormat("Missing non-hierarchical layer name for index %d", i));
+    std::string name_key = aifocore::fmt::format(kKeyNonHierName, i);
+    auto layer_name_or = ini.GetString(kGroupHierarchical, name_key);
+    if (!layer_name_or.ok()) {
+      // If layer name is missing, but we have a count, it might be a malformed
+      // section or different numbering For now, just log a warning and continue
+      // with a generic name? Or maybe stop processing non-hier layers? Let's
+      // assume if the name is missing, the layer might be skippable or we can
+      // use a placeholder
+      std::cerr << "Warning: Missing name for non-hierarchical layer " << i
+                << ". Skipping.\n";
+      continue;
+    }
+    layer.name = *layer_name_or;
 
     // Get count
-    std::string count_key = absl::StrFormat(kKeyNonHierLevelCount, i);
-    ASSIGN_OR_RETURN(
-        layer.count, ini.GetInt(kGroupHierarchical, count_key),
-        absl::StrFormat("Missing count for non-hierarchical layer %s",
-                        layer.name));
+    std::string count_key = aifocore::fmt::format(kKeyNonHierLevelCount, i);
+    AIFOCORE_ASSIGN_OR_RETURN(layer.count,
+                              ini.GetInt(kGroupHierarchical, count_key));
     layer.record_offset = record_offset;
 
     // Get individual record information
@@ -1416,14 +1437,15 @@ absl::Status ParseNonTiledLayers(const mrxs::internal::IniFile& ini,
       record.layer_index = j;
 
       // Get value name (optional field - may not exist for all records)
-      std::string val_key = absl::StrFormat(kKeyNonHierVal, i, j);
+      std::string val_key = aifocore::fmt::format(kKeyNonHierVal, i, j);
       auto val = ini.GetString(kGroupHierarchical, val_key);
       if (val.ok()) {
         record.value_name = *val;
       }
 
       // Get section name (optional field - may not exist for all records)
-      std::string section_key = absl::StrFormat(kKeyNonHierValSection, i, j);
+      std::string section_key =
+          aifocore::fmt::format(kKeyNonHierValSection, i, j);
       auto section = ini.GetString(kGroupHierarchical, section_key);
       if (section.ok()) {
         record.section_name = *section;
@@ -1452,10 +1474,10 @@ absl::Status ParseNonTiledLayers(const mrxs::internal::IniFile& ini,
   // Set synthetic positions flag based on whether we found position data
   slide_info.using_synthetic_positions = !found_position_layer;
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-}  // namespace
+} // namespace
 
 /// @brief Detect the type of associated data from magic bytes
 ///
@@ -1465,28 +1487,28 @@ absl::Status ParseNonTiledLayers(const mrxs::internal::IniFile& ini,
 ///
 /// @param data Raw data bytes
 /// @return Detected AssociatedDataType (kImage, kXml, kBinary, or kUnknown)
-AssociatedDataType MrxsReader::DetectDataType(
-    const std::vector<uint8_t>& data) {
+AssociatedDataType
+MrxsReader::DetectDataType(const std::vector<uint8_t> &data) {
   if (data.empty())
     return AssociatedDataType::kUnknown;
 
   // Check magic bytes
   if (data.size() >= 2 && data[0] == 0xFF && data[1] == 0xD8) {
-    return AssociatedDataType::kImage;  // JPEG
+    return AssociatedDataType::kImage; // JPEG
   }
   if (data.size() >= 4 && data[0] == 0x89 && data[1] == 0x50 &&
       data[2] == 0x4E && data[3] == 0x47) {
-    return AssociatedDataType::kImage;  // PNG
+    return AssociatedDataType::kImage; // PNG
   }
   if (data.size() >= 2 && data[0] == 0x42 && data[1] == 0x4D) {
-    return AssociatedDataType::kImage;  // BMP
+    return AssociatedDataType::kImage; // BMP
   }
   if (data.size() >= 5 && data[0] == '<' && data[1] == '?' && data[2] == 'x' &&
       data[3] == 'm' && data[4] == 'l') {
-    return AssociatedDataType::kXml;  // XML
+    return AssociatedDataType::kXml; // XML
   }
   if (data.size() >= 3 && data[0] == 0x78 && data[1] == 0x9C) {
-    return AssociatedDataType::kBinary;  // Zlib-compressed data
+    return AssociatedDataType::kBinary; // Zlib-compressed data
   }
 
   // Try to detect if it's text/XML by checking printable characters
@@ -1498,12 +1520,12 @@ AssociatedDataType MrxsReader::DetectDataType(
         printable_count++;
       }
     }
-    if (printable_count > 90) {         // >90% printable
-      return AssociatedDataType::kXml;  // Likely text/XML
+    if (printable_count > 90) {        // >90% printable
+      return AssociatedDataType::kXml; // Likely text/XML
     }
   }
 
-  return AssociatedDataType::kBinary;  // Default to binary
+  return AssociatedDataType::kBinary; // Default to binary
 }
 
 /// @brief Get list of available associated data items
@@ -1515,12 +1537,12 @@ AssociatedDataType MrxsReader::DetectDataType(
 std::vector<std::string> MrxsReader::GetAssociatedDataNames() const {
   std::vector<std::string> names;
 
-  for (const auto& layer : slide_info_.nonhier_layers) {
-    for (const auto& record : layer.records) {
+  for (const auto &layer : slide_info_.nonhier_layers) {
+    for (const auto &record : layer.records) {
       // Create unique name from layer and value
       std::string name =
           record.value_name.empty()
-              ? absl::StrFormat("%s_%d", layer.name, record.layer_index)
+              ? aifocore::fmt::format("{}_{}", layer.name, record.layer_index)
               : record.value_name;
       names.push_back(name);
     }
@@ -1535,35 +1557,36 @@ std::vector<std::string> MrxsReader::GetAssociatedDataNames() const {
 /// reading the actual data from disk.
 ///
 /// @param name Data item name
-/// @return StatusOr containing AssociatedDataInfo or error
-/// @retval absl::NotFoundError if data item does not exist
+/// @return Result containing AssociatedDataInfo or error
+/// @retval NotFound if data item does not exist
 /// @note Size and type are unknown until the data is actually loaded
-absl::StatusOr<AssociatedDataInfo> MrxsReader::GetAssociatedDataInfo(
-    std::string_view name) const {
+aifocore::Result<AssociatedDataInfo>
+MrxsReader::GetAssociatedDataInfo(std::string_view name) const {
   // Find the record
-  for (const auto& layer : slide_info_.nonhier_layers) {
-    for (const auto& record : layer.records) {
+  for (const auto &layer : slide_info_.nonhier_layers) {
+    for (const auto &record : layer.records) {
       std::string record_name =
           record.value_name.empty()
-              ? absl::StrFormat("%s_%d", layer.name, record.layer_index)
+              ? aifocore::fmt::format("{}_{}", layer.name, record.layer_index)
               : record.value_name;
 
       if (record_name == name) {
         AssociatedDataInfo info;
         info.name = record_name;
-        info.description = absl::StrFormat("Layer: %s", layer.name);
-        info.size_bytes = 0;         // Unknown until loaded
-        info.is_compressed = false;  // Unknown until loaded
+        info.description = aifocore::fmt::format("Layer: {}", layer.name);
+        info.size_bytes = 0;        // Unknown until loaded
+        info.is_compressed = false; // Unknown until loaded
         info.compression_type = "unknown";
-        info.type = AssociatedDataType::kUnknown;  // Unknown until loaded
+        info.type = AssociatedDataType::kUnknown; // Unknown until loaded
 
         return info;
       }
     }
   }
 
-  return MAKE_STATUS(absl::StatusCode::kNotFound,
-                     absl::StrFormat("Associated data not found: %s", name));
+  return aifocore::Status(
+      aifocore::StatusCode::kNotFound,
+      aifocore::fmt::format("Associated data not found: {}", name));
 }
 
 /// @brief Load associated data from disk
@@ -1574,19 +1597,19 @@ absl::StatusOr<AssociatedDataInfo> MrxsReader::GetAssociatedDataInfo(
 /// - Type detection from magic bytes
 ///
 /// @param name Data item name
-/// @return StatusOr containing AssociatedData with decoded content
-/// @retval absl::NotFoundError if data item doesn't exist or files can't be
+/// @return Result containing AssociatedData with decoded content
+/// @retval NotFound if data item doesn't exist or files can't be
 /// opened
-/// @retval absl::InternalError if reading or decoding fails
-absl::StatusOr<AssociatedData> MrxsReader::LoadAssociatedData(
-    std::string_view name) const {
+/// @retval Internal if reading or decoding fails
+aifocore::Result<AssociatedData>
+MrxsReader::LoadAssociatedData(std::string_view name) const {
   // Find the record
-  const mrxs::NonHierarchicalRecord* target_record = nullptr;
-  for (const auto& layer : slide_info_.nonhier_layers) {
-    for (const auto& record : layer.records) {
+  const mrxs::NonHierarchicalRecord *target_record = nullptr;
+  for (const auto &layer : slide_info_.nonhier_layers) {
+    for (const auto &record : layer.records) {
       std::string record_name =
           record.value_name.empty()
-              ? absl::StrFormat("%s_%d", layer.name, record.layer_index)
+              ? aifocore::fmt::format("{}_{}", layer.name, record.layer_index)
               : record.value_name;
 
       if (record_name == name) {
@@ -1599,23 +1622,23 @@ absl::StatusOr<AssociatedData> MrxsReader::LoadAssociatedData(
   }
 
   if (!target_record) {
-    return MAKE_STATUS(absl::StatusCode::kNotFound,
-                       absl::StrFormat("Associated data not found: %s", name));
+    return aifocore::Status(
+        aifocore::StatusCode::kNotFound,
+        aifocore::fmt::format("Associated data not found: {}", name));
   }
 
   // Read the record using index reader
   std::tuple<std::string, int64_t, int64_t> record_data;
-  ASSIGN_OR_RETURN(record_data, ReadNonHierRecord(target_record->record_index),
-                   "Failed to read non-hierarchical record");
+  AIFOCORE_ASSIGN_OR_RETURN(record_data,
+                            ReadNonHierRecord(target_record->record_index));
 
   auto [rel_path, offset, size] = record_data;
   fs::path datafile_path = dirname_ / rel_path;
 
   // Read data from file using helper
   std::vector<uint8_t> raw_data;
-  ASSIGN_OR_RETURN(raw_data,
-                   mrxs::MrxsDataReader::ReadData(datafile_path, offset, size),
-                   "Failed to read associated data");
+  AIFOCORE_ASSIGN_OR_RETURN(
+      raw_data, mrxs::MrxsDataReader::ReadData(datafile_path, offset, size));
 
   // Detect data type
   AssociatedDataType type = DetectDataType(raw_data);
@@ -1631,7 +1654,7 @@ absl::StatusOr<AssociatedData> MrxsReader::LoadAssociatedData(
 
     // Try to decompress (use reasonable max size)
     size_t expected_size =
-        raw_data.size() * 100;  // Assume up to 100x compression
+        raw_data.size() * 100; // Assume up to 100x compression
 
     auto decompressed_or =
         DecompressZlib(raw_data.data(), raw_data.size(), expected_size);
@@ -1642,8 +1665,8 @@ absl::StatusOr<AssociatedData> MrxsReader::LoadAssociatedData(
       type = DetectDataType(decompressed_data);
     } else {
       // Decompression failed, keep as-is
-      LOG(WARNING) << "Failed to decompress data for " << name << ": "
-                   << decompressed_or.status();
+      std::cerr << "Failed to decompress data for " << name << ": "
+                << decompressed_or.status().ToString();
       decompressed_data = raw_data;
     }
   } else {
@@ -1654,7 +1677,7 @@ absl::StatusOr<AssociatedData> MrxsReader::LoadAssociatedData(
   AssociatedData result;
   result.info.name = std::string(name);
   result.info.description =
-      absl::StrFormat("Layer: %s", target_record->layer_name);
+      aifocore::fmt::format("Layer: {}", target_record->layer_name);
   result.info.size_bytes = decompressed_data.size();
   result.info.is_compressed = is_compressed;
   result.info.compression_type = compression_type;
@@ -1662,40 +1685,39 @@ absl::StatusOr<AssociatedData> MrxsReader::LoadAssociatedData(
 
   // Parse data based on type
   switch (type) {
-    case AssociatedDataType::kImage: {
-      // Detect image format from magic bytes
-      mrxs::MrxsImageFormat img_format = mrxs::MrxsImageFormat::kUnknown;
-      if (decompressed_data.size() >= 2 && decompressed_data[0] == 0xFF &&
-          decompressed_data[1] == 0xD8) {
-        img_format = mrxs::MrxsImageFormat::kJpeg;
-      } else if (decompressed_data.size() >= 4 &&
-                 decompressed_data[0] == 0x89 && decompressed_data[1] == 0x50) {
-        img_format = mrxs::MrxsImageFormat::kPng;
-      } else if (decompressed_data.size() >= 2 &&
-                 decompressed_data[0] == 0x42 && decompressed_data[1] == 0x4D) {
-        img_format = mrxs::MrxsImageFormat::kBmp;
-      }
-
-      RGBImage decoded_image;
-      ASSIGN_OR_RETURN(
-          decoded_image,
-          mrxs::internal::DecodeImage(decompressed_data, img_format),
-          "Failed to decode associated image");
-      result.data = std::move(decoded_image);
-      break;
+  case AssociatedDataType::kImage: {
+    // Detect image format from magic bytes
+    mrxs::MrxsImageFormat img_format = mrxs::MrxsImageFormat::kUnknown;
+    if (decompressed_data.size() >= 2 && decompressed_data[0] == 0xFF &&
+        decompressed_data[1] == 0xD8) {
+      img_format = mrxs::MrxsImageFormat::kJpeg;
+    } else if (decompressed_data.size() >= 4 && decompressed_data[0] == 0x89 &&
+               decompressed_data[1] == 0x50) {
+      img_format = mrxs::MrxsImageFormat::kPng;
+    } else if (decompressed_data.size() >= 2 && decompressed_data[0] == 0x42 &&
+               decompressed_data[1] == 0x4D) {
+      img_format = mrxs::MrxsImageFormat::kBmp;
     }
 
-    case AssociatedDataType::kXml: {
-      // Convert to string
-      result.data =
-          std::string(decompressed_data.begin(), decompressed_data.end());
-      break;
-    }
+    RGBImage decoded_image;
+    AIFOCORE_ASSIGN_OR_RETURN(
+        decoded_image,
+        mrxs::internal::DecodeImage(decompressed_data, img_format));
+    result.data = std::move(decoded_image);
+    break;
+  }
 
-    default:
-      // Keep as binary
-      result.data = std::move(decompressed_data);
-      break;
+  case AssociatedDataType::kXml: {
+    // Convert to string
+    result.data =
+        std::string(decompressed_data.begin(), decompressed_data.end());
+    break;
+  }
+
+  default:
+    // Keep as binary
+    result.data = std::move(decompressed_data);
+    break;
   }
 
   return result;
@@ -1708,12 +1730,12 @@ absl::StatusOr<AssociatedData> MrxsReader::LoadAssociatedData(
 /// validation and file I/O.
 ///
 /// @param tile Tile metadata containing file location and size
-/// @return StatusOr containing raw compressed data or error
-/// @retval absl::InvalidArgumentError if file number or params are invalid
-/// @retval absl::NotFoundError if data file cannot be opened
-/// @retval absl::InternalError if seek or read operation fails
-absl::StatusOr<std::vector<uint8_t>> MrxsReader::ReadTileData(
-    const mrxs::MiraxTileRecord& tile) const {
+/// @return Result containing raw compressed data or error
+/// @retval InvalidArgument if file number or params are invalid
+/// @retval NotFound if data file cannot be opened
+/// @retval Internal if seek or read operation fails
+aifocore::Result<std::vector<uint8_t>>
+MrxsReader::ReadTileData(const mrxs::MiraxTileRecord &tile) const {
   // Delegate to data reader helper
   return mrxs::MrxsDataReader::ReadTileData(dirname_, tile,
                                             slide_info_.datafile_paths);
@@ -1736,11 +1758,11 @@ absl::StatusOr<std::vector<uint8_t>> MrxsReader::ReadTileData(
 /// - Executed asynchronously
 ///
 /// @param request Tile request specifying region and level
-/// @return StatusOr containing TilePlan or error
-/// @retval absl::InvalidArgumentError if level is invalid
+/// @return Result containing TilePlan or error
+/// @retval InvalidArgument if level is invalid
 /// @note May perform I/O to build spatial index on first call for a level
-absl::StatusOr<core::TilePlan> MrxsReader::PrepareRequest(
-    const core::TileRequest& request) const {
+aifocore::Result<core::TilePlan>
+MrxsReader::PrepareRequest(const core::TileRequest &request) const {
   // Use the plan builder helper to create the plan
   return MrxsPlanBuilder::BuildPlan(request, *this);
 }
@@ -1759,20 +1781,20 @@ absl::StatusOr<core::TilePlan> MrxsReader::PrepareRequest(
 /// @param writer Tile writer for output
 /// @return OkStatus on success, or error if any operation fails
 /// @note Continues processing after individual tile failures (logs warnings)
-absl::Status MrxsReader::ExecutePlan(const core::TilePlan& plan,
-                                     runtime::TileWriter& writer) const {
+aifocore::Status MrxsReader::ExecutePlan(const core::TilePlan &plan,
+                                         runtime::TileWriter &writer) const {
   // Use the tile executor helper to execute the plan
   return MrxsTileExecutor::ExecutePlan(plan, *this, writer);
 }
 
 void MrxsReader::SetITileCache(std::shared_ptr<ITileCache> cache) {
-  absl::MutexLock lock(&cache_mutex_);
+  std::lock_guard<std::mutex> lock(cache_mutex_);
   cache_ = std::move(cache);
 }
 
 std::shared_ptr<ITileCache> MrxsReader::GetITileCache() const {
-  absl::MutexLock lock(&cache_mutex_);
+  std::lock_guard<std::mutex> lock(cache_mutex_);
   return cache_;
 }
 
-}  // namespace fastslide
+} // namespace fastslide

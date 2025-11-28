@@ -18,7 +18,7 @@
 
 #include "jpeg-compressor/jpgd.h"
 
-#include <unistd.h>
+#include "aifocore/platform/portability.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -63,8 +63,7 @@ bool ReadBytes(int fd, size_t file_size, uint64_t offset, uint64_t length,
   }
 
   out.resize(length);
-  ssize_t bytes_read =
-      pread(fd, out.data(), length, static_cast<off_t>(offset));
+  ssize_t bytes_read = aifocore::portable_pread(fd, out.data(), length, offset);
 
   if (bytes_read < 0 || static_cast<size_t>(bytes_read) != length) {
     return false;

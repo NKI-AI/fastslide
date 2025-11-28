@@ -14,77 +14,78 @@
 
 #include "fastslide/runtime/io/file_reader.h"
 
-#include "absl/strings/str_format.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
+#include "aifocore/utilities/fmt.h"
+#include "aifocore/platform/portability.h"
 
 namespace fastslide {
 namespace runtime {
 namespace io {
 
-absl::StatusOr<FileReader> FileReader::Open(const fs::path& path,
+aifocore::Result<FileReader> FileReader::Open(const fs::path& path,
                                             const char* mode) {
-  FILE* file = fopen(path.string().c_str(), mode);
+  FILE* file = aifocore::portable_fopen(path, mode);
   if (!file) {
-    return MAKE_STATUS(absl::StatusCode::kNotFound,
-                       absl::StrFormat("Cannot open file: %s", path.string()));
+    return aifocore::Status(aifocore::StatusCode::kNotFound,
+                       aifocore::fmt::format("Cannot open file: {}", path.string()));
   }
   return FileReader(file);
 }
 
-absl::Status FileReader::Seek(int64_t offset, int whence) const {
-  if (fseek(file_.get(), offset, whence) != 0) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInternal,
-        absl::StrFormat("Failed to seek to offset %lld", offset));
+aifocore::Status FileReader::Seek(int64_t offset, int whence) const {
+  if (aifocore::portable_fseek(file_.get(), offset, whence) != 0) {
+    return aifocore::Status(
+        aifocore::StatusCode::kInternal,
+        aifocore::fmt::format("Failed to seek to offset {}", offset));
   }
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-absl::StatusOr<int64_t> FileReader::GetSize() const {
-  const int64_t current_pos = ftell(file_.get());
+aifocore::Result<int64_t> FileReader::GetSize() const {
+  const int64_t current_pos = aifocore::portable_ftell(file_.get());
   if (current_pos < 0) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
+    return aifocore::Status(aifocore::StatusCode::kInternal,
                        "Failed to get current file position");
   }
 
-  if (fseek(file_.get(), 0, SEEK_END) != 0) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
+  if (aifocore::portable_fseek(file_.get(), 0, SEEK_END) != 0) {
+    return aifocore::Status(aifocore::StatusCode::kInternal,
                        "Failed to seek to end of file");
   }
 
-  const int64_t size = ftell(file_.get());
+  const int64_t size = aifocore::portable_ftell(file_.get());
   if (size < 0) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
+    return aifocore::Status(aifocore::StatusCode::kInternal,
                        "Failed to determine file size");
   }
 
   // Restore original position
-  if (fseek(file_.get(), current_pos, SEEK_SET) != 0) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
+  if (aifocore::portable_fseek(file_.get(), current_pos, SEEK_SET) != 0) {
+    return aifocore::Status(aifocore::StatusCode::kInternal,
                        "Failed to restore file position");
   }
 
   return size;
 }
 
-absl::Status FileReader::Read(void* buffer, size_t size) const {
+aifocore::Status FileReader::Read(void* buffer, size_t size) const {
   if (fread(buffer, 1, size, file_.get()) != size) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
-                       absl::StrFormat("Failed to read %zu bytes", size));
+    return aifocore::Status(aifocore::StatusCode::kInternal,
+                       aifocore::fmt::format("Failed to read {} bytes", size));
   }
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-absl::StatusOr<std::vector<uint8_t>> FileReader::ReadBytes(size_t size) const {
+aifocore::Result<std::vector<uint8_t>> FileReader::ReadBytes(size_t size) const {
   std::vector<uint8_t> buffer(size);
-  RETURN_IF_ERROR(Read(buffer.data(), size), "Failed to read into buffer");
+  AIFOCORE_RETURN_IF_ERROR(Read(buffer.data(), size));
   return buffer;
 }
 
-absl::StatusOr<int64_t> FileReader::Tell() const {
-  const int64_t pos = ftell(file_.get());
+aifocore::Result<int64_t> FileReader::Tell() const {
+  const int64_t pos = aifocore::portable_ftell(file_.get());
   if (pos < 0) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
+    return aifocore::Status(aifocore::StatusCode::kInternal,
                        "Failed to get file position");
   }
   return pos;

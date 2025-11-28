@@ -21,8 +21,7 @@
 #include <span>
 #include <string>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/image.h"
 #include "fastslide/runtime/tile_writer.h"
@@ -35,26 +34,26 @@ class DirectStrategy : public ITileWriterStrategy {
  public:
   explicit DirectStrategy(const TileWriter::Config& config);
 
-  absl::Status WriteTile(const core::TileReadOp& op,
+  aifocore::Status WriteTile(const core::TileReadOp& op,
                          std::span<const uint8_t> pixel_data,
                          uint32_t tile_width, uint32_t tile_height,
                          uint32_t tile_channels) override;
 
-  absl::Status Finalize() override;
+  aifocore::Status Finalize() override;
   ImageDimensions GetDimensions() const override;
   uint32_t GetChannels() const override;
-  absl::StatusOr<Image> GetOutput() override;
+  aifocore::Result<Image> GetOutput() override;
   std::string GetName() const override;
   uint8_t* GetOutputBuffer() override;
   size_t GetOutputBufferSize() const override;
 
  private:
-  absl::Status WriteTilePlanar(const core::TileReadOp& op,
+  aifocore::Status WriteTilePlanar(const core::TileReadOp& op,
                                std::span<const uint8_t> pixel_data,
                                uint32_t tile_width, uint32_t tile_height,
                                uint32_t tile_channels);
 
-  absl::Status WriteTileInterleaved(const core::TileReadOp& op,
+  aifocore::Status WriteTileInterleaved(const core::TileReadOp& op,
                                     std::span<const uint8_t> pixel_data,
                                     uint32_t tile_width, uint32_t tile_height,
                                     uint32_t tile_channels);

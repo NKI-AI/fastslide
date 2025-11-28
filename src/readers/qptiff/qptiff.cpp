@@ -30,10 +30,7 @@
 
 #include <pugixml.hpp>
 
-#include "absl/log/log.h"
-#include "absl/status/status.h"
-#include "aifocore/concepts/numeric.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/qptiff/metadata_parser.h"
 #include "fastslide/readers/qptiff/qptiff_metadata_loader.h"
@@ -50,8 +47,8 @@ namespace fastslide {
 
 using aifocore::Size;
 
-absl::StatusOr<std::unique_ptr<QpTiffReader>> QpTiffReader::Create(
-    std::string_view filename) {
+aifocore::Result<std::unique_ptr<QpTiffReader>>
+QpTiffReader::Create(std::string_view filename) {
   return CreateImpl(filename);
 }
 
@@ -71,19 +68,19 @@ int QpTiffReader::GetLevelCount() const {
   return static_cast<int>(pyramid_.size());
 }
 
-absl::StatusOr<LevelInfo> QpTiffReader::GetLevelInfo(int level) const {
+aifocore::Result<LevelInfo> QpTiffReader::GetLevelInfo(int level) const {
   if (level < 0) {
-    return absl::StatusOr<LevelInfo>(MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument, "Level cannot be negative"));
+    return aifocore::Result<LevelInfo>(aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument, "Level cannot be negative"));
   }
 
   if (level < 0 || static_cast<size_t>(level) >= pyramid_.size()) {
-    return absl::StatusOr<LevelInfo>(
-        MAKE_STATUS(absl::StatusCode::kNotFound,
-                    aifocore::fmt::format("Level {} not found", level)));
+    return aifocore::Result<LevelInfo>(
+        aifocore::Status(aifocore::StatusCode::kNotFound,
+                         aifocore::fmt::format("Level {} not found", level)));
   }
 
-  const auto& pyramid_level = pyramid_[level];
+  const auto &pyramid_level = pyramid_[level];
   LevelInfo level_info;
   level_info.dimensions = pyramid_level.size;
 
@@ -103,7 +100,7 @@ absl::StatusOr<LevelInfo> QpTiffReader::GetLevelInfo(int level) const {
   return level_info;
 }
 
-const SlideProperties& QpTiffReader::GetProperties() const {
+const SlideProperties &QpTiffReader::GetProperties() const {
   return properties_;
 }
 
@@ -111,7 +108,7 @@ std::vector<ChannelMetadata> QpTiffReader::GetChannelMetadata() const {
   std::vector<ChannelMetadata> metadata;
   metadata.reserve(channels_.size());
 
-  for (const auto& ch : channels_) {
+  for (const auto &ch : channels_) {
     ChannelMetadata md;
     md.name = ch.name;
     md.biomarker = ch.biomarker;
@@ -131,7 +128,7 @@ uint32_t QpTiffReader::GetActualChannelCount() const {
 
   // For RGB images, we have 1 logical channel but 3 actual color channels
   if (format_ == ImageFormat::kRGB) {
-    return 3;  // RGB has 3 channels
+    return 3; // RGB has 3 channels
   }
 
   // For spectral images, logical channels = actual channels
@@ -141,43 +138,43 @@ uint32_t QpTiffReader::GetActualChannelCount() const {
 std::vector<std::string> QpTiffReader::GetAssociatedImageNames() const {
   std::vector<std::string> names;
   names.reserve(associated_images_.size());
-  for (const auto& [name, info] : associated_images_) {
+  for (const auto &[name, info] : associated_images_) {
     names.push_back(name);
   }
   return names;
 }
 
-absl::StatusOr<ImageDimensions> QpTiffReader::GetAssociatedImageDimensions(
-    std::string_view name) const {
+aifocore::Result<ImageDimensions>
+QpTiffReader::GetAssociatedImageDimensions(std::string_view name) const {
   if (!associated_images_.contains(std::string(name))) {
-    return absl::StatusOr<ImageDimensions>(MAKE_STATUS(
-        absl::StatusCode::kNotFound,
+    return aifocore::Result<ImageDimensions>(aifocore::Status(
+        aifocore::StatusCode::kNotFound,
         aifocore::fmt::format("Associated image '{}' not found", name)));
   }
 
-  const auto& info = associated_images_.at(std::string(name));
+  const auto &info = associated_images_.at(std::string(name));
   return ImageDimensions{info.size[0], info.size[1]};
 }
 
-absl::StatusOr<RGBImage> QpTiffReader::ReadAssociatedImage(
-    std::string_view name) const {
+aifocore::Result<RGBImage>
+QpTiffReader::ReadAssociatedImage(std::string_view name) const {
   if (!associated_images_.contains(std::string(name))) {
-    return MAKE_STATUSOR(
-        RGBImage, absl::StatusCode::kNotFound,
-        "Associated image '" + std::string(name) + "' not found");
+    return aifocore::Status(aifocore::StatusCode::kNotFound,
+                            "Associated image '" + std::string(name) +
+                                "' not found");
   }
 
-  const QpTiffAssociatedInfo& info = associated_images_.at(std::string(name));
+  const QpTiffAssociatedInfo &info = associated_images_.at(std::string(name));
 
   // Use simpletiff to read the associated image page
   if (!tiff_index_ || info.page >= tiff_index_->NumPages()) {
-    return MAKE_STATUSOR(
-        RGBImage, absl::StatusCode::kInternal,
+    return aifocore::Status(
+        aifocore::StatusCode::kInternal,
         aifocore::fmt::format("Invalid page {} for associated image '{}'",
                               info.page, name));
   }
 
-  const auto& page_header = tiff_index_->Page(info.page);
+  const auto &page_header = tiff_index_->Page(info.page);
   const uint32_t width = info.size[0];
   const uint32_t height = info.size[1];
   const uint16_t samples_per_pixel = page_header.samples_per_pixel;
@@ -193,40 +190,40 @@ absl::StatusOr<RGBImage> QpTiffReader::ReadAssociatedImage(
                                      rgb_image.GetData(), stride);
 
   if (!result) {
-    return MAKE_STATUSOR(
-        RGBImage, absl::StatusCode::kInternal,
+    return aifocore::Status(
+        aifocore::StatusCode::kInternal,
         aifocore::fmt::format("Failed to read associated image '{}': {}", name,
-                              result.error().message));
+                              result.error().message()));
   }
 
   return rgb_image;
 }
 
 // TODO(jonasteuwen): This function could fail,
-// make it absl::StatusOr<ImageDimensions>
+// make it aifocore::Result<ImageDimensions>
 ImageDimensions QpTiffReader::GetTileSize() const {
   // Try to get tile size from level 0
   if (pyramid_.empty() || pyramid_[0].pages.empty()) {
-    return ImageDimensions{512, 512};  // Default for QPTIFF
+    return ImageDimensions{512, 512}; // Default for QPTIFF
   }
 
   if (!tiff_index_) {
-    return ImageDimensions{512, 512};  // Default fallback
+    return ImageDimensions{512, 512}; // Default fallback
   }
 
   const uint16_t page = pyramid_[0].pages[0];
   if (page >= tiff_index_->NumPages()) {
-    return ImageDimensions{512, 512};  // Default fallback
+    return ImageDimensions{512, 512}; // Default fallback
   }
 
-  const auto& page_header = tiff_index_->Page(page);
+  const auto &page_header = tiff_index_->Page(page);
 
   if (page_header.storage == simpletiff::Storage::kTiles) {
-    const auto& tiles = tiff_index_->Tiles(page_header.payload_id);
+    const auto &tiles = tiff_index_->Tiles(page_header.payload_id);
     return ImageDimensions{tiles.tile_w, tiles.tile_h};
   }
 
-  return ImageDimensions{512, 512};  // Default for QPTIFF
+  return ImageDimensions{512, 512}; // Default for QPTIFF
 }
 
 Metadata QpTiffReader::GetMetadata() const {
@@ -254,15 +251,15 @@ Metadata QpTiffReader::GetMetadata() const {
 // Two-Stage Pipeline Implementation
 // ============================================================================
 
-absl::StatusOr<core::TilePlan> QpTiffReader::PrepareRequest(
-    const core::TileRequest& request) const {
+aifocore::Result<core::TilePlan>
+QpTiffReader::PrepareRequest(const core::TileRequest &request) const {
   // Use the plan builder helper to create the plan with tiff_index_
   return QptiffPlanBuilder::BuildPlan(request, pyramid_, output_planar_config_,
                                       *tiff_index_);
 }
 
-absl::Status QpTiffReader::ExecutePlan(const core::TilePlan& plan,
-                                       runtime::TileWriter& writer) const {
+aifocore::Status QpTiffReader::ExecutePlan(const core::TilePlan &plan,
+                                           runtime::TileWriter &writer) const {
   // Use the tile executor helper to execute the plan with tiff_index_
   return QptiffTileExecutor::ExecutePlan(plan, pyramid_, *tiff_index_, writer);
 }
@@ -278,7 +275,7 @@ void QpTiffReader::PopulateSlideProperties() {
   // Set bounds to full slide (QPTIFF has complete coverage)
   auto level0_or = GetLevelInfo(0);
   if (level0_or.ok()) {
-    const auto& level0 = *level0_or;
+    const auto &level0 = *level0_or;
     properties_.bounds =
         SlideBounds(0, 0, level0.dimensions[0], level0.dimensions[1]);
   }
@@ -286,20 +283,19 @@ void QpTiffReader::PopulateSlideProperties() {
 
 // Utility methods and implementation
 
-absl::Status QpTiffReader::ProcessMetadata() {
+aifocore::Status QpTiffReader::ProcessMetadata() {
   // Use the metadata loader helper to process metadata with tiff_index_
-  RETURN_IF_ERROR(
-      QptiffMetadataLoader::LoadMetadata(*tiff_index_, metadata_, channels_,
-                                         pyramid_, associated_images_, format_),
-      "Failed to load metadata");
+  AIFOCORE_RETURN_IF_ERROR(QptiffMetadataLoader::LoadMetadata(
+      *tiff_index_, metadata_, channels_, pyramid_, associated_images_,
+      format_));
 
   // Set output planar config based on format
   if (format_ == ImageFormat::kRGB) {
-    output_planar_config_ = PlanarConfig::kContiguous;  // RGB is interleaved
+    output_planar_config_ = PlanarConfig::kContiguous; // RGB is interleaved
   } else {
   }
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-}  // namespace fastslide
+} // namespace fastslide

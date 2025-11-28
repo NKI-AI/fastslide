@@ -14,6 +14,7 @@
 
 #include "fastslide/readers/qptiff/metadata_parser.h"
 
+#include "aifocore/status/result.h"
 #include "gtest/gtest.h"
 
 namespace fastslide {
@@ -121,7 +122,7 @@ TEST_F(QpTiffMetadataParserTest, ParseInvalidXml) {
   auto status = QpTiffMetadataParser::ParseSlideMetadata(invalid_xml, metadata);
 
   EXPECT_FALSE(status.ok());
-  EXPECT_EQ(status.code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(status.code(), aifocore::StatusCode::kInvalidArgument);
 }
 
 TEST_F(QpTiffMetadataParserTest, ParseMissingResolutionInfo) {
@@ -135,7 +136,7 @@ TEST_F(QpTiffMetadataParserTest, ParseMissingResolutionInfo) {
   auto status = QpTiffMetadataParser::ParseSlideMetadata(xml_content, metadata);
 
   EXPECT_FALSE(status.ok());
-  EXPECT_EQ(status.code(), absl::StatusCode::kNotFound);
+  EXPECT_EQ(status.code(), aifocore::StatusCode::kNotFound);
 }
 
 TEST_F(QpTiffMetadataParserTest, GetTextHelper) {

@@ -16,38 +16,40 @@
 
 #include <limits>
 
-#include "absl/strings/str_format.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
+#include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/mrxs/mrxs_constants.h"
 #include "fastslide/runtime/io/file_reader.h"
 
 namespace fastslide {
 namespace mrxs {
 
-absl::Status TileDataValidator::ValidateTileParams(
-    const MiraxTileRecord& tile) {
+aifocore::Status
+TileDataValidator::ValidateTileParams(const MiraxTileRecord &tile) {
   // Validate offset
   if (tile.offset < 0) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat("Invalid negative offset %d for tile at (%d, %d)",
-                        tile.offset, tile.x, tile.y));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Invalid negative offset {} for tile at ({}, {})",
+                              tile.offset, tile.x, tile.y));
   }
 
   // Validate length
   if (tile.length <= 0) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       absl::StrFormat("Invalid length %d for tile at (%d, %d)",
-                                       tile.length, tile.x, tile.y));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Invalid length {} for tile at ({}, {})",
+                              tile.length, tile.x, tile.y));
   }
 
   // Prevent bad_alloc from unreasonably large allocations
   if (tile.length > constants::kMaxTileSize) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat("Tile length %d exceeds maximum allowed size of %d "
-                        "for tile at (%d, %d)",
-                        tile.length, constants::kMaxTileSize, tile.x, tile.y));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format(
+            "Tile length {} exceeds maximum allowed size of {} "
+            "for tile at ({}, {})",
+            tile.length, constants::kMaxTileSize, tile.x, tile.y));
   }
 
   // Validate that offset + length doesn't overflow
@@ -55,107 +57,99 @@ absl::Status TileDataValidator::ValidateTileParams(
       static_cast<int64_t>(tile.offset) + static_cast<int64_t>(tile.length);
   if (end_offset < 0 ||
       end_offset > std::numeric_limits<int64_t>::max() - 1024) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat("Tile offset %d + length %d causes overflow for "
-                        "tile at (%d, %d)",
-                        tile.offset, tile.length, tile.x, tile.y));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Tile offset {} + length {} causes overflow for "
+                              "tile at ({}, {})",
+                              tile.offset, tile.length, tile.x, tile.y));
   }
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-absl::Status TileDataValidator::ValidateFileNumber(int32_t file_number,
-                                                   size_t num_datafiles) {
+aifocore::Status TileDataValidator::ValidateFileNumber(int32_t file_number,
+                                                       size_t num_datafiles) {
   if (file_number < 0 || file_number >= static_cast<int32_t>(num_datafiles)) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat("Invalid file number: %d (must be 0-%zu)", file_number,
-                        num_datafiles - 1));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Invalid file number: {} (must be 0-{})",
+                              file_number, num_datafiles - 1));
   }
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-absl::StatusOr<std::vector<uint8_t>> MrxsDataReader::ReadTileData(
-    const fs::path& dirname, const MiraxTileRecord& tile,
-    const std::vector<std::string>& datafile_paths) {
+aifocore::Result<std::vector<uint8_t>>
+MrxsDataReader::ReadTileData(const fs::path &dirname,
+                             const MiraxTileRecord &tile,
+                             const std::vector<std::string> &datafile_paths) {
   // Validate file number
-  RETURN_IF_ERROR(TileDataValidator::ValidateFileNumber(tile.data_file_number,
-                                                        datafile_paths.size()),
-                  "Invalid data file number");
+  AIFOCORE_RETURN_IF_ERROR(TileDataValidator::ValidateFileNumber(
+      tile.data_file_number, datafile_paths.size()));
 
   // Validate tile parameters
-  RETURN_IF_ERROR(TileDataValidator::ValidateTileParams(tile),
-                  "Invalid tile parameters");
+  AIFOCORE_RETURN_IF_ERROR(TileDataValidator::ValidateTileParams(tile));
 
   // Construct full path to data file
   fs::path data_path = dirname / datafile_paths[tile.data_file_number];
 
   // Open file
   FileReader file;
-  ASSIGN_OR_RETURN(
-      file, FileReader::Open(data_path, "rb"),
-      absl::StrFormat("Cannot open data file: %s", data_path.string()));
+  AIFOCORE_ASSIGN_OR_RETURN(file, FileReader::Open(data_path, "rb"));
 
   // Get file size to validate read bounds
   int64_t file_size;
-  ASSIGN_OR_RETURN(file_size, file.GetSize(),
-                   "Failed to determine data file size");
+  AIFOCORE_ASSIGN_OR_RETURN(file_size, file.GetSize());
 
   // Validate that tile data fits within file bounds
   const int64_t end_offset =
       static_cast<int64_t>(tile.offset) + static_cast<int64_t>(tile.length);
   if (end_offset > file_size) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat(
-            "Tile data extends beyond file size: offset=%d, "
-            "length=%d, end=%lld, file_size=%lld for tile at (%d, %d)",
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format(
+            "Tile data extends beyond file size: offset={}, "
+            "length={}, end={}, file_size={} for tile at ({}, {})",
             tile.offset, tile.length, end_offset, file_size, tile.x, tile.y));
   }
 
   // Seek to tile
-  RETURN_IF_ERROR(file.Seek(tile.offset), "Failed to seek in data file");
+  AIFOCORE_RETURN_IF_ERROR(file.Seek(tile.offset));
 
   // Read tile data
   std::vector<uint8_t> data;
-  ASSIGN_OR_RETURN(data, file.ReadBytes(tile.length),
-                   "Failed to read tile data");
+  AIFOCORE_ASSIGN_OR_RETURN(data, file.ReadBytes(tile.length));
 
   return data;
 }
 
-absl::StatusOr<std::vector<uint8_t>> MrxsDataReader::ReadData(
-    const fs::path& datafile_path, int64_t offset, int64_t size) {
+aifocore::Result<std::vector<uint8_t>>
+MrxsDataReader::ReadData(const fs::path &datafile_path, int64_t offset,
+                         int64_t size) {
   // Validate parameters
   if (offset < 0) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat("Invalid negative offset: %lld", offset));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Invalid negative offset: {}", offset));
   }
 
   if (size <= 0) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       absl::StrFormat("Invalid size: %lld", size));
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            aifocore::fmt::format("Invalid size: {}", size));
   }
 
   // Open file
   FileReader file;
-  ASSIGN_OR_RETURN(
-      file, FileReader::Open(datafile_path, "rb"),
-      absl::StrFormat("Cannot open data file: %s", datafile_path.string()));
+  AIFOCORE_ASSIGN_OR_RETURN(file, FileReader::Open(datafile_path, "rb"));
 
   // Seek to offset
-  RETURN_IF_ERROR(file.Seek(offset),
-                  absl::StrFormat("Cannot seek to offset %lld", offset));
+  AIFOCORE_RETURN_IF_ERROR(file.Seek(offset));
 
   // Read data
   std::vector<uint8_t> data;
-  ASSIGN_OR_RETURN(data, file.ReadBytes(size),
-                   absl::StrFormat("Cannot read %lld bytes", size));
+  AIFOCORE_ASSIGN_OR_RETURN(data, file.ReadBytes(size));
 
   return data;
 }
 
-}  // namespace mrxs
-}  // namespace fastslide
+} // namespace mrxs
+} // namespace fastslide

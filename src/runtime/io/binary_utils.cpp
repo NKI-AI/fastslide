@@ -20,64 +20,63 @@
 #include <cstdio>
 #include <vector>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
-#include "absl/strings/str_format.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
+#include "aifocore/utilities/fmt.h"
 
 namespace fastslide {
 namespace runtime {
 namespace io {
 
-absl::StatusOr<int32_t> ReadLeInt32(FILE* file) {
+aifocore::Result<int32_t> ReadLeInt32(FILE *file) {
   uint8_t buf[4];
   if (fread(buf, 1, 4, file) != 4) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
-                       "Failed to read 4 bytes for int32");
+    return aifocore::Status(aifocore::StatusCode::kInternal,
+                            "Failed to read 4 bytes for int32");
   }
   // Little-endian byte order
   return static_cast<int32_t>(buf[0] | (buf[1] << 8) | (buf[2] << 16) |
                               (buf[3] << 24));
 }
 
-absl::StatusOr<uint32_t> ReadLeUInt32(FILE* file) {
+aifocore::Result<uint32_t> ReadLeUInt32(FILE *file) {
   uint8_t buf[4];
   if (fread(buf, 1, 4, file) != 4) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
-                       "Failed to read 4 bytes for uint32");
+    return aifocore::Status(aifocore::StatusCode::kInternal,
+                            "Failed to read 4 bytes for uint32");
   }
   // Little-endian byte order
   return static_cast<uint32_t>(buf[0] | (buf[1] << 8) | (buf[2] << 16) |
                                (buf[3] << 24));
 }
 
-absl::StatusOr<std::vector<uint8_t>> DecompressZlib(const uint8_t* data,
-                                                    size_t compressed_size,
-                                                    size_t expected_size) {
+aifocore::Result<std::vector<uint8_t>> DecompressZlib(const uint8_t *data,
+                                                      size_t compressed_size,
+                                                      size_t expected_size) {
   std::vector<uint8_t> decompressed(expected_size);
   z_stream strm{};
-  strm.next_in = const_cast<uint8_t*>(data);
+  strm.next_in = const_cast<uint8_t *>(data);
   strm.avail_in = compressed_size;
   strm.next_out = decompressed.data();
   strm.avail_out = expected_size;
 
   if (inflateInit(&strm) != Z_OK) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
-                       "Failed to initialize zlib");
+    return aifocore::Status(aifocore::StatusCode::kInternal,
+                            "Failed to initialize zlib");
   }
 
   int ret = inflate(&strm, Z_FINISH);
   inflateEnd(&strm);
 
   if (ret != Z_STREAM_END) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInternal,
-        absl::StrFormat("Zlib decompression failed with error code: %d", ret));
+    return aifocore::Status(
+        aifocore::StatusCode::kInternal,
+        aifocore::fmt::format("Zlib decompression failed with error code: {}",
+                              ret));
   }
 
   return decompressed;
 }
 
-}  // namespace io
-}  // namespace runtime
-}  // namespace fastslide
+} // namespace io
+} // namespace runtime
+} // namespace fastslide

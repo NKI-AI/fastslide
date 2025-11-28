@@ -17,7 +17,7 @@
 
 #include <vector>
 
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
 #include "fastslide/readers/qptiff/qptiff.h"
@@ -60,7 +60,7 @@ class QptiffPlanBuilder {
   /// @param output_planar_config Planar configuration for output
   /// @param tiff_index SimpleTiff index for querying tile structure
   /// @return Tile plan or error status
-  static absl::StatusOr<core::TilePlan> BuildPlan(
+  static aifocore::Result<core::TilePlan> BuildPlan(
       const core::TileRequest& request,
       const std::vector<QpTiffLevelInfo>& pyramid,
       PlanarConfig output_planar_config,
@@ -71,7 +71,7 @@ class QptiffPlanBuilder {
   /// @param request The tile request
   /// @param pyramid Pyramid levels information
   /// @return Status indicating success or failure
-  static absl::Status ValidateRequest(
+  static aifocore::Status ValidateRequest(
       const core::TileRequest& request,
       const std::vector<QpTiffLevelInfo>& pyramid);
 
@@ -94,7 +94,7 @@ class QptiffPlanBuilder {
   /// @param tile_height Output tile height
   /// @param is_tiled Output whether pages are tiled
   /// @return Status indicating success or failure
-  static absl::Status GetTileDimensions(const simpletiff::TiffIndex& tiff_index,
+  static aifocore::Status GetTileDimensions(const simpletiff::TiffIndex& tiff_index,
                                         const QpTiffLevelInfo& level_info,
                                         uint32_t& tile_width,
                                         uint32_t& tile_height, bool& is_tiled);

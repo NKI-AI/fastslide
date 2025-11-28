@@ -20,8 +20,7 @@
 #include <tuple>
 #include <vector>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
 #include "fastslide/runtime/io/file_reader.h"
 
@@ -45,9 +44,9 @@ namespace mrxs {
 
 /// @brief Result of reading a non-hierarchical record
 struct NonHierRecordData {
-  std::string datafile_path;  ///< Relative path to data file
-  int64_t offset;             ///< Byte offset in data file
-  int64_t size;               ///< Size in bytes
+  std::string datafile_path; ///< Relative path to data file
+  int64_t offset;            ///< Byte offset in data file
+  int64_t size;              ///< Size in bytes
 };
 
 /// @brief Helper class for reading MRXS Index.dat file
@@ -65,7 +64,7 @@ struct NonHierRecordData {
 /// ASSIGN_OR_RETURN(auto tiles, reader.ReadLevelTiles(0));
 /// ```
 class MrxsIndexReader {
- public:
+public:
   /// @brief Default constructor (creates invalid reader)
   MrxsIndexReader() = default;
 
@@ -74,25 +73,25 @@ class MrxsIndexReader {
   /// @param index_path Path to Index.dat file
   /// @param slide_info Slide information (for validation and context)
   /// @return MrxsIndexReader instance or error
-  /// @retval absl::NotFoundError if file cannot be opened
-  /// @retval absl::InvalidArgumentError if file header is invalid
-  static absl::StatusOr<MrxsIndexReader> Open(const fs::path& index_path,
-                                              const SlideDataInfo& slide_info);
+  /// @retval NotFoundError if file cannot be opened
+  /// @retval InvalidArgumentError if file header is invalid
+  static aifocore::Result<MrxsIndexReader>
+  Open(const fs::path &index_path, const SlideDataInfo &slide_info);
 
   /// @brief Move constructor
-  MrxsIndexReader(MrxsIndexReader&& other) noexcept = default;
+  MrxsIndexReader(MrxsIndexReader &&other) noexcept = default;
 
   /// @brief Move assignment
-  MrxsIndexReader& operator=(MrxsIndexReader&& other) noexcept = default;
+  MrxsIndexReader &operator=(MrxsIndexReader &&other) noexcept = default;
 
   /// @brief Destructor (automatic cleanup via FileReader)
   ~MrxsIndexReader() = default;
 
   /// @brief Deleted copy constructor (unique ownership)
-  MrxsIndexReader(const MrxsIndexReader&) = delete;
+  MrxsIndexReader(const MrxsIndexReader &) = delete;
 
   /// @brief Deleted copy assignment (unique ownership)
-  MrxsIndexReader& operator=(const MrxsIndexReader&) = delete;
+  MrxsIndexReader &operator=(const MrxsIndexReader &) = delete;
 
   /// @brief Read all tile records for a specific pyramid level
   ///
@@ -103,11 +102,11 @@ class MrxsIndexReader {
   /// @param level_index Zero-based level index (0 = highest resolution)
   /// @param level_params Pyramid parameters for this level
   /// @return Vector of tile records or error
-  /// @retval absl::InvalidArgumentError if level index is invalid or data is
+  /// @retval InvalidArgumentError if level index is invalid or data is
   /// malformed
-  /// @retval absl::InternalError if file I/O fails
-  absl::StatusOr<std::vector<MiraxTileRecord>> ReadLevelTiles(
-      int level_index, const PyramidLevelParameters& level_params);
+  /// @retval InternalError if file I/O fails
+  aifocore::Result<std::vector<MiraxTileRecord>>
+  ReadLevelTiles(int level_index, const PyramidLevelParameters &level_params);
 
   /// @brief Read a non-hierarchical record (associated data)
   ///
@@ -116,13 +115,13 @@ class MrxsIndexReader {
   ///
   /// @param record_index Record index in non-hierarchical section
   /// @return Record data (path, offset, size) or error
-  /// @retval absl::InvalidArgumentError if record index is invalid
-  /// @retval absl::InternalError if file I/O fails
-  absl::StatusOr<NonHierRecordData> ReadNonHierRecord(int record_index);
+  /// @retval InvalidArgumentError if record index is invalid
+  /// @retval InternalError if file I/O fails
+  aifocore::Result<NonHierRecordData> ReadNonHierRecord(int record_index);
 
- private:
+private:
   /// @brief Private constructor (use Open factory method)
-  MrxsIndexReader(FileReader file, const SlideDataInfo* slide_info,
+  MrxsIndexReader(FileReader file, const SlideDataInfo *slide_info,
                   int64_t hierarchical_root, int64_t nonhier_root);
 
   /// @brief Read index file header and validate
@@ -130,8 +129,8 @@ class MrxsIndexReader {
   /// @param file File reader positioned at start of file
   /// @param slide_info Slide info for validation
   /// @return Tuple of (hierarchical_root, nonhier_root) offsets or error
-  static absl::StatusOr<std::tuple<int64_t, int64_t>> ReadHeader(
-      const FileReader& file, const SlideDataInfo& slide_info);
+  static aifocore::Result<std::tuple<int64_t, int64_t>>
+  ReadHeader(const FileReader &file, const SlideDataInfo &slide_info);
 
   /// @brief Subdivide a stored image into multiple logical tiles
   ///
@@ -149,19 +148,20 @@ class MrxsIndexReader {
   /// @param level_params Level parameters
   /// @param zoom_level Zoom level metadata
   /// @return Vector of tile records for all subtiles
-  std::vector<MiraxTileRecord> SubdivideImage(
-      int64_t image_index, int32_t image_grid_x, int32_t image_grid_y,
-      int64_t data_offset, int64_t data_length, int64_t data_file_number,
-      int level_index, const PyramidLevelParameters& level_params,
-      const SlideZoomLevel& zoom_level);
+  std::vector<MiraxTileRecord>
+  SubdivideImage(int64_t image_index, int32_t image_grid_x,
+                 int32_t image_grid_y, int64_t data_offset, int64_t data_length,
+                 int64_t data_file_number, int level_index,
+                 const PyramidLevelParameters &level_params,
+                 const SlideZoomLevel &zoom_level);
 
-  FileReader file_;                  ///< Index file handle (RAII)
-  const SlideDataInfo* slide_info_;  ///< Slide information pointer
-  int64_t hierarchical_root_ = 0;    ///< Offset to hierarchical root
-  int64_t nonhier_root_ = 0;         ///< Offset to non-hierarchical root
+  FileReader file_;                 ///< Index file handle (RAII)
+  const SlideDataInfo *slide_info_; ///< Slide information pointer
+  int64_t hierarchical_root_ = 0;   ///< Offset to hierarchical root
+  int64_t nonhier_root_ = 0;        ///< Offset to non-hierarchical root
 };
 
-}  // namespace mrxs
-}  // namespace fastslide
+} // namespace mrxs
+} // namespace fastslide
 
-#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_INDEX_READER_H_
+#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_INDEX_READER_H_

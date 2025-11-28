@@ -26,11 +26,8 @@
 #include <utility>
 #include <vector>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
-
 #include "aifocore/concepts/numeric.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/utilities/tiff/tile_utilities.h"
 
@@ -54,7 +51,7 @@ void TiffBasedReader::SetCache(std::shared_ptr<ITileCache> cache) {
   // For TIFF-based readers, we store in the old TileCache system
   // TODO(fastslide): Update tiff_cache_service to use ITileCache directly
   // For now, ITileCache is used primarily by MRXS readers
-  (void)cache;  // Suppress unused parameter warning
+  (void)cache; // Suppress unused parameter warning
 }
 
 int TiffBasedReader::GetBestLevelForDownsampleImpl(
@@ -79,4 +76,4 @@ int TiffBasedReader::GetBestLevelForDownsampleImpl(
   return best_level;
 }
 
-}  // namespace fastslide
+} // namespace fastslide

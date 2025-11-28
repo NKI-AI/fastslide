@@ -18,7 +18,7 @@
 #include <cstdint>
 #include <vector>
 
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 #include "fastslide/image.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
 
@@ -29,24 +29,24 @@ namespace internal {
 /// @brief Decode compressed image data into an RGB image
 /// @param data Compressed image data
 /// @param format Image format (JPEG/PNG/BMP)
-/// @return StatusOr containing decoded RGB image or error
-absl::StatusOr<RGBImage> DecodeImage(const std::vector<uint8_t>& data,
+/// @return Result containing decoded RGB image or error
+aifocore::Result<RGBImage> DecodeImage(const std::vector<uint8_t>& data,
                                      MrxsImageFormat format);
 
 /// @brief Decode JPEG image data
 /// @param data JPEG compressed data
-/// @return StatusOr containing decoded RGB image or error
-absl::StatusOr<RGBImage> DecodeJpeg(const std::vector<uint8_t>& data);
+/// @return Result containing decoded RGB image or error
+aifocore::Result<RGBImage> DecodeJpeg(const std::vector<uint8_t>& data);
 
 /// @brief Decode PNG image data (using lodepng)
 /// @param data PNG compressed data
-/// @return StatusOr containing decoded RGB image or error
-absl::StatusOr<RGBImage> DecodePng(const std::vector<uint8_t>& data);
+/// @return Result containing decoded RGB image or error
+aifocore::Result<RGBImage> DecodePng(const std::vector<uint8_t>& data);
 
 /// @brief Decode BMP image data (simple, uncompressed only)
 /// @param data BMP data
-/// @return StatusOr containing decoded RGB image or error
-absl::StatusOr<RGBImage> DecodeBmp(const std::vector<uint8_t>& data);
+/// @return Result containing decoded RGB image or error
+aifocore::Result<RGBImage> DecodeBmp(const std::vector<uint8_t>& data);
 
 }  // namespace internal
 }  // namespace mrxs

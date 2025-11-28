@@ -39,14 +39,14 @@ constexpr int32_t kFix_2_053119869 = 16819;
 constexpr int32_t kFix_2_562915447 = 20995;
 constexpr int32_t kFix_3_072711026 = 25172;
 
-} // namespace
+}  // namespace
 
 // ============================================================================
 // Vectorized 1D IDCT Pass 1: Row Processing (Process 2 rows at once)
 // ============================================================================
 
-HWY_INLINE void idct_1d_pass1_simd_scalar(int32_t *HWY_RESTRICT temp,
-                                          const int16_t *HWY_RESTRICT src) {
+HWY_INLINE void idct_1d_pass1_simd_scalar(int32_t* HWY_RESTRICT temp,
+                                          const int16_t* HWY_RESTRICT src) {
   // Scalar fallback for single row
   int32_t c0 = src[0], c1 = src[1], c2 = src[2], c3 = src[3];
   int32_t c4 = src[4], c5 = src[5], c6 = src[6], c7 = src[7];
@@ -90,8 +90,8 @@ HWY_INLINE void idct_1d_pass1_simd_scalar(int32_t *HWY_RESTRICT temp,
   temp[4] = (tmp13 - btmp0 + kPass1Round) >> kPass1Shift;
 }
 
-HWY_INLINE void idct_1d_pass1_simd(int32_t *HWY_RESTRICT temp,
-                                   const int16_t *HWY_RESTRICT src) {
+HWY_INLINE void idct_1d_pass1_simd(int32_t* HWY_RESTRICT temp,
+                                   const int16_t* HWY_RESTRICT src) {
   // Just use scalar - the broadcast approach was inefficient
   idct_1d_pass1_simd_scalar(temp, src);
 }
@@ -100,8 +100,8 @@ HWY_INLINE void idct_1d_pass1_simd(int32_t *HWY_RESTRICT temp,
 // Vectorized 1D IDCT Pass 2: Column Processing (4 columns at a time)
 // ============================================================================
 
-HWY_INLINE void idct_1d_pass2_simd_4cols(uint8_t *HWY_RESTRICT dst,
-                                         const int32_t *HWY_RESTRICT temp) {
+HWY_INLINE void idct_1d_pass2_simd_4cols(uint8_t* HWY_RESTRICT dst,
+                                         const int32_t* HWY_RESTRICT temp) {
   const hn::CappedTag<int32_t, 4> d32;
 
   // Load 4 columns from each of the 8 rows (strided by 8)
@@ -235,8 +235,8 @@ HWY_INLINE void idct_1d_pass2_simd_4cols(uint8_t *HWY_RESTRICT dst,
   hn::StoreU(u8_7, d8, dst + 7 * 8);
 }
 
-HWY_INLINE void idct_1d_pass2_simd(uint8_t *HWY_RESTRICT dst,
-                                   const int32_t *HWY_RESTRICT temp) {
+HWY_INLINE void idct_1d_pass2_simd(uint8_t* HWY_RESTRICT dst,
+                                   const int32_t* HWY_RESTRICT temp) {
   // Process first 4 columns
   idct_1d_pass2_simd_4cols(dst, temp);
   // Process last 4 columns
@@ -247,8 +247,8 @@ HWY_INLINE void idct_1d_pass2_simd(uint8_t *HWY_RESTRICT dst,
 // Main 8x8 IDCT Function
 // ============================================================================
 
-void IdctHighway(const int16_t *HWY_RESTRICT input,
-                 uint8_t *HWY_RESTRICT output) {
+void IdctHighway(const int16_t* HWY_RESTRICT input,
+                 uint8_t* HWY_RESTRICT output) {
   // Temporary storage for intermediate values after row processing
   int32_t temp[64];
 
@@ -261,8 +261,8 @@ void IdctHighway(const int16_t *HWY_RESTRICT input,
   idct_1d_pass2_simd(output, temp);
 }
 
-} // namespace HWY_NAMESPACE
-} // namespace jpgd
+}  // namespace HWY_NAMESPACE
+}  // namespace jpgd
 
 HWY_AFTER_NAMESPACE();
 
@@ -274,17 +274,17 @@ HWY_EXPORT(IdctHighway);
 /// @brief Highway-optimized 8x8 IDCT dispatch function
 /// @param input Input DCT coefficients (8x8 block as row-major int16)
 /// @param output Output pixel values (8x8 block as row-major uint8)
-void IdctHighwayDispatch(const int16_t *input, uint8_t *output) {
+void IdctHighwayDispatch(const int16_t* input, uint8_t* output) {
   return HWY_DYNAMIC_DISPATCH(IdctHighway)(input, output);
 }
 
-} // namespace jpgd
+}  // namespace jpgd
 
 // C interface
 extern "C" {
-void idctHighwayShortU8(const int16_t *input, uint8_t *output) {
+void idctHighwayShortU8(const int16_t* input, uint8_t* output) {
   jpgd::IdctHighwayDispatch(input, output);
 }
 }
 
-#endif // HWY_ONCE
+#endif  // HWY_ONCE

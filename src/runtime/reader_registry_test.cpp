@@ -24,7 +24,7 @@
 #include <utility>
 #include <vector>
 
-#include "absl/status/status.h"
+#include "aifocore/status/result.h"
 #include "fastslide/runtime/format_descriptor.h"
 #include "fastslide/slide_reader.h"
 
@@ -48,8 +48,9 @@ FormatDescriptor CreateMockMrxsDescriptor() {
       SetCapability(desc.capabilities, FormatCapability::kCompressed);
   desc.factory = [](std::shared_ptr<ITileCache> cache,
                     std::string_view filename)
-      -> absl::StatusOr<std::unique_ptr<SlideReader>> {
-    return absl::UnimplementedError("Mock MRXS factory");
+      -> aifocore::Result<std::unique_ptr<SlideReader>> {
+    return aifocore::Status(aifocore::StatusCode::kUnimplemented,
+                            "Mock MRXS factory");
   };
   return desc;
 }
@@ -67,8 +68,9 @@ FormatDescriptor CreateMockQptiffDescriptor() {
       SetCapability(desc.capabilities, FormatCapability::kSpectral);
   desc.factory = [](std::shared_ptr<ITileCache> cache,
                     std::string_view filename)
-      -> absl::StatusOr<std::unique_ptr<SlideReader>> {
-    return absl::UnimplementedError("Mock QPTIFF factory");
+      -> aifocore::Result<std::unique_ptr<SlideReader>> {
+    return aifocore::Status(aifocore::StatusCode::kUnimplemented,
+                            "Mock QPTIFF factory");
   };
   return desc;
 }
@@ -87,8 +89,9 @@ FormatDescriptor CreateMockSvsDescriptor() {
       SetCapability(desc.capabilities, FormatCapability::kAssociatedImages);
   desc.factory = [](std::shared_ptr<ITileCache> cache,
                     std::string_view filename)
-      -> absl::StatusOr<std::unique_ptr<SlideReader>> {
-    return absl::UnimplementedError("Mock SVS factory");
+      -> aifocore::Result<std::unique_ptr<SlideReader>> {
+    return aifocore::Status(aifocore::StatusCode::kUnimplemented,
+                            "Mock SVS factory");
   };
   return desc;
 }
@@ -117,7 +120,7 @@ TEST(ReaderRegistryTest, RegisterSingleFormat) {
   EXPECT_TRUE(registry.SupportsExtension(".mrxs"));
   EXPECT_FALSE(registry.SupportsExtension(".svs"));
 
-  auto* format = registry.GetFormat(".mrxs");
+  auto *format = registry.GetFormat(".mrxs");
   ASSERT_NE(format, nullptr);
   EXPECT_EQ(format->format_name, "MRXS");
   EXPECT_EQ(format->primary_extension, ".mrxs");
@@ -165,8 +168,9 @@ TEST(ReaderRegistryTest, ReplaceExistingFormat) {
   mrxs1.capabilities = SetCapability(0, FormatCapability::kPyramidal);
   mrxs1.factory = [](std::shared_ptr<ITileCache> cache,
                      std::string_view filename)
-      -> absl::StatusOr<std::unique_ptr<SlideReader>> {
-    return absl::UnimplementedError("Mock MRXS factory");
+      -> aifocore::Result<std::unique_ptr<SlideReader>> {
+    return aifocore::Status(aifocore::StatusCode::kUnimplemented,
+                            "Mock MRXS factory");
   };
 
   registry.RegisterFormat(mrxs1);
@@ -180,8 +184,9 @@ TEST(ReaderRegistryTest, ReplaceExistingFormat) {
   mrxs2.capabilities = SetCapability(0, FormatCapability::kPyramidal);
   mrxs2.factory = [](std::shared_ptr<ITileCache> cache,
                      std::string_view filename)
-      -> absl::StatusOr<std::unique_ptr<SlideReader>> {
-    return absl::UnimplementedError("Mock MRXS V2 factory");
+      -> aifocore::Result<std::unique_ptr<SlideReader>> {
+    return aifocore::Status(aifocore::StatusCode::kUnimplemented,
+                            "Mock MRXS V2 factory");
   };
 
   registry.RegisterFormat(mrxs2);
@@ -190,7 +195,7 @@ TEST(ReaderRegistryTest, ReplaceExistingFormat) {
   EXPECT_EQ(registry.ListFormats().size(), 1);
 
   // But it's the new one
-  auto* format = registry.GetFormat(".mrxs");
+  auto *format = registry.GetFormat(".mrxs");
   ASSERT_NE(format, nullptr);
   EXPECT_EQ(format->format_name, "MRXS_V2");
 }
@@ -228,8 +233,8 @@ TEST(ReaderRegistryTest, ExtensionNormalizationLeadingDot) {
   ReaderRegistry registry;
   registry.RegisterFormat(CreateMockMrxsDescriptor());
 
-  auto* format1 = registry.GetFormat(".mrxs");
-  auto* format2 = registry.GetFormat("mrxs");
+  auto *format1 = registry.GetFormat(".mrxs");
+  auto *format2 = registry.GetFormat("mrxs");
 
   EXPECT_EQ(format1, format2);
   EXPECT_NE(format1, nullptr);
@@ -246,8 +251,8 @@ TEST(ReaderRegistryTest, GetSupportedExtensionsSorted) {
   mrxs.capabilities = SetCapability(0, FormatCapability::kPyramidal);
   mrxs.factory = [](std::shared_ptr<ITileCache> cache,
                     std::string_view filename)
-      -> absl::StatusOr<std::unique_ptr<SlideReader>> {
-    return absl::UnimplementedError("Mock");
+      -> aifocore::Result<std::unique_ptr<SlideReader>> {
+    return aifocore::Status(aifocore::StatusCode::kUnimplemented, "Mock");
   };
   registry.RegisterFormat(mrxs);
 
@@ -257,8 +262,8 @@ TEST(ReaderRegistryTest, GetSupportedExtensionsSorted) {
   qptiff.capabilities = SetCapability(0, FormatCapability::kSpectral);
   qptiff.factory = [](std::shared_ptr<ITileCache> cache,
                       std::string_view filename)
-      -> absl::StatusOr<std::unique_ptr<SlideReader>> {
-    return absl::UnimplementedError("Mock");
+      -> aifocore::Result<std::unique_ptr<SlideReader>> {
+    return aifocore::Status(aifocore::StatusCode::kUnimplemented, "Mock");
   };
   registry.RegisterFormat(qptiff);
 
@@ -344,7 +349,7 @@ TEST(ReaderRegistryTest, MultipleCapabilityCheck) {
   ReaderRegistry registry;
   registry.RegisterFormat(CreateMockMrxsDescriptor());
 
-  auto* format = registry.GetFormat(".mrxs");
+  auto *format = registry.GetFormat(".mrxs");
   ASSERT_NE(format, nullptr);
 
   // Check multiple capabilities
@@ -366,7 +371,7 @@ TEST(ReaderRegistryTest, CreateReaderUnsupportedExtension) {
   auto result = registry.CreateReader("slide.unknown");
 
   EXPECT_FALSE(result.ok());
-  EXPECT_EQ(result.status().code(), absl::StatusCode::kNotFound);
+  EXPECT_EQ(result.status().code(), aifocore::StatusCode::kNotFound);
   // Message should contain "No reader registered"
   EXPECT_NE(result.status().message().find("No reader registered"),
             std::string::npos);
@@ -381,10 +386,11 @@ TEST(ReaderRegistryTest, CreateReaderWithExtension) {
   desc.primary_extension = ".test";
   desc.factory = [](std::shared_ptr<ITileCache> cache,
                     std::string_view filename)
-      -> absl::StatusOr<std::unique_ptr<SlideReader>> {
+      -> aifocore::Result<std::unique_ptr<SlideReader>> {
     // Return error to verify factory was called
-    return absl::InternalError("Test factory called for: " +
-                               std::string(filename));
+    return aifocore::Status(aifocore::StatusCode::kInternal,
+                            "Test factory called for: " +
+                                std::string(filename));
   };
 
   registry.RegisterFormat(desc);
@@ -392,7 +398,7 @@ TEST(ReaderRegistryTest, CreateReaderWithExtension) {
   auto result = registry.CreateReader("slide.test");
 
   EXPECT_FALSE(result.ok());
-  EXPECT_EQ(result.status().code(), absl::StatusCode::kInternal);
+  EXPECT_EQ(result.status().code(), aifocore::StatusCode::kInternal);
   EXPECT_NE(result.status().message().find("slide.test"), std::string::npos);
 }
 
@@ -404,8 +410,8 @@ TEST(ReaderRegistryTest, CreateReaderCaseInsensitiveExtension) {
   desc.primary_extension = ".test";
   desc.factory = [](std::shared_ptr<ITileCache> cache,
                     std::string_view filename)
-      -> absl::StatusOr<std::unique_ptr<SlideReader>> {
-    return absl::InternalError("Factory called");
+      -> aifocore::Result<std::unique_ptr<SlideReader>> {
+    return aifocore::Status(aifocore::StatusCode::kInternal, "Factory called");
   };
 
   registry.RegisterFormat(desc);
@@ -439,12 +445,12 @@ TEST(ReaderRegistryTest, CreateReaderWithNullCache) {
   desc.primary_extension = ".test";
   desc.factory = [&null_cache_received](std::shared_ptr<ITileCache> cache,
                                         std::string_view filename)
-      -> absl::StatusOr<std::unique_ptr<SlideReader>> {
+      -> aifocore::Result<std::unique_ptr<SlideReader>> {
     // Verify nullptr cache was passed
     if (cache == nullptr) {
       null_cache_received = true;
     }
-    return absl::InternalError("Test");
+    return aifocore::Status(aifocore::StatusCode::kInternal, "Test");
   };
 
   registry.RegisterFormat(desc);
@@ -472,14 +478,14 @@ TEST(ReaderRegistryTest, ConcurrentRegistration) {
       desc.capabilities = SetCapability(0, FormatCapability::kPyramidal);
       desc.factory = [](std::shared_ptr<ITileCache> cache,
                         std::string_view filename)
-          -> absl::StatusOr<std::unique_ptr<SlideReader>> {
-        return absl::UnimplementedError("Mock");
+          -> aifocore::Result<std::unique_ptr<SlideReader>> {
+        return aifocore::Status(aifocore::StatusCode::kUnimplemented, "Mock");
       };
       registry.RegisterFormat(desc);
     });
   }
 
-  for (auto& thread : threads) {
+  for (auto &thread : threads) {
     thread.join();
   }
 
@@ -508,7 +514,7 @@ TEST(ReaderRegistryTest, ConcurrentAccess) {
     });
   }
 
-  for (auto& thread : threads) {
+  for (auto &thread : threads) {
     thread.join();
   }
 
@@ -537,8 +543,8 @@ TEST(ReaderRegistryTest, MultiDotExtension) {
   desc.capabilities = 0;
   desc.factory = [](std::shared_ptr<ITileCache> cache,
                     std::string_view filename)
-      -> absl::StatusOr<std::unique_ptr<SlideReader>> {
-    return absl::UnimplementedError("Mock");
+      -> aifocore::Result<std::unique_ptr<SlideReader>> {
+    return aifocore::Status(aifocore::StatusCode::kUnimplemented, "Mock");
   };
 
   registry.RegisterFormat(desc);
@@ -556,8 +562,9 @@ TEST(ReaderRegistryTest, FilenameWithPath) {
   desc.primary_extension = ".test";
   desc.factory = [](std::shared_ptr<ITileCache> cache,
                     std::string_view filename)
-      -> absl::StatusOr<std::unique_ptr<SlideReader>> {
-    return absl::InternalError("Called with: " + std::string(filename));
+      -> aifocore::Result<std::unique_ptr<SlideReader>> {
+    return aifocore::Status(aifocore::StatusCode::kInternal,
+                            "Called with: " + std::string(filename));
   };
 
   registry.RegisterFormat(desc);
@@ -577,8 +584,8 @@ TEST(ReaderRegistryTest, FilenameWithMultipleDots) {
 
   // Should extract .mrxs extension correctly
   EXPECT_FALSE(result.ok());
-  EXPECT_NE(result.status().code(), absl::StatusCode::kNotFound);
+  EXPECT_NE(result.status().code(), aifocore::StatusCode::kNotFound);
 }
 
-}  // namespace runtime
-}  // namespace fastslide
+} // namespace runtime
+} // namespace fastslide

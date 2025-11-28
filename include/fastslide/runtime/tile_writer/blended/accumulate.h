@@ -17,7 +17,7 @@
 
 #include <cstdint>
 
-#include "absl/synchronization/mutex.h"
+#include <mutex>
 #include "fastslide/runtime/tile_writer/fs_profile.h"
 
 namespace fastslide::runtime {
@@ -52,7 +52,7 @@ void AccumulateLinearTile(const float* linear_planar, int w, int h, int base_x,
                           int base_y, float weight, float* accumulator_r,
                           float* accumulator_g, float* accumulator_b,
                           float* weight_sum, int img_w, int img_h,
-                          absl::Mutex& accumulator_mutex);
+                          std::mutex& accumulator_mutex);
 
 /// @brief Finalize: normalize planar linear RGB accumulators and convert to
 /// interleaved sRGB8

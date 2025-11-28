@@ -21,8 +21,7 @@
 #include <utility>
 #include <vector>
 
-#include "absl/status/statusor.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
 #include "fastslide/readers/mrxs/mrxs.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/format_descriptor.h"
@@ -42,20 +41,24 @@ namespace {
 /// @param cache Optional tile cache (nullptr = no caching)
 /// @param filename Path to the .mrxs file
 /// @return StatusOr containing unique pointer to SlideReader or error
-absl::StatusOr<std::unique_ptr<SlideReader>> CreateMrxsReader(
-    std::shared_ptr<ITileCache> cache, std::string_view filename) {
-  DECLARE_ASSIGN_OR_RETURN_MOVE(std::unique_ptr<MrxsReader>, reader,
-                                MrxsReader::Create(std::string(filename)));
+aifocore::Result<std::unique_ptr<SlideReader>>
+CreateMrxsReader(std::shared_ptr<ITileCache> cache, std::string_view filename) {
+
+  auto reader_or = MrxsReader::Create(std::string(filename));
+  if (!reader_or.ok()) {
+    return reader_or.status();
+  }
+  std::unique_ptr<MrxsReader> reader = std::move(reader_or).value();
 
   // Apply cache if provided
   if (cache) {
     reader->SetITileCache(cache);
   }
 
-  return reader;
+  return std::unique_ptr<SlideReader>(std::move(reader));
 }
 
-}  // namespace
+} // namespace
 
 /// @brief Create a format descriptor for MRXS files
 ///
@@ -99,6 +102,6 @@ FormatDescriptor CreateMrxsFormatDescriptor() {
   return desc;
 }
 
-}  // namespace mrxs
-}  // namespace formats
-}  // namespace fastslide
+} // namespace mrxs
+} // namespace formats
+} // namespace fastslide

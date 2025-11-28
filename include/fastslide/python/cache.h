@@ -20,8 +20,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 #include "fastslide/utilities/cache.h"
 
 namespace fastslide::python {
@@ -43,15 +42,15 @@ struct CacheInspectionStats {
 
 /// @brief Cache manager with inspection capabilities
 class CacheManager {
- private:
+private:
   std::shared_ptr<TileCache> cache_;
 
- public:
+public:
   /// @brief Create a CacheManager with given capacity
   /// @param capacity Cache capacity
-  /// @return StatusOr containing the CacheManager
-  [[nodiscard]] static absl::StatusOr<std::shared_ptr<CacheManager>> Create(
-      size_t capacity = 1000);
+  /// @return Result containing the CacheManager
+  [[nodiscard]] static aifocore::Result<std::shared_ptr<CacheManager>>
+  Create(size_t capacity = 1000);
 
   [[nodiscard]] std::shared_ptr<TileCache> GetCache() const;
 
@@ -61,20 +60,20 @@ class CacheManager {
 
   [[nodiscard]] CacheInspectionStats GetDetailedStats() const;
 
-  [[nodiscard]] absl::Status Resize(size_t new_capacity);
+  [[nodiscard]] aifocore::Status Resize(size_t new_capacity);
 
- private:
+private:
   explicit CacheManager(std::shared_ptr<TileCache> cache);
 };
 
 /// @brief Global cache manager singleton
 class GlobalCacheManager {
- public:
-  [[nodiscard]] static GlobalCacheManager& Instance();
+public:
+  [[nodiscard]] static GlobalCacheManager &Instance();
 
   [[nodiscard]] std::shared_ptr<TileCache> GetCache();
 
-  [[nodiscard]] absl::Status SetCapacity(size_t capacity);
+  [[nodiscard]] aifocore::Status SetCapacity(size_t capacity);
 
   [[nodiscard]] TileCache::Stats GetStats();
 
@@ -83,4 +82,4 @@ class GlobalCacheManager {
   void Clear();
 };
 
-}  // namespace fastslide::python
+} // namespace fastslide::python

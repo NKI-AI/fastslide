@@ -21,7 +21,7 @@
 
 #include <jpeg-compressor/jpgd.h>
 
-#include "absl/status/status.h"
+
 #include "absl/strings/str_format.h"
 #include "aifocore/status/status_macros.h"
 #include "lodepng/lodepng.h"
@@ -94,7 +94,8 @@ absl::StatusOr<RGBImage> DecodeJpeg(const std::vector<uint8_t>& data) {
                   DataType::kUInt8);
 
   // Copy data from jpgd's buffer to our image
-  const size_t num_pixels = static_cast<size_t>(width) * static_cast<size_t>(height);
+  const size_t num_pixels =
+      static_cast<size_t>(width) * static_cast<size_t>(height);
   std::memcpy(result.GetData(), decoded, num_pixels * 3);
 
   // Free jpgd's allocated memory (using standard free since jpgd uses malloc)
@@ -213,5 +214,3 @@ absl::StatusOr<RGBImage> DecodeBmp(const std::vector<uint8_t>& data) {
 }
 
 }  // namespace fastslide::mrxs::internal
-
-

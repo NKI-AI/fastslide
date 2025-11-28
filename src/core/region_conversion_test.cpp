@@ -20,8 +20,7 @@
 #include <string_view>
 #include <vector>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 
 namespace fastslide {
 
@@ -33,10 +32,11 @@ class MockReaderForConversion : public SlideReader {
 
   [[nodiscard]] int GetLevelCount() const override { return num_levels_; }
 
-  [[nodiscard]] absl::StatusOr<LevelInfo> GetLevelInfo(
+  [[nodiscard]] aifocore::Result<LevelInfo> GetLevelInfo(
       int level) const override {
     if (level < 0 || level >= num_levels_) {
-      return absl::InvalidArgumentError("Invalid level");
+      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                              "Invalid level");
     }
 
     LevelInfo info;
@@ -56,14 +56,14 @@ class MockReaderForConversion : public SlideReader {
     return {};
   }
 
-  [[nodiscard]] absl::StatusOr<ImageDimensions> GetAssociatedImageDimensions(
+  [[nodiscard]] aifocore::Result<ImageDimensions> GetAssociatedImageDimensions(
       std::string_view name) const override {
-    return absl::NotFoundError("Not found");
+    return aifocore::Status(aifocore::StatusCode::kNotFound, "Not found");
   }
 
-  [[nodiscard]] absl::StatusOr<Image> ReadAssociatedImage(
+  [[nodiscard]] aifocore::Result<Image> ReadAssociatedImage(
       std::string_view name) const override {
-    return absl::NotFoundError("Not found");
+    return aifocore::Status(aifocore::StatusCode::kNotFound, "Not found");
   }
 
   [[nodiscard]] Metadata GetMetadata() const override { return Metadata(); }
@@ -88,7 +88,7 @@ class MockReaderForConversion : public SlideReader {
   }
 
   // Expose protected method for testing
-  absl::StatusOr<core::TileRequest> TestRegionToTileRequest(
+  aifocore::Result<core::TileRequest> TestRegionToTileRequest(
       const RegionSpec& region) const {
     return RegionToTileRequest(region);
   }
@@ -110,7 +110,7 @@ TEST(RegionConversionTest, BasicConversion) {
   region.level = 0;
 
   auto result = reader.TestRegionToTileRequest(region);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
 
   const auto& request = result.value();
   EXPECT_EQ(request.level, 0);
@@ -134,7 +134,7 @@ TEST(RegionConversionTest, InvalidRegionZeroWidth) {
 
   auto result = reader.TestRegionToTileRequest(region);
   EXPECT_FALSE(result.ok());
-  EXPECT_EQ(result.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(result.status().code(), aifocore::StatusCode::kInvalidArgument);
 }
 
 TEST(RegionConversionTest, InvalidRegionZeroHeight) {
@@ -147,7 +147,7 @@ TEST(RegionConversionTest, InvalidRegionZeroHeight) {
 
   auto result = reader.TestRegionToTileRequest(region);
   EXPECT_FALSE(result.ok());
-  EXPECT_EQ(result.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(result.status().code(), aifocore::StatusCode::kInvalidArgument);
 }
 
 TEST(RegionConversionTest, InvalidLevelNegative) {
@@ -160,7 +160,7 @@ TEST(RegionConversionTest, InvalidLevelNegative) {
 
   auto result = reader.TestRegionToTileRequest(region);
   EXPECT_FALSE(result.ok());
-  EXPECT_EQ(result.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(result.status().code(), aifocore::StatusCode::kInvalidArgument);
 }
 
 TEST(RegionConversionTest, InvalidLevelOutOfRange) {
@@ -173,7 +173,7 @@ TEST(RegionConversionTest, InvalidLevelOutOfRange) {
 
   auto result = reader.TestRegionToTileRequest(region);
   EXPECT_FALSE(result.ok());
-  EXPECT_EQ(result.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(result.status().code(), aifocore::StatusCode::kInvalidArgument);
 }
 
 TEST(RegionConversionTest, HigherPyramidLevel) {
@@ -185,7 +185,7 @@ TEST(RegionConversionTest, HigherPyramidLevel) {
   region.level = 2;  // Level 2 (downsampled)
 
   auto result = reader.TestRegionToTileRequest(region);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
 
   const auto& request = result.value();
   EXPECT_EQ(request.level, 2);
@@ -207,7 +207,7 @@ TEST(RegionConversionTest, LargeRegion) {
   region.level = 0;
 
   auto result = reader.TestRegionToTileRequest(region);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
 
   const auto& request = result.value();
   EXPECT_EQ(request.level, 0);
@@ -227,7 +227,7 @@ TEST(RegionConversionTest, SmallRegion) {
   region.level = 0;
 
   auto result = reader.TestRegionToTileRequest(region);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
 
   const auto& request = result.value();
   EXPECT_TRUE(request.IsValid());
@@ -249,7 +249,7 @@ TEST(RegionConversionTest, MaxCoordinates) {
   region.level = 0;
 
   auto result = reader.TestRegionToTileRequest(region);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
 
   const auto& request = result.value();
   EXPECT_TRUE(request.IsValid());
@@ -273,7 +273,7 @@ TEST(RegionConversionTest, NoChannelSelection) {
   region.level = 0;
 
   auto result = reader.TestRegionToTileRequest(region);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
 
   const auto& request = result.value();
   EXPECT_TRUE(request.channel_indices.empty());
@@ -292,7 +292,7 @@ TEST(RegionConversionTest, WithChannelSelection) {
   region.level = 0;
 
   auto result = reader.TestRegionToTileRequest(region);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
 
   const auto& request = result.value();
   EXPECT_FALSE(request.channel_indices.empty());
@@ -314,7 +314,7 @@ TEST(RegionConversionTest, SingleChannelSelection) {
   region.level = 0;
 
   auto result = reader.TestRegionToTileRequest(region);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
 
   const auto& request = result.value();
   EXPECT_EQ(request.channel_indices.size(), 1);
@@ -334,7 +334,7 @@ TEST(RegionConversionTest, ResetChannelSelection) {
   region.level = 0;
 
   auto result = reader.TestRegionToTileRequest(region);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
 
   const auto& request = result.value();
   EXPECT_TRUE(request.channel_indices.empty());
@@ -354,7 +354,7 @@ TEST(RegionConversionTest, PreservesUInt32Precision) {
   region.level = 0;
 
   auto result = reader.TestRegionToTileRequest(region);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
 
   const auto& request = result.value();
   ASSERT_TRUE(request.region_bounds.has_value());
@@ -386,7 +386,7 @@ TEST(RegionConversionIntegrationTest, ConversionWithPriorValidation) {
   region.level = 0;
 
   auto result = reader.TestRegionToTileRequest(region);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
 
   const auto& request = result.value();
   ASSERT_TRUE(request.region_bounds.has_value());
@@ -409,7 +409,7 @@ TEST(RegionConversionTest, OriginRegion) {
   region.level = 0;
 
   auto result = reader.TestRegionToTileRequest(region);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
 
   const auto& request = result.value();
   ASSERT_TRUE(request.region_bounds.has_value());
@@ -426,7 +426,7 @@ TEST(RegionConversionTest, NonSquareRegion) {
   region.level = 0;
 
   auto result = reader.TestRegionToTileRequest(region);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
 
   const auto& request = result.value();
   ASSERT_TRUE(request.region_bounds.has_value());
@@ -443,7 +443,7 @@ TEST(RegionConversionTest, TallRectangle) {
   region.level = 0;
 
   auto result = reader.TestRegionToTileRequest(region);
-  ASSERT_TRUE(result.ok()) << result.status();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
 
   const auto& request = result.value();
   ASSERT_TRUE(request.region_bounds.has_value());

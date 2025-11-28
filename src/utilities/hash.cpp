@@ -23,9 +23,9 @@
 #include <string>
 #include <vector>
 
-#include "absl/status/status.h"
-#include "absl/strings/str_format.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/platform/portability.h"
+#include "aifocore/status/result.h"
+#include "aifocore/utilities/fmt.h"
 #include "fastslide/utilities/sha-256.h"
 
 namespace fastslide {
@@ -33,60 +33,67 @@ namespace fastslide {
 QuickHashBuilder::QuickHashBuilder() : finalized_(false) {
   ctx_ = new Sha_256;
   hash_buffer_.resize(SIZE_OF_SHA_256_HASH);
-  sha_256_init(static_cast<Sha_256*>(ctx_), hash_buffer_.data());
+  sha_256_init(static_cast<Sha_256 *>(ctx_), hash_buffer_.data());
 }
 
 QuickHashBuilder::~QuickHashBuilder() {
   if (ctx_) {
-    delete static_cast<Sha_256*>(ctx_);
+    delete static_cast<Sha_256 *>(ctx_);
   }
 }
 
-absl::Status QuickHashBuilder::HashFile(const fs::path& file_path) {
+aifocore::Status QuickHashBuilder::HashFile(const fs::path &file_path) {
   if (finalized_) {
-    return MAKE_STATUS(absl::StatusCode::kFailedPrecondition,
-                       "Hash already finalized");
+    return aifocore::Status(aifocore::StatusCode::kFailedPrecondition,
+                            "Hash already finalized");
   }
 
+  // Note: ifstream doesn't support wchar_t path on all platforms/compilers
+  // consistently with the constructor, but on Windows MSVC it does. However,
+  // standard C++17 allows fs::path. On Windows, the MSVC implementation handles
+  // fs::path correctly (using wide chars). If we were using raw fopen, we'd
+  // need _wfopen. std::ifstream handles fs::path natively.
   std::ifstream file(file_path, std::ios::binary);
   if (!file.is_open()) {
-    return MAKE_STATUS(
-        absl::StatusCode::kNotFound,
-        absl::StrFormat("Cannot open file: %s", file_path.string()));
+    return aifocore::Status(
+        aifocore::StatusCode::kNotFound,
+        aifocore::fmt::format("Cannot open file: {}", file_path.string()));
   }
 
   std::array<uint8_t, 8192> buffer;
-  while (file.read(reinterpret_cast<char*>(buffer.data()), buffer.size()) ||
+  while (file.read(reinterpret_cast<char *>(buffer.data()), buffer.size()) ||
          file.gcount() > 0) {
-    sha_256_write(static_cast<Sha_256*>(ctx_), buffer.data(), file.gcount());
+    sha_256_write(static_cast<Sha_256 *>(ctx_), buffer.data(), file.gcount());
   }
 
   if (file.bad()) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInternal,
-        absl::StrFormat("Error reading file: %s", file_path.string()));
+    return aifocore::Status(
+        aifocore::StatusCode::kInternal,
+        aifocore::fmt::format("Error reading file: {}", file_path.string()));
   }
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-absl::Status QuickHashBuilder::HashFilePart(const fs::path& file_path,
-                                            int64_t offset, int64_t length) {
+aifocore::Status QuickHashBuilder::HashFilePart(const fs::path &file_path,
+                                                int64_t offset,
+                                                int64_t length) {
   if (finalized_) {
-    return MAKE_STATUS(absl::StatusCode::kFailedPrecondition,
-                       "Hash already finalized");
+    return aifocore::Status(aifocore::StatusCode::kFailedPrecondition,
+                            "Hash already finalized");
   }
 
-  FILE* file = fopen(file_path.string().c_str(), "rb");
+  FILE *file = aifocore::portable_fopen(file_path, "rb");
   if (!file) {
-    return MAKE_STATUS(
-        absl::StatusCode::kNotFound,
-        absl::StrFormat("Cannot open file: %s", file_path.string()));
+    return aifocore::Status(
+        aifocore::StatusCode::kNotFound,
+        aifocore::fmt::format("Cannot open file: {}", file_path.string()));
   }
 
-  if (fseek(file, offset, SEEK_SET) != 0) {
+  if (aifocore::portable_fseek(file, offset, SEEK_SET) != 0) {
     fclose(file);
-    return MAKE_STATUS(absl::StatusCode::kInternal, "Failed to seek in file");
+    return aifocore::Status(aifocore::StatusCode::kInternal,
+                            "Failed to seek in file");
   }
 
   std::array<uint8_t, 8192> buffer;
@@ -98,43 +105,45 @@ absl::Status QuickHashBuilder::HashFilePart(const fs::path& file_path,
     const size_t bytes_read = fread(buffer.data(), 1, to_read, file);
 
     if (bytes_read > 0) {
-      sha_256_write(static_cast<Sha_256*>(ctx_), buffer.data(), bytes_read);
+      sha_256_write(static_cast<Sha_256 *>(ctx_), buffer.data(), bytes_read);
       remaining -= bytes_read;
     }
 
     if (bytes_read < to_read) {
       if (ferror(file)) {
         fclose(file);
-        return MAKE_STATUS(absl::StatusCode::kInternal, "Error reading file");
+        return aifocore::Status(aifocore::StatusCode::kInternal,
+                                "Error reading file");
       }
-      break;  // EOF
+      break; // EOF
     }
   }
 
   fclose(file);
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-absl::Status QuickHashBuilder::HashData(const uint8_t* data, size_t length) {
+aifocore::Status QuickHashBuilder::HashData(const uint8_t *data,
+                                            size_t length) {
   if (finalized_) {
-    return MAKE_STATUS(absl::StatusCode::kFailedPrecondition,
-                       "Hash already finalized");
+    return aifocore::Status(aifocore::StatusCode::kFailedPrecondition,
+                            "Hash already finalized");
   }
 
-  sha_256_write(static_cast<Sha_256*>(ctx_), data, length);
-  return absl::OkStatus();
+  sha_256_write(static_cast<Sha_256 *>(ctx_), data, length);
+  return aifocore::Status::OkStatus();
 }
 
-absl::Status QuickHashBuilder::HashData(const std::vector<uint8_t>& data) {
+aifocore::Status QuickHashBuilder::HashData(const std::vector<uint8_t> &data) {
   return HashData(data.data(), data.size());
 }
 
 std::string QuickHashBuilder::Finalize() {
   if (finalized_) {
-    return "";  // Already finalized
+    return ""; // Already finalized
   }
 
-  sha_256_close(static_cast<Sha_256*>(ctx_));
+  sha_256_close(static_cast<Sha_256 *>(ctx_));
   finalized_ = true;
 
   // Convert to hex string
@@ -147,4 +156,4 @@ std::string QuickHashBuilder::Finalize() {
   return oss.str();
 }
 
-}  // namespace fastslide
+} // namespace fastslide

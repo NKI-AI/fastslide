@@ -19,8 +19,7 @@
 #include <filesystem>
 #include <vector>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
 
 /// @file mrxs_data_reader.h
@@ -41,7 +40,7 @@ namespace mrxs {
 /// prevent crashes from malformed data. This centralizes validation logic
 /// that was previously duplicated across multiple locations.
 class TileDataValidator {
- public:
+public:
   /// @brief Validate tile parameters
   ///
   /// Checks that tile offset, length, and derived values are valid and safe:
@@ -51,15 +50,15 @@ class TileDataValidator {
   ///
   /// @param tile Tile record to validate
   /// @return OkStatus if valid, error otherwise
-  static absl::Status ValidateTileParams(const MiraxTileRecord& tile);
+  static aifocore::Status ValidateTileParams(const MiraxTileRecord &tile);
 
   /// @brief Validate file number is within range
   ///
   /// @param file_number File number from tile record
   /// @param num_datafiles Number of data files available
   /// @return OkStatus if valid, error otherwise
-  static absl::Status ValidateFileNumber(int32_t file_number,
-                                         size_t num_datafiles);
+  static aifocore::Status ValidateFileNumber(int32_t file_number,
+                                             size_t num_datafiles);
 };
 
 /// @brief Helper for reading MRXS data files
@@ -71,7 +70,7 @@ class TileDataValidator {
 /// Note: This class intentionally doesn't cache file handles. File handle
 /// pooling should be implemented at a higher level if needed for performance.
 class MrxsDataReader {
- public:
+public:
   /// @brief Read raw tile data from a data file
   ///
   /// Opens the appropriate data file, seeks to the tile's offset, and reads
@@ -82,12 +81,12 @@ class MrxsDataReader {
   /// @param tile Tile metadata (offset, length, file number)
   /// @param datafile_paths Paths to data files
   /// @return Raw compressed data or error
-  /// @retval absl::InvalidArgumentError if tile params are invalid
-  /// @retval absl::NotFoundError if data file cannot be opened
-  /// @retval absl::InternalError if seek or read fails
-  static absl::StatusOr<std::vector<uint8_t>> ReadTileData(
-      const fs::path& dirname, const MiraxTileRecord& tile,
-      const std::vector<std::string>& datafile_paths);
+  /// @retval InvalidArgument if tile params are invalid
+  /// @retval NotFound if data file cannot be opened
+  /// @retval Internal if seek or read fails
+  static aifocore::Result<std::vector<uint8_t>>
+  ReadTileData(const fs::path &dirname, const MiraxTileRecord &tile,
+               const std::vector<std::string> &datafile_paths);
 
   /// @brief Read data from a specific offset in a data file
   ///
@@ -98,11 +97,11 @@ class MrxsDataReader {
   /// @param offset Byte offset in file
   /// @param size Number of bytes to read
   /// @return Raw data or error
-  static absl::StatusOr<std::vector<uint8_t>> ReadData(
-      const fs::path& datafile_path, int64_t offset, int64_t size);
+  static aifocore::Result<std::vector<uint8_t>>
+  ReadData(const fs::path &datafile_path, int64_t offset, int64_t size);
 };
 
-}  // namespace mrxs
-}  // namespace fastslide
+} // namespace mrxs
+} // namespace fastslide
 
-#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_DATA_READER_H_
+#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_DATA_READER_H_

@@ -20,18 +20,17 @@
 #include <functional>
 #include <list>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
-#include "absl/synchronization/mutex.h"
+#include "aifocore/status/result.h"
 #include "fastslide/runtime/cache_interface.h"
 
 /**
  * @file lru_tile_cache.h
  * @brief LRU tile cache implementation of ITileCache
- * 
+ *
  * This header provides a concrete implementation of the ITileCache interface
  * using an LRU (Least Recently Used) eviction policy. This is the default
  * cache implementation used by FastSlide.
@@ -42,7 +41,7 @@ namespace runtime {
 
 /// @brief Hash function for TileKey
 struct TileKeyHash {
-  std::size_t operator()(const TileKey& key) const {
+  std::size_t operator()(const TileKey &key) const {
     std::size_t hash1 = std::hash<std::string>{}(key.filename);
     std::size_t hash2 = std::hash<uint16_t>{}(key.level);
     std::size_t hash3 = std::hash<uint32_t>{}(key.tile_x);
@@ -66,12 +65,12 @@ struct TileKeyHash {
 ///
 /// This is the default cache implementation used by FastSlide readers.
 class LRUTileCache : public ITileCache {
- public:
+public:
   /// @brief Create a new LRU tile cache
   /// @param capacity Maximum number of tiles to cache
   /// @return StatusOr containing the cache instance or error
-  static absl::StatusOr<std::shared_ptr<LRUTileCache>> Create(
-      size_t capacity = 1000);
+  static aifocore::Result<std::shared_ptr<LRUTileCache>>
+  Create(size_t capacity = 1000);
 
   /// @brief Constructor
   /// @param capacity Maximum number of tiles to cache
@@ -81,8 +80,8 @@ class LRUTileCache : public ITileCache {
   ~LRUTileCache() override = default;
 
   // ITileCache interface implementation
-  std::shared_ptr<CachedTileData> Get(const TileKey& key) override;
-  void Put(const TileKey& key, std::shared_ptr<CachedTileData> tile) override;
+  std::shared_ptr<CachedTileData> Get(const TileKey &key) override;
+  void Put(const TileKey &key, std::shared_ptr<CachedTileData> tile) override;
   void Clear() override;
   size_t GetSize() const override;
   size_t GetCapacity() const override;
@@ -92,9 +91,9 @@ class LRUTileCache : public ITileCache {
   /// @brief Set cache capacity
   /// @param capacity New capacity
   /// @return Status indicating success or failure
-  absl::Status SetCapacity(size_t capacity);
+  aifocore::Status SetCapacity(size_t capacity);
 
- private:
+private:
   /// @brief Internal cache entry
   struct CacheEntry {
     TileKey key;
@@ -106,7 +105,7 @@ class LRUTileCache : public ITileCache {
   void EvictLru();
 
   size_t capacity_;
-  mutable absl::Mutex mutex_;
+  mutable std::mutex mutex_;
   std::unordered_map<TileKey, CacheEntry, TileKeyHash> cache_;
   std::list<TileKey> lru_list_;
 
@@ -115,11 +114,11 @@ class LRUTileCache : public ITileCache {
   mutable size_t misses_;
 };
 
-}  // namespace runtime
+} // namespace runtime
 
 // Import into fastslide namespace
 using runtime::LRUTileCache;
 
-}  // namespace fastslide
+} // namespace fastslide
 
-#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_RUNTIME_LRU_TILE_CACHE_H_
+#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_RUNTIME_LRU_TILE_CACHE_H_

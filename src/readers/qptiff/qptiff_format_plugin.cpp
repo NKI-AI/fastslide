@@ -21,8 +21,7 @@
 #include <utility>
 #include <vector>
 
-#include "absl/status/statusor.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
 #include "fastslide/readers/qptiff/qptiff.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/format_descriptor.h"
@@ -35,18 +34,17 @@ namespace qptiff {
 namespace {
 
 /// @brief Factory function for QPTIFF readers
-absl::StatusOr<std::unique_ptr<SlideReader>> CreateQptiffReader(
+aifocore::Result<std::unique_ptr<SlideReader>> CreateQptiffReader(
     std::shared_ptr<ITileCache> cache, std::string_view filename) {
   // Create the QPTIFF reader (using existing implementation)
-  DECLARE_ASSIGN_OR_RETURN_MOVE(std::unique_ptr<QpTiffReader>, reader,
-                                QpTiffReader::Create(std::string(filename)));
+  AIFOCORE_ASSIGN_OR_RETURN(auto reader, QpTiffReader::Create(std::string(filename)));
 
   // Apply cache if provided
   if (cache) {
     reader->SetCache(cache);
   }
 
-  return reader;
+  return std::unique_ptr<SlideReader>(std::move(reader));
 }
 
 }  // namespace

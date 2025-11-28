@@ -20,8 +20,7 @@
 #include <type_traits>
 #include <utility>
 
-#include "absl/status/statusor.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
 
 /**
  * @file reader_factory.h
@@ -112,11 +111,10 @@ class ReaderFactory {
   /// @param filename Path to the slide file/directory
   /// @return StatusOr containing the reader instance or an error
   template <typename PathType>
-  static absl::StatusOr<std::unique_ptr<Derived>> CreateImpl(
+  static aifocore::Result<std::unique_ptr<Derived>> CreateImpl(
       PathType filename) {
     // Hook 1: Validate input (format-specific)
-    RETURN_IF_ERROR(Derived::ValidateInput(filename),
-                    "Failed to validate input");
+    AIFOCORE_RETURN_IF_ERROR(Derived::ValidateInput(filename));
 
     // Hook 2: Create reader with all initialization (format-specific)
     // The derived class handles: metadata loading, construction, property setup

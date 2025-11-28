@@ -21,7 +21,7 @@
 #include <utility>
 #include <vector>
 
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 #include "benchmark/benchmark.h"
 #include "fastslide/runtime/reader_registry.h"
 #include "fastslide/slide_reader.h"
@@ -63,17 +63,20 @@ public:
 
   int GetLevelCount() const { return reader_ ? reader_->GetLevelCount() : 0; }
 
-  absl::StatusOr<fastslide::LevelInfo> GetLevelInfo(int level) const {
+  aifocore::Result<fastslide::LevelInfo> GetLevelInfo(int level) const {
     if (!reader_) {
-      return absl::InternalError("Reader not initialized");
+      return aifocore::Status(aifocore::StatusCode::kInternal,
+                              "Reader not initialized");
     }
     return reader_->GetLevelInfo(level);
   }
 
-  absl::StatusOr<fastslide::Image> ReadRegion(uint32_t x, uint32_t y, int level,
-                                              uint32_t width, uint32_t height) {
+  aifocore::Result<fastslide::Image> ReadRegion(uint32_t x, uint32_t y,
+                                                int level, uint32_t width,
+                                                uint32_t height) {
     if (!reader_) {
-      return absl::InternalError("Reader not initialized");
+      return aifocore::Status(aifocore::StatusCode::kInternal,
+                              "Reader not initialized");
     }
 
     fastslide::RegionSpec region{

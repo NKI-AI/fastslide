@@ -20,7 +20,7 @@
 #include <string>
 #include <string_view>
 
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 
 namespace fs = std::filesystem;
 
@@ -36,44 +36,44 @@ namespace internal {
 /// - Key=Value pairs
 /// - Comments starting with ; or #
 class IniFile {
- public:
+public:
   /// @brief Load and parse an INI file
   /// @param path Path to the INI file
-  /// @return StatusOr containing parsed IniFile or error
-  static absl::StatusOr<IniFile> Load(const fs::path& path);
+  /// @return Result containing parsed IniFile or error
+  static aifocore::Result<IniFile> Load(const fs::path &path);
 
   /// @brief Get string value from section
   /// @param section Section name
   /// @param key Key name
-  /// @return StatusOr containing value or error
-  absl::StatusOr<std::string> GetString(std::string_view section,
-                                        std::string_view key) const;
+  /// @return Result containing value or error
+  aifocore::Result<std::string> GetString(std::string_view section,
+                                          std::string_view key) const;
 
   /// @brief Get integer value from section
   /// @param section Section name
   /// @param key Key name
-  /// @return StatusOr containing integer value or error
-  absl::StatusOr<int> GetInt(std::string_view section,
-                             std::string_view key) const;
+  /// @return Result containing integer value or error
+  aifocore::Result<int> GetInt(std::string_view section,
+                               std::string_view key) const;
 
   /// @brief Get double value from section
   /// @param section Section name
   /// @param key Key name
-  /// @return StatusOr containing double value or error
-  absl::StatusOr<double> GetDouble(std::string_view section,
-                                   std::string_view key) const;
+  /// @return Result containing double value or error
+  aifocore::Result<double> GetDouble(std::string_view section,
+                                     std::string_view key) const;
 
   /// @brief Check if section exists
   /// @param section Section name
   /// @return True if section exists
   bool HasSection(std::string_view section) const;
 
- private:
+private:
   std::map<std::string, std::map<std::string, std::string>> data_;
 };
 
-}  // namespace internal
-}  // namespace mrxs
-}  // namespace fastslide
+} // namespace internal
+} // namespace mrxs
+} // namespace fastslide
 
-#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_INI_PARSER_H_
+#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_INI_PARSER_H_

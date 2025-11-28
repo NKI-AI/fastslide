@@ -18,9 +18,10 @@
 #include <cmath>
 #include <sstream>
 #include <string>
+#include <vector>
 
-#include "absl/status/statusor.h"
-#include "absl/strings/str_format.h"
+#include "aifocore/status/result.h"
+#include "aifocore/utilities/fmt.h"
 
 namespace fastslide {
 
@@ -129,7 +130,7 @@ uint32_t PackRGB(uint8_t red, uint8_t green, uint8_t blue) {
          (static_cast<uint32_t>(green) << 8) | static_cast<uint32_t>(blue);
 }
 
-absl::StatusOr<std::array<uint8_t, 3>> ParseRgb(const std::string& str) {
+aifocore::Result<std::array<uint8_t, 3>> ParseRgb(const std::string& str) {
   std::array<uint8_t, 3> rgb{};
   std::istringstream ss(str);
 
@@ -142,8 +143,8 @@ absl::StatusOr<std::array<uint8_t, 3>> ParseRgb(const std::string& str) {
     }
 
     if (value < 0 || value > 255) {
-      return absl::InvalidArgumentError(absl::StrFormat(
-          "Invalid RGB value: %d (must be in range [0, 255])", value));
+      return aifocore::Status(aifocore::StatusCode::kInvalidArgument, aifocore::fmt::format(
+          "Invalid RGB value: {} (must be in range [0, 255])", value));
     }
 
     component = static_cast<uint8_t>(value);

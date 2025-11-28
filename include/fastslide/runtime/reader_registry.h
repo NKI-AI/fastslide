@@ -22,15 +22,15 @@
 #include <string_view>
 #include <vector>
 
-#include "absl/status/statusor.h"
-#include "absl/synchronization/mutex.h"
+#include "aifocore/status/result.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/format_descriptor.h"
+#include <mutex>
 
 /**
  * @file reader_registry.h
  * @brief Modern reader registry with format descriptor support
- * 
+ *
  * This header defines the new ReaderRegistry that uses FormatDescriptor
  * for format registration.
  * The registry is designed to be injectable for testing while providing
@@ -74,7 +74,7 @@ namespace runtime {
 /// auto reader = registry.CreateReader("slide.mrxs", my_cache);
 /// @endcode
 class ReaderRegistry {
- public:
+public:
   /// @brief Constructor
   ReaderRegistry() = default;
 
@@ -82,10 +82,10 @@ class ReaderRegistry {
   ~ReaderRegistry() = default;
 
   // Non-copyable, movable
-  ReaderRegistry(const ReaderRegistry&) = delete;
-  ReaderRegistry& operator=(const ReaderRegistry&) = delete;
-  ReaderRegistry(ReaderRegistry&&) = default;
-  ReaderRegistry& operator=(ReaderRegistry&&) = default;
+  ReaderRegistry(const ReaderRegistry &) = delete;
+  ReaderRegistry &operator=(const ReaderRegistry &) = delete;
+  ReaderRegistry(ReaderRegistry &&) = default;
+  ReaderRegistry &operator=(ReaderRegistry &&) = default;
 
   /// @brief Register a format descriptor
   /// @param descriptor Format descriptor to register
@@ -102,9 +102,9 @@ class ReaderRegistry {
   /// @param cache Optional tile cache (nullptr = no caching)
   /// @return SlideReader instance or error status
   /// @note Thread-safe
-  [[nodiscard]] absl::StatusOr<std::unique_ptr<SlideReader>> CreateReader(
-      std::string_view filename,
-      std::shared_ptr<ITileCache> cache = nullptr) const;
+  [[nodiscard]] aifocore::Result<std::unique_ptr<SlideReader>>
+  CreateReader(std::string_view filename,
+               std::shared_ptr<ITileCache> cache = nullptr) const;
 
   /// @brief List all registered formats
   /// @return Vector of format names
@@ -115,8 +115,8 @@ class ReaderRegistry {
   /// @param extension File extension (e.g., ".mrxs")
   /// @return Format descriptor or nullptr if not found
   /// @note Thread-safe
-  [[nodiscard]] const FormatDescriptor* GetFormat(
-      std::string_view extension) const;
+  [[nodiscard]] const FormatDescriptor *
+  GetFormat(std::string_view extension) const;
 
   /// @brief Check if extension is supported
   /// @param extension File extension (e.g., ".mrxs")
@@ -136,8 +136,8 @@ class ReaderRegistry {
   /// @param capability Capability to filter by
   /// @return Vector of format names that support the capability
   /// @note Thread-safe
-  [[nodiscard]] std::vector<std::string> ListFormatsByCapability(
-      FormatCapability capability) const;
+  [[nodiscard]] std::vector<std::string>
+  ListFormatsByCapability(FormatCapability capability) const;
 
   /// @brief Get all supported extensions
   /// @return Vector of extensions (sorted)
@@ -148,7 +148,7 @@ class ReaderRegistry {
   /// @note Thread-safe
   void Clear();
 
- private:
+private:
   /// @brief Normalize extension (lowercase with leading dot)
   static std::string NormalizeExtension(std::string_view extension);
 
@@ -156,7 +156,7 @@ class ReaderRegistry {
   std::map<std::string, FormatDescriptor> formats_;
 
   /// @brief Mutex for thread-safe access
-  mutable absl::Mutex mutex_;
+  mutable std::mutex mutex_;
 };
 
 /// @brief Get global default registry
@@ -170,14 +170,14 @@ class ReaderRegistry {
 /// built-in formats registered.
 ///
 /// @return Reference to global registry
-ReaderRegistry& GetGlobalRegistry();
+ReaderRegistry &GetGlobalRegistry();
 
-}  // namespace runtime
+} // namespace runtime
 
 // Import into fastslide namespace
 using runtime::GetGlobalRegistry;
 using runtime::ReaderRegistry;
 
-}  // namespace fastslide
+} // namespace fastslide
 
-#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_RUNTIME_READER_REGISTRY_H_
+#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_RUNTIME_READER_REGISTRY_H_

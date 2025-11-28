@@ -23,7 +23,7 @@
 #include <variant>
 #include <vector>
 
-#include "absl/status/status.h"
+#include "aifocore/status/result.h"
 
 namespace fastslide {
 
@@ -321,7 +321,7 @@ class Metadata {
 
   /// @brief Validate that mandatory keys are present
   /// @return Status indicating success or missing keys
-  [[nodiscard]] absl::Status ValidateMandatory() const {
+  [[nodiscard]] aifocore::Status ValidateMandatory() const {
     std::vector<std::string> missing_keys;
 
     if (!contains(std::string(MetadataKeys::kFormat))) {
@@ -338,10 +338,10 @@ class Metadata {
           msg += ", ";
         msg += missing_keys[i];
       }
-      return absl::InvalidArgumentError(msg);
+      return aifocore::Status(aifocore::StatusCode::kInvalidArgument, msg);
     }
 
-    return absl::OkStatus();
+    return aifocore::Status::OkStatus();
   }
 
  private:

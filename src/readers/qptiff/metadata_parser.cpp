@@ -21,48 +21,51 @@
 
 #include <pugixml.hpp>
 
-#include "absl/status/status.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
 #include "fastslide/utilities/colors.h"
 
 namespace fastslide {
 namespace formats {
 namespace qptiff {
 
-absl::Status QpTiffMetadataParser::ParseSlideMetadata(
-    const std::string& xml_content, QpTiffSlideMetadata& metadata) {
+aifocore::Status
+QpTiffMetadataParser::ParseSlideMetadata(const std::string &xml_content,
+                                         QpTiffSlideMetadata &metadata) {
 
   if (!IsQpTiffFormat(xml_content)) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       "Invalid QPTIFF XML format");
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "Invalid QPTIFF XML format");
   }
 
   pugi::xml_document doc;
   if (!doc.load_string(xml_content.c_str())) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       "Failed to parse XML metadata");
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "Failed to parse XML metadata");
   }
 
   auto root = doc.child("PerkinElmer-QPI-ImageDescription");
   if (root.empty()) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       "Invalid XML structure - missing root element");
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "Invalid XML structure - missing root element");
   }
 
   return ExtractResolutionInfo(root, metadata);
 }
 
-absl::StatusOr<QpTiffChannelInfo> QpTiffMetadataParser::ParseChannelInfo(
-    const std::string& xml_content, int channel_index) {
+aifocore::Result<QpTiffChannelInfo>
+QpTiffMetadataParser::ParseChannelInfo(const std::string &xml_content,
+                                       int channel_index) {
 
   pugi::xml_document doc;
   if (!doc.load_string(xml_content.c_str())) {
-    return absl::InvalidArgumentError("Failed to parse XML metadata");
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "Failed to parse XML metadata");
   }
 
   auto root = doc.child("PerkinElmer-QPI-ImageDescription");
   if (root.empty()) {
-    return absl::InvalidArgumentError("Invalid XML structure");
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "Invalid XML structure");
   }
 
   QpTiffChannelInfo channel;
@@ -95,8 +98,8 @@ absl::StatusOr<QpTiffChannelInfo> QpTiffMetadataParser::ParseChannelInfo(
   return channel;
 }
 
-std::string QpTiffMetadataParser::ExtractImageType(
-    const std::string& xml_content) {
+std::string
+QpTiffMetadataParser::ExtractImageType(const std::string &xml_content) {
   pugi::xml_document doc;
   if (!doc.load_string(xml_content.c_str())) {
     return "";
@@ -110,25 +113,26 @@ std::string QpTiffMetadataParser::ExtractImageType(
   return GetText(&root, "ImageType");
 }
 
-bool QpTiffMetadataParser::IsQpTiffFormat(const std::string& xml_content) {
+bool QpTiffMetadataParser::IsQpTiffFormat(const std::string &xml_content) {
   return xml_content.find("PerkinElmer-QPI-ImageDescription") !=
          std::string::npos;
 }
 
-std::string QpTiffMetadataParser::GetText(const void* node_ptr,
-                                          const char* tag) {
-  const auto* const node = static_cast<const pugi::xml_node*>(node_ptr);
+std::string QpTiffMetadataParser::GetText(const void *node_ptr,
+                                          const char *tag) {
+  const auto *const node = static_cast<const pugi::xml_node *>(node_ptr);
   auto child = node->child(tag);
   return !child.empty() ? child.text().as_string() : std::string{};
 }
 
-absl::Status QpTiffMetadataParser::ExtractResolutionInfo(
-    const pugi::xml_node& root_node, QpTiffSlideMetadata& metadata) {
+aifocore::Status
+QpTiffMetadataParser::ExtractResolutionInfo(const pugi::xml_node &root_node,
+                                            QpTiffSlideMetadata &metadata) {
 
   auto resolution_node = root_node.child("ScanProfile").child("root");
   if (resolution_node.empty()) {
-    return MAKE_STATUS(absl::StatusCode::kNotFound,
-                       "Resolution information not found in XML");
+    return aifocore::Status(aifocore::StatusCode::kNotFound,
+                            "Resolution information not found in XML");
   }
 
   // Extract pixel size
@@ -154,15 +158,16 @@ absl::Status QpTiffMetadataParser::ExtractResolutionInfo(
   }
 
   if (metadata.mpp_x <= 0.0 || metadata.mpp_y <= 0.0) {
-    return MAKE_STATUS(absl::StatusCode::kNotFound,
-                       "Valid pixel size not found in XML");
+    return aifocore::Status(aifocore::StatusCode::kNotFound,
+                            "Valid pixel size not found in XML");
   }
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-ColorRGB QpTiffMetadataParser::ParseChannelColor(
-    const std::string& color_str, const ColorRGB& default_color) {
+ColorRGB
+QpTiffMetadataParser::ParseChannelColor(const std::string &color_str,
+                                        const ColorRGB &default_color) {
 
   if (color_str.empty()) {
     return default_color;
@@ -173,10 +178,10 @@ ColorRGB QpTiffMetadataParser::ParseChannelColor(
     return default_color;
   }
 
-  const auto& rgb_array = color_result.value();
+  const auto &rgb_array = color_result.value();
   return ColorRGB(rgb_array[0], rgb_array[1], rgb_array[2]);
 }
 
-}  // namespace qptiff
-}  // namespace formats
-}  // namespace fastslide
+} // namespace qptiff
+} // namespace formats
+} // namespace fastslide

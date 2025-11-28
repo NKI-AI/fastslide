@@ -21,8 +21,7 @@
 #include <string_view>
 #include <type_traits>
 
-#include "absl/status/statusor.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
 #include "fastslide/readers/tiff_based_reader.h"
 
 /**
@@ -128,14 +127,14 @@ class TiffReaderFactory {
   /// @param filename Path to the TIFF file (string_view or fs::path)
   /// @return StatusOr containing the reader instance or an error
   template <typename PathType>
-  static absl::StatusOr<std::unique_ptr<Derived>> CreateImpl(
+  static aifocore::Result<std::unique_ptr<Derived>> CreateImpl(
       PathType filename) {
     // Allocate the concrete reader object
     // Use unique_ptr with new to call private constructor
     auto reader = std::unique_ptr<Derived>(new Derived(filename));
 
     // Call format-specific metadata parsing
-    RETURN_IF_ERROR(reader->ProcessMetadata(), "Failed to process metadata");
+    AIFOCORE_RETURN_IF_ERROR(reader->ProcessMetadata());
 
     // Convert metadata to common SlideProperties view
     reader->PopulateSlideProperties();

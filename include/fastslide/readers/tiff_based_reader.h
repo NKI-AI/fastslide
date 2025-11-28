@@ -22,8 +22,7 @@
 #include <string>
 #include <vector>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 #include "fastslide/slide_reader.h"
 #include "fastslide/utilities/tiff/tile_utilities.h"
 
@@ -68,8 +67,7 @@ namespace fs = std::filesystem;
 namespace fastslide {
 
 // Forward declaration for friend class
-template <typename Derived>
-class TiffReaderFactory;
+template <typename Derived> class TiffReaderFactory;
 
 /// @brief Base class for TIFF-based slide readers
 ///
@@ -80,10 +78,9 @@ class TiffReaderFactory;
 /// @note All readers now use simpletiff directly for TIFF operations, providing
 /// better performance and thread safety without the need for handle pools.
 class TiffBasedReader : public SlideReader {
- public:
+public:
   /// @brief Allow TiffReaderFactory to access protected methods
-  template <typename Derived>
-  friend class TiffReaderFactory;
+  template <typename Derived> friend class TiffReaderFactory;
 
   /// @brief Virtual destructor
   virtual ~TiffBasedReader() = default;
@@ -98,7 +95,7 @@ class TiffBasedReader : public SlideReader {
   /// caching)
   void SetCache(std::shared_ptr<ITileCache> cache);
 
- protected:
+protected:
   /// @brief Constructor for derived classes
   /// @param filename Path to the TIFF file
   explicit TiffBasedReader(fs::path filename);
@@ -119,6 +116,6 @@ class TiffBasedReader : public SlideReader {
   SlideProperties properties_;
 };
 
-}  // namespace fastslide
+} // namespace fastslide
 
-#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_TIFF_BASED_READER_H_
+#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_TIFF_BASED_READER_H_

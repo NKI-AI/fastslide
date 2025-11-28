@@ -18,11 +18,12 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <mutex>
 #include <string>
 #include <utility>
 
-#include "absl/status/status.h"
-#include "absl/strings/str_format.h"
+#include "aifocore/status/result.h"
+#include "aifocore/utilities/fmt.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/image.h"
 #include "fastslide/runtime/tile_writer/blended/blended_strategy.h"
@@ -34,12 +35,12 @@ namespace fastslide::runtime {
 
 TileWriter::~TileWriter() = default;
 
-TileWriter::TileWriter(const core::TilePlan& plan)
+TileWriter::TileWriter(const core::TilePlan &plan)
     : config_(AnalyzePlan(plan)) {
   strategy_ = CreateStrategy(config_);
 }
 
-TileWriter::TileWriter(const Config& config) : config_(config) {
+TileWriter::TileWriter(const Config &config) : config_(config) {
   strategy_ = CreateStrategy(config_);
 }
 
@@ -54,21 +55,23 @@ TileWriter::TileWriter(uint32_t width, uint32_t height,
   strategy_ = CreateStrategy(config_);
 }
 
-absl::Status TileWriter::WriteTile(const core::TileReadOp& op,
-                                   std::span<const uint8_t> pixel_data,
-                                   uint32_t tile_width, uint32_t tile_height,
-                                   uint32_t tile_channels) {
+aifocore::Status TileWriter::WriteTile(const core::TileReadOp &op,
+                                       std::span<const uint8_t> pixel_data,
+                                       uint32_t tile_width,
+                                       uint32_t tile_height,
+                                       uint32_t tile_channels) {
   return strategy_->WriteTile(op, pixel_data, tile_width, tile_height,
                               tile_channels);
 }
 
-absl::Status TileWriter::WriteTile(const core::TileReadOp& op,
-                                   std::span<const uint8_t> pixel_data,
-                                   uint32_t tile_width, uint32_t tile_height,
-                                   uint32_t tile_channels,
-                                   absl::Mutex& accumulator_mutex) {
+aifocore::Status TileWriter::WriteTile(const core::TileReadOp &op,
+                                       std::span<const uint8_t> pixel_data,
+                                       uint32_t tile_width,
+                                       uint32_t tile_height,
+                                       uint32_t tile_channels,
+                                       std::mutex &accumulator_mutex) {
   // Try to cast to BlendedStrategy to use mutex-aware version
-  auto* blended = dynamic_cast<BlendedStrategy*>(strategy_.get());
+  auto *blended = dynamic_cast<BlendedStrategy *>(strategy_.get());
   if (blended) {
     return blended->WriteTile(op, pixel_data, tile_width, tile_height,
                               tile_channels, accumulator_mutex);
@@ -78,10 +81,11 @@ absl::Status TileWriter::WriteTile(const core::TileReadOp& op,
                               tile_channels);
 }
 
-absl::Status TileWriter::FillWithColor(uint8_t r, uint8_t g, uint8_t b) {
-  uint8_t* buffer = strategy_->GetOutputBuffer();
+aifocore::Status TileWriter::FillWithColor(uint8_t r, uint8_t g, uint8_t b) {
+  uint8_t *buffer = strategy_->GetOutputBuffer();
   if (!buffer) {
-    return absl::InternalError("No output buffer available");
+    return aifocore::Status(aifocore::StatusCode::kInternal,
+                            "No output buffer available");
   }
 
   if (config_.channels == 3) {
@@ -93,39 +97,33 @@ absl::Status TileWriter::FillWithColor(uint8_t r, uint8_t g, uint8_t b) {
     FillRGBA8(buffer, config_.dimensions[0], config_.dimensions[1], r, g, b,
               255);
   } else {
-    return absl::UnimplementedError(absl::StrFormat(
-        "FillWithColor not implemented for %d channels", config_.channels));
+    return aifocore::Status(
+        aifocore::StatusCode::kUnimplemented,
+        aifocore::fmt::format("FillWithColor not implemented for {} channels",
+                              config_.channels));
   }
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-absl::Status TileWriter::Finalize() {
-  return strategy_->Finalize();
-}
+aifocore::Status TileWriter::Finalize() { return strategy_->Finalize(); }
 
 ImageDimensions TileWriter::GetDimensions() const {
   return strategy_->GetDimensions();
 }
 
-uint32_t TileWriter::GetChannels() const {
-  return strategy_->GetChannels();
-}
+uint32_t TileWriter::GetChannels() const { return strategy_->GetChannels(); }
 
-absl::StatusOr<TileWriter::OutputImage> TileWriter::GetOutput() {
+aifocore::Result<TileWriter::OutputImage> TileWriter::GetOutput() {
   return strategy_->GetOutput();
 }
 
-bool TileWriter::IsBlendingEnabled() const {
-  return config_.enable_blending;
-}
+bool TileWriter::IsBlendingEnabled() const { return config_.enable_blending; }
 
-std::string TileWriter::GetStrategyName() const {
-  return strategy_->GetName();
-}
+std::string TileWriter::GetStrategyName() const { return strategy_->GetName(); }
 
-std::unique_ptr<ITileWriterStrategy> TileWriter::CreateStrategy(
-    const Config& config) {
+std::unique_ptr<ITileWriterStrategy>
+TileWriter::CreateStrategy(const Config &config) {
   if (config.enable_blending) {
     return std::make_unique<BlendedStrategy>(config);
   } else {
@@ -133,7 +131,7 @@ std::unique_ptr<ITileWriterStrategy> TileWriter::CreateStrategy(
   }
 }
 
-TileWriter::Config TileWriter::AnalyzePlan(const core::TilePlan& plan) {
+TileWriter::Config TileWriter::AnalyzePlan(const core::TilePlan &plan) {
   Config config;
 
   config.dimensions = plan.output.dimensions;
@@ -149,18 +147,18 @@ TileWriter::Config TileWriter::AnalyzePlan(const core::TilePlan& plan) {
   }
 
   switch (plan.output.pixel_format) {
-    case core::OutputSpec::PixelFormat::kUInt8:
-      config.data_type = DataType::kUInt8;
-      break;
-    case core::OutputSpec::PixelFormat::kUInt16:
-      config.data_type = DataType::kUInt16;
-      break;
-    case core::OutputSpec::PixelFormat::kFloat32:
-      config.data_type = DataType::kFloat32;
-      break;
-    default:
-      config.data_type = DataType::kUInt8;
-      break;
+  case core::OutputSpec::PixelFormat::kUInt8:
+    config.data_type = DataType::kUInt8;
+    break;
+  case core::OutputSpec::PixelFormat::kUInt16:
+    config.data_type = DataType::kUInt16;
+    break;
+  case core::OutputSpec::PixelFormat::kFloat32:
+    config.data_type = DataType::kFloat32;
+    break;
+  default:
+    config.data_type = DataType::kUInt8;
+    break;
   }
 
   config.planar_config = plan.output.planar_config;
@@ -183,7 +181,7 @@ TileWriter::Config TileWriter::AnalyzePlan(const core::TilePlan& plan) {
   }
 
   config.enable_blending = false;
-  for (const auto& op : plan.operations) {
+  for (const auto &op : plan.operations) {
     if (op.blend_metadata.has_value()) {
       config.enable_blending = true;
       break;
@@ -193,4 +191,4 @@ TileWriter::Config TileWriter::AnalyzePlan(const core::TilePlan& plan) {
   return config;
 }
 
-}  // namespace fastslide::runtime
+} // namespace fastslide::runtime

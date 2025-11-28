@@ -19,8 +19,7 @@
 #include <string>
 #include <utility>
 
-#include "absl/status/status.h"
-#include "absl/status/statusor.h"
+#include "aifocore/status/result.h"
 #include "aifocore/status/status_macros.h"
 
 namespace fastslide::python {
@@ -29,21 +28,16 @@ namespace fastslide::python {
 CacheManager::CacheManager(std::shared_ptr<TileCache> cache)
     : cache_(std::move(cache)) {}
 
-absl::StatusOr<std::shared_ptr<CacheManager>> CacheManager::Create(
-    size_t capacity) {
+aifocore::Result<std::shared_ptr<CacheManager>>
+CacheManager::Create(size_t capacity) {
   std::shared_ptr<TileCache> cache;
-  ASSIGN_OR_RETURN(cache, TileCache::CreateShared(capacity),
-                   "Failed to create tile cache");
+  AIFOCORE_ASSIGN_OR_RETURN(cache, TileCache::CreateShared(capacity));
   return std::shared_ptr<CacheManager>(new CacheManager(std::move(cache)));
 }
 
-std::shared_ptr<TileCache> CacheManager::GetCache() const {
-  return cache_;
-}
+std::shared_ptr<TileCache> CacheManager::GetCache() const { return cache_; }
 
-void CacheManager::Clear() {
-  cache_->Clear();
-}
+void CacheManager::Clear() { cache_->Clear(); }
 
 TileCache::Stats CacheManager::GetBasicStats() const {
   return cache_->GetStats();
@@ -58,32 +52,31 @@ CacheInspectionStats CacheManager::GetDetailedStats() const {
   detailed.misses = basic.misses;
   detailed.hit_ratio = basic.hit_ratio;
   detailed.memory_usage_mb =
-      basic.memory_usage_bytes / (1024.0 * 1024.0);  // Convert bytes to MB
+      basic.memory_usage_bytes / (1024.0 * 1024.0); // Convert bytes to MB
   // TODO(jonasteuwen): Add actual key tracking if needed
   return detailed;
 }
 
-absl::Status CacheManager::Resize(size_t new_capacity) {
+aifocore::Status CacheManager::Resize(size_t new_capacity) {
   // Create new cache with new capacity
   std::shared_ptr<TileCache> new_cache;
-  ASSIGN_OR_RETURN(new_cache, TileCache::CreateShared(new_capacity),
-                   "Failed to create new tile cache");
+  AIFOCORE_ASSIGN_OR_RETURN(new_cache, TileCache::CreateShared(new_capacity));
   cache_ = std::move(new_cache);
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
 // GlobalCacheManager implementation
-GlobalCacheManager& GlobalCacheManager::Instance() {
+GlobalCacheManager &GlobalCacheManager::Instance() {
   static GlobalCacheManager instance;
   return instance;
 }
 
 std::shared_ptr<TileCache> GlobalCacheManager::GetCache() {
   return std::shared_ptr<TileCache>(&GlobalTileCache::Instance().GetCache(),
-                                    [](TileCache*) {});
+                                    [](TileCache *) {});
 }
 
-absl::Status GlobalCacheManager::SetCapacity(size_t capacity) {
+aifocore::Status GlobalCacheManager::SetCapacity(size_t capacity) {
   return GlobalTileCache::Instance().SetCapacity(capacity);
 }
 
@@ -100,7 +93,7 @@ CacheInspectionStats GlobalCacheManager::GetDetailedStats() {
   detailed.misses = basic.misses;
   detailed.hit_ratio = basic.hit_ratio;
   detailed.memory_usage_mb =
-      basic.memory_usage_bytes / (1024.0 * 1024.0);  // Convert bytes to MB
+      basic.memory_usage_bytes / (1024.0 * 1024.0); // Convert bytes to MB
   // TODO(jonasteuwen): Add actual key tracking if needed
   return detailed;
 }
@@ -109,4 +102,4 @@ void GlobalCacheManager::Clear() {
   GlobalTileCache::Instance().GetCache().Clear();
 }
 
-}  // namespace fastslide::python
+} // namespace fastslide::python

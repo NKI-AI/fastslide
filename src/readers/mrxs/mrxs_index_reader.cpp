@@ -1,7 +1,7 @@
 // Copyright 2025 Jonas Teuwen. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in git liance with the License.
+// you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
 //     http://www.apache.org/licenses/LICENSE-2.0
@@ -17,27 +17,24 @@
 #include <cstring>
 #include <limits>
 
-#include "absl/log/log.h"
-#include "absl/strings/str_format.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
+#include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/mrxs/mrxs_constants.h"
 #include "fastslide/runtime/io/binary_utils.h"
 
 namespace fastslide {
 namespace mrxs {
 
-absl::StatusOr<MrxsIndexReader> MrxsIndexReader::Open(
-    const fs::path& index_path, const SlideDataInfo& slide_info) {
+aifocore::Result<MrxsIndexReader>
+MrxsIndexReader::Open(const fs::path &index_path,
+                      const SlideDataInfo &slide_info) {
   // Open index file
   FileReader file;
-  ASSIGN_OR_RETURN(
-      file, FileReader::Open(index_path, "rb"),
-      absl::StrFormat("Cannot open index file: %s", index_path.string()));
+  AIFOCORE_ASSIGN_OR_RETURN(file, FileReader::Open(index_path, "rb"));
 
   // Read and validate header
   std::tuple<int64_t, int64_t> roots;
-  ASSIGN_OR_RETURN(roots, ReadHeader(file, slide_info),
-                   "Failed to read index file header");
+  AIFOCORE_ASSIGN_OR_RETURN(roots, ReadHeader(file, slide_info));
 
   auto [hierarchical_root, nonhier_root] = roots;
 
@@ -45,30 +42,28 @@ absl::StatusOr<MrxsIndexReader> MrxsIndexReader::Open(
                          nonhier_root);
 }
 
-absl::StatusOr<std::tuple<int64_t, int64_t>> MrxsIndexReader::ReadHeader(
-    const FileReader& file, const SlideDataInfo& slide_info) {
+aifocore::Result<std::tuple<int64_t, int64_t>>
+MrxsIndexReader::ReadHeader(const FileReader &file,
+                            const SlideDataInfo &slide_info) {
   // Read version
   char version[constants::kIndexVersionSize + 1] = {0};
-  RETURN_IF_ERROR(file.Read(version, constants::kIndexVersionSize),
-                  "Failed to read index file version");
+  AIFOCORE_RETURN_IF_ERROR(file.Read(version, constants::kIndexVersionSize));
 
   if (std::string_view(version, constants::kIndexVersionSize) !=
       constants::kIndexVersion) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat("Unsupported index version: %s", version));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Unsupported index version: {}", version));
   }
 
   // Skip UUID/slide ID (variable length, read from INI file)
   const size_t uuid_length = slide_info.slide_id.length();
   std::vector<char> uuid_buffer(uuid_length);
-  RETURN_IF_ERROR(file.Read(uuid_buffer.data(), uuid_length),
-                  "Failed to read slide UUID from index file");
+  AIFOCORE_RETURN_IF_ERROR(file.Read(uuid_buffer.data(), uuid_length));
 
   // Read hierarchical root pointer
   int32_t hier_root_32;
-  ASSIGN_OR_RETURN(hier_root_32, ReadLeInt32(file.Get()),
-                   "Failed to read hierarchical root pointer");
+  AIFOCORE_ASSIGN_OR_RETURN(hier_root_32, ReadLeInt32(file.Get()));
   int64_t hierarchical_root = hier_root_32;
 
   // Calculate non-hierarchical root
@@ -79,135 +74,125 @@ absl::StatusOr<std::tuple<int64_t, int64_t>> MrxsIndexReader::ReadHeader(
 }
 
 MrxsIndexReader::MrxsIndexReader(FileReader file,
-                                 const SlideDataInfo* slide_info,
+                                 const SlideDataInfo *slide_info,
                                  int64_t hierarchical_root,
                                  int64_t nonhier_root)
-    : file_(std::move(file)),
-      slide_info_(slide_info),
-      hierarchical_root_(hierarchical_root),
-      nonhier_root_(nonhier_root) {}
+    : file_(std::move(file)), slide_info_(slide_info),
+      hierarchical_root_(hierarchical_root), nonhier_root_(nonhier_root) {}
 
-absl::StatusOr<std::vector<MiraxTileRecord>> MrxsIndexReader::ReadLevelTiles(
-    int level_index, const PyramidLevelParameters& level_params) {
+aifocore::Result<std::vector<MiraxTileRecord>>
+MrxsIndexReader::ReadLevelTiles(int level_index,
+                                const PyramidLevelParameters &level_params) {
   const int zoom_levels = static_cast<int>(slide_info_->zoom_levels.size());
   if (level_index < 0 || level_index >= zoom_levels) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       absl::StrFormat("Invalid level index: %d", level_index));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Invalid level index: {}", level_index));
   }
 
   // Navigate to level data
   const int64_t level_pointer_offset = hierarchical_root_ + (4 * level_index);
-  RETURN_IF_ERROR(
-      file_.Seek(level_pointer_offset),
-      absl::StrFormat("Failed to seek to level %d pointer", level_index));
+  AIFOCORE_RETURN_IF_ERROR(file_.Seek(level_pointer_offset));
 
   // Read pointer to this level's zoom data
   int32_t zoom_level_data_pointer_32;
-  ASSIGN_OR_RETURN(zoom_level_data_pointer_32, ReadLeInt32(file_.Get()),
-                   "Failed to read zoom level data pointer");
+  AIFOCORE_ASSIGN_OR_RETURN(zoom_level_data_pointer_32,
+                            ReadLeInt32(file_.Get()));
   int64_t zoom_level_data_pointer = zoom_level_data_pointer_32;
 
-  RETURN_IF_ERROR(file_.Seek(zoom_level_data_pointer),
-                  "Failed to seek to zoom level data");
+  AIFOCORE_RETURN_IF_ERROR(file_.Seek(zoom_level_data_pointer));
 
   // Read zoom level data structure: [sentinel_zero][data_pages_pointer]
   int32_t sentinel_value;
-  ASSIGN_OR_RETURN(sentinel_value, ReadLeInt32(file_.Get()),
-                   "Failed to read sentinel value");
+  AIFOCORE_ASSIGN_OR_RETURN(sentinel_value, ReadLeInt32(file_.Get()));
 
   if (sentinel_value != 0) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat(
-            "Expected sentinel value 0 at beginning of zoom data, got %d",
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format(
+            "Expected sentinel value 0 at beginning of zoom data, got {}",
             sentinel_value));
   }
 
   int32_t data_pages_pointer_32;
-  ASSIGN_OR_RETURN(data_pages_pointer_32, ReadLeInt32(file_.Get()),
-                   "Failed to read data pages pointer");
+  AIFOCORE_ASSIGN_OR_RETURN(data_pages_pointer_32, ReadLeInt32(file_.Get()));
   int64_t data_pages_pointer = data_pages_pointer_32;
 
-  RETURN_IF_ERROR(file_.Seek(data_pages_pointer),
-                  "Failed to seek to data pages");
+  AIFOCORE_RETURN_IF_ERROR(file_.Seek(data_pages_pointer));
 
   // Get slide dimensions
   const int total_images_horizontal = slide_info_->images_x;
-  const SlideZoomLevel& zoom_level = slide_info_->zoom_levels[level_index];
+  const SlideZoomLevel &zoom_level = slide_info_->zoom_levels[level_index];
 
   // Parse paged image records
   std::vector<MiraxTileRecord> tiles;
 
   while (true) {
     int32_t page_length_32;
-    ASSIGN_OR_RETURN(page_length_32, ReadLeInt32(file_.Get()),
-                     "Failed to read page length");
+    AIFOCORE_ASSIGN_OR_RETURN(page_length_32, ReadLeInt32(file_.Get()));
     int64_t page_length = page_length_32;
 
     int32_t next_page_pointer_32;
-    ASSIGN_OR_RETURN(next_page_pointer_32, ReadLeInt32(file_.Get()),
-                     "Failed to read next page pointer");
+    AIFOCORE_ASSIGN_OR_RETURN(next_page_pointer_32, ReadLeInt32(file_.Get()));
     int64_t next_page_pointer = next_page_pointer_32;
 
     // Process each image record in this page
     for (int record_idx = 0; record_idx < page_length; ++record_idx) {
       int32_t image_index_32;
-      ASSIGN_OR_RETURN(image_index_32, ReadLeInt32(file_.Get()),
-                       "Failed to read image index");
+      AIFOCORE_ASSIGN_OR_RETURN(image_index_32, ReadLeInt32(file_.Get()));
       int64_t image_index = image_index_32;
 
       int32_t data_offset_32;
-      ASSIGN_OR_RETURN(data_offset_32, ReadLeInt32(file_.Get()),
-                       "Failed to read data offset");
+      AIFOCORE_ASSIGN_OR_RETURN(data_offset_32, ReadLeInt32(file_.Get()));
       int64_t data_offset = data_offset_32;
 
       int32_t data_length_32;
-      ASSIGN_OR_RETURN(data_length_32, ReadLeInt32(file_.Get()),
-                       "Failed to read data length");
+      AIFOCORE_ASSIGN_OR_RETURN(data_length_32, ReadLeInt32(file_.Get()));
       int64_t data_length = data_length_32;
 
       int32_t data_file_number_32;
-      ASSIGN_OR_RETURN(data_file_number_32, ReadLeInt32(file_.Get()),
-                       "Failed to read data file number");
+      AIFOCORE_ASSIGN_OR_RETURN(data_file_number_32, ReadLeInt32(file_.Get()));
       int64_t data_file_number = data_file_number_32;
 
       // Validate tile data parameters
       if (data_offset < 0) {
-        return MAKE_STATUS(
-            absl::StatusCode::kInvalidArgument,
-            absl::StrFormat("Invalid negative data offset %d for image index "
-                            "%d at level %d",
-                            data_offset, image_index, level_index));
+        return aifocore::Status(
+            aifocore::StatusCode::kInvalidArgument,
+            aifocore::fmt::format(
+                "Invalid negative data offset {} for image index "
+                "{} at level {}",
+                data_offset, image_index, level_index));
       }
 
       if (data_length <= 0) {
-        return MAKE_STATUS(
-            absl::StatusCode::kInvalidArgument,
-            absl::StrFormat(
-                "Invalid data length %d for image index %d at level %d",
+        return aifocore::Status(
+            aifocore::StatusCode::kInvalidArgument,
+            aifocore::fmt::format(
+                "Invalid data length {} for image index {} at level {}",
                 data_length, image_index, level_index));
       }
 
       // Prevent bad_alloc from unreasonably large tile sizes
       if (data_length > constants::kMaxTileSize) {
-        return MAKE_STATUS(
-            absl::StatusCode::kInvalidArgument,
-            absl::StrFormat("Data length %d exceeds maximum allowed size of %d "
-                            "for image index %d at level %d",
-                            data_length, constants::kMaxTileSize, image_index,
-                            level_index));
+        return aifocore::Status(
+            aifocore::StatusCode::kInvalidArgument,
+            aifocore::fmt::format(
+                "Data length {} exceeds maximum allowed size of {} "
+                "for image index {} at level {}",
+                data_length, constants::kMaxTileSize, image_index,
+                level_index));
       }
 
       // Validate that offset + length doesn't overflow int64
       const int64_t end_offset = data_offset + data_length;
       if (end_offset < 0 ||
           end_offset > std::numeric_limits<int64_t>::max() - 1024) {
-        return MAKE_STATUS(
-            absl::StatusCode::kInvalidArgument,
-            absl::StrFormat("Data offset %d + length %d causes overflow for "
-                            "image index %d at level %d",
-                            data_offset, data_length, image_index,
-                            level_index));
+        return aifocore::Status(
+            aifocore::StatusCode::kInvalidArgument,
+            aifocore::fmt::format(
+                "Data offset {} + length {} causes overflow for "
+                "image index {} at level {}",
+                data_offset, data_length, image_index, level_index));
       }
 
       // Convert linear image_index to 2D grid coordinates
@@ -225,12 +210,11 @@ absl::StatusOr<std::vector<MiraxTileRecord>> MrxsIndexReader::ReadLevelTiles(
 
     // Check if there are more pages
     if (next_page_pointer == 0) {
-      break;  // End of page list
+      break; // End of page list
     }
 
     // Navigate to next page
-    RETURN_IF_ERROR(file_.Seek(next_page_pointer),
-                    "Failed to seek to next page");
+    AIFOCORE_RETURN_IF_ERROR(file_.Seek(next_page_pointer));
   }
 
   return tiles;
@@ -239,8 +223,8 @@ absl::StatusOr<std::vector<MiraxTileRecord>> MrxsIndexReader::ReadLevelTiles(
 std::vector<MiraxTileRecord> MrxsIndexReader::SubdivideImage(
     int64_t image_index, int32_t image_grid_x, int32_t image_grid_y,
     int64_t data_offset, int64_t data_length, int64_t data_file_number,
-    int level_index, const PyramidLevelParameters& level_params,
-    const SlideZoomLevel& zoom_level) {
+    int level_index, const PyramidLevelParameters &level_params,
+    const SlideZoomLevel &zoom_level) {
 
   std::vector<MiraxTileRecord> tiles;
 
@@ -260,7 +244,7 @@ std::vector<MiraxTileRecord> MrxsIndexReader::SubdivideImage(
     const int tile_grid_y =
         image_grid_y + (sub_tile_y_idx * camera_image_divisions);
     if (tile_grid_y >= total_images_vertical) {
-      break;  // Outside slide bounds
+      break; // Outside slide bounds
     }
 
     for (int sub_tile_x_idx = 0;
@@ -269,7 +253,7 @@ std::vector<MiraxTileRecord> MrxsIndexReader::SubdivideImage(
       const int tile_grid_x =
           image_grid_x + (sub_tile_x_idx * camera_image_divisions);
       if (tile_grid_x >= total_images_horizontal) {
-        break;  // Outside slide bounds
+        break; // Outside slide bounds
       }
 
       // Create tile metadata
@@ -305,100 +289,88 @@ std::vector<MiraxTileRecord> MrxsIndexReader::SubdivideImage(
   return tiles;
 }
 
-absl::StatusOr<NonHierRecordData> MrxsIndexReader::ReadNonHierRecord(
-    int record_index) {
+aifocore::Result<NonHierRecordData>
+MrxsIndexReader::ReadNonHierRecord(int record_index) {
   // Navigate to non-hierarchical root
-  RETURN_IF_ERROR(file_.Seek(nonhier_root_),
-                  "Cannot seek to non-hierarchical root");
+  AIFOCORE_RETURN_IF_ERROR(file_.Seek(nonhier_root_));
 
   // Read pointer to record pointer array
   int32_t record_array_pointer_32;
-  ASSIGN_OR_RETURN(record_array_pointer_32, ReadLeInt32(file_.Get()),
-                   "Cannot read non-hierarchical array pointer");
+  AIFOCORE_ASSIGN_OR_RETURN(record_array_pointer_32, ReadLeInt32(file_.Get()));
   int64_t record_array_pointer = record_array_pointer_32;
 
   // Navigate to the specific record's pointer
   const int64_t record_pointer_offset = record_array_pointer + 4 * record_index;
-  RETURN_IF_ERROR(file_.Seek(record_pointer_offset),
-                  absl::StrFormat("Cannot seek to record pointer for record %d",
-                                  record_index));
+  AIFOCORE_RETURN_IF_ERROR(file_.Seek(record_pointer_offset));
 
   // Read pointer to record header
   int32_t record_header_pointer_32;
-  ASSIGN_OR_RETURN(record_header_pointer_32, ReadLeInt32(file_.Get()),
-                   "Cannot read record header pointer");
+  AIFOCORE_ASSIGN_OR_RETURN(record_header_pointer_32, ReadLeInt32(file_.Get()));
   int64_t record_header_pointer = record_header_pointer_32;
 
   // Navigate to record header
-  RETURN_IF_ERROR(file_.Seek(record_header_pointer),
-                  "Cannot seek to record header");
+  AIFOCORE_RETURN_IF_ERROR(file_.Seek(record_header_pointer));
 
   // Read sentinel value (should be 0)
   int32_t sentinel_value;
-  ASSIGN_OR_RETURN(sentinel_value, ReadLeInt32(file_.Get()),
-                   "Cannot read sentinel value");
+  AIFOCORE_ASSIGN_OR_RETURN(sentinel_value, ReadLeInt32(file_.Get()));
 
   if (sentinel_value != 0) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat(
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format(
             "Expected sentinel value 0 at beginning of non-hierarchical "
-            "record, got %d",
+            "record, got {}",
             sentinel_value));
   }
 
   // Read pointer to data page
   int32_t data_page_pointer_32;
-  ASSIGN_OR_RETURN(data_page_pointer_32, ReadLeInt32(file_.Get()),
-                   "Cannot read data page pointer");
+  AIFOCORE_ASSIGN_OR_RETURN(data_page_pointer_32, ReadLeInt32(file_.Get()));
   int64_t data_page_pointer = data_page_pointer_32;
 
   // Navigate to data page
-  RETURN_IF_ERROR(file_.Seek(data_page_pointer), "Cannot seek to data page");
+  AIFOCORE_RETURN_IF_ERROR(file_.Seek(data_page_pointer));
 
   // Read page length
   int32_t page_length_32;
-  ASSIGN_OR_RETURN(page_length_32, ReadLeInt32(file_.Get()),
-                   "Cannot read page length");
+  AIFOCORE_ASSIGN_OR_RETURN(page_length_32, ReadLeInt32(file_.Get()));
   int64_t page_length = page_length_32;
 
   if (page_length < 1) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
         "Expected at least one item in non-hierarchical data page");
   }
 
   // Skip metadata: next page pointer + two reserved fields
   for (int i = 0; i < 3; ++i) {
     int32_t skip;
-    ASSIGN_OR_RETURN(skip, ReadLeInt32(file_.Get()), "Cannot read skip value");
-    (void)skip;  // Intentionally unused
+    AIFOCORE_ASSIGN_OR_RETURN(skip, ReadLeInt32(file_.Get()));
+    (void)skip; // Intentionally unused
   }
 
   // Read actual data location
   int32_t data_offset_32;
-  ASSIGN_OR_RETURN(data_offset_32, ReadLeInt32(file_.Get()),
-                   "Cannot read data offset");
+  AIFOCORE_ASSIGN_OR_RETURN(data_offset_32, ReadLeInt32(file_.Get()));
   int64_t data_offset = data_offset_32;
 
   int32_t data_size_32;
-  ASSIGN_OR_RETURN(data_size_32, ReadLeInt32(file_.Get()),
-                   "Cannot read data size");
+  AIFOCORE_ASSIGN_OR_RETURN(data_size_32, ReadLeInt32(file_.Get()));
   int64_t data_size = data_size_32;
 
   int32_t datafile_number_32;
-  ASSIGN_OR_RETURN(datafile_number_32, ReadLeInt32(file_.Get()),
-                   "Cannot read datafile number");
+  AIFOCORE_ASSIGN_OR_RETURN(datafile_number_32, ReadLeInt32(file_.Get()));
   int64_t datafile_number = datafile_number_32;
 
   // Validate datafile number
   if (datafile_number < 0 ||
       datafile_number >= static_cast<int>(slide_info_->datafile_paths.size())) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        absl::StrFormat("Invalid datafile number: %d (must be 0-%zu)",
-                        datafile_number,
-                        slide_info_->datafile_paths.size() - 1));
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Invalid datafile number: {} (must be 0-{})",
+                              datafile_number,
+                              slide_info_->datafile_paths.size() - 1));
   }
 
   NonHierRecordData result;
@@ -409,5 +381,5 @@ absl::StatusOr<NonHierRecordData> MrxsIndexReader::ReadNonHierRecord(
   return result;
 }
 
-}  // namespace mrxs
-}  // namespace fastslide
+} // namespace mrxs
+} // namespace fastslide

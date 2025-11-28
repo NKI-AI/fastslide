@@ -24,8 +24,7 @@
 
 #include <pugixml.hpp>
 
-#include "absl/log/log.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/qptiff/metadata_parser.h"
 #include "fastslide/utilities/colors.h"
@@ -33,60 +32,59 @@
 
 namespace fastslide {
 
-absl::Status QptiffMetadataLoader::LoadMetadata(
-    const simpletiff::TiffIndex& tiff_index, SlideMetadata& metadata,
-    std::vector<QpTiffChannelInfo>& channels,
-    std::vector<QpTiffLevelInfo>& pyramid,
-    std::map<std::string, QpTiffAssociatedInfo>& associated_images,
-    ImageFormat& format) {
+aifocore::Status QptiffMetadataLoader::LoadMetadata(
+    const simpletiff::TiffIndex &tiff_index, SlideMetadata &metadata,
+    std::vector<QpTiffChannelInfo> &channels,
+    std::vector<QpTiffLevelInfo> &pyramid,
+    std::map<std::string, QpTiffAssociatedInfo> &associated_images,
+    ImageFormat &format) {
 
   // Get total number of directories upfront
   uint16_t total_pages = static_cast<uint16_t>(tiff_index.NumPages());
 
   if (total_pages < 4) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
-        "QPTIFF file has too few pages: " + std::to_string(total_pages));
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "QPTIFF file has too few pages: " +
+                                std::to_string(total_pages));
   }
 
   // Process full resolution channels
   uint16_t thumbnail_start_page;
-  ASSIGN_OR_RETURN(thumbnail_start_page,
-                   ProcessFullResolutionChannels(tiff_index, total_pages,
-                                                 metadata, channels, format),
-                   "Failed to process full resolution channels");
+  AIFOCORE_ASSIGN_OR_RETURN(thumbnail_start_page,
+                            ProcessFullResolutionChannels(tiff_index,
+                                                          total_pages, metadata,
+                                                          channels, format));
 
   if (channels.empty()) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       "No full resolution channels found");
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "No full resolution channels found");
   }
 
   // Build level 0 from channels
   QpTiffLevelInfo level0;
   level0.Reserve(channels.size());
-  for (const auto& ch : channels) {
+  for (const auto &ch : channels) {
     level0.pages.push_back(ch.page);
   }
   level0.size =
       aifocore::Size<uint32_t, 2>{channels[0].width, channels[0].height};
   level0.tiled =
-      std::ranges::all_of(channels, [](const auto& ch) { return ch.tiled; });
+      std::ranges::all_of(channels, [](const auto &ch) { return ch.tiled; });
   level0.allow_random_access = level0.tiled;
   pyramid.push_back(std::move(level0));
 
   // Process thumbnail and reduced levels
-  RETURN_IF_ERROR(ProcessThumbnailAndReducedLevels(
-                      tiff_index, thumbnail_start_page, total_pages,
-                      channels.size(), pyramid, associated_images),
-                  "Failed to process thumbnail and reduced levels");
+  AIFOCORE_RETURN_IF_ERROR(ProcessThumbnailAndReducedLevels(
+      tiff_index, thumbnail_start_page, total_pages, channels.size(), pyramid,
+      associated_images));
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-absl::StatusOr<uint16_t> QptiffMetadataLoader::ProcessFullResolutionChannels(
-    const simpletiff::TiffIndex& tiff_index, uint16_t total_pages,
-    SlideMetadata& metadata, std::vector<QpTiffChannelInfo>& channels,
-    ImageFormat& format) {
+aifocore::Result<uint16_t> QptiffMetadataLoader::ProcessFullResolutionChannels(
+    const simpletiff::TiffIndex &tiff_index, uint16_t total_pages,
+    SlideMetadata &metadata, std::vector<QpTiffChannelInfo> &channels,
+    ImageFormat &format) {
 
   uint16_t thumbnail_page = 0;
 
@@ -96,30 +94,30 @@ absl::StatusOr<uint16_t> QptiffMetadataLoader::ProcessFullResolutionChannels(
          return !IsThumbnailPage(tiff_index, p);
        })) {
 
-    const auto& page_header = tiff_index.Page(page);
+    const auto &page_header = tiff_index.Page(page);
 
     // Get basic directory info
     std::array<uint32_t, 2> image_dims{page_header.width, page_header.height};
 
     // Get XML metadata
-    const std::string& desc_result = page_header.description;
+    const std::string &desc_result = page_header.description;
     if (desc_result.empty()) {
-      continue;  // Skip pages without XML
+      continue; // Skip pages without XML
     }
 
     // Parse XML
     pugi::xml_document doc;
     if (!doc.load_string(desc_result.c_str())) {
-      return MAKE_STATUS(
-          absl::StatusCode::kInvalidArgument,
-          "Failed to parse XML metadata on page " + std::to_string(page));
+      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                              "Failed to parse XML metadata on page " +
+                                  std::to_string(page));
     }
 
     auto root = doc.child("PerkinElmer-QPI-ImageDescription");
     if (root.empty()) {
-      return MAKE_STATUS(
-          absl::StatusCode::kInvalidArgument,
-          "Invalid XML structure on page " + std::to_string(page));
+      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                              "Invalid XML structure on page " +
+                                  std::to_string(page));
     }
 
     std::string image_type =
@@ -153,9 +151,8 @@ absl::StatusOr<uint16_t> QptiffMetadataLoader::ProcessFullResolutionChannels(
           channels.push_back(std::move(channel));
 
           // Extract metadata from page 0
-          RETURN_IF_ERROR(
-              ExtractResolutionMetadata(page_header, metadata, &root),
-              "Failed to extract resolution metadata from page 0");
+          AIFOCORE_RETURN_IF_ERROR(
+              ExtractResolutionMetadata(page_header, metadata, &root));
         }
         // Skip additional RGB pages
       } else {
@@ -184,9 +181,8 @@ absl::StatusOr<uint16_t> QptiffMetadataLoader::ProcessFullResolutionChannels(
 
         // Extract metadata from page 0
         if (page == 0) {
-          RETURN_IF_ERROR(
-              ExtractResolutionMetadata(page_header, metadata, &root),
-              "Failed to extract resolution metadata from page 0");
+          AIFOCORE_RETURN_IF_ERROR(
+              ExtractResolutionMetadata(page_header, metadata, &root));
         }
       }
     }
@@ -197,17 +193,17 @@ absl::StatusOr<uint16_t> QptiffMetadataLoader::ProcessFullResolutionChannels(
   return thumbnail_page;
 }
 
-absl::Status QptiffMetadataLoader::ProcessThumbnailAndReducedLevels(
-    const simpletiff::TiffIndex& tiff_index, uint16_t thumbnail_start_page,
+aifocore::Status QptiffMetadataLoader::ProcessThumbnailAndReducedLevels(
+    const simpletiff::TiffIndex &tiff_index, uint16_t thumbnail_start_page,
     uint16_t total_pages, size_t num_channels,
-    std::vector<QpTiffLevelInfo>& pyramid,
-    std::map<std::string, QpTiffAssociatedInfo>& associated_images) {
+    std::vector<QpTiffLevelInfo> &pyramid,
+    std::map<std::string, QpTiffAssociatedInfo> &associated_images) {
 
   // Find and process the thumbnail page
   for (uint16_t current_page = thumbnail_start_page; current_page < total_pages;
        ++current_page) {
     if (IsThumbnailPage(tiff_index, current_page)) {
-      const auto& page_header = tiff_index.Page(current_page);
+      const auto &page_header = tiff_index.Page(current_page);
       associated_images["Thumbnail"] =
           QpTiffAssociatedInfo{.page = current_page,
                                .size = {page_header.width, page_header.height}};
@@ -222,10 +218,10 @@ absl::Status QptiffMetadataLoader::ProcessThumbnailAndReducedLevels(
   std::vector<uint16_t> current_level_pages;
 
   while (current_page < total_pages) {
-    const auto& page_header = tiff_index.Page(current_page);
+    const auto &page_header = tiff_index.Page(current_page);
 
     // Get XML metadata to determine image type
-    const std::string& desc_result = page_header.description;
+    const std::string &desc_result = page_header.description;
     std::string image_type;
 
     if (!desc_result.empty()) {
@@ -250,7 +246,7 @@ absl::Status QptiffMetadataLoader::ProcessThumbnailAndReducedLevels(
         reduced_level.pages = current_level_pages;
 
         // Get dimensions from first page of this level
-        const auto& first_page_header = tiff_index.Page(current_level_pages[0]);
+        const auto &first_page_header = tiff_index.Page(current_level_pages[0]);
         reduced_level.size = {first_page_header.width,
                               first_page_header.height};
 
@@ -278,34 +274,34 @@ absl::Status QptiffMetadataLoader::ProcessThumbnailAndReducedLevels(
 
   // Handle any remaining pages in current_level_pages (partial level)
   if (!current_level_pages.empty()) {
-    LOG(WARNING) << "Found incomplete reduced level with "
-                 << current_level_pages.size() << " pages (expected "
-                 << num_channels << ")";
+    std::cerr << "Found incomplete reduced level with "
+              << current_level_pages.size() << " pages (expected "
+              << num_channels << ")";
   }
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
 bool QptiffMetadataLoader::IsThumbnailPage(
-    const simpletiff::TiffIndex& tiff_index, uint16_t page) {
+    const simpletiff::TiffIndex &tiff_index, uint16_t page) {
   if (page >= tiff_index.NumPages()) {
-    return true;  // Stop iteration on error
+    return true; // Stop iteration on error
   }
 
-  const auto& page_header = tiff_index.Page(page);
-  const std::string& desc_result = page_header.description;
+  const auto &page_header = tiff_index.Page(page);
+  const std::string &desc_result = page_header.description;
   if (desc_result.empty()) {
-    return false;  // Not a thumbnail, continue
+    return false; // Not a thumbnail, continue
   }
 
   pugi::xml_document doc;
   if (!doc.load_string(desc_result.c_str())) {
-    return true;  // Stop iteration on parse error
+    return true; // Stop iteration on parse error
   }
 
   auto root = doc.child("PerkinElmer-QPI-ImageDescription");
   if (root.empty()) {
-    return true;  // Stop iteration on structure error
+    return true; // Stop iteration on structure error
   }
 
   std::string image_type =
@@ -313,9 +309,9 @@ bool QptiffMetadataLoader::IsThumbnailPage(
   return image_type == "Thumbnail";
 }
 
-absl::Status QptiffMetadataLoader::ExtractResolutionMetadata(
-    const simpletiff::PageHeader& page_header, SlideMetadata& metadata,
-    const void* xml_root) {
+aifocore::Status QptiffMetadataLoader::ExtractResolutionMetadata(
+    const simpletiff::PageHeader &page_header, SlideMetadata &metadata,
+    const void *xml_root) {
 
   // Extract MPP from TIFF tags
   auto x_res = page_header.x_resolution;
@@ -325,33 +321,33 @@ absl::Status QptiffMetadataLoader::ExtractResolutionMetadata(
   uint16_t res_unit = page_header.resolution_unit.value_or(3);
 
   if (!x_res.has_value() || !y_res.has_value()) {
-    return MAKE_STATUS(absl::StatusCode::kNotFound,
-                       "Missing resolution information in TIFF tags");
+    return aifocore::Status(aifocore::StatusCode::kNotFound,
+                            "Missing resolution information in TIFF tags");
   }
 
   // Convert resolution to microns per pixel
   double mpp_x = 0.0;
   double mpp_y = 0.0;
   switch (res_unit) {
-    case 2:                             // RESUNIT_INCH
-      mpp_x = 25400.0 / x_res.value();  // 25400 microns per inch
-      mpp_y = 25400.0 / y_res.value();
-      break;
-    case 3:                             // RESUNIT_CENTIMETER (default)
-      mpp_x = 10000.0 / x_res.value();  // 10000 microns per cm
-      mpp_y = 10000.0 / y_res.value();
-      break;
-    default:
-      return MAKE_STATUS(
-          absl::StatusCode::kInvalidArgument,
-          "Unsupported resolution unit: " + std::to_string(res_unit));
+  case 2:                            // RESUNIT_INCH
+    mpp_x = 25400.0 / x_res.value(); // 25400 microns per inch
+    mpp_y = 25400.0 / y_res.value();
+    break;
+  case 3:                            // RESUNIT_CENTIMETER (default)
+    mpp_x = 10000.0 / x_res.value(); // 10000 microns per cm
+    mpp_y = 10000.0 / y_res.value();
+    break;
+  default:
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "Unsupported resolution unit: " +
+                                std::to_string(res_unit));
   }
 
   // Validate isotropic resolution
   if (std::abs(mpp_x - mpp_y) / std::max(mpp_x, mpp_y) > 0.01 || mpp_x <= 0.0 ||
       mpp_y <= 0.0) {
-    return MAKE_STATUS(
-        absl::StatusCode::kInvalidArgument,
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
         "Computed MPP values are not isotropic enough or not positive: " +
             std::to_string(mpp_x) + ", " + std::to_string(mpp_y) + " µm/px");
   }
@@ -361,7 +357,7 @@ absl::Status QptiffMetadataLoader::ExtractResolutionMetadata(
 
   // Optionally validate against XML metadata if present
   if (xml_root != nullptr) {
-    const auto* root = static_cast<const pugi::xml_node*>(xml_root);
+    const auto *root = static_cast<const pugi::xml_node *>(xml_root);
     auto resolution_node = root->child("ScanProfile").child("root");
 
     if (!resolution_node.empty()) {
@@ -371,9 +367,9 @@ absl::Status QptiffMetadataLoader::ExtractResolutionMetadata(
         double tolerance = 0.05 * (mpp_x + mpp_y) / 2.0;
         if (std::abs(mpp_y - xml_pixel_size) > tolerance ||
             std::abs(mpp_x - xml_pixel_size) > tolerance) {
-          LOG(WARNING) << "TIFF resolution doesn't match XML resolution - "
-                       << "TIFF: " << mpp_y << " µm/px, XML: " << xml_pixel_size
-                       << " µm/px (tolerance: " << tolerance << ")";
+          std::cerr << "TIFF resolution doesn't match XML resolution - "
+                    << "TIFF: " << mpp_y << " µm/px, XML: " << xml_pixel_size
+                    << " µm/px (tolerance: " << tolerance << ")";
         }
       }
 
@@ -391,7 +387,7 @@ absl::Status QptiffMetadataLoader::ExtractResolutionMetadata(
     }
   }
 
-  return absl::OkStatus();
+  return aifocore::Status::OkStatus();
 }
 
-}  // namespace fastslide
+} // namespace fastslide
