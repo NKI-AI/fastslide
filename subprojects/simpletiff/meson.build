@@ -4,7 +4,7 @@ project('simpletiff', 'cpp',
 
 # Dependencies
 threads_dep = dependency('threads')
-aifocore_dep = dependency('aifocore')
+aifocore_dep = dependency('aifocore', fallback : ['aifocore', 'aifocore_dep'])
 zstd_dep = dependency('libzstd', fallback : ['zstd', 'libzstd_dep'])
 png_dep = dependency('libpng',
   fallback : ['libpng', 'libpng_dep'],
@@ -85,6 +85,8 @@ simpletiff_dep = declare_dependency(
   include_directories : inc,
   link_with : simpletiff_lib,
   dependencies : simpletiff_deps)
+
+meson.override_dependency('simpletiff', simpletiff_dep)
 
 # Examples
 subdir('examples')

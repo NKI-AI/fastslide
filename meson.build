@@ -103,17 +103,6 @@ else
   jpeg_dep = dependency('libjpeg', fallback: ['libjpeg-turbo'], static: true)
 endif
 
-# abseil-cpp from wrap (statically linked)
-abseil_proj = subproject('abseil-cpp', default_options: [
-  'default_library=static',
-  'prefer_static=true',
-  'warning_level=0'  # Suppress all warnings from abseil
-])
-absl_log_dep = dependency('absl_log', fallback: ['abseil-cpp'], static: true)
-absl_status_dep = dependency('absl_status', fallback: ['abseil-cpp'], static: true)
-absl_strings_dep = dependency('absl_strings', fallback: ['abseil-cpp'], static: true)
-absl_flags_dep = dependency('absl_flags', fallback: ['abseil-cpp'], static: true)
-
 # Build dependencies for simpletiff and other libraries
 # zstd (required by simpletiff and others) - provides 'libzstd'
 zstd_opts = [
@@ -195,7 +184,7 @@ aifocore_dep = aifocore_proj.get_variable('aifocore_dep')
 
 # FastSlide only needs specific parts of aifocore (all header-only):
 # 1. aifocore/concepts/numeric.h - Provides Size type used throughout fastslide
-# 2. aifocore/status/status_macros.h - Provides status handling macros (RETURN_IF_ERROR, etc.)
+# 2. aifocore/status/result.h - Provides status handling macros (RETURN_IF_ERROR, etc.)
 # 3. aifocore/utilities/fmt.h - Provides formatting utilities
 #
 # These are separated so only the minimal required headers need to be synced
@@ -203,7 +192,7 @@ aifocore_dep = aifocore_proj.get_variable('aifocore_dep')
 #
 # Files required from aifocore for public sync:
 #   - include/aifocore/concepts/numeric.h
-#   - include/aifocore/status/status_macros.h  
+#   - include/aifocore/status/result.h  
 #   - include/aifocore/utilities/fmt.h
 
 # Note: We need to declare fmt and cereal first before using them in aifocore deps
@@ -269,6 +258,25 @@ lodepng_lib = static_library('lodepng',
 lodepng_dep = declare_dependency(
   include_directories: lodepng_incdir,
   link_with: lodepng_lib
+)
+
+# CLI11 - detect location (monorepo vs copybara)
+# Monorepo: ../../third_party/CLI11/upstream
+# Copybara: third_party/CLI11/upstream
+cli11_base_path = ''
+if fs.is_dir('../../third_party/CLI11/upstream')
+  message('Found CLI11 in monorepo location: ../../third_party/CLI11/upstream')
+  cli11_base_path = '../../third_party/CLI11/upstream'
+elif fs.is_dir('third_party/CLI11/upstream')
+  message('Found CLI11 in copybara location: third_party/CLI11/upstream')
+  cli11_base_path = 'third_party/CLI11/upstream'
+else
+  error('CLI11 not found. Please ensure it exists in ../../third_party/CLI11/upstream or third_party/CLI11/upstream')
+endif
+
+cli11_incdir = include_directories(cli11_base_path / 'include')
+cli11_dep = declare_dependency(
+  include_directories: cli11_incdir
 )
 
 # ============================================================================
@@ -421,9 +429,6 @@ fastslide_static = static_library('fastslide',
     # Internal dependencies
     aifocore_dep,
     # External dependencies
-    absl_log_dep,
-    absl_status_dep,
-    absl_strings_dep,
     simpletiff_dep,  # Using simpletiff instead of libtiff
     zstd_dep,
     libwebp_dep,
@@ -457,9 +462,6 @@ else
       # Internal dependencies
       aifocore_dep,
       # External dependencies
-      absl_log_dep,
-      absl_status_dep,
-      absl_strings_dep,
       simpletiff_dep,
       zstd_dep,
       libwebp_dep,
@@ -508,9 +510,6 @@ c_api_headers = [
 # C API library dependencies
 c_api_deps = [
   aifocore_dep,
-  absl_log_dep,
-  absl_status_dep,
-  absl_strings_dep,
   fmt_dep,
   cereal_dep,
   zstd_dep,
@@ -564,11 +563,8 @@ if not is_wasm and python3.found() and pybind11_dep.found()
     python_sources,
     include_directories: [incdir],
   dependencies: [
-    pybind11_dep,
-    aifocore_dep,
-    absl_log_dep,
-      absl_status_dep,
-      absl_strings_dep,
+      pybind11_dep,
+      aifocore_dep,
       fmt_dep,
       cereal_dep,
       simpletiff_dep,  # Using simpletiff instead of libtiff
@@ -603,9 +599,6 @@ if is_wasm
     include_directories: [incdir],
     dependencies: [
       aifocore_dep,
-      absl_log_dep,
-      absl_status_dep,
-      absl_strings_dep,
       fmt_dep,
       cereal_dep,
       simpletiff_dep,
@@ -649,12 +642,11 @@ if not is_wasm
     include_directories: [incdir],
     dependencies: [
       aifocore_dep,
-      absl_flags_dep,
-      absl_log_dep,
       fmt_dep,
       cereal_dep,
       lodepng_dep,
-      highway_dep
+      highway_dep,
+      cli11_dep
     ],
     link_with: fastslide_lib,
     install: true
@@ -671,9 +663,6 @@ if not is_wasm and gtest_dep.found() and gtest_main_dep.found()
     gtest_dep,
     gtest_main_dep,
     aifocore_dep,
-    absl_log_dep,
-    absl_status_dep,
-    absl_strings_dep,
     fmt_dep,
     cereal_dep,
     zstd_dep,

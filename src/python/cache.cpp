@@ -20,7 +20,6 @@
 #include <utility>
 
 #include "aifocore/status/result.h"
-#include "aifocore/status/status_macros.h"
 
 namespace fastslide::python {
 
