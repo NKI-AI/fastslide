@@ -49,6 +49,7 @@ SRC_GLOBS = [
     "aifo/simpletiff/python/**",
     "aifo/jpeg-compressor/**",
     "third_party/lodepng/**",
+    "third_party/CLI11/**",
 ]
 
 # Configurable list of other globs for projects to copy over.
