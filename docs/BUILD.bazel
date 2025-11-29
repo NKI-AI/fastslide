@@ -41,8 +41,8 @@ multirun(
 doxygen(
     name = "doxygen_build",
     srcs = [
-        "//aifo/fastslide:fastslide_headers",
-        "//aifo/fastslide:fastslide_sources",
+        ":fastslide_headers",
+        ":fastslide_sources",
     ],
     outs = [
         "html",

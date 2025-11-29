@@ -16,11 +16,11 @@ pybind_extension(
     }),
     visibility = ["//visibility:public"],
     deps = [
-        "//aifo/fastslide:cache",
-        "//aifo/fastslide:fastslide_lib",
-        "//aifo/fastslide:python_binding_headers",
-        "//aifo/fastslide:runtime_global_cache_manager",
-        "//aifo/fastslide:runtime_plugin_loader",
-        "//aifo/fastslide:runtime_reader_registry",
+        ":cache",
+        ":fastslide_lib",
+        ":python_binding_headers",
+        ":runtime_global_cache_manager",
+        ":runtime_plugin_loader",
+        ":runtime_reader_registry",
     ],
 )

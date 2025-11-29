@@ -8,10 +8,10 @@ cc_binary(
         "-O3",
     ],
     deps = [
-        "//aifo/fastslide:fastslide_lib",
-        "//aifo/fastslide:formats_aperio",
-        "//aifo/fastslide:formats_mrxs",
-        "//aifo/fastslide:formats_qptiff",
+        ":fastslide_lib",
+        ":formats_aperio",
+        ":formats_mrxs",
+        ":formats_qptiff",
         "@google_benchmark//:benchmark",
     ],
 )

@@ -136,6 +136,10 @@ core.workflow(
             after = "//",
             paths = glob(["**/BUILD.bazel"]) + ["BUILD.bazel"]),
         core.replace(
+            before = "//aifo/fastslide:",
+            after = ":",
+            paths = glob(["**/BUILD.bazel"]) + ["BUILD.bazel"]),
+        core.replace(
             before = "//aifo/aifocore",
             after = "//subprojects/aifocore",
             paths = glob(["**/BUILD.bazel"]) + ["BUILD.bazel"]),
