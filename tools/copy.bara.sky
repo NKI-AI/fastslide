@@ -39,7 +39,6 @@ GENERAL_FILES = [
     "aifo/aifocore/meson.build",
     "aifo/aifocore/LICENSE",
     "aifo/aifocore/README.md",
-    "platforms/",
 ]
 
 # Configurable list of source globs (e.g. src/python)
@@ -70,6 +69,7 @@ OTHER_GLOBS = [
     "aifo/simpletiff/examples/**",
     "aifo/simpletiff/tests/**",
     "aifo/simpletiff/subprojects/*.wrap",  # Only wrap files from subprojects
+    "platforms/",
 ]
 
 EXCLUDED_FILES = [
@@ -78,6 +78,7 @@ EXCLUDED_FILES = [
     # Exclude .gitignore files (they're monorepo-specific)
     "**/.gitignore",
     # Exclude symlinks from monorepo (we use wrap files in copybara version)
+    "tools/copy.bara.sky",
     "aifo/fastslide/subprojects/simpletiff",
     "aifo/fastslide/subprojects/aifocore",
     "aifo/fastslide/subprojects/jpeg-compressor",
