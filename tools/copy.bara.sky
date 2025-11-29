@@ -22,6 +22,7 @@ TARGET_BRANCH = "sync/monorepo/internal"  # The branch in the destination reposi
 GENERAL_FILES = [
     "aifo/fastslide/README_PUBLIC.md",
     "aifo/fastslide/meson.build",
+    "aifo/fastslide/BUILD.bazel",
     "aifo/fastslide/LICENSE",
     "aifo/fastslide/meson_options.txt",
     "aifo/fastslide/MANIFEST.in",
@@ -38,6 +39,7 @@ GENERAL_FILES = [
     "aifo/aifocore/meson.build",
     "aifo/aifocore/LICENSE",
     "aifo/aifocore/README.md",
+    "platforms/",
 ]
 
 # Configurable list of source globs (e.g. src/python)
@@ -109,6 +111,10 @@ core.workflow(
         core.move(
             before = "aifo/fastslide/",
             after = ""
+        ),
+        core.move(
+            before = "platforms",
+            after = "",
         ),
         # Move simpletiff to third_party for copybara-translated version
         core.move(

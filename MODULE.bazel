@@ -4,7 +4,7 @@ This module defines the dependencies and configurations for FastSlide.
 
 module(name = "fastslide")
 
-bazel_dep(name = "platforms", version = "0.0.11")
+bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "bazel_features", version = "1.23.0")
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
 bazel_dep(name = "gazelle", version = "0.41.0")
