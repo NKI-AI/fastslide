@@ -87,6 +87,7 @@ EXCLUDED_FILES = [
     "aifo/fastslide/subprojects/aifocore",
     "aifo/fastslide/subprojects/jpeg-compressor",
     "aifo/simpletiff/subprojects/jpeg-compressor",
+    "aifo/fastslide/benchmarks/BUILD.bazel",  # Requires openslide library to be installed
 ]
 
 core.workflow(
