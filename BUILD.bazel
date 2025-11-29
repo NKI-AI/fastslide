@@ -7,7 +7,7 @@ load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 # ============================================================================
 
 # Build config to choose JPEG decoder
-# Set via: bazel build --define=jpeg_decoder=jpgd //aifo/fastslide/...
+# Set via: bazel build --define=jpeg_decoder=jpgd //...
 config_setting(
     name = "use_jpgd",
     define_values = {"jpeg_decoder": "jpgd"},
@@ -27,20 +27,20 @@ WASM_COPTS = select({
 filegroup(
     name = "fastslide_headers",
     srcs = glob(["include/**/*.h"]),
-    visibility = ["//aifo/fastslide/docs:__pkg__"],
+    visibility = ["//docs:__pkg__"],
 )
 
 # Export all source files for documentation generation
 filegroup(
     name = "fastslide_sources",
     srcs = glob(["src/**/*.cpp"]),
-    visibility = ["//aifo/fastslide/docs:__pkg__"],
+    visibility = ["//docs:__pkg__"],
 )
 
 # Export Doxyfile for documentation generation
 exports_files(
     ["Doxyfile"],
-    visibility = ["//aifo/fastslide/docs:__pkg__"],
+    visibility = ["//docs:__pkg__"],
 )
 
 # ============================================================================
@@ -57,14 +57,14 @@ cc_library(
     ],
     includes = ["include"],
     visibility = [
-        "//aifo/fastslide/tests:__pkg__",
-        "//aifo/fastslide/tests:__subpackages__",
+        "//tests:__pkg__",
+        "//tests:__subpackages__",
         "//visibility:__subpackages__",
     ],
     deps = [
         ":core_tile_request",
         ":image",
-        "//aifo/aifocore:concepts",
+        "//subprojects/aifocore:concepts",
     ],
 )
 
@@ -75,8 +75,8 @@ cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
-        "//aifo/aifocore:result",
-        "//aifo/aifocore:utilities-core",
+        "//subprojects/aifocore:result",
+        "//subprojects/aifocore:utilities-core",
     ],
 )
 
@@ -92,14 +92,14 @@ cc_library(
     ],
     includes = ["include"],
     visibility = [
-        "//aifo/fastslide/tests:__pkg__",
-        "//aifo/fastslide/tests:__subpackages__",
+        "//tests:__pkg__",
+        "//tests:__subpackages__",
         "//visibility:__subpackages__",
     ],
     deps = [
         ":colors",
-        "//aifo/aifocore:concepts",
-        "//aifo/aifocore:result",
+        "//subprojects/aifocore:concepts",
+        "//subprojects/aifocore:result",
         "//third_party/pugixml",
     ],
 )
@@ -111,10 +111,10 @@ cc_library(
         "include/fastslide/python/reader.h",
     ],
     includes = ["include"],
-    visibility = ["//aifo/fastslide/src/python:__pkg__"],
+    visibility = ["//src/python:__pkg__"],
     deps = [
         ":slide_reader",
-        "//aifo/aifocore:concepts",
+        "//subprojects/aifocore:concepts",
         "@pybind11",
     ],
 )
@@ -125,16 +125,16 @@ cc_library(
     hdrs = ["include/fastslide/utilities/cache.h"],
     includes = ["include"],
     visibility = [
-        "//aifo/fastslide/src/python:__pkg__",
-        "//aifo/fastslide/tests:__pkg__",
-        "//aifo/fastslide/tests:__subpackages__",
+        "//src/python:__pkg__",
+        "//tests:__pkg__",
+        "//tests:__subpackages__",
         "//visibility:__subpackages__",
     ],
     deps = [
         ":runtime_cache_interface",
         ":runtime_lru_tile_cache",
-        "//aifo/aifocore:concepts",
-        "//aifo/aifocore:result",
+        "//subprojects/aifocore:concepts",
+        "//subprojects/aifocore:result",
     ],
 )
 
@@ -147,8 +147,8 @@ cc_library(
     deps = [
         ":cache",
         ":runtime_cache_interface",
-        "//aifo/aifocore:concepts",
-        "//aifo/aifocore:result",
+        "//subprojects/aifocore:concepts",
+        "//subprojects/aifocore:result",
     ],
 )
 
@@ -168,9 +168,9 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":sha256",
-        "//aifo/aifocore:portability",
-        "//aifo/aifocore:result",
-        "//aifo/aifocore:utilities-core",
+        "//subprojects/aifocore:portability",
+        "//subprojects/aifocore:result",
+        "//subprojects/aifocore:utilities-core",
     ],
 )
 
@@ -193,8 +193,8 @@ cc_library(
     deps = [
         ":image",
         ":mrxs_internal_types",
-        "//aifo/aifocore:concepts",
-        "//aifo/aifocore:utilities-core",
+        "//subprojects/aifocore:concepts",
+        "//subprojects/aifocore:utilities-core",
     ],
 )
 
@@ -211,9 +211,9 @@ cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
-        "//aifo/aifocore:concepts",
-        "//aifo/aifocore:result",
-        "//aifo/aifocore:utilities-core",
+        "//subprojects/aifocore:concepts",
+        "//subprojects/aifocore:result",
+        "//subprojects/aifocore:utilities-core",
         "@hwy",
     ],
 )
@@ -231,7 +231,7 @@ cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
-        "//aifo/aifocore:concepts",
+        "//subprojects/aifocore:concepts",
     ],
 )
 
@@ -250,7 +250,7 @@ cc_library(
     deps = [
         ":colors",
         ":image",
-        "//aifo/aifocore:concepts",  # For aifocore::Size
+        "//subprojects/aifocore:concepts",  # For aifocore::Size
     ],
 )
 
@@ -299,7 +299,7 @@ cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
-        "//aifo/aifocore:concepts",  # For aifocore::Size
+        "//subprojects/aifocore:concepts",  # For aifocore::Size
     ],
 )
 
@@ -311,7 +311,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":runtime_cache_interface",
-        "//aifo/aifocore:result",
+        "//subprojects/aifocore:result",
     ],
 )
 
@@ -334,7 +334,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":runtime_cache_interface",
-        "//aifo/aifocore:result",
+        "//subprojects/aifocore:result",
     ],
 )
 
@@ -348,8 +348,8 @@ cc_library(
         ":runtime_cache_interface",
         ":runtime_format_descriptor",
         ":slide_reader",
-        "//aifo/aifocore:result",
-        "//aifo/aifocore:utilities-core",
+        "//subprojects/aifocore:result",
+        "//subprojects/aifocore:utilities-core",
     ],
 )
 
@@ -363,7 +363,7 @@ cc_library(
         ":formats",
         ":runtime_format_descriptor",
         ":runtime_reader_registry",
-        "//aifo/aifocore:utilities-core",
+        "//subprojects/aifocore:utilities-core",
     ],
 )
 
@@ -401,9 +401,9 @@ cc_library(
     deps = [
         ":core_tile_plan",
         ":image",
-        "//aifo/aifocore:result",
-        "//aifo/aifocore:thread_pool_singleton",
-        "//aifo/aifocore:utilities-core",
+        "//subprojects/aifocore:result",
+        "//subprojects/aifocore:thread_pool_singleton",
+        "//subprojects/aifocore:utilities-core",
         "@hwy",
     ],
 )
@@ -439,9 +439,9 @@ cc_library(
         ":metadata",
         ":runtime_tile_writer",
         ":slide_options",
-        "//aifo/aifocore:concepts",
-        "//aifo/aifocore:result",
-        "//aifo/aifocore:utilities-core",
+        "//subprojects/aifocore:concepts",
+        "//subprojects/aifocore:result",
+        "//subprojects/aifocore:utilities-core",
     ],
 )
 
@@ -467,9 +467,9 @@ cc_library(
         ":runtime_binary_utils",
         ":slide_reader",
         ":tiff_utilities",
-        "//aifo/aifocore:concepts",
-        "//aifo/aifocore:result",
-        "//aifo/aifocore:utilities-core",
+        "//subprojects/aifocore:concepts",
+        "//subprojects/aifocore:result",
+        "//subprojects/aifocore:utilities-core",
     ],
 )
 
@@ -539,10 +539,10 @@ cc_library(
         ":runtime",
         ":slide_reader",
         ":tiff_utilities",
-        "//aifo/aifocore:concepts",
-        "//aifo/aifocore:result",
-        "//aifo/aifocore:utilities-core",
-        "//aifo/simpletiff:simpletiff_lib",
+        "//subprojects/aifocore:concepts",
+        "//subprojects/aifocore:result",
+        "//subprojects/aifocore:utilities-core",
+        "//subprojects/simpletiff:simpletiff_lib",
         "//third_party/pugixml",
     ],
 )
@@ -578,10 +578,10 @@ cc_library(
         ":runtime",
         ":slide_reader",
         ":tiff_utilities",
-        "//aifo/aifocore:concepts",
-        "//aifo/aifocore:result",
-        "//aifo/aifocore:utilities-core",
-        "//aifo/simpletiff:simpletiff_lib",
+        "//subprojects/aifocore:concepts",
+        "//subprojects/aifocore:result",
+        "//subprojects/aifocore:utilities-core",
+        "//subprojects/simpletiff:simpletiff_lib",
         "//third_party/pugixml",
     ],
 )
@@ -629,11 +629,11 @@ cc_library(
         ":runtime_file_reader",
         ":slide_reader",
         ":spatial_index",
-        "//aifo/aifocore:concepts",
-        "//aifo/aifocore:portability",
-        "//aifo/aifocore:result",
-        "//aifo/aifocore:thread_pool_singleton",
-        "//aifo/aifocore:utilities-core",
+        "//subprojects/aifocore:concepts",
+        "//subprojects/aifocore:portability",
+        "//subprojects/aifocore:result",
+        "//subprojects/aifocore:thread_pool_singleton",
+        "//subprojects/aifocore:utilities-core",
         "//third_party/lodepng",
         "@hwy",
     ] + select({
@@ -650,9 +650,9 @@ cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
-        "//aifo/aifocore:portability",
-        "//aifo/aifocore:result",
-        "//aifo/aifocore:utilities-core",
+        "//subprojects/aifocore:portability",
+        "//subprojects/aifocore:result",
+        "//subprojects/aifocore:utilities-core",
         "@zlib",
     ],
 )
@@ -664,9 +664,9 @@ cc_library(
     copts = WASM_COPTS,
     includes = ["include"],
     deps = [
-        "//aifo/aifocore:portability",
-        "//aifo/aifocore:result",
-        "//aifo/aifocore:utilities-core",
+        "//subprojects/aifocore:portability",
+        "//subprojects/aifocore:result",
+        "//subprojects/aifocore:utilities-core",
     ],
 )
 
