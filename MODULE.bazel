@@ -54,8 +54,26 @@ pip.parse(
     enable_implicit_namespace_pkgs = True,
     hub_name = "pip",
     python_version = "3.11",
+    requirements_lock = ":requirements_linux.txt",
+    requirements_darwin = ":requirements_darwin.txt",
 )
 
 use_repo(pip, "pip")
 
 bazel_dep(name = "rules_doxygen", version = "2.5.0", dev_dependency = True)
+doxygen_extension = use_extension("@rules_doxygen//:extensions.bzl", "doxygen_extension")
+doxygen_extension.configuration(
+    platform = "mac",
+    version = "0.0.0",
+)
+use_repo(doxygen_extension, "doxygen")
+
+emsdk_version = "4.0.11"
+
+bazel_dep(name = "emsdk", version = emsdk_version)
+git_override(
+    module_name = "emsdk",
+    commit = "d49219d03a41cd12f95a33ba84273c20d41fd350",
+    remote = "https://github.com/emscripten-core/emsdk.git",
+    strip_prefix = "bazel",
+)
