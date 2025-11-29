@@ -10,11 +10,10 @@ FastSlide is a modern C++20 library for reading whole slide images (WSI) with fi
 
 ## Features
 
-- 🚀 **High Performance** - Thread-safe design with LRU tile caching
+- 🚀 **High Performance** - Thread-safe design
 - 📁 **Multiple Formats** - SVS (Aperio), QPTIFF, MRXS (3DHISTECH), including multiplex (non-RGB) formats. Others coming soon
 - 🐍 **Python & C++** - Complete APIs for both languages
 - 🔧 **PyTorch Ready** - Works seamlessly with DataLoader multi-worker loading
-- 📊 **Production Ready** - Robust error handling and comprehensive testing
 
 ## Quick Start
 
@@ -159,14 +158,6 @@ fastslide::RegionSpec spec{
 auto image = reader->ReadRegion(spec);
 ```
 
-## Supported Formats
-
-| Format         | Extension       | Features                                     |
-| -------------- | --------------- | -------------------------------------------- |
-| Aperio SVS     | `.svs`          | Multi-resolution pyramids, associated images |
-| QPTIFF         | `.tif`, `.tiff` | Multi-channel fluorescence, metadata         |
-| 3DHISTECH MRXS | `.mrxs`         | Overlapping tiles, spatial indexing          |
-
 ## Key Features
 
 ### Thread-Safe Multi-Processing
@@ -211,7 +202,7 @@ We welcome contributions! See [CONTRIBUTING.md](../../CONTRIBUTING.md) for guide
 
 ## Third-Party Components
 
-FastSlide incorporates the following third-party software:
+FastSlide incorporates the following third-party software into its source:
 
 - **SHA-256 implementation** from [sha-2](https://github.com/amosnier/sha-2) by Alain Mosnier
 
@@ -229,8 +220,26 @@ FastSlide incorporates the following third-party software:
   - Used for: Decoding PNG in file formats and to write png in examples.
 
 - **pugixml**: from [pugixml.org](https://pugixml.org/)
+
   - Licensed under: MIT License
   - Used for: Parsing of XML headers
+
+- **tifffile**: from [cgohlke/tifffile/](https://github.com/cgohlke/tifffile/) by Christoph Gohlke
+
+  - Licensed under: BSD-3-Clause
+  - Used for: Test data files
+
+- **jpeg-compressor**: from [richgel999/jpeg-compressor](https://github.com/richgel999/jpeg-compressor) by richgel999
+
+- Licensed under: Public domain
+- Used for: Alternative JPEG decompression, required in WASM builds.
+
+- **thread-pool**: from [bshoshany/thread-pool](https://github.com/bshoshany/thread-pool) by Barak Shoshany
+
+- Licensed under: MIT License
+- Used for: Creating thread pool for decoding, etc.
+
+Several other libraries are used, but these are dynamically (or statically where appropriate) linked.
 
 ## Citation
 

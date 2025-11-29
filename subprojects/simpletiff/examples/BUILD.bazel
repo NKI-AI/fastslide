@@ -1,8 +1,0 @@
-cc_binary(
-    name = "example_read",
-    srcs = ["example_read.cpp"],
-    deps = [
-        "//subprojects/simpletiff:simpletiff_lib",
-        "@libpng",
-    ],
-)
