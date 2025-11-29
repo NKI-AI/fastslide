@@ -80,6 +80,8 @@ git_override(
     strip_prefix = "bazel",
 )
 
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
 http_archive(
     name = "hwy",
     build_file = "@//third_party:hwy.BUILD",
