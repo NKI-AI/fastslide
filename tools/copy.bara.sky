@@ -39,6 +39,8 @@ GENERAL_FILES = [
     "aifo/aifocore/meson.build",
     "aifo/aifocore/LICENSE",
     "aifo/aifocore/README.md",
+    "third_party/hwy_mac_fix.patch",
+    "third_party/hwy.BUILD",
 ]
 
 # Configurable list of source globs (e.g. src/python)

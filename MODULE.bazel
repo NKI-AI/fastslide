@@ -79,3 +79,13 @@ git_override(
     remote = "https://github.com/emscripten-core/emsdk.git",
     strip_prefix = "bazel",
 )
+
+http_archive(
+    name = "hwy",
+    build_file = "@//third_party:hwy.BUILD",
+    patch_args = ["-p1"],
+    patches = ["@//third_party:hwy_mac_fix.patch"],  # This is only needed on Darwin with Clang 16
+    sha256 = "58e9d5d41d6573ad15245ad76aec53a69499ca7480c092d899c4424812ed906f",
+    strip_prefix = "highway-1.2.0",
+    urls = ["https://github.com/google/highway/releases/download/1.2.0/highway-1.2.0.tar.gz"],
+)
