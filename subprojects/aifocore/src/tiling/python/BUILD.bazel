@@ -5,8 +5,8 @@ cc_library(
     srcs = ["grid_module.cpp"],
     visibility = ["//visibility:public"],
     deps = [
-        "//aifo/aifocore:tiling",
-        "//aifo/aifocore:tiling_python",
+        "//subprojects/aifocore:tiling",
+        "//subprojects/aifocore:tiling_python",
         "@pybind11",
     ],
 )

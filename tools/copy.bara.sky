@@ -113,10 +113,6 @@ core.workflow(
             before = "aifo/fastslide/",
             after = ""
         ),
-        core.move(
-            before = "platforms",
-            after = "",
-        ),
         # Move simpletiff to third_party for copybara-translated version
         core.move(
             before = "aifo/simpletiff/",
@@ -134,9 +130,17 @@ core.workflow(
             paths = glob(["**/*.cpp", "**/*.h"])
         ),
         core.replace(
-                before = "//aifo/fastslide",
-                after = "",
-                paths = glob(["**/BUILD"])),
+                before = "//aifo/fastslide/",
+                after = "//",
+                paths = glob(["**/BUILD.bazel"])),
+        core.replace(
+            before = "//aifo/aifocore",
+            after = "//subprojects/aifocore",
+            paths = glob(["**/BUILD.bazel"])),
+        core.replace(
+            before = "//aifo/simpletiff",
+            after = "//subprojects/simpletiff",
+            paths = glob(["**/BUILD.bazel"])),
         core.move(
             before = "README_PUBLIC.md",
             after = "README.md"

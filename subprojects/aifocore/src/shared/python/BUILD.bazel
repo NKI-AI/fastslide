@@ -5,8 +5,8 @@ cc_library(
     srcs = ["vector_module.cpp"],
     visibility = ["//visibility:public"],
     deps = [
-        "//aifo/aifocore:shared",
-        "//aifo/aifocore:shared_python",
+        "//subprojects/aifocore:shared",
+        "//subprojects/aifocore:shared_python",
         "@pybind11",
     ],
 )
