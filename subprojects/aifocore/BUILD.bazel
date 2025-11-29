@@ -1,0 +1,325 @@
+load("@aspect_rules_py//py:defs.bzl", "py_binary", "py_library")
+load("@pip//:requirements.bzl", "requirement")
+load("@pybind11_bazel//:build_defs.bzl", "pybind_extension")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "portability",
+    hdrs = ["include/aifocore/platform/portability.h"],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "concepts",
+    hdrs = ["include/aifocore/concepts/numeric.h"],
+    strip_include_prefix = "include",
+    visibility = ["//aifo:__subpackages__"],
+    deps = [
+        "@cereal",
+        "@fmt",
+    ],
+)
+
+cc_library(
+    name = "math",
+    hdrs = ["include/aifocore/concepts/math.h"],
+    strip_include_prefix = "include",
+    visibility = ["//aifo:__subpackages__"],
+)
+
+cc_library(
+    name = "ndarray",
+    hdrs = [
+        "include/aifocore/math/ndarray.h",
+        "include/aifocore/math/ndarray_all.h",
+        "include/aifocore/math/ndarray_functions.h",
+        "include/aifocore/math/ndarray_operators.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "ranges",
+    hdrs = ["include/aifocore/ranges/zip.h"],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "tiling",
+    hdrs = ["include/aifocore/tiling/grid.h"],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":ranges",
+        "//subprojects/aifocore:concepts",
+    ],
+)
+
+cc_library(
+    name = "status",
+    hdrs = [
+        "include/aifocore/status/result.h",
+        "include/aifocore/status/status_macros.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@abseil-cpp//absl/status:status",
+        "@abseil-cpp//absl/status:statusor",
+    ],
+)
+
+cc_library(
+    name = "result",
+    hdrs = [
+        "include/aifocore/status/result.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+)
+
+cc_binary(
+    name = "trace_example",
+    srcs = ["src/status/trace_example.cpp"],
+    deps = [
+        ":status",
+        "@abseil-cpp//absl/status:status",
+        "@abseil-cpp//absl/status:statusor",
+    ],
+)
+
+cc_library(
+    name = "tiling_python",
+    hdrs = ["include/aifocore/tiling/python/grid_wrapper.h"],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "bs_thread_pool",
+    hdrs = ["include/aifocore/utilities/bs_thread_pool.h"],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "treiber_stack",
+    hdrs = ["include/aifocore/utilities/treiber_stack.h"],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "thread_pool_singleton",
+    srcs = ["src/utilities/thread_pool_singleton.cpp"],
+    hdrs = ["include/aifocore/utilities/thread_pool_singleton.h"],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":bs_thread_pool",
+    ],
+)
+
+cc_library(
+    name = "utilities-zip",
+    hdrs = ["include/aifocore/utilities/zip.h"],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = ["@minizip"],
+)
+
+cc_library(
+    name = "utilities-fmt",
+    hdrs = ["include/aifocore/utilities/fmt.h"],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = ["@fmt"],
+)
+
+cc_library(
+    name = "utilities-vips",
+    hdrs = [
+        "include/aifocore/utilities/pyvips.h",
+        "include/aifocore/utilities/vips.h",
+        ":status",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":status",
+        "@libvips//:libvips-cpp",
+        "@pybind11",
+    ],
+)
+
+cc_library(
+    name = "utilities-core",
+    hdrs = [
+        "include/aifocore/utilities/spinners.h",
+        "include/aifocore/utilities/temporary.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":utilities-fmt",
+    ],
+)
+
+cc_library(
+    name = "utilities",
+    hdrs = [
+        "include/aifocore/utilities/spinners.h",
+        "include/aifocore/utilities/temporary.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":status",
+        ":utilities-fmt",
+        ":utilities-vips",
+        ":utilities-zip",
+    ],
+)
+
+cc_library(
+    name = "shared",
+    hdrs = [
+        "include/aifocore/shared/exceptions.h",
+        "include/aifocore/shared/vector.h",
+    ],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@boost.atomic",
+        "@boost.interprocess",
+    ],
+)
+
+cc_library(
+    name = "shared_python",
+    hdrs = ["include/aifocore/shared/python/vector.h"],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+)
+
+pybind_extension(
+    name = "aifocore/shm/vector",
+    srcs = ["//subprojects/aifocore/src/shared/python:vector_module"],
+    copts = ["-fvisibility=hidden"],
+    linkopts = select({
+        "@platforms//os:macos": ["-Wl,-exported_symbol,_PyInit_vector"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [
+        ":shared",
+        ":shared_python",
+    ],
+)
+
+pybind_extension(
+    name = "aifocore/tiling/_grid",
+    srcs = ["//subprojects/aifocore/src/tiling/python:grid_module"],
+    copts = ["-fvisibility=hidden"],
+    linkopts = select({
+        "@platforms//os:macos": ["-Wl,-exported_symbol,_PyInit__grid"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//subprojects/aifocore:tiling",
+        "//subprojects/aifocore:tiling_python",
+    ],
+)
+
+pybind_extension(
+    name = "aifocore/pathology/inference_engine",
+    srcs = ["//subprojects/aifocore/src/pathology:inference_engine_module"],
+    copts = ["-fvisibility=hidden"],
+    linkopts = select({
+        "@platforms//os:macos": ["-Wl,-exported_symbol,_PyInit_inference_engine"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//aifo/ahcore:inference_engine",
+        "@abseil-cpp//absl/status:status",
+    ],
+)
+
+py_library(
+    name = "aifocore_tiling",
+    srcs = glob(["**/*.py"]),
+    data = [":aifocore/tiling/_grid"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "aifocore_pathology",
+    srcs = glob(["aifocore/pathology/**/*.py"]),
+    data = [":aifocore/pathology/inference_engine"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "aifocore_shm",
+    srcs = [],
+    data = [":aifocore/shm/vector"],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "aifocore_models",
+    srcs = glob(["aifocore/models/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("torch"),
+    ],
+)
+
+alias(
+    name = "aifocore_inference",
+    actual = "//subprojects/aifocore/aifocore/inference:aifocore_inference",
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "aifocore",
+    srcs = glob(["aifocore/**/*.py"]),
+    data = [
+        ":aifocore_pathology",
+        ":aifocore_shm",
+        ":aifocore_tiling",
+    ],
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aifocore_inference",
+    ],
+)
+
+py_binary(
+    name = "bulk_wsi_inference",
+    srcs = ["aifocore/pathology/bulk_inference.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":aifocore_pathology",
+        requirement("tqdm"),
+    ],
+)
+
+alias(
+    name = "segmentation_inference",
+    actual = "//subprojects/aifocore/aifocore/inference:segmentation_inference",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "wsi_inference",
+    actual = "//subprojects/aifocore/src/pathology:inference",
+)
