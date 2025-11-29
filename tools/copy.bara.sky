@@ -28,6 +28,7 @@ GENERAL_FILES = [
     "aifo/fastslide/pyproject.toml",
     "aifo/fastslide/requirements_linux.txt",
     "aifo/fastslide/requirements_darwin.txt",
+    "aifo/fastslide/MODULE_external.bazel",
     "aifo/simpletiff/meson.build",
     "aifo/simpletiff/meson_options.txt",
     "aifo/simpletiff/LICENSE",
@@ -68,8 +69,6 @@ OTHER_GLOBS = [
 ]
 
 EXCLUDED_FILES = [
-    "**/*.bazel",
-    "**/*.BUILD",
     # Exclude Meson build directories
     "**/builddir/**",
     # Exclude .gitignore files (they're monorepo-specific)
@@ -97,6 +96,10 @@ core.workflow(
     origin_files = GENERAL_FILES + glob(SRC_GLOBS + OTHER_GLOBS, exclude = EXCLUDED_FILES),
     destination_files = glob(["**"]),
     transformations = [
+        # core.move(
+        #     before = "aifo/fastslide/MODULE_external.bazel", 
+        #     after = "MODULE.bazel"
+        # ),
         core.move(
             before = "aifo/jpeg-compressor/",
             after = "third_party/jpeg-compressor/"
