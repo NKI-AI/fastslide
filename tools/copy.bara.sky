@@ -10,9 +10,9 @@
 #   (e.g., "sync_folder/**") as necessary.
 
 # For local testing, use a file:// URL (update path as needed):
-# REFERENCE_REPO_URL = "file:///path/to/your/local/aifo-simpletiff"
+REFERENCE_REPO_URL = "file:///Users/jonasteuwen/Code/aifo-simpletiff"
 # For production, use the remote repository:
-REFERENCE_REPO_URL = "git@github.com:NKI-AI/aiforoncology-internal.git"
+# REFERENCE_REPO_URL = "git@github.com:NKI-AI/aiforoncology-internal.git"
 REFERENCE_BRANCH = "feature/simpletiff-integration"  # The branch in the source repository to sync from.
 
 TARGET_REPO_URL = "git@github.com:NKI-AI/fastslide.git" # The destination repository URL to sync to.
@@ -29,6 +29,8 @@ GENERAL_FILES = [
     "aifo/fastslide/requirements_linux.txt",
     "aifo/fastslide/requirements_darwin.txt",
     "aifo/fastslide/MODULE_external.bazel",
+    "aifo/fastslide/.bazelignore",
+    "aifo/fastslide/.bazelversion",
     "aifo/simpletiff/meson.build",
     "aifo/simpletiff/meson_options.txt",
     "aifo/simpletiff/LICENSE",
@@ -96,10 +98,10 @@ core.workflow(
     origin_files = GENERAL_FILES + glob(SRC_GLOBS + OTHER_GLOBS, exclude = EXCLUDED_FILES),
     destination_files = glob(["**"]),
     transformations = [
-        # core.move(
-        #     before = "aifo/fastslide/MODULE_external.bazel", 
-        #     after = "MODULE.bazel"
-        # ),
+        core.move(
+            before = "aifo/fastslide/MODULE_external.bazel", 
+            after = "MODULE.bazel"
+        ),
         core.move(
             before = "aifo/jpeg-compressor/",
             after = "third_party/jpeg-compressor/"
