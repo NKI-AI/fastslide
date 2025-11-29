@@ -8,7 +8,7 @@ To build wheels for a specific Python version:
     bazelisk build \\
       --@rules_python//python/config_settings:python_version=3.11 \\
       --platforms=//platforms:darwin_aarch64 \\
-      //aifo/fastslide/python:fastslide_wheel_cp311
+      //python:fastslide_wheel_cp311
 
 To build all wheels, use the provided script:
     ./aifo/fastslide/python/build_all_wheels.sh
@@ -49,7 +49,7 @@ WHEEL_PLATFORM = select({
 
 genrule(
     name = "copy_extension",
-    srcs = ["//aifo/fastslide/src/python:_fastslide"],
+    srcs = ["//src/python:_fastslide"],
     outs = ["fastslide/_fastslide.so"],
     cmd = "cp $< $@",
 )
@@ -178,7 +178,7 @@ alias(
 # Filegroup for building all wheels at once
 # ==============================================================================
 # This allows you to build all Python versions with a single command:
-#   bazelisk build --platforms=//platforms:darwin_aarch64 //aifo/fastslide/python:all_wheels
+#   bazelisk build --platforms=//platforms:darwin_aarch64 //python:all_wheels
 #
 # Note: Bazel will automatically parallelize the builds
 

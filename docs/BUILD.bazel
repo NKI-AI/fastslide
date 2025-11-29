@@ -110,7 +110,7 @@ sphinx_build_binary(
         "@docs_pip//sphinx_autodoc_typehints",
         "@docs_pip//myst_parser",
         "@docs_pip//matplotlib",
-        "//aifo/fastslide/python:fastslide",
+        "//python:fastslide",
         "//aifo/dlup",
     ],
 )

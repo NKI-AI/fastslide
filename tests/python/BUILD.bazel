@@ -5,7 +5,7 @@ REQUIREMENTS = [
     requirement("pytest"),
     requirement("pytest-mock"),
     requirement("numpy"),
-    "//aifo/fastslide/python:fastslide",
+    "//python:fastslide",
 ]
 
 py_test(

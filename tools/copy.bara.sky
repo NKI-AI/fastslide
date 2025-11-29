@@ -133,6 +133,10 @@ core.workflow(
             regex_groups = {},
             paths = glob(["**/*.cpp", "**/*.h"])
         ),
+        core.replace(
+                before = "//aifo/fastslide",
+                after = "",
+                paths = glob(["**/BUILD"])),
         core.move(
             before = "README_PUBLIC.md",
             after = "README.md"
