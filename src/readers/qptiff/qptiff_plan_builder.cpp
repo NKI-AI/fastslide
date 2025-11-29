@@ -27,11 +27,11 @@
 
 namespace fastslide {
 
-aifocore::Result<core::TilePlan>
-QptiffPlanBuilder::BuildPlan(const core::TileRequest &request,
-                             const std::vector<QpTiffLevelInfo> &pyramid,
-                             PlanarConfig output_planar_config,
-                             const simpletiff::TiffIndex &tiff_index) {
+aifocore::Result<core::TilePlan> QptiffPlanBuilder::BuildPlan(
+    const core::TileRequest& request,
+    const std::vector<QpTiffLevelInfo>& pyramid,
+    PlanarConfig output_planar_config,
+    const simpletiff::TiffIndex& tiff_index) {
 
   core::TilePlan plan;
   plan.request = request;
@@ -39,11 +39,11 @@ QptiffPlanBuilder::BuildPlan(const core::TileRequest &request,
   // Validate request
   AIFOCORE_RETURN_IF_ERROR(ValidateRequest(request, pyramid));
 
-  const QpTiffLevelInfo &level_info = pyramid[request.level];
+  const QpTiffLevelInfo& level_info = pyramid[request.level];
   const size_t num_channels = level_info.pages.size();
 
   // Get page header from first channel to query TIFF structure
-  const auto &page_header = tiff_index.Page(level_info.pages[0]);
+  const auto& page_header = tiff_index.Page(level_info.pages[0]);
 
   // Determine output channel count based on planar configuration:
   // - For kContiguous (RGB interleaved): use samples_per_pixel (e.g., 3 for
@@ -81,7 +81,7 @@ QptiffPlanBuilder::BuildPlan(const core::TileRequest &request,
     plan.output.channels = static_cast<uint32_t>(num_channels);
     plan.output.pixel_format = pixel_format;
     plan.output.planar_config = output_planar_config;
-    plan.output.background = {0, 0, 0, 255}; // Black background
+    plan.output.background = {0, 0, 0, 255};  // Black background
     plan.actual_region = {
         .top_left = {static_cast<uint32_t>(x), static_cast<uint32_t>(y)},
         .size = {width, height},
@@ -118,12 +118,12 @@ QptiffPlanBuilder::BuildPlan(const core::TileRequest &request,
   plan.output.channels = static_cast<uint32_t>(output_channels);
   plan.output.pixel_format = pixel_format;
   plan.output.planar_config = output_planar_config;
-  plan.output.background = {0, 0, 0, 255}; // Black background
+  plan.output.background = {0, 0, 0, 255};  // Black background
 
   // Estimate costs
   plan.cost.total_tiles = plan.operations.size();
   plan.cost.total_bytes_to_read = 0;
-  for (const auto &op : plan.operations) {
+  for (const auto& op : plan.operations) {
     plan.cost.total_bytes_to_read += op.byte_size;
   }
   plan.cost.tiles_to_decode = plan.cost.total_tiles;
@@ -137,8 +137,8 @@ QptiffPlanBuilder::BuildPlan(const core::TileRequest &request,
 }
 
 aifocore::Status QptiffPlanBuilder::ValidateRequest(
-    const core::TileRequest &request,
-    const std::vector<QpTiffLevelInfo> &pyramid) {
+    const core::TileRequest& request,
+    const std::vector<QpTiffLevelInfo>& pyramid) {
 
   if (request.level < 0 ||
       static_cast<size_t>(request.level) >= pyramid.size()) {
@@ -147,7 +147,7 @@ aifocore::Status QptiffPlanBuilder::ValidateRequest(
         aifocore::fmt::format("Invalid level: {}", request.level));
   }
 
-  const QpTiffLevelInfo &level_info = pyramid[request.level];
+  const QpTiffLevelInfo& level_info = pyramid[request.level];
   const size_t num_channels = level_info.pages.size();
 
   if (num_channels == 0) {
@@ -155,7 +155,7 @@ aifocore::Status QptiffPlanBuilder::ValidateRequest(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Level {} has no pages/channels", request.level));
   }
-  if (num_channels > 1000) { // Reasonable upper bound for spectral imaging
+  if (num_channels > 1000) {  // Reasonable upper bound for spectral imaging
     return aifocore::Status(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Level {} has too many channels: {} (max 1000)",
@@ -165,11 +165,11 @@ aifocore::Status QptiffPlanBuilder::ValidateRequest(
   return aifocore::Status::OkStatus();
 }
 
-void QptiffPlanBuilder::DetermineRegionBounds(const core::TileRequest &request,
-                                              const QpTiffLevelInfo &level_info,
-                                              double &x, double &y,
-                                              uint32_t &width,
-                                              uint32_t &height) {
+void QptiffPlanBuilder::DetermineRegionBounds(const core::TileRequest& request,
+                                              const QpTiffLevelInfo& level_info,
+                                              double& x, double& y,
+                                              uint32_t& width,
+                                              uint32_t& height) {
 
   if (request.IsRegionRequest() && request.region_bounds->IsValid()) {
     // Use fractional region bounds from request
@@ -187,25 +187,25 @@ void QptiffPlanBuilder::DetermineRegionBounds(const core::TileRequest &request,
 }
 
 aifocore::Status QptiffPlanBuilder::GetTileDimensions(
-    const simpletiff::TiffIndex &tiff_index, const QpTiffLevelInfo &level_info,
-    uint32_t &tile_width, uint32_t &tile_height, bool &is_tiled) {
+    const simpletiff::TiffIndex& tiff_index, const QpTiffLevelInfo& level_info,
+    uint32_t& tile_width, uint32_t& tile_height, bool& is_tiled) {
 
   // Get page header from first page of this level
-  const auto &page_header = tiff_index.Page(level_info.pages[0]);
+  const auto& page_header = tiff_index.Page(level_info.pages[0]);
 
   is_tiled = (page_header.storage == simpletiff::Storage::kTiles);
 
   if (is_tiled) {
-    const auto &tiles = tiff_index.Tiles(page_header.payload_id);
+    const auto& tiles = tiff_index.Tiles(page_header.payload_id);
     tile_width = tiles.tile_w;
     tile_height = tiles.tile_h;
   } else {
     // For strips, tile_width = image width, tile_height = rows per strip
     tile_width = level_info.size[0];
-    const auto &strips = tiff_index.Strips(page_header.payload_id);
+    const auto& strips = tiff_index.Strips(page_header.payload_id);
     uint32_t rows_per_strip = strips.rows_per_strip;
     if (rows_per_strip == 0) {
-      rows_per_strip = level_info.size[1]; // Single strip
+      rows_per_strip = level_info.size[1];  // Single strip
     }
     tile_height = rows_per_strip;
   }
@@ -214,7 +214,7 @@ aifocore::Status QptiffPlanBuilder::GetTileDimensions(
 }
 
 std::vector<core::TileReadOp> QptiffPlanBuilder::CreateTileOperations(
-    const core::TileRequest &request, const QpTiffLevelInfo &level_info,
+    const core::TileRequest& request, const QpTiffLevelInfo& level_info,
     uint32_t region_x, uint32_t region_y, uint32_t width, uint32_t height,
     uint32_t tile_width, uint32_t tile_height, bool is_tiled,
     uint32_t bytes_per_sample) {
@@ -250,7 +250,7 @@ std::vector<core::TileReadOp> QptiffPlanBuilder::CreateTileOperations(
         const uint32_t inter_bottom = std::min(tile_bottom, region_y + height);
 
         if (inter_left >= inter_right || inter_top >= inter_bottom) {
-          continue; // No intersection
+          continue;  // No intersection
         }
 
         const uint32_t inter_width = inter_right - inter_left;
@@ -260,7 +260,7 @@ std::vector<core::TileReadOp> QptiffPlanBuilder::CreateTileOperations(
         core::TileReadOp op;
         op.level = request.level;
         op.tile_coord = {static_cast<uint32_t>(ch),
-                         0}; // Channel stored in X coord
+                         0};  // Channel stored in X coord
         op.source_id = page;
 
         // For TIFF, byte_offset is the tile index
@@ -269,7 +269,7 @@ std::vector<core::TileReadOp> QptiffPlanBuilder::CreateTileOperations(
               (level_info.size[0] + tile_width - 1) / tile_width;
           op.byte_offset = tile_y * tiles_across + tile_x;
         } else {
-          op.byte_offset = tile_y; // Strip number
+          op.byte_offset = tile_y;  // Strip number
         }
 
         // Estimate tile size
@@ -293,4 +293,4 @@ std::vector<core::TileReadOp> QptiffPlanBuilder::CreateTileOperations(
   return operations;
 }
 
-} // namespace fastslide
+}  // namespace fastslide

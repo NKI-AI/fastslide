@@ -14,13 +14,13 @@
 
 #include "simpletiff/reader.h"
 
-#include "aifocore/platform/portability.h"
-
 #include <algorithm>
 #include <atomic>
 #include <cstring>
 #include <thread>
+#include <vector>
 
+#include "aifocore/platform/portability.h"
 #include "aifocore/status/result.h"
 #include "simpletiff/decompression.h"
 #include "simpletiff/errors.h"
@@ -57,10 +57,10 @@ namespace {
 /// @return Result indicating success or error
 Result<void> DecompressJpegWithTables(std::span<const uint8_t> compressed_data,
                                       std::span<const uint8_t> jpeg_tables_span,
-                                      std::vector<uint8_t> &jpeg_stream_buffer,
-                                      DecodeContext &ctx, int &out_width,
-                                      int &out_height,
-                                      std::vector<uint8_t> &dst) {
+                                      std::vector<uint8_t>& jpeg_stream_buffer,
+                                      DecodeContext& ctx, int& out_width,
+                                      int& out_height,
+                                      std::vector<uint8_t>& dst) {
   std::span<const uint8_t> jpeg_data_span;
 
   // Compose JPEG stream if tables are present
@@ -89,8 +89,8 @@ Result<void> DecompressJpegWithTables(std::span<const uint8_t> compressed_data,
 /// @param cache_rec Tiles or strips record containing table cache
 /// @return Result containing span to cached JPEG tables
 template <typename CacheRec>
-Result<std::span<const uint8_t>>
-LoadJpegTablesFromCache(const TiffIndex &index, const CacheRec &cache_rec) {
+Result<std::span<const uint8_t>> LoadJpegTablesFromCache(
+    const TiffIndex& index, const CacheRec& cache_rec) {
   auto state = cache_rec.jpeg_tables_state.load(std::memory_order_acquire);
 
   if (state == JpegTablesState::kLoaded) {
@@ -134,29 +134,29 @@ LoadJpegTablesFromCache(const TiffIndex &index, const CacheRec &cache_rec) {
   return std::span<const uint8_t>();
 }
 
-} // namespace
+}  // namespace
 
 // =============================================================================
 // Public API
 // =============================================================================
 
-Result<void> ReadTile(const TiffIndex &index, uint32_t page_index,
-                      uint32_t tile_index, DecodeContext &ctx,
-                      std::vector<uint8_t> &dst, int &out_width,
-                      int &out_height) {
+Result<void> ReadTile(const TiffIndex& index, uint32_t page_index,
+                      uint32_t tile_index, DecodeContext& ctx,
+                      std::vector<uint8_t>& dst, int& out_width,
+                      int& out_height) {
   if (page_index >= index.NumPages()) {
     return Error("Page index " + std::to_string(page_index) +
                  " out of range (file has " + std::to_string(index.NumPages()) +
                  " pages)");
   }
 
-  const auto &page = index.Page(page_index);
+  const auto& page = index.Page(page_index);
   if (page.storage != Storage::kTiles) {
     return Error("Page " + std::to_string(page_index) +
                  " is not tiled (cannot use ReadTile)");
   }
 
-  const auto &tiles = index.Tiles(page.payload_id);
+  const auto& tiles = index.Tiles(page.payload_id);
 
   // Use optimized single-tile loader (avoids loading entire offset/bytecount
   // arrays)
@@ -224,15 +224,15 @@ Result<void> ReadTile(const TiffIndex &index, uint32_t page_index,
   }
 }
 
-Result<void> ReadRawTile(const TiffIndex &index, uint32_t page_index,
-                         uint32_t tile_index, std::vector<uint8_t> &dst) {
+Result<void> ReadRawTile(const TiffIndex& index, uint32_t page_index,
+                         uint32_t tile_index, std::vector<uint8_t>& dst) {
   if (page_index >= index.NumPages()) {
     return Error("Page index " + std::to_string(page_index) +
                  " out of range (file has " + std::to_string(index.NumPages()) +
                  " pages)");
   }
 
-  const auto &page = index.Page(page_index);
+  const auto& page = index.Page(page_index);
 
   // Support both tiled and strip storage for raw reading
   uint64_t offset = 0;
@@ -275,8 +275,8 @@ Result<void> ReadRawTile(const TiffIndex &index, uint32_t page_index,
   return Result<void>();
 }
 
-Result<void> ReadTiledPage(const TiffIndex &index, uint32_t page_index,
-                           const Roi &roi, DecodeContext &ctx, uint8_t *dst,
+Result<void> ReadTiledPage(const TiffIndex& index, uint32_t page_index,
+                           const Roi& roi, DecodeContext& ctx, uint8_t* dst,
                            int dst_stride) {
   if (page_index >= index.NumPages()) {
     return Error("Page index " + std::to_string(page_index) +
@@ -290,7 +290,7 @@ Result<void> ReadTiledPage(const TiffIndex &index, uint32_t page_index,
                  " metadata");
   }
 
-  const auto &page = index.Page(page_index);
+  const auto& page = index.Page(page_index);
   if (page.storage != Storage::kTiles) {
     return Error("Page " + std::to_string(page_index) +
                  " is not tiled (cannot use ReadTiledPage)");
@@ -304,7 +304,7 @@ Result<void> ReadTiledPage(const TiffIndex &index, uint32_t page_index,
             .what());
   }
 
-  const auto &tiles = index.Tiles(page.payload_id);
+  const auto& tiles = index.Tiles(page.payload_id);
 
   // Compute tile range intersecting ROI
   const uint32_t tx0 = roi.x / tiles.tile_w;
@@ -338,9 +338,9 @@ Result<void> ReadTiledPage(const TiffIndex &index, uint32_t page_index,
   return Result<void>();
 }
 
-Result<void> ReadStripe(const TiffIndex &index, uint32_t page_index,
-                        uint32_t strip_index, DecodeContext &ctx,
-                        std::vector<uint8_t> &decompressed) {
+Result<void> ReadStripe(const TiffIndex& index, uint32_t page_index,
+                        uint32_t strip_index, DecodeContext& ctx,
+                        std::vector<uint8_t>& decompressed) {
   if (page_index >= index.NumPages()) {
     return Error("Page index " + std::to_string(page_index) +
                  " out of range (file has " + std::to_string(index.NumPages()) +
@@ -353,13 +353,13 @@ Result<void> ReadStripe(const TiffIndex &index, uint32_t page_index,
                  " metadata");
   }
 
-  const auto &page = index.Page(page_index);
+  const auto& page = index.Page(page_index);
   if (page.storage != Storage::kStrips) {
     return Error("Page " + std::to_string(page_index) +
                  " is not striped (cannot use ReadStripe)");
   }
 
-  const auto &strips = index.Strips(page.payload_id);
+  const auto& strips = index.Strips(page.payload_id);
   auto offsets = index.Offsets(strips.offsets);
   auto bytecounts = index.Bytecounts(strips.bytecounts);
 
@@ -438,8 +438,8 @@ Result<void> ReadStripe(const TiffIndex &index, uint32_t page_index,
        IsCompression(page.compression, Compression::kZstd))) {
     ApplyHorizontalPredictor(decompressed, page.width, strip_h,
                              page.samples_per_pixel, page.bits_per_sample,
-                             !index.IsLittleEndian(), // file_big_endian
-                             1); // planar_configuration (CONTIG)
+                             !index.IsLittleEndian(),  // file_big_endian
+                             1);  // planar_configuration (CONTIG)
   }
 
   return Result<void>();
@@ -469,8 +469,8 @@ struct StripRoiParams {
 /// @param bytes_per_pixel Bytes per pixel (for computing byte offsets)
 /// @param params Output parameters (will be filled)
 /// @return true if ROI is valid (non-zero area), false otherwise
-bool ComputeStripRoiParams(const PageHeader &page, const Roi &roi,
-                           uint32_t bytes_per_pixel, StripRoiParams &params) {
+bool ComputeStripRoiParams(const PageHeader& page, const Roi& roi,
+                           uint32_t bytes_per_pixel, StripRoiParams& params) {
   // Clamp ROI to page bounds
   params.roi_x = std::min(roi.x, page.width);
   params.roi_y = std::min(roi.y, page.height);
@@ -503,9 +503,9 @@ bool ComputeStripRoiParams(const PageHeader &page, const Roi &roi,
 /// @param dst Destination buffer
 /// @param dst_stride Destination row stride
 /// @return Number of rows written to destination
-uint32_t CopyStripRowsToRoi(const std::vector<uint8_t> &strip_data,
+uint32_t CopyStripRowsToRoi(const std::vector<uint8_t>& strip_data,
                             uint32_t strip_height, uint32_t y_offset,
-                            const StripRoiParams &params, uint8_t *dst,
+                            const StripRoiParams& params, uint8_t* dst,
                             int dst_stride) {
   uint32_t rows_written = 0;
   const int row_bytes = static_cast<int>(params.full_row_bytes);
@@ -519,9 +519,9 @@ uint32_t CopyStripRowsToRoi(const std::vector<uint8_t> &strip_data,
     }
 
     // Compute source and destination pointers
-    const uint8_t *src_row =
+    const uint8_t* src_row =
         strip_data.data() + r * row_bytes + params.roi_row_offset;
-    uint8_t *dst_row = dst + (global_y - params.roi_y) * dst_stride;
+    uint8_t* dst_row = dst + (global_y - params.roi_y) * dst_stride;
 
     // Copy the ROI portion of the row
     const uint32_t available = params.full_row_bytes - params.roi_row_offset;
@@ -536,14 +536,14 @@ uint32_t CopyStripRowsToRoi(const std::vector<uint8_t> &strip_data,
   return rows_written;
 }
 
-} // namespace
+}  // namespace
 
 // =============================================================================
 // Public API
 // =============================================================================
 
-Result<void> ReadStripedPage(const TiffIndex &index, uint32_t page_index,
-                             const Roi &roi, DecodeContext &ctx, uint8_t *dst,
+Result<void> ReadStripedPage(const TiffIndex& index, uint32_t page_index,
+                             const Roi& roi, DecodeContext& ctx, uint8_t* dst,
                              int dst_stride) {
   // ========================================
   // 1. Validation
@@ -559,7 +559,7 @@ Result<void> ReadStripedPage(const TiffIndex &index, uint32_t page_index,
                  " metadata");
   }
 
-  const auto &page = index.Page(page_index);
+  const auto& page = index.Page(page_index);
   if (page.storage != Storage::kStrips) {
     return Error("Page " + std::to_string(page_index) +
                  " is not striped (cannot use ReadStripedPage)");
@@ -601,7 +601,7 @@ Result<void> ReadStripedPage(const TiffIndex &index, uint32_t page_index,
   // ========================================
   // 3. Strip iteration and ROI extraction
   // ========================================
-  const auto &strips = index.Strips(page.payload_id);
+  const auto& strips = index.Strips(page.payload_id);
   auto offsets = index.Offsets(strips.offsets);
 
   uint32_t y_offset = 0;
@@ -643,23 +643,23 @@ Result<void> ReadStripedPage(const TiffIndex &index, uint32_t page_index,
   return Result<void>();
 }
 
-Result<void> ReadSingleJpegPage(const TiffIndex &index, uint32_t page_index,
-                                DecodeContext &ctx, std::vector<uint8_t> &dst,
-                                int &dst_stride, int &out_width,
-                                int &out_height) {
+Result<void> ReadSingleJpegPage(const TiffIndex& index, uint32_t page_index,
+                                DecodeContext& ctx, std::vector<uint8_t>& dst,
+                                int& dst_stride, int& out_width,
+                                int& out_height) {
   if (page_index >= index.NumPages()) {
     return Error("Page index " + std::to_string(page_index) +
                  " out of range (file has " + std::to_string(index.NumPages()) +
                  " pages)");
   }
 
-  const auto &page = index.Page(page_index);
+  const auto& page = index.Page(page_index);
   if (page.storage != Storage::kSingleJpeg) {
     return Error("Page " + std::to_string(page_index) +
                  " is not single-JPEG storage");
   }
 
-  const auto &single = index.SingleJpeg(page.payload_id);
+  const auto& single = index.SingleJpeg(page.payload_id);
 
   // Read JPEG data using pread
   auto jpeg_data_span =
@@ -678,8 +678,8 @@ Result<void> ReadSingleJpegPage(const TiffIndex &index, uint32_t page_index,
   return Result<void>();
 }
 
-Result<void> ReadPage(const TiffIndex &index, uint32_t page_index,
-                      const Roi &roi, DecodeContext &ctx, uint8_t *dst,
+Result<void> ReadPage(const TiffIndex& index, uint32_t page_index,
+                      const Roi& roi, DecodeContext& ctx, uint8_t* dst,
                       int dst_stride) {
   if (page_index >= index.NumPages()) {
     return Error("Page index " + std::to_string(page_index) +
@@ -687,54 +687,56 @@ Result<void> ReadPage(const TiffIndex &index, uint32_t page_index,
                  " pages)");
   }
 
-  const auto &page = index.Page(page_index);
+  const auto& page = index.Page(page_index);
 
   switch (page.storage) {
-  case Storage::kTiles:
-    return ReadTiledPage(index, page_index, roi, ctx, dst, dst_stride);
+    case Storage::kTiles:
+      return ReadTiledPage(index, page_index, roi, ctx, dst, dst_stride);
 
-  case Storage::kStrips:
-    return ReadStripedPage(index, page_index, roi, ctx, dst, dst_stride);
+    case Storage::kStrips:
+      return ReadStripedPage(index, page_index, roi, ctx, dst, dst_stride);
 
-  case Storage::kSingleJpeg: {
-    // Single JPEG storage: decode entire image then crop to ROI
-    // Note: This is less efficient than tiled/striped formats since we must
-    // decode the entire JPEG before cropping. Consider converting large
-    // single-JPEG TIFFs to tiled format for better ROI performance.
-    std::vector<uint8_t> temp_dst;
-    int temp_stride = 0;
-    int w = 0, h = 0;
-    AIFOCORE_RETURN_IF_ERROR(ReadSingleJpegPage(index, page_index, ctx,
-                                                temp_dst, temp_stride, w, h));
+    case Storage::kSingleJpeg: {
+      // Single JPEG storage: decode entire image then crop to ROI
+      // Note: This is less efficient than tiled/striped formats since we must
+      // decode the entire JPEG before cropping. Consider converting large
+      // single-JPEG TIFFs to tiled format for better ROI performance.
+      std::vector<uint8_t> temp_dst;
+      int temp_stride = 0;
+      int w = 0, h = 0;
+      AIFOCORE_RETURN_IF_ERROR(ReadSingleJpegPage(index, page_index, ctx,
+                                                  temp_dst, temp_stride, w, h));
 
-    // Clamp ROI to image bounds
-    const uint32_t x0 = std::min(roi.x, static_cast<uint32_t>(w));
-    const uint32_t y0 = std::min(roi.y, static_cast<uint32_t>(h));
-    const uint32_t x1 = std::min(roi.x + roi.width, static_cast<uint32_t>(w));
-    const uint32_t y1 = std::min(roi.y + roi.height, static_cast<uint32_t>(h));
+      // Clamp ROI to image bounds
+      const uint32_t x0 = std::min(roi.x, static_cast<uint32_t>(w));
+      const uint32_t y0 = std::min(roi.y, static_cast<uint32_t>(h));
+      const uint32_t x1 = std::min(roi.x + roi.width, static_cast<uint32_t>(w));
+      const uint32_t y1 =
+          std::min(roi.y + roi.height, static_cast<uint32_t>(h));
 
-    // Validate clamped ROI
-    if (x0 >= x1 || y0 >= y1) {
-      return Error("ROI is completely outside image bounds");
+      // Validate clamped ROI
+      if (x0 >= x1 || y0 >= y1) {
+        return Error("ROI is completely outside image bounds");
+      }
+
+      const uint32_t roi_w = x1 - x0;
+      const uint32_t roi_h = y1 - y0;
+      const int bytes_per_pixel = 3;  // JPEG output is always RGB
+
+      // Copy ROI rows from decoded image to destination
+      for (uint32_t y = 0; y < roi_h; ++y) {
+        const uint8_t* src_row =
+            temp_dst.data() + (y0 + y) * temp_stride + x0 * bytes_per_pixel;
+        uint8_t* dst_row = dst + y * dst_stride;
+        std::memcpy(dst_row, src_row, roi_w * bytes_per_pixel);
+      }
+      return Result<void>();
     }
 
-    const uint32_t roi_w = x1 - x0;
-    const uint32_t roi_h = y1 - y0;
-    const int bytes_per_pixel = 3; // JPEG output is always RGB
-
-    // Copy ROI rows from decoded image to destination
-    for (uint32_t y = 0; y < roi_h; ++y) {
-      const uint8_t *src_row =
-          temp_dst.data() + (y0 + y) * temp_stride + x0 * bytes_per_pixel;
-      uint8_t *dst_row = dst + y * dst_stride;
-      std::memcpy(dst_row, src_row, roi_w * bytes_per_pixel);
-    }
-    return Result<void>();
-  }
-
-  default:
-    return Error("Unknown storage type for page " + std::to_string(page_index));
+    default:
+      return Error("Unknown storage type for page " +
+                   std::to_string(page_index));
   }
 }
 
-} // namespace simpletiff
+}  // namespace simpletiff

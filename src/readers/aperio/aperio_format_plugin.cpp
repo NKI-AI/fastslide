@@ -34,9 +34,8 @@ namespace aperio {
 namespace {
 
 /// @brief Factory function for Aperio readers
-aifocore::Result<std::unique_ptr<SlideReader>>
-CreateAperioReader(std::shared_ptr<ITileCache> cache,
-                   std::string_view filename) {
+aifocore::Result<std::unique_ptr<SlideReader>> CreateAperioReader(
+    std::shared_ptr<ITileCache> cache, std::string_view filename) {
   // Create the Aperio reader (using existing implementation)
   AIFOCORE_ASSIGN_OR_RETURN(auto reader,
                             AperioReader::Create(std::string(filename)));
@@ -49,7 +48,7 @@ CreateAperioReader(std::shared_ptr<ITileCache> cache,
   return std::unique_ptr<SlideReader>(std::move(reader));
 }
 
-} // namespace
+}  // namespace
 
 FormatDescriptor CreateAperioFormatDescriptor() {
   FormatDescriptor desc;
@@ -81,6 +80,6 @@ FormatDescriptor CreateAperioFormatDescriptor() {
   return desc;
 }
 
-} // namespace aperio
-} // namespace formats
-} // namespace fastslide
+}  // namespace aperio
+}  // namespace formats
+}  // namespace fastslide

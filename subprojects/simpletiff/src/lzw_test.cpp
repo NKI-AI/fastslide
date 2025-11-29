@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <cstring>
 #include <span>
+#include <string>
 #include <vector>
 
 namespace simpletiff {
@@ -51,7 +52,7 @@ std::vector<uint8_t> ReadTestDataFile(const char* filename) {
   }
 
   fseek(f, 0, SEEK_END);
-  long size = ftell(f);
+  int64_t size = ftell(f);
   fseek(f, 0, SEEK_SET);
   std::vector<uint8_t> data(size);
   fread(data.data(), 1, size, f);
@@ -185,8 +186,9 @@ TEST(LzwTest, ImagecodecsImageNoEOI) {
   if (decoded.size() == expected.size()) {
     for (size_t i = 0; i < expected.size(); ++i) {
       if (decoded[i] != expected[i]) {
-        FAIL() << "Mismatch at byte " << i << ": got " << (int)decoded[i]
-               << ", expected " << (int)expected[i];
+        FAIL() << "Mismatch at byte " << i << ": got "
+               << static_cast<int>(decoded[i]) << ", expected "
+               << static_cast<int>(expected[i]);
         break;
       }
     }

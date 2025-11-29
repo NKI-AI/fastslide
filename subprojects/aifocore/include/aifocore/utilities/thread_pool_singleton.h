@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <future>
 #include <type_traits>
+#include <utility>
 
 #include "aifocore/utilities/bs_thread_pool.h"
 

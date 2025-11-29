@@ -14,8 +14,8 @@
 
 // I/O utilities for reading TIFF files
 
-#ifndef SIMPLETIFF_IO_UTILS_H_
-#define SIMPLETIFF_IO_UTILS_H_
+#ifndef AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_IO_UTILS_H_
+#define AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_IO_UTILS_H_
 
 #include <cstdint>
 #include <span>
@@ -106,4 +106,4 @@ void CopyTileInto(uint8_t* dst, int dst_stride, const uint8_t* tile_data,
 
 }  // namespace simpletiff
 
-#endif  // SIMPLETIFF_IO_UTILS_H_
+#endif  // AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_IO_UTILS_H_

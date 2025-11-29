@@ -143,7 +143,7 @@ TEST(LRUTileCacheTest, OverwriteExistingKey) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, EvictLeastRecentlyUsed) {
-  LRUTileCache cache(3); // Small capacity
+  LRUTileCache cache(3);  // Small capacity
 
   TileKey key1{"test.mrxs", 0, 0, 0};
   TileKey key2{"test.mrxs", 0, 1, 0};
@@ -161,7 +161,7 @@ TEST(LRUTileCacheTest, EvictLeastRecentlyUsed) {
   cache.Put(key4, CreateTestTile(256, 256, 3));
 
   EXPECT_EQ(cache.GetSize(), 3);
-  EXPECT_EQ(cache.Get(key1), nullptr); // Evicted
+  EXPECT_EQ(cache.Get(key1), nullptr);  // Evicted
   EXPECT_NE(cache.Get(key2), nullptr);
   EXPECT_NE(cache.Get(key3), nullptr);
   EXPECT_NE(cache.Get(key4), nullptr);
@@ -185,8 +185,8 @@ TEST(LRUTileCacheTest, AccessUpdatesLRU) {
   // Add key4 (should evict key2, the least recently used)
   cache.Put(key4, CreateTestTile(256, 256, 3));
 
-  EXPECT_NE(cache.Get(key1), nullptr); // Still present
-  EXPECT_EQ(cache.Get(key2), nullptr); // Evicted
+  EXPECT_NE(cache.Get(key1), nullptr);  // Still present
+  EXPECT_EQ(cache.Get(key2), nullptr);  // Evicted
   EXPECT_NE(cache.Get(key3), nullptr);
   EXPECT_NE(cache.Get(key4), nullptr);
 }
@@ -201,7 +201,7 @@ TEST(LRUTileCacheTest, ClearEmptyCache) {
   cache.Clear();
 
   EXPECT_EQ(cache.GetSize(), 0);
-  EXPECT_EQ(cache.GetCapacity(), 100); // Capacity unchanged
+  EXPECT_EQ(cache.GetCapacity(), 100);  // Capacity unchanged
 }
 
 TEST(LRUTileCacheTest, ClearPopulatedCache) {
@@ -243,7 +243,7 @@ TEST(LRUTileCacheTest, SetCapacityLarger) {
   EXPECT_TRUE(status.ok());
 
   EXPECT_EQ(cache.GetCapacity(), 20);
-  EXPECT_EQ(cache.GetSize(), 0); // Cleared during resize
+  EXPECT_EQ(cache.GetSize(), 0);  // Cleared during resize
 }
 
 TEST(LRUTileCacheTest, SetCapacitySmaller) {
@@ -260,7 +260,7 @@ TEST(LRUTileCacheTest, SetCapacitySmaller) {
   EXPECT_TRUE(status.ok());
 
   EXPECT_EQ(cache.GetCapacity(), 10);
-  EXPECT_EQ(cache.GetSize(), 0); // Cleared during resize
+  EXPECT_EQ(cache.GetSize(), 0);  // Cleared during resize
 }
 
 TEST(LRUTileCacheTest, SetCapacityZero) {
@@ -286,7 +286,7 @@ TEST(LRUTileCacheTest, SetCapacitySameValue) {
   EXPECT_TRUE(status.ok());
 
   EXPECT_EQ(cache.GetCapacity(), 100);
-  EXPECT_EQ(cache.GetSize(), 0); // Still cleared
+  EXPECT_EQ(cache.GetSize(), 0);  // Still cleared
 }
 
 // ============================================================================
@@ -371,7 +371,7 @@ TEST(LRUTileCacheTest, ConcurrentPuts) {
     });
   }
 
-  for (auto &thread : threads) {
+  for (auto& thread : threads) {
     thread.join();
   }
 
@@ -411,7 +411,7 @@ TEST(LRUTileCacheTest, ConcurrentGetsAndPuts) {
     });
   }
 
-  for (auto &thread : threads) {
+  for (auto& thread : threads) {
     thread.join();
   }
 
@@ -453,8 +453,8 @@ TEST(LRUTileCacheTest, DifferentTileSizes) {
   TileKey key1{"test.mrxs", 0, 0, 0};
   TileKey key2{"test.mrxs", 0, 1, 0};
 
-  cache.Put(key1, CreateTestTile(256, 256, 3)); // 256*256*3 bytes
-  cache.Put(key2, CreateTestTile(512, 512, 4)); // 512*512*4 bytes
+  cache.Put(key1, CreateTestTile(256, 256, 3));  // 256*256*3 bytes
+  cache.Put(key2, CreateTestTile(512, 512, 4));  // 512*512*4 bytes
 
   auto stats = cache.GetStats();
   EXPECT_EQ(stats.size, 2);
@@ -592,11 +592,11 @@ TEST(LRUTileCacheTest, MixedHitMissPattern) {
   }
 
   // Access pattern: hit, miss, hit, miss, hit
-  TileKey hit1{"test.mrxs", 0, 0, 0};   // Hit
-  TileKey miss1{"test.mrxs", 0, 10, 0}; // Miss
-  TileKey hit2{"test.mrxs", 0, 1, 0};   // Hit
-  TileKey miss2{"test.mrxs", 0, 11, 0}; // Miss
-  TileKey hit3{"test.mrxs", 0, 2, 0};   // Hit
+  TileKey hit1{"test.mrxs", 0, 0, 0};    // Hit
+  TileKey miss1{"test.mrxs", 0, 10, 0};  // Miss
+  TileKey hit2{"test.mrxs", 0, 1, 0};    // Hit
+  TileKey miss2{"test.mrxs", 0, 11, 0};  // Miss
+  TileKey hit3{"test.mrxs", 0, 2, 0};    // Hit
 
   cache.Get(hit1);
   cache.Get(miss1);
@@ -622,7 +622,7 @@ TEST(LRUTileCacheTest, SequentialAccessPattern) {
   }
 
   auto stats = cache.GetStats();
-  EXPECT_EQ(stats.size, 50); // Capped at capacity
+  EXPECT_EQ(stats.size, 50);  // Capped at capacity
 
   // Access tiles in reverse order - should be mostly hits
   size_t hits_before = stats.hits;
@@ -692,10 +692,10 @@ TEST(LRUTileCacheTest, SimilarKeysDifferentiate) {
 
   // Keys that differ only in one field
   TileKey key_file1{"file1.mrxs", 0, 10, 20};
-  TileKey key_file2{"file2.mrxs", 0, 10, 20}; // Different file
-  TileKey key_level{"file1.mrxs", 1, 10, 20}; // Different level
-  TileKey key_x{"file1.mrxs", 0, 11, 20};     // Different x
-  TileKey key_y{"file1.mrxs", 0, 10, 21};     // Different y
+  TileKey key_file2{"file2.mrxs", 0, 10, 20};  // Different file
+  TileKey key_level{"file1.mrxs", 1, 10, 20};  // Different level
+  TileKey key_x{"file1.mrxs", 0, 11, 20};      // Different x
+  TileKey key_y{"file1.mrxs", 0, 10, 21};      // Different y
 
   cache.Put(key_file1, CreateTestTile(256, 256, 3));
   cache.Put(key_file2, CreateTestTile(256, 256, 3));
@@ -773,12 +773,12 @@ TEST(LRUTileCacheTest, StatisticsAfterClearPreserveCapacity) {
 
   for (uint32_t i = 0; i < 20; ++i) {
     TileKey key{"test.mrxs", 0, i, 0};
-    cache.Get(key); // Hits
+    cache.Get(key);  // Hits
   }
 
   for (uint32_t i = 50; i < 60; ++i) {
     TileKey key{"test.mrxs", 0, i, 0};
-    cache.Get(key); // Misses
+    cache.Get(key);  // Misses
   }
 
   auto stats = cache.GetStats();
@@ -791,9 +791,9 @@ TEST(LRUTileCacheTest, StatisticsAfterClearPreserveCapacity) {
 
   stats = cache.GetStats();
   EXPECT_EQ(stats.size, 0);
-  EXPECT_EQ(stats.capacity, 50); // Preserved
-  EXPECT_EQ(stats.hits, 0);      // Reset
-  EXPECT_EQ(stats.misses, 0);    // Reset
+  EXPECT_EQ(stats.capacity, 50);  // Preserved
+  EXPECT_EQ(stats.hits, 0);       // Reset
+  EXPECT_EQ(stats.misses, 0);     // Reset
   EXPECT_EQ(stats.hit_ratio, 0.0);
 }
 
@@ -818,12 +818,12 @@ TEST(LRUTileCacheTest, ConcurrentEvictionPressure) {
     });
   }
 
-  for (auto &thread : threads) {
+  for (auto& thread : threads) {
     thread.join();
   }
 
-  EXPECT_EQ(tiles_added, 500);     // All puts attempted
-  EXPECT_EQ(cache.GetSize(), 100); // Capped at capacity
+  EXPECT_EQ(tiles_added, 500);      // All puts attempted
+  EXPECT_EQ(cache.GetSize(), 100);  // Capped at capacity
 
   // Cache should be stable
   auto stats = cache.GetStats();
@@ -870,7 +870,7 @@ TEST(LRUTileCacheTest, ConcurrentAccessDuringEviction) {
     });
   }
 
-  for (auto &thread : threads) {
+  for (auto& thread : threads) {
     thread.join();
   }
 
@@ -889,7 +889,7 @@ TEST(LRUTileCacheTest, CacheWarmingScenario) {
   // Simulate cache warming - preload common tiles
   std::vector<TileKey> hot_tiles;
   for (uint32_t i = 0; i < 20; ++i) {
-    TileKey key{"hotspot.mrxs", 0, i / 5, i % 5}; // 4x5 region
+    TileKey key{"hotspot.mrxs", 0, i / 5, i % 5};  // 4x5 region
     hot_tiles.push_back(key);
     cache.Put(key, CreateTestTile(256, 256, 3));
   }
@@ -902,7 +902,7 @@ TEST(LRUTileCacheTest, CacheWarmingScenario) {
 
   // Hot tiles may have been evicted
   int hot_tiles_remaining = 0;
-  for (const auto &key : hot_tiles) {
+  for (const auto& key : hot_tiles) {
     if (cache.Get(key) != nullptr) {
       hot_tiles_remaining++;
     }
@@ -954,11 +954,11 @@ TEST(LRUTileCacheTest, MixedNullAndValidTiles) {
   TileKey key2{"test.mrxs", 0, 1, 0};
   TileKey key3{"test.mrxs", 0, 2, 0};
 
-  cache.Put(key1, CreateTestTile(256, 256, 3)); // Valid
-  cache.Put(key2, nullptr);                     // Null
-  cache.Put(key3, CreateTestTile(256, 256, 3)); // Valid
+  cache.Put(key1, CreateTestTile(256, 256, 3));  // Valid
+  cache.Put(key2, nullptr);                      // Null
+  cache.Put(key3, CreateTestTile(256, 256, 3));  // Valid
 
-  EXPECT_EQ(cache.GetSize(), 2); // Only valid tiles
+  EXPECT_EQ(cache.GetSize(), 2);  // Only valid tiles
   EXPECT_NE(cache.Get(key1), nullptr);
   EXPECT_EQ(cache.Get(key2), nullptr);
   EXPECT_NE(cache.Get(key3), nullptr);
@@ -1020,7 +1020,7 @@ TEST(LRUTileCacheTest, MemoryTrackingAccuracy) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, VeryLargeCapacity) {
-  LRUTileCache cache(1000000); // 1 million tiles
+  LRUTileCache cache(1000000);  // 1 million tiles
 
   EXPECT_EQ(cache.GetCapacity(), 1000000);
 
@@ -1049,7 +1049,7 @@ TEST(LRUTileCacheTest, CapacityReductionWithOversizedCache) {
   EXPECT_TRUE(status.ok());
 
   EXPECT_EQ(cache.GetCapacity(), 10);
-  EXPECT_EQ(cache.GetSize(), 0); // Cleared
+  EXPECT_EQ(cache.GetSize(), 0);  // Cleared
 
   // Verify can use new capacity
   for (uint32_t i = 0; i < 10; ++i) {
@@ -1109,7 +1109,7 @@ TEST(LRUTileCacheTest, MultiSlideWorkflow) {
   std::vector<std::string> slides = {"slide1.mrxs", "slide2.mrxs",
                                      "slide3.mrxs"};
 
-  for (const auto &slide : slides) {
+  for (const auto& slide : slides) {
     for (uint32_t i = 0; i < 50; ++i) {
       TileKey key{slide, 0, i, 0};
       cache.Put(key, CreateTestTile(256, 256, 3));
@@ -1119,7 +1119,7 @@ TEST(LRUTileCacheTest, MultiSlideWorkflow) {
   EXPECT_EQ(cache.GetSize(), 150);
 
   // Access tiles from different slides
-  for (const auto &slide : slides) {
+  for (const auto& slide : slides) {
     for (uint32_t i = 0; i < 10; ++i) {
       TileKey key{slide, 0, i, 0};
       auto result = cache.Get(key);
@@ -1128,7 +1128,7 @@ TEST(LRUTileCacheTest, MultiSlideWorkflow) {
   }
 
   auto stats = cache.GetStats();
-  EXPECT_EQ(stats.hits, 30); // 3 slides * 10 tiles each
+  EXPECT_EQ(stats.hits, 30);  // 3 slides * 10 tiles each
 }
 
 // ============================================================================
@@ -1139,7 +1139,7 @@ TEST(LRUTileCacheTest, EmptyTileData) {
   LRUTileCache cache(10);
 
   TileKey key{"empty.mrxs", 0, 0, 0};
-  std::vector<uint8_t> empty_data; // Empty vector
+  std::vector<uint8_t> empty_data;  // Empty vector
   auto empty_tile = std::make_shared<CachedTileData>(
       std::move(empty_data), aifocore::Size<uint32_t, 2>{0, 0}, 0);
 
@@ -1158,5 +1158,5 @@ TEST(LRUTileCacheTest, EmptyTileData) {
   EXPECT_EQ(cache.GetMemoryUsage(), 0);
 }
 
-} // namespace runtime
-} // namespace fastslide
+}  // namespace runtime
+}  // namespace fastslide

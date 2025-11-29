@@ -14,12 +14,13 @@
 
 #include "simpletiff/tiff_parser.h"
 
-#include "aifocore/platform/portability.h"
-
-#include <algorithm>
 #include <cstring>
 #include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
+#include "aifocore/platform/portability.h"
 #include "simpletiff/io_utils.h"
 
 namespace simpletiff {

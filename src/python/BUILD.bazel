@@ -1,0 +1,26 @@
+load("@pybind11_bazel//:build_defs.bzl", "pybind_extension")
+
+# Python bindings extension module using pybind11_bazel
+# This properly handles Python version selection and ABI compatibility
+pybind_extension(
+    name = "_fastslide",
+    srcs = [
+        "cache.cpp",
+        "fastslide.cpp",
+        "reader.cpp",
+    ],
+    copts = ["-fvisibility=hidden"],
+    linkopts = select({
+        "@platforms//os:macos": ["-Wl,-exported_symbol,_PyInit__fastslide"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//aifo/fastslide:cache",
+        "//aifo/fastslide:fastslide_lib",
+        "//aifo/fastslide:python_binding_headers",
+        "//aifo/fastslide:runtime_global_cache_manager",
+        "//aifo/fastslide:runtime_plugin_loader",
+        "//aifo/fastslide:runtime_reader_registry",
+    ],
+)

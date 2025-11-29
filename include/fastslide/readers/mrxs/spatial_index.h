@@ -37,14 +37,14 @@ struct Box {
 
 /// @brief Spatial tile information with bounding box
 struct SpatialTile {
-  MiraxTileRecord tile_info; ///< Original tile information
-  Box bbox;                  ///< Bounding box in level coordinates
-  double tile_width;         ///< Tile width in level coordinates
-  double tile_height;        ///< Tile height in level coordinates
-  int32_t grid_x;            ///< Grid X coordinate (tile_x / grid_divisor)
-  int32_t grid_y;            ///< Grid Y coordinate (tile_y / grid_divisor)
-  double offset_x;           ///< X offset from expected grid position
-  double offset_y;           ///< Y offset from expected grid position
+  MiraxTileRecord tile_info;  ///< Original tile information
+  Box bbox;                   ///< Bounding box in level coordinates
+  double tile_width;          ///< Tile width in level coordinates
+  double tile_height;         ///< Tile height in level coordinates
+  int32_t grid_x;             ///< Grid X coordinate (tile_x / grid_divisor)
+  int32_t grid_y;             ///< Grid Y coordinate (tile_y / grid_divisor)
+  double offset_x;            ///< X offset from expected grid position
+  double offset_y;            ///< Y offset from expected grid position
 };
 
 /// @brief Spatial index for efficient tile queries using grid-based hashmap
@@ -58,7 +58,7 @@ struct SpatialTile {
 /// cells. Tiles are indexed in all cells they overlap, ensuring complete
 /// coverage during region queries.
 class MrxsSpatialIndex {
-public:
+ public:
   /// @brief Build spatial index from tiles
   /// @param tiles Vector of tile information
   /// @param level_params Level parameters for spatial calculations
@@ -66,10 +66,10 @@ public:
   /// slide_info)
   /// @param slide_info Slide information (for camera positions and zoom level)
   /// @return Result containing spatial index or error
-  static aifocore::Result<std::unique_ptr<MrxsSpatialIndex>>
-  Build(const std::vector<MiraxTileRecord> &tiles,
-        const PyramidLevelParameters &level_params, int level,
-        const SlideDataInfo &slide_info);
+  static aifocore::Result<std::unique_ptr<MrxsSpatialIndex>> Build(
+      const std::vector<MiraxTileRecord>& tiles,
+      const PyramidLevelParameters& level_params, int level,
+      const SlideDataInfo& slide_info);
 
   /// @brief Query tiles that intersect with a region
   /// @param x X coordinate of region (level coordinates)
@@ -77,12 +77,13 @@ public:
   /// @param width Width of region
   /// @param height Height of region
   /// @return Vector of tile indices that intersect the region
-  [[nodiscard]] std::vector<size_t>
-  QueryRegion(double x, double y, double width, double height) const;
+  [[nodiscard]] std::vector<size_t> QueryRegion(double x, double y,
+                                                double width,
+                                                double height) const;
 
   /// @brief Get spatial tile information
   /// @return Vector of spatial tiles
-  [[nodiscard]] const std::vector<SpatialTile> &GetSpatialTiles() const {
+  [[nodiscard]] const std::vector<SpatialTile>& GetSpatialTiles() const {
     return spatial_tiles_;
   }
 
@@ -96,12 +97,11 @@ public:
   /// @param level Pyramid level index
   /// @param slide_info Slide information (for camera positions and zoom level)
   /// @return Bounding box in level coordinates
-  static Box
-  CalculateTileBoundingBox(const MiraxTileRecord &tile,
-                           const PyramidLevelParameters &level_params,
-                           int level, const SlideDataInfo &slide_info);
+  static Box CalculateTileBoundingBox(
+      const MiraxTileRecord& tile, const PyramidLevelParameters& level_params,
+      int level, const SlideDataInfo& slide_info);
 
-private:
+ private:
   /// @brief Constructor (use Build() factory method)
   MrxsSpatialIndex(ankerl::unordered_dense::map<std::pair<int32_t, int32_t>,
                                                 std::vector<size_t>>
@@ -116,18 +116,18 @@ private:
   ankerl::unordered_dense::map<std::pair<int32_t, int32_t>, std::vector<size_t>>
       cell_index_;
 
-  std::vector<SpatialTile> spatial_tiles_; ///< Spatial tile information
+  std::vector<SpatialTile> spatial_tiles_;  ///< Spatial tile information
 
-  double step_x_; ///< Grid cell width in X direction
-  double step_y_; ///< Grid cell height in Y direction
+  double step_x_;  ///< Grid cell width in X direction
+  double step_y_;  ///< Grid cell height in Y direction
 
   /// Epoch-based deduplication for query results
   /// Avoids returning the same tile multiple times when it spans multiple cells
   mutable std::atomic<uint32_t>
-      query_epoch_; ///< Current query epoch (atomic for thread safety)
-  mutable std::vector<uint32_t> seen_epoch_; ///< Last seen epoch per tile
+      query_epoch_;  ///< Current query epoch (atomic for thread safety)
+  mutable std::vector<uint32_t> seen_epoch_;  ///< Last seen epoch per tile
   mutable std::mutex
-      epoch_wrap_mutex_; ///< Protects epoch wrapping (rare operation)
+      epoch_wrap_mutex_;  ///< Protects epoch wrapping (rare operation)
 
   // Structure of Arrays (SoA) layout for tight query loop
   //
@@ -149,16 +149,16 @@ private:
   //   prefetcher works optimally with sequential access patterns.
   // - Precision: Float (23-bit mantissa) is sufficient for micron-level
   //   coordinates up to ~8 million pixels, well beyond typical slides.
-  std::vector<float> bbox_min_x_; ///< Bounding box minimum X coordinates
-  std::vector<float> bbox_min_y_; ///< Bounding box minimum Y coordinates
-  std::vector<float> bbox_max_x_; ///< Bounding box maximum X coordinates
-  std::vector<float> bbox_max_y_; ///< Bounding box maximum Y coordinates
+  std::vector<float> bbox_min_x_;  ///< Bounding box minimum X coordinates
+  std::vector<float> bbox_min_y_;  ///< Bounding box minimum Y coordinates
+  std::vector<float> bbox_max_x_;  ///< Bounding box maximum X coordinates
+  std::vector<float> bbox_max_y_;  ///< Bounding box maximum Y coordinates
 
-  double inv_step_x_; ///< Reciprocal of step_x_ for fast grid computation
-  double inv_step_y_; ///< Reciprocal of step_y_ for fast grid computation
+  double inv_step_x_;  ///< Reciprocal of step_x_ for fast grid computation
+  double inv_step_y_;  ///< Reciprocal of step_y_ for fast grid computation
 };
 
-} // namespace mrxs
-} // namespace fastslide
+}  // namespace mrxs
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_SPATIAL_INDEX_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_SPATIAL_INDEX_H_

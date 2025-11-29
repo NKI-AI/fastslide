@@ -105,7 +105,8 @@ class MockSlideReader : public SlideReader {
   [[nodiscard]] aifocore::Result<LevelInfo> GetLevelInfo(
       int level) const override {
     if (level != 0) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument, "Invalid level");
+      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                              "Invalid level");
     }
     LevelInfo info;
     info.dimensions = ImageDimensions{1024, 768};
@@ -135,7 +136,8 @@ class MockSlideReader : public SlideReader {
     if (name == "macro") {
       return ImageDimensions{512, 384};
     }
-    return aifocore::Status(aifocore::StatusCode::kNotFound, "Associated image not found");
+    return aifocore::Status(aifocore::StatusCode::kNotFound,
+                            "Associated image not found");
   }
 
   // Implement two-stage pipeline instead of overriding
@@ -143,7 +145,8 @@ class MockSlideReader : public SlideReader {
   [[nodiscard]] aifocore::Result<core::TilePlan> PrepareRequest(
       const core::TileRequest& request) const override {
     if (!request.IsValid()) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument, "Invalid request");
+      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                              "Invalid request");
     }
 
     core::TilePlan plan;

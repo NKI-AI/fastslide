@@ -37,20 +37,20 @@ struct ColorRGB {
       : r(red), g(green), b(blue) {}
 
   /// @brief Array access operator for compatibility
-  constexpr uint8_t &operator[](std::size_t index) { return (&r)[index]; }
+  constexpr uint8_t& operator[](std::size_t index) { return (&r)[index]; }
 
   /// @brief Const array access operator for compatibility
-  constexpr const uint8_t &operator[](std::size_t index) const {
+  constexpr const uint8_t& operator[](std::size_t index) const {
     return (&r)[index];
   }
 
   /// @brief Equality comparison
-  constexpr bool operator==(const ColorRGB &other) const {
+  constexpr bool operator==(const ColorRGB& other) const {
     return r == other.r && g == other.g && b == other.b;
   }
 
   /// @brief Inequality comparison
-  constexpr bool operator!=(const ColorRGB &other) const {
+  constexpr bool operator!=(const ColorRGB& other) const {
     return !(*this == other);
   }
 };
@@ -87,8 +87,8 @@ uint32_t PackRGB(uint8_t red, uint8_t green, uint8_t blue);
 ///
 /// This function parses color strings in the format "R,G,B" where each
 /// component is an integer in the range [0, 255].
-aifocore::Result<std::array<uint8_t, 3>> ParseRgb(const std::string &str);
+aifocore::Result<std::array<uint8_t, 3>> ParseRgb(const std::string& str);
 
-} // namespace fastslide
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_UTILITIES_COLORS_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_UTILITIES_COLORS_H_

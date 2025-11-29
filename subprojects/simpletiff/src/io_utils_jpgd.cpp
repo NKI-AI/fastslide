@@ -16,17 +16,16 @@
 
 #include "simpletiff/io_utils.h"
 
-#include "jpeg-compressor/jpgd.h"
-
-#include "aifocore/platform/portability.h"
-
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <mutex>
 #include <span>
+#include <utility>
 #include <vector>
 
+#include "aifocore/platform/portability.h"
+#include "jpeg-compressor/jpgd.h"
 #include "simpletiff/reader.h"
 
 namespace simpletiff {

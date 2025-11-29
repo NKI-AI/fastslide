@@ -59,19 +59,18 @@ std::vector<std::string> SplitString(std::string_view str, char delimiter) {
 }
 
 // Helper for string to double conversion
-bool ParseDouble(const std::string &str, double &value) {
+bool ParseDouble(const std::string& str, double& value) {
   if (str.empty()) {
     return false;
   }
-  char *end_ptr;
+  char* end_ptr;
   value = std::strtod(str.c_str(), &end_ptr);
   return end_ptr != str.c_str();
 }
-} // namespace
+}  // namespace
 
-aifocore::Status
-AperioMetadataParser::ParseFromDescription(const std::string &description,
-                                           AperioMetadata &metadata) {
+aifocore::Status AperioMetadataParser::ParseFromDescription(
+    const std::string& description, AperioMetadata& metadata) {
 
   if (!IsAperioFormat(description)) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
@@ -112,14 +111,14 @@ AperioMetadataParser::ParseFromDescription(const std::string &description,
   return aifocore::Status::OkStatus();
 }
 
-bool AperioMetadataParser::IsAperioFormat(const std::string &description) {
+bool AperioMetadataParser::IsAperioFormat(const std::string& description) {
   // Check for Aperio signature at the beginning of the description
   return description.starts_with("Aperio") ||
          description.find("Aperio") != std::string::npos;
 }
 
-std::string
-AperioMetadataParser::ParseAssociatedImageName(const std::string &description) {
+std::string AperioMetadataParser::ParseAssociatedImageName(
+    const std::string& description) {
 
   // Look for common associated image patterns in Aperio files
   if (description.find("macro") != std::string::npos ||
@@ -147,12 +146,12 @@ AperioMetadataParser::ParseAssociatedImageName(const std::string &description) {
   return "";
 }
 
-std::string AperioMetadataParser::ExtractValue(const std::string &description,
-                                               const std::string &key) {
+std::string AperioMetadataParser::ExtractValue(const std::string& description,
+                                               const std::string& key) {
   // Aperio metadata is typically pipe-separated
   std::vector<std::string> parts = SplitString(description, '|');
 
-  for (const auto &part : parts) {
+  for (const auto& part : parts) {
     // Look for key=value or key = value patterns
     size_t eq_pos = part.find('=');
     if (eq_pos != std::string::npos) {
@@ -165,7 +164,7 @@ std::string AperioMetadataParser::ExtractValue(const std::string &description,
       if (key_end != std::string::npos) {
         part_key.erase(key_end + 1);
       } else if (part_key.find_first_not_of(" \t") == std::string::npos) {
-        part_key.clear(); // All whitespace
+        part_key.clear();  // All whitespace
       }
 
       part_value.erase(0, part_value.find_first_not_of(" \t"));
@@ -173,7 +172,7 @@ std::string AperioMetadataParser::ExtractValue(const std::string &description,
       if (val_end != std::string::npos) {
         part_value.erase(val_end + 1);
       } else if (part_value.find_first_not_of(" \t") == std::string::npos) {
-        part_value.clear(); // All whitespace
+        part_value.clear();  // All whitespace
       }
 
       if (part_key == key) {
@@ -185,6 +184,6 @@ std::string AperioMetadataParser::ExtractValue(const std::string &description,
   return "";
 }
 
-} // namespace aperio
-} // namespace formats
-} // namespace fastslide
+}  // namespace aperio
+}  // namespace formats
+}  // namespace fastslide

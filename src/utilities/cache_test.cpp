@@ -29,12 +29,12 @@
 namespace fastslide {
 
 class TileCacheTest : public ::testing::Test {
-protected:
+ protected:
   void SetUp() override {
     // Create test tiles
-    std::vector<uint8_t> data1(256 * 256 * 3, 128); // Gray tile
-    std::vector<uint8_t> data2(256 * 256 * 3, 255); // White tile
-    std::vector<uint8_t> data3(256 * 256 * 3, 0);   // Black tile
+    std::vector<uint8_t> data1(256 * 256 * 3, 128);  // Gray tile
+    std::vector<uint8_t> data2(256 * 256 * 3, 255);  // White tile
+    std::vector<uint8_t> data3(256 * 256 * 3, 0);    // Black tile
 
     tile1_ = std::make_shared<CachedTile>(
         std::move(data1), aifocore::Size<uint32_t, 2>{256, 256}, 3);
@@ -83,7 +83,7 @@ TEST_F(TileCacheTest, BasicOperations) {
 
   retrieved = cache.Get(key1_);
   ASSERT_NE(retrieved, nullptr);
-  EXPECT_EQ(retrieved->data[0], 255); // Should be white tile now
+  EXPECT_EQ(retrieved->data[0], 255);  // Should be white tile now
 
   // Test Clear
   cache.Clear();
@@ -93,7 +93,7 @@ TEST_F(TileCacheTest, BasicOperations) {
 
 // Test LRU eviction behavior
 TEST_F(TileCacheTest, LRUEviction) {
-  TileCache cache(2); // Small cache for testing eviction
+  TileCache cache(2);  // Small cache for testing eviction
 
   // Fill cache to capacity
   cache.Put(key1_, tile1_);
@@ -150,8 +150,8 @@ TEST_F(TileCacheTest, Statistics) {
   cache.Put(key2_, tile2_);
 
   // Test misses
-  cache.Get(key3_); // Miss
-  cache.Get(key3_); // Miss
+  cache.Get(key3_);  // Miss
+  cache.Get(key3_);  // Miss
 
   stats = cache.GetStats();
   EXPECT_EQ(stats.size, 2);
@@ -160,9 +160,9 @@ TEST_F(TileCacheTest, Statistics) {
   EXPECT_EQ(stats.hit_ratio, 0.0);
 
   // Test hits
-  cache.Get(key1_); // Hit
-  cache.Get(key2_); // Hit
-  cache.Get(key1_); // Hit
+  cache.Get(key1_);  // Hit
+  cache.Get(key2_);  // Hit
+  cache.Get(key1_);  // Hit
 
   stats = cache.GetStats();
   EXPECT_EQ(stats.hits, 3);
@@ -260,7 +260,7 @@ TEST_F(TileCacheTest, ThreadSafety) {
   }
 
   // Wait for all threads to complete
-  for (auto &thread : threads) {
+  for (auto& thread : threads) {
     thread.join();
   }
 
@@ -269,12 +269,12 @@ TEST_F(TileCacheTest, ThreadSafety) {
 
   // Get final stats - should not crash
   auto stats = cache.GetStats();
-  EXPECT_LE(stats.size, 100); // Should not exceed capacity
+  EXPECT_LE(stats.size, 100);  // Should not exceed capacity
 }
 
 // Test GlobalTileCache
 TEST_F(TileCacheTest, GlobalTileCache) {
-  auto &global_cache = GlobalTileCache::Instance();
+  auto& global_cache = GlobalTileCache::Instance();
 
   // Test setting capacity
   auto status = global_cache.SetCapacity(20);
@@ -287,7 +287,7 @@ TEST_F(TileCacheTest, GlobalTileCache) {
   EXPECT_EQ(status.code(), aifocore::StatusCode::kInvalidArgument);
 
   // Test basic operations through global cache
-  auto &cache = global_cache.GetCache();
+  auto& cache = global_cache.GetCache();
   cache.Put(key1_, tile1_);
 
   auto retrieved = cache.Get(key1_);
@@ -295,7 +295,7 @@ TEST_F(TileCacheTest, GlobalTileCache) {
   EXPECT_EQ(retrieved->size[0], 256);
 
   // Test const access
-  const auto &const_cache = global_cache.GetCache();
+  const auto& const_cache = global_cache.GetCache();
   auto stats = const_cache.GetStats();
   EXPECT_EQ(stats.size, 1);
 
@@ -335,12 +335,12 @@ TEST_F(TileCacheTest, Performance) {
   // Should have good hit ratio due to key reuse
   auto stats = cache.GetStats();
   EXPECT_GT(stats.hit_ratio,
-            0.9); // Should be very high since we're reusing keys
+            0.9);  // Should be very high since we're reusing keys
 }
 
 // Test edge cases
 TEST_F(TileCacheTest, EdgeCases) {
-  TileCache cache(1); // Capacity of 1
+  TileCache cache(1);  // Capacity of 1
 
   // Test single item cache
   cache.Put(key1_, tile1_);
@@ -352,7 +352,7 @@ TEST_F(TileCacheTest, EdgeCases) {
   EXPECT_NE(cache.Get(key2_), nullptr);
 
   // Test large tile data
-  std::vector<uint8_t> large_data(10 * 1024 * 1024, 42); // 10MB tile
+  std::vector<uint8_t> large_data(10 * 1024 * 1024, 42);  // 10MB tile
   auto large_tile = std::make_shared<CachedTile>(
       std::move(large_data), aifocore::Size<uint32_t, 2>{1024, 1024}, 10);
 
@@ -363,4 +363,4 @@ TEST_F(TileCacheTest, EdgeCases) {
   EXPECT_EQ(retrieved->data[0], 42);
 }
 
-} // namespace fastslide
+}  // namespace fastslide

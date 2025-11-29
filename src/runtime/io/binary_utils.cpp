@@ -27,7 +27,7 @@ namespace fastslide {
 namespace runtime {
 namespace io {
 
-aifocore::Result<int32_t> ReadLeInt32(FILE *file) {
+aifocore::Result<int32_t> ReadLeInt32(FILE* file) {
   uint8_t buf[4];
   if (fread(buf, 1, 4, file) != 4) {
     return aifocore::Status(aifocore::StatusCode::kInternal,
@@ -38,7 +38,7 @@ aifocore::Result<int32_t> ReadLeInt32(FILE *file) {
                               (buf[3] << 24));
 }
 
-aifocore::Result<uint32_t> ReadLeUInt32(FILE *file) {
+aifocore::Result<uint32_t> ReadLeUInt32(FILE* file) {
   uint8_t buf[4];
   if (fread(buf, 1, 4, file) != 4) {
     return aifocore::Status(aifocore::StatusCode::kInternal,
@@ -49,12 +49,12 @@ aifocore::Result<uint32_t> ReadLeUInt32(FILE *file) {
                                (buf[3] << 24));
 }
 
-aifocore::Result<std::vector<uint8_t>> DecompressZlib(const uint8_t *data,
+aifocore::Result<std::vector<uint8_t>> DecompressZlib(const uint8_t* data,
                                                       size_t compressed_size,
                                                       size_t expected_size) {
   std::vector<uint8_t> decompressed(expected_size);
   z_stream strm{};
-  strm.next_in = const_cast<uint8_t *>(data);
+  strm.next_in = const_cast<uint8_t*>(data);
   strm.avail_in = compressed_size;
   strm.next_out = decompressed.data();
   strm.avail_out = expected_size;
@@ -77,6 +77,6 @@ aifocore::Result<std::vector<uint8_t>> DecompressZlib(const uint8_t *data,
   return decompressed;
 }
 
-} // namespace io
-} // namespace runtime
-} // namespace fastslide
+}  // namespace io
+}  // namespace runtime
+}  // namespace fastslide

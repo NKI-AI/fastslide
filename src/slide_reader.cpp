@@ -23,8 +23,8 @@
 
 namespace fastslide {
 
-RegionSpec SlideReader::ClampRegion(const RegionSpec &region,
-                                    const ImageDimensions &image_dims) {
+RegionSpec SlideReader::ClampRegion(const RegionSpec& region,
+                                    const ImageDimensions& image_dims) {
   // Handle edge case of zero-sized image
   if (image_dims[0] == 0 || image_dims[1] == 0) {
     RegionSpec clamped = region;
@@ -70,7 +70,7 @@ int SlideReader::GetBestLevelForDownsample(double downsample) const {
   for (int level = 0; level < level_count; ++level) {
     auto level_info_result = GetLevelInfo(level);
     if (!level_info_result.ok()) {
-      continue; // Skip invalid levels
+      continue;  // Skip invalid levels
     }
 
     double level_downsample = level_info_result.value().downsample_factor;
@@ -88,8 +88,8 @@ int SlideReader::GetBestLevelForDownsample(double downsample) const {
 // Two-Stage Pipeline Helpers
 // ============================================================================
 
-aifocore::Result<core::TileRequest>
-SlideReader::RegionToTileRequest(const RegionSpec &region) const {
+aifocore::Result<core::TileRequest> SlideReader::RegionToTileRequest(
+    const RegionSpec& region) const {
   // Validate region
   if (!region.IsValid()) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
@@ -125,8 +125,8 @@ SlideReader::RegionToTileRequest(const RegionSpec &region) const {
   return request;
 }
 
-aifocore::Result<Image>
-SlideReader::ReadRegionViaPipeline(const RegionSpec &region) const {
+aifocore::Result<Image> SlideReader::ReadRegionViaPipeline(
+    const RegionSpec& region) const {
 
   // Convert RegionSpec to TileRequest
   core::TileRequest request;
@@ -153,7 +153,7 @@ SlideReader::ReadRegionViaPipeline(const RegionSpec &region) const {
             plan.output.channels));
   }
 
-  runtime::TileWriter writer(plan); // Auto-detects blending, channels, etc.
+  runtime::TileWriter writer(plan);  // Auto-detects blending, channels, etc.
 
   // Execute the plan (same interface for all formats)
   AIFOCORE_RETURN_IF_ERROR(ExecutePlan(plan, writer));
@@ -166,4 +166,4 @@ SlideReader::ReadRegionViaPipeline(const RegionSpec &region) const {
   return output;
 }
 
-} // namespace fastslide
+}  // namespace fastslide

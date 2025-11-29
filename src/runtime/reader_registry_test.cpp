@@ -120,7 +120,7 @@ TEST(ReaderRegistryTest, RegisterSingleFormat) {
   EXPECT_TRUE(registry.SupportsExtension(".mrxs"));
   EXPECT_FALSE(registry.SupportsExtension(".svs"));
 
-  auto *format = registry.GetFormat(".mrxs");
+  auto* format = registry.GetFormat(".mrxs");
   ASSERT_NE(format, nullptr);
   EXPECT_EQ(format->format_name, "MRXS");
   EXPECT_EQ(format->primary_extension, ".mrxs");
@@ -195,7 +195,7 @@ TEST(ReaderRegistryTest, ReplaceExistingFormat) {
   EXPECT_EQ(registry.ListFormats().size(), 1);
 
   // But it's the new one
-  auto *format = registry.GetFormat(".mrxs");
+  auto* format = registry.GetFormat(".mrxs");
   ASSERT_NE(format, nullptr);
   EXPECT_EQ(format->format_name, "MRXS_V2");
 }
@@ -233,8 +233,8 @@ TEST(ReaderRegistryTest, ExtensionNormalizationLeadingDot) {
   ReaderRegistry registry;
   registry.RegisterFormat(CreateMockMrxsDescriptor());
 
-  auto *format1 = registry.GetFormat(".mrxs");
-  auto *format2 = registry.GetFormat("mrxs");
+  auto* format1 = registry.GetFormat(".mrxs");
+  auto* format2 = registry.GetFormat("mrxs");
 
   EXPECT_EQ(format1, format2);
   EXPECT_NE(format1, nullptr);
@@ -349,7 +349,7 @@ TEST(ReaderRegistryTest, MultipleCapabilityCheck) {
   ReaderRegistry registry;
   registry.RegisterFormat(CreateMockMrxsDescriptor());
 
-  auto *format = registry.GetFormat(".mrxs");
+  auto* format = registry.GetFormat(".mrxs");
   ASSERT_NE(format, nullptr);
 
   // Check multiple capabilities
@@ -388,9 +388,9 @@ TEST(ReaderRegistryTest, CreateReaderWithExtension) {
                     std::string_view filename)
       -> aifocore::Result<std::unique_ptr<SlideReader>> {
     // Return error to verify factory was called
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Test factory called for: " +
-                                std::string(filename));
+    return aifocore::Status(
+        aifocore::StatusCode::kInternal,
+        "Test factory called for: " + std::string(filename));
   };
 
   registry.RegisterFormat(desc);
@@ -485,7 +485,7 @@ TEST(ReaderRegistryTest, ConcurrentRegistration) {
     });
   }
 
-  for (auto &thread : threads) {
+  for (auto& thread : threads) {
     thread.join();
   }
 
@@ -514,7 +514,7 @@ TEST(ReaderRegistryTest, ConcurrentAccess) {
     });
   }
 
-  for (auto &thread : threads) {
+  for (auto& thread : threads) {
     thread.join();
   }
 
@@ -587,5 +587,5 @@ TEST(ReaderRegistryTest, FilenameWithMultipleDots) {
   EXPECT_NE(result.status().code(), aifocore::StatusCode::kNotFound);
 }
 
-} // namespace runtime
-} // namespace fastslide
+}  // namespace runtime
+}  // namespace fastslide

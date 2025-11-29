@@ -1,0 +1,9 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "lodepng",
+    srcs = ["upstream/lodepng/lodepng.cpp"],
+    hdrs = ["upstream/lodepng/lodepng.h"],
+    includes = ["upstream"],
+    visibility = ["//visibility:public"],
+)

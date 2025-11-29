@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef AIFOCORE_STATUS_RESULT_H_
-#define AIFOCORE_STATUS_RESULT_H_
+#ifndef AIFO_AIFOCORE_INCLUDE_AIFOCORE_STATUS_RESULT_H_
+#define AIFO_AIFOCORE_INCLUDE_AIFOCORE_STATUS_RESULT_H_
 
 #include <cassert>
 #include <cstdlib>
@@ -49,56 +49,59 @@ enum class StatusCode {
 
 inline std::string StatusCodeToString(StatusCode code) {
   switch (code) {
-  case StatusCode::kOk:
-    return "OK";
-  case StatusCode::kCancelled:
-    return "CANCELLED";
-  case StatusCode::kUnknown:
-    return "UNKNOWN";
-  case StatusCode::kInvalidArgument:
-    return "INVALID_ARGUMENT";
-  case StatusCode::kDeadlineExceeded:
-    return "DEADLINE_EXCEEDED";
-  case StatusCode::kNotFound:
-    return "NOT_FOUND";
-  case StatusCode::kAlreadyExists:
-    return "ALREADY_EXISTS";
-  case StatusCode::kPermissionDenied:
-    return "PERMISSION_DENIED";
-  case StatusCode::kResourceExhausted:
-    return "RESOURCE_EXHAUSTED";
-  case StatusCode::kFailedPrecondition:
-    return "FAILED_PRECONDITION";
-  case StatusCode::kAborted:
-    return "ABORTED";
-  case StatusCode::kOutOfRange:
-    return "OUT_OF_RANGE";
-  case StatusCode::kUnimplemented:
-    return "UNIMPLEMENTED";
-  case StatusCode::kInternal:
-    return "INTERNAL";
-  case StatusCode::kUnavailable:
-    return "UNAVAILABLE";
-  case StatusCode::kDataLoss:
-    return "DATA_LOSS";
-  case StatusCode::kUnauthenticated:
-    return "UNAUTHENTICATED";
-  default:
-    return "UNKNOWN(" + std::to_string(static_cast<int>(code)) + ")";
+    case StatusCode::kOk:
+      return "OK";
+    case StatusCode::kCancelled:
+      return "CANCELLED";
+    case StatusCode::kUnknown:
+      return "UNKNOWN";
+    case StatusCode::kInvalidArgument:
+      return "INVALID_ARGUMENT";
+    case StatusCode::kDeadlineExceeded:
+      return "DEADLINE_EXCEEDED";
+    case StatusCode::kNotFound:
+      return "NOT_FOUND";
+    case StatusCode::kAlreadyExists:
+      return "ALREADY_EXISTS";
+    case StatusCode::kPermissionDenied:
+      return "PERMISSION_DENIED";
+    case StatusCode::kResourceExhausted:
+      return "RESOURCE_EXHAUSTED";
+    case StatusCode::kFailedPrecondition:
+      return "FAILED_PRECONDITION";
+    case StatusCode::kAborted:
+      return "ABORTED";
+    case StatusCode::kOutOfRange:
+      return "OUT_OF_RANGE";
+    case StatusCode::kUnimplemented:
+      return "UNIMPLEMENTED";
+    case StatusCode::kInternal:
+      return "INTERNAL";
+    case StatusCode::kUnavailable:
+      return "UNAVAILABLE";
+    case StatusCode::kDataLoss:
+      return "DATA_LOSS";
+    case StatusCode::kUnauthenticated:
+      return "UNAUTHENTICATED";
+    default:
+      return "UNKNOWN(" + std::to_string(static_cast<int>(code)) + ")";
   }
 }
 
 class Status {
-public:
+ public:
   Status() : code_(StatusCode::kOk) {}
+
   Status(StatusCode code, std::string message)
       : code_(code), message_(std::move(message)) {}
 
   static Status OkStatus() { return Status(); }
 
   bool ok() const { return code_ == StatusCode::kOk; }
+
   StatusCode code() const { return code_; }
-  const std::string &message() const { return message_; }
+
+  const std::string& message() const { return message_; }
 
   std::string ToString() const {
     if (ok())
@@ -110,17 +113,18 @@ public:
     // Intentional no-op to suppress unused result warnings if any
   }
 
-  bool operator==(const Status &other) const {
+  bool operator==(const Status& other) const {
     return code_ == other.code_ && message_ == other.message_;
   }
-  bool operator!=(const Status &other) const { return !(*this == other); }
 
-  friend std::ostream &operator<<(std::ostream &os, const Status &status) {
+  bool operator!=(const Status& other) const { return !(*this == other); }
+
+  friend std::ostream& operator<<(std::ostream& os, const Status& status) {
     os << status.ToString();
     return os;
   }
 
-private:
+ private:
   StatusCode code_;
   std::string message_;
 };
@@ -131,45 +135,54 @@ inline Status Error(std::string msg) {
 }
 
 // Helper macros for termination
-#define AIFOCORE_CHECK(condition, message)                                     \
-  do {                                                                         \
-    if (!(condition)) {                                                        \
-      std::cerr << "Check failed: " << #condition << " - " << (message)        \
-                << "\n";                                                       \
-      std::abort();                                                            \
-    }                                                                          \
+#define AIFOCORE_CHECK(condition, message)                              \
+  do {                                                                  \
+    if (!(condition)) {                                                 \
+      std::cerr << "Check failed: " << #condition << " - " << (message) \
+                << "\n";                                                \
+      std::abort();                                                     \
+    }                                                                   \
   } while (0)
 
-template <typename T> class Result {
-public:
+template <typename T>
+class Result {
+ public:
   using value_type = T;
 
   // Constructors
-  Result(const T &value) : data_(value) {}
-  Result(T &&value) : data_(std::move(value)) {}
+  // NOLINTNEXTLINE(runtime/explicit)
+  Result(const T& value) : data_(value) {}
+
+  // NOLINTNEXTLINE(runtime/explicit)
+  Result(T&& value) : data_(std::move(value)) {}
 
   // Constructor from Status (implicit allow for return Status(...))
-  Result(const Status &status) : data_(status) {
+  // NOLINTNEXTLINE(runtime/explicit)
+  Result(const Status& status) : data_(status) {
     AIFOCORE_CHECK(!status.ok(), "Result constructed with OK status");
   }
-  Result(Status &&status) : data_(std::move(status)) {
+
+  // NOLINTNEXTLINE(runtime/explicit)
+  Result(Status&& status) : data_(std::move(status)) {
     AIFOCORE_CHECK(!std::get<Status>(data_).ok(),
                    "Result constructed with OK status");
   }
 
   // In-place construction
   template <typename... Args>
-  explicit Result(std::in_place_t, Args &&...args)
+  explicit Result(std::in_place_t, Args&&... args)
       : data_(std::in_place_type<T>, std::forward<Args>(args)...) {}
 
   bool ok() const { return std::holds_alternative<T>(data_); }
 
   // Legacy/Google Style
   bool Ok() const { return ok(); }
+
   bool IsError() const { return !ok(); }
+
   explicit operator bool() const { return ok(); }
 
-  const T &value() const & {
+  const T& value() const& {
     if (!ok()) {
       std::cerr << "Bad Result access: " << status().ToString() << "\n";
       std::abort();
@@ -177,7 +190,7 @@ public:
     return std::get<T>(data_);
   }
 
-  T &value() & {
+  T& value() & {
     if (!ok()) {
       std::cerr << "Bad Result access: " << status().ToString() << "\n";
       std::abort();
@@ -185,7 +198,7 @@ public:
     return std::get<T>(data_);
   }
 
-  T &&value() && {
+  T&& value() && {
     if (!ok()) {
       std::cerr << "Bad Result access: " << status().ToString() << "\n";
       std::abort();
@@ -194,11 +207,13 @@ public:
   }
 
   // Legacy aliases
-  T &Value() & { return value(); }
-  const T &Value() const & { return value(); }
-  T &&Value() && { return std::move(*this).value(); }
+  T& Value() & { return value(); }
 
-  const Status &status() const {
+  const T& Value() const& { return value(); }
+
+  T&& Value() && { return std::move(*this).value(); }
+
+  const Status& status() const {
     if (ok()) {
       static const Status kOk = Status::OkStatus();
       return kOk;
@@ -206,12 +221,12 @@ public:
     return std::get<Status>(data_);
   }
 
-  const Status &error() const {
+  const Status& error() const {
     AIFOCORE_CHECK(!ok(), "Result::error() called on OK result");
     return std::get<Status>(data_);
   }
 
-  T ValueOr(T default_value) const & {
+  T ValueOr(T default_value) const& {
     if (ok())
       return std::get<T>(data_);
     return default_value;
@@ -224,31 +239,43 @@ public:
   }
 
   // Dereference
-  T &operator*() & { return value(); }
-  const T &operator*() const & { return value(); }
-  T &&operator*() && { return std::move(*this).value(); }
-  T *operator->() { return &value(); }
-  const T *operator->() const { return &value(); }
+  T& operator*() & { return value(); }
 
-private:
+  const T& operator*() const& { return value(); }
+
+  T&& operator*() && { return std::move(*this).value(); }
+
+  T* operator->() { return &value(); }
+
+  const T* operator->() const { return &value(); }
+
+ private:
   std::variant<T, Status> data_;
 };
 
 // Specialization for void
-template <> class Result<void> {
-public:
+template <>
+class Result<void> {
+ public:
   Result() : status_(Status::OkStatus()) {}
-  Result(const Status &status) : status_(status) {}
-  Result(Status &&status) : status_(std::move(status)) {}
+
+  // NOLINTNEXTLINE(runtime/explicit)
+  Result(const Status& status) : status_(status) {}
+
+  // NOLINTNEXTLINE(runtime/explicit)
+  Result(Status&& status) : status_(std::move(status)) {}
 
   bool ok() const { return status_.ok(); }
+
   bool Ok() const { return ok(); }
+
   bool IsError() const { return !ok(); }
+
   explicit operator bool() const { return ok(); }
 
-  const Status &status() const { return status_; }
+  const Status& status() const { return status_; }
 
-  const Status &error() const {
+  const Status& error() const {
     AIFOCORE_CHECK(!ok(), "Result::error() called on OK result");
     return status_;
   }
@@ -262,12 +289,12 @@ public:
 
   void IgnoreError() const {}
 
-private:
+ private:
   Status status_;
 };
 
 namespace internal {
-inline std::string FormatStackFrame(char const *function, char const *file,
+inline std::string FormatStackFrame(char const* function, char const* file,
                                     int line, StatusCode code,
                                     std::string_view message) {
   std::string s = "  at ";
@@ -292,10 +319,10 @@ inline std::string StripStackTrace(std::string_view full_message) {
   }
   return std::string(full_message);
 }
-} // namespace internal
+}  // namespace internal
 
 // AddTrace function
-inline Status AddTrace(const Status &st, char const *function, char const *file,
+inline Status AddTrace(const Status& st, char const* function, char const* file,
                        int line, std::string_view message = {}) {
   if (st.ok()) {
     return st;
@@ -326,8 +353,8 @@ inline Status AddTrace(const Status &st, char const *function, char const *file,
 }
 
 template <typename T>
-inline Status AddTrace(const Result<T> &res, char const *function,
-                       char const *file, int line,
+inline Status AddTrace(const Result<T>& res, char const* function,
+                       char const* file, int line,
                        std::string_view message = {}) {
   if (res.ok()) {
     return Status::OkStatus();
@@ -336,29 +363,29 @@ inline Status AddTrace(const Result<T> &res, char const *function,
 }
 
 // Macros
-#define AIFOCORE_RETURN_IF_ERROR(expr)                                         \
-  do {                                                                         \
-    const auto &_status = (expr);                                              \
-    if (!_status.ok())                                                         \
-      return ::aifocore::AddTrace(_status, __func__, __FILE__, __LINE__);      \
+#define AIFOCORE_RETURN_IF_ERROR(expr)                                    \
+  do {                                                                    \
+    const auto& _status = (expr);                                         \
+    if (!_status.ok())                                                    \
+      return ::aifocore::AddTrace(_status, __func__, __FILE__, __LINE__); \
   } while (0)
 
 // Implement ASSIGN_OR_RETURN
-#define AIFOCORE_ASSIGN_OR_RETURN_IMPL(statusor, lhs, rexpr)                   \
-  auto statusor = (rexpr);                                                     \
-  if (!statusor.ok())                                                          \
-    return ::aifocore::AddTrace(statusor.status(), __func__, __FILE__,         \
-                                __LINE__);                                     \
+#define AIFOCORE_ASSIGN_OR_RETURN_IMPL(statusor, lhs, rexpr)           \
+  auto statusor = (rexpr);                                             \
+  if (!statusor.ok())                                                  \
+    return ::aifocore::AddTrace(statusor.status(), __func__, __FILE__, \
+                                __LINE__);                             \
   lhs = std::move(statusor).value()
 
-#define AIFOCORE_ASSIGN_OR_RETURN(lhs, rexpr)                                  \
-  AIFOCORE_ASSIGN_OR_RETURN_IMPL(AIFOCORE_MACROS_UID(_status_or_val), lhs,     \
+#define AIFOCORE_ASSIGN_OR_RETURN(lhs, rexpr)                              \
+  AIFOCORE_ASSIGN_OR_RETURN_IMPL(AIFOCORE_MACROS_UID(_status_or_val), lhs, \
                                  rexpr)
 
 #define AIFOCORE_MACROS_concat_inner(x, y) x##y
 #define AIFOCORE_MACROS_concat(x, y) AIFOCORE_MACROS_concat_inner(x, y)
 #define AIFOCORE_MACROS_UID(x) AIFOCORE_MACROS_concat(x, __LINE__)
 
-} // namespace aifocore
+}  // namespace aifocore
 
-#endif // AIFOCORE_STATUS_RESULT_H_
+#endif  // AIFO_AIFOCORE_INCLUDE_AIFOCORE_STATUS_RESULT_H_

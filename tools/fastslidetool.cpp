@@ -16,6 +16,7 @@
 #include <iomanip>
 #include <iostream>
 #include <string>
+#include <utility>
 #include <variant>
 
 #include "CLI11/CLI11.hpp"
@@ -27,39 +28,41 @@
 
 namespace {
 
-void PrintSeparator(char c = '=') { std::cout << std::string(80, c) << '\n'; }
+void PrintSeparator(char c = '=') {
+  std::cout << std::string(80, c) << '\n';
+}
 
-void PrintHeader(const std::string &title) {
+void PrintHeader(const std::string& title) {
   std::cout << '\n';
   PrintSeparator('=');
   std::cout << " " << title << '\n';
   PrintSeparator('=');
 }
 
-void PrintSubHeader(const std::string &title) {
+void PrintSubHeader(const std::string& title) {
   std::cout << '\n';
   std::cout << "--- " << title << " ---\n";
 }
 
-void PrintKeyValue(const std::string &key, const std::string &value,
+void PrintKeyValue(const std::string& key, const std::string& value,
                    int width = 30) {
   std::cout << std::left << std::setw(width) << (key + ":") << value << '\n';
 }
 
-void PrintKeyValue(const std::string &key, double value, int width = 30) {
+void PrintKeyValue(const std::string& key, double value, int width = 30) {
   std::cout << std::left << std::setw(width) << (key + ":") << std::fixed
             << std::setprecision(6) << value << '\n';
 }
 
-void PrintKeyValue(const std::string &key, int value, int width = 30) {
+void PrintKeyValue(const std::string& key, int value, int width = 30) {
   std::cout << std::left << std::setw(width) << (key + ":") << value << '\n';
 }
 
-void PrintKeyValue(const std::string &key, size_t value, int width = 30) {
+void PrintKeyValue(const std::string& key, size_t value, int width = 30) {
   std::cout << std::left << std::setw(width) << (key + ":") << value << '\n';
 }
 
-void PrintSlideInfo(const fastslide::SlideReader &reader) {
+void PrintSlideInfo(const fastslide::SlideReader& reader) {
   PrintHeader("Slide Information");
 
   // Format
@@ -67,7 +70,7 @@ void PrintSlideInfo(const fastslide::SlideReader &reader) {
   PrintKeyValue("Image Format", fastslide::GetName(reader.GetImageFormat()));
 
   // Properties
-  const auto &props = reader.GetProperties();
+  const auto& props = reader.GetProperties();
   PrintKeyValue("MPP X", props.mpp[0]);
   PrintKeyValue("MPP Y", props.mpp[1]);
   PrintKeyValue("Objective Magnification", props.objective_magnification);
@@ -90,10 +93,10 @@ void PrintSlideInfo(const fastslide::SlideReader &reader) {
 
   // MRXS-specific: Camera position information
   if (reader.GetFormatName() == "MRXS") {
-    const auto *mrxs_reader =
-        dynamic_cast<const fastslide::MrxsReader *>(&reader);
+    const auto* mrxs_reader =
+        dynamic_cast<const fastslide::MrxsReader*>(&reader);
     if (mrxs_reader) {
-      const auto &mrxs_info = mrxs_reader->GetMrxsInfo();
+      const auto& mrxs_info = mrxs_reader->GetMrxsInfo();
       if (!mrxs_info.using_synthetic_positions) {
         const int positions_x = mrxs_info.images_x / mrxs_info.image_divisions;
         const int positions_y = mrxs_info.images_y / mrxs_info.image_divisions;
@@ -109,7 +112,7 @@ void PrintSlideInfo(const fastslide::SlideReader &reader) {
   }
 }
 
-void PrintLevelInfo(const fastslide::SlideReader &reader) {
+void PrintLevelInfo(const fastslide::SlideReader& reader) {
   PrintHeader("Pyramid Levels");
 
   int level_count = reader.GetLevelCount();
@@ -123,7 +126,7 @@ void PrintLevelInfo(const fastslide::SlideReader &reader) {
       continue;
     }
 
-    const auto &info = *level_info_or;
+    const auto& info = *level_info_or;
     PrintSubHeader("Level " + std::to_string(level));
 
     std::string dims_str = std::to_string(info.dimensions[0]) + " x " +
@@ -132,7 +135,7 @@ void PrintLevelInfo(const fastslide::SlideReader &reader) {
     PrintKeyValue("  Downsample Factor", info.downsample_factor, 25);
 
     // Calculate approximate MPP for this level
-    const auto &props = reader.GetProperties();
+    const auto& props = reader.GetProperties();
     double level_mpp_x = props.mpp[0] * info.downsample_factor;
     double level_mpp_y = props.mpp[1] * info.downsample_factor;
 
@@ -149,7 +152,7 @@ void PrintLevelInfo(const fastslide::SlideReader &reader) {
   }
 }
 
-void PrintChannelInfo(const fastslide::SlideReader &reader) {
+void PrintChannelInfo(const fastslide::SlideReader& reader) {
   auto channels = reader.GetChannelMetadata();
   if (channels.empty()) {
     return;
@@ -159,7 +162,7 @@ void PrintChannelInfo(const fastslide::SlideReader &reader) {
   PrintKeyValue("Number of Channels", channels.size());
 
   for (size_t i = 0; i < channels.size(); ++i) {
-    const auto &ch = channels[i];
+    const auto& ch = channels[i];
     PrintSubHeader("Channel " + std::to_string(i));
 
     PrintKeyValue("  Name", ch.name, 25);
@@ -182,7 +185,7 @@ void PrintChannelInfo(const fastslide::SlideReader &reader) {
   }
 }
 
-void PrintAssociatedImages(const fastslide::SlideReader &reader) {
+void PrintAssociatedImages(const fastslide::SlideReader& reader) {
   auto assoc_names = reader.GetAssociatedImageNames();
   if (assoc_names.empty()) {
     return;
@@ -191,10 +194,10 @@ void PrintAssociatedImages(const fastslide::SlideReader &reader) {
   PrintHeader("Associated Images");
   PrintKeyValue("Number of Images", assoc_names.size());
 
-  for (const auto &name : assoc_names) {
+  for (const auto& name : assoc_names) {
     auto dims_or = reader.GetAssociatedImageDimensions(name);
     if (dims_or.ok()) {
-      const auto &dims = *dims_or;
+      const auto& dims = *dims_or;
       std::string size_str =
           std::to_string(dims[0]) + " x " + std::to_string(dims[1]);
       PrintKeyValue("  " + name, size_str, 25);
@@ -204,11 +207,10 @@ void PrintAssociatedImages(const fastslide::SlideReader &reader) {
   }
 }
 
-void PrintAssociatedData(const fastslide::SlideReader &reader) {
+void PrintAssociatedData(const fastslide::SlideReader& reader) {
   // Check if this is an MRXS reader (only format that supports associated data
   // currently)
-  const auto *mrxs_reader =
-      dynamic_cast<const fastslide::MrxsReader *>(&reader);
+  const auto* mrxs_reader = dynamic_cast<const fastslide::MrxsReader*>(&reader);
   if (!mrxs_reader) {
     return;
   }
@@ -221,10 +223,10 @@ void PrintAssociatedData(const fastslide::SlideReader &reader) {
   PrintHeader("Associated Data (Non-Hierarchical Layers)");
   PrintKeyValue("Number of Data Items", data_names.size());
 
-  for (const auto &name : data_names) {
+  for (const auto& name : data_names) {
     auto info_or = mrxs_reader->GetAssociatedDataInfo(name);
     if (info_or.ok()) {
-      const auto &info = *info_or;
+      const auto& info = *info_or;
       std::string type_str = fastslide::GetTypeName(info.type);
       PrintKeyValue("  " + name, type_str, 50);
     } else {
@@ -236,7 +238,7 @@ void PrintAssociatedData(const fastslide::SlideReader &reader) {
                "(lazy-loaded)\n";
 }
 
-void PrintMetadata(const fastslide::SlideReader &reader) {
+void PrintMetadata(const fastslide::SlideReader& reader) {
   auto metadata = reader.GetMetadata();
   if (metadata.empty()) {
     return;
@@ -244,7 +246,7 @@ void PrintMetadata(const fastslide::SlideReader &reader) {
 
   PrintHeader("Additional Metadata");
 
-  for (const auto &[key, value] : metadata) {
+  for (const auto& [key, value] : metadata) {
     std::string value_str;
 
     if (std::holds_alternative<std::string>(value)) {
@@ -260,8 +262,8 @@ void PrintMetadata(const fastslide::SlideReader &reader) {
 }
 
 // PNG image writer using lodepng
-aifocore::Status SaveImagePNG(const fastslide::Image &image,
-                              const std::string &filename) {
+aifocore::Status SaveImagePNG(const fastslide::Image& image,
+                              const std::string& filename) {
   if (image.GetFormat() != fastslide::ImageFormat::kRGB) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
                             "Only RGB images can be saved");
@@ -279,16 +281,16 @@ aifocore::Status SaveImagePNG(const fastslide::Image &image,
                             static_cast<unsigned int>(image.GetHeight()));
 
   if (error != 0) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            aifocore::fmt::format("PNG encode error {}: {}",
-                                                  error,
-                                                  lodepng_error_text(error)));
+    return aifocore::Status(
+        aifocore::StatusCode::kInternal,
+        aifocore::fmt::format("PNG encode error {}: {}", error,
+                              lodepng_error_text(error)));
   }
 
   return aifocore::Status::OkStatus();
 }
 
-int InfoCommand(const std::string &input_file, bool verbose) {
+int InfoCommand(const std::string& input_file, bool verbose) {
   // Create reader using global registry
   std::cout << "Opening slide: " << input_file << '\n';
   auto reader_or = fastslide::GetGlobalRegistry().CreateReader(input_file);
@@ -299,7 +301,7 @@ int InfoCommand(const std::string &input_file, bool verbose) {
     return 1;
   }
 
-  auto &reader = *reader_or;
+  auto& reader = *reader_or;
 
   // Print information
   PrintSlideInfo(*reader);
@@ -321,9 +323,9 @@ int InfoCommand(const std::string &input_file, bool verbose) {
   return 0;
 }
 
-int RegionCommand(const std::string &input_file, double x, double y,
+int RegionCommand(const std::string& input_file, double x, double y,
                   uint32_t width, uint32_t height, int level,
-                  const std::string &output_file) {
+                  const std::string& output_file) {
   // Create reader using global registry
   std::cout << "Opening slide: " << input_file << '\n';
   auto reader_or = fastslide::GetGlobalRegistry().CreateReader(input_file);
@@ -334,7 +336,7 @@ int RegionCommand(const std::string &input_file, double x, double y,
     return 1;
   }
 
-  auto &reader = *reader_or;
+  auto& reader = *reader_or;
 
   std::cout << "Reading region:\n";
   std::cout << "  Position: (" << std::fixed << std::setprecision(2) << x
@@ -349,7 +351,7 @@ int RegionCommand(const std::string &input_file, double x, double y,
 
   if (reader->GetFormatName() == "MRXS") {
     std::cout << "  Using MRXS fractional coordinate path...\n";
-    auto *mrxs_reader = dynamic_cast<fastslide::MrxsReader *>(reader.get());
+    auto* mrxs_reader = dynamic_cast<fastslide::MrxsReader*>(reader.get());
     if (mrxs_reader) {
       auto result =
           mrxs_reader->ReadRegionFractional(level, x, y, width, height);
@@ -377,7 +379,7 @@ int RegionCommand(const std::string &input_file, double x, double y,
     return 1;
   }
 
-  const auto &image = *image_or;
+  const auto& image = *image_or;
   std::cout << "Read image: " << image.GetWidth() << " x " << image.GetHeight()
             << " pixels\n";
 
@@ -394,9 +396,9 @@ int RegionCommand(const std::string &input_file, double x, double y,
   return 0;
 }
 
-} // namespace
+}  // namespace
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
   CLI::App app{"FastSlide Tool - Slide Reader Utility"};
 
   // Common flags
@@ -414,7 +416,7 @@ int main(int argc, char *argv[]) {
   app.require_subcommand(1);
 
   // Info command
-  auto *info_cmd = app.add_subcommand("info", "Show slide information");
+  auto* info_cmd = app.add_subcommand("info", "Show slide information");
   info_cmd
       ->add_option("--input,-i", input_file,
                    "Path to the slide file (SVS, QPTIFF, or MRXS)")
@@ -423,7 +425,7 @@ int main(int argc, char *argv[]) {
                      "Show verbose information including metadata");
 
   // Region command
-  auto *region_cmd =
+  auto* region_cmd =
       app.add_subcommand("region", "Read and save a region from the slide");
   region_cmd
       ->add_option("--input,-i", input_file,

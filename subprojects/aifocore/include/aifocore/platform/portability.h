@@ -15,6 +15,8 @@
 #ifndef AIFO_AIFOCORE_INCLUDE_AIFOCORE_PLATFORM_PORTABILITY_H_
 #define AIFO_AIFOCORE_INCLUDE_AIFOCORE_PLATFORM_PORTABILITY_H_
 
+#include <sys/stat.h>
+
 #include <cstdio>
 #include <filesystem>
 
@@ -25,21 +27,22 @@
 #ifdef AIFOCORE_WINDOWS
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
-#include <io.h>
-#include <windows.h>
 #include <fcntl.h>
-#include <sys/stat.h>
+#include <io.h>
 #include <sys/types.h>
+#include <windows.h>
 
 // Map POSIX types/functions to Windows equivalents
 using portable_stat_struct = struct _stat64;
 
 namespace aifocore {
 
-inline FILE* portable_fopen(const std::filesystem::path& path, const char* mode) {
+inline FILE* portable_fopen(const std::filesystem::path& path,
+                            const char* mode) {
   // Convert mode to wstring
   std::wstring wmode;
-  for (const char* p = mode; *p; ++p) wmode += static_cast<wchar_t>(*p);
+  for (const char* p = mode; *p; ++p)
+    wmode += static_cast<wchar_t>(*p);
   return _wfopen(path.c_str(), wmode.c_str());
 }
 
@@ -71,7 +74,8 @@ inline int portable_unlink(const char* filename) {
   return ::_unlink(filename);
 }
 
-inline ssize_t portable_pread(int fd, void* buf, size_t count, uint64_t offset) {
+inline ssize_t portable_pread(int fd, void* buf, size_t count,
+                              uint64_t offset) {
   // Get Windows handle from file descriptor
   HANDLE handle = reinterpret_cast<HANDLE>(::_get_osfhandle(fd));
   if (handle == INVALID_HANDLE_VALUE) {
@@ -83,7 +87,8 @@ inline ssize_t portable_pread(int fd, void* buf, size_t count, uint64_t offset) 
   overlapped.OffsetHigh = static_cast<DWORD>(offset >> 32);
 
   DWORD bytes_read = 0;
-  if (!::ReadFile(handle, buf, static_cast<DWORD>(count), &bytes_read, &overlapped)) {
+  if (!::ReadFile(handle, buf, static_cast<DWORD>(count), &bytes_read,
+                  &overlapped)) {
     // Check for EOF or other errors
     if (::GetLastError() == ERROR_HANDLE_EOF) {
       return 0;
@@ -94,7 +99,7 @@ inline ssize_t portable_pread(int fd, void* buf, size_t count, uint64_t offset) 
   return static_cast<ssize_t>(bytes_read);
 }
 
-} // namespace aifocore
+}  // namespace aifocore
 
 #ifndef O_BINARY
 #define O_BINARY _O_BINARY
@@ -106,15 +111,15 @@ inline ssize_t portable_pread(int fd, void* buf, size_t count, uint64_t offset) 
 
 #else  // POSIX
 
-#include <unistd.h>
-#include <sys/stat.h>
 #include <fcntl.h>
+#include <unistd.h>
 
 using portable_stat_struct = struct stat;
 
 namespace aifocore {
 
-inline FILE* portable_fopen(const std::filesystem::path& path, const char* mode) {
+inline FILE* portable_fopen(const std::filesystem::path& path,
+                            const char* mode) {
   return std::fopen(path.c_str(), mode);
 }
 
@@ -146,11 +151,12 @@ inline int portable_unlink(const char* filename) {
   return ::unlink(filename);
 }
 
-inline ssize_t portable_pread(int fd, void* buf, size_t count, uint64_t offset) {
+inline ssize_t portable_pread(int fd, void* buf, size_t count,
+                              uint64_t offset) {
   return ::pread(fd, buf, count, static_cast<off_t>(offset));
 }
 
-} // namespace aifocore
+}  // namespace aifocore
 
 #ifndef O_BINARY
 #define O_BINARY 0
@@ -159,4 +165,3 @@ inline ssize_t portable_pread(int fd, void* buf, size_t count, uint64_t offset) 
 #endif  // AIFOCORE_WINDOWS
 
 #endif  // AIFO_AIFOCORE_INCLUDE_AIFOCORE_PLATFORM_PORTABILITY_H_
-

@@ -14,8 +14,8 @@
 //
 // ZSTD decompression for TIFF
 
-#ifndef SIMPLETIFF_ZSTD_H_
-#define SIMPLETIFF_ZSTD_H_
+#ifndef AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_ZSTD_H_
+#define AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_ZSTD_H_
 
 #include <cstdint>
 #include <span>
@@ -33,4 +33,4 @@ bool DecompressZstd(std::span<const uint8_t> compressed,
 
 }  // namespace simpletiff
 
-#endif  // SIMPLETIFF_ZSTD_H_
+#endif  // AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_ZSTD_H_

@@ -33,16 +33,16 @@ namespace fastslide {
 QuickHashBuilder::QuickHashBuilder() : finalized_(false) {
   ctx_ = new Sha_256;
   hash_buffer_.resize(SIZE_OF_SHA_256_HASH);
-  sha_256_init(static_cast<Sha_256 *>(ctx_), hash_buffer_.data());
+  sha_256_init(static_cast<Sha_256*>(ctx_), hash_buffer_.data());
 }
 
 QuickHashBuilder::~QuickHashBuilder() {
   if (ctx_) {
-    delete static_cast<Sha_256 *>(ctx_);
+    delete static_cast<Sha_256*>(ctx_);
   }
 }
 
-aifocore::Status QuickHashBuilder::HashFile(const fs::path &file_path) {
+aifocore::Status QuickHashBuilder::HashFile(const fs::path& file_path) {
   if (finalized_) {
     return aifocore::Status(aifocore::StatusCode::kFailedPrecondition,
                             "Hash already finalized");
@@ -61,9 +61,9 @@ aifocore::Status QuickHashBuilder::HashFile(const fs::path &file_path) {
   }
 
   std::array<uint8_t, 8192> buffer;
-  while (file.read(reinterpret_cast<char *>(buffer.data()), buffer.size()) ||
+  while (file.read(reinterpret_cast<char*>(buffer.data()), buffer.size()) ||
          file.gcount() > 0) {
-    sha_256_write(static_cast<Sha_256 *>(ctx_), buffer.data(), file.gcount());
+    sha_256_write(static_cast<Sha_256*>(ctx_), buffer.data(), file.gcount());
   }
 
   if (file.bad()) {
@@ -75,7 +75,7 @@ aifocore::Status QuickHashBuilder::HashFile(const fs::path &file_path) {
   return aifocore::Status::OkStatus();
 }
 
-aifocore::Status QuickHashBuilder::HashFilePart(const fs::path &file_path,
+aifocore::Status QuickHashBuilder::HashFilePart(const fs::path& file_path,
                                                 int64_t offset,
                                                 int64_t length) {
   if (finalized_) {
@@ -83,7 +83,7 @@ aifocore::Status QuickHashBuilder::HashFilePart(const fs::path &file_path,
                             "Hash already finalized");
   }
 
-  FILE *file = aifocore::portable_fopen(file_path, "rb");
+  FILE* file = aifocore::portable_fopen(file_path, "rb");
   if (!file) {
     return aifocore::Status(
         aifocore::StatusCode::kNotFound,
@@ -105,7 +105,7 @@ aifocore::Status QuickHashBuilder::HashFilePart(const fs::path &file_path,
     const size_t bytes_read = fread(buffer.data(), 1, to_read, file);
 
     if (bytes_read > 0) {
-      sha_256_write(static_cast<Sha_256 *>(ctx_), buffer.data(), bytes_read);
+      sha_256_write(static_cast<Sha_256*>(ctx_), buffer.data(), bytes_read);
       remaining -= bytes_read;
     }
 
@@ -115,7 +115,7 @@ aifocore::Status QuickHashBuilder::HashFilePart(const fs::path &file_path,
         return aifocore::Status(aifocore::StatusCode::kInternal,
                                 "Error reading file");
       }
-      break; // EOF
+      break;  // EOF
     }
   }
 
@@ -123,27 +123,27 @@ aifocore::Status QuickHashBuilder::HashFilePart(const fs::path &file_path,
   return aifocore::Status::OkStatus();
 }
 
-aifocore::Status QuickHashBuilder::HashData(const uint8_t *data,
+aifocore::Status QuickHashBuilder::HashData(const uint8_t* data,
                                             size_t length) {
   if (finalized_) {
     return aifocore::Status(aifocore::StatusCode::kFailedPrecondition,
                             "Hash already finalized");
   }
 
-  sha_256_write(static_cast<Sha_256 *>(ctx_), data, length);
+  sha_256_write(static_cast<Sha_256*>(ctx_), data, length);
   return aifocore::Status::OkStatus();
 }
 
-aifocore::Status QuickHashBuilder::HashData(const std::vector<uint8_t> &data) {
+aifocore::Status QuickHashBuilder::HashData(const std::vector<uint8_t>& data) {
   return HashData(data.data(), data.size());
 }
 
 std::string QuickHashBuilder::Finalize() {
   if (finalized_) {
-    return ""; // Already finalized
+    return "";  // Already finalized
   }
 
-  sha_256_close(static_cast<Sha_256 *>(ctx_));
+  sha_256_close(static_cast<Sha_256*>(ctx_));
   finalized_ = true;
 
   // Convert to hex string
@@ -156,4 +156,4 @@ std::string QuickHashBuilder::Finalize() {
   return oss.str();
 }
 
-} // namespace fastslide
+}  // namespace fastslide

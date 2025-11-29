@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <utility>
+#include <vector>
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
@@ -29,9 +31,8 @@
 
 namespace fastslide {
 
-aifocore::Result<core::TilePlan>
-MrxsPlanBuilder::BuildPlan(const core::TileRequest &request,
-                           const MrxsReader &reader) {
+aifocore::Result<core::TilePlan> MrxsPlanBuilder::BuildPlan(
+    const core::TileRequest& request, const MrxsReader& reader) {
 
   core::TilePlan plan;
   plan.request = request;
@@ -44,14 +45,14 @@ MrxsPlanBuilder::BuildPlan(const core::TileRequest &request,
   if (!level_info_or.ok()) {
     return level_info_or.status();
   }
-  const auto &level_info = *level_info_or;
+  const auto& level_info = *level_info_or;
 
   // Get spatial index for this level
   auto index_or = reader.GetSpatialIndex(request.level);
   if (!index_or.ok()) {
     return index_or.status();
   }
-  const auto &index = *index_or;
+  const auto& index = *index_or;
 
   // Determine region bounds from request
   double x, y;
@@ -62,8 +63,8 @@ MrxsPlanBuilder::BuildPlan(const core::TileRequest &request,
   auto tile_indices = index->QueryRegion(x, y, width, height);
 
   // Get slide info for output specification
-  const auto &slide_info = reader.GetMrxsInfo();
-  const auto &zoom_level = slide_info.zoom_levels[request.level];
+  const auto& slide_info = reader.GetMrxsInfo();
+  const auto& zoom_level = slide_info.zoom_levels[request.level];
 
   if (tile_indices.empty()) {
     // No tiles found - return empty plan
@@ -92,9 +93,8 @@ MrxsPlanBuilder::BuildPlan(const core::TileRequest &request,
   return plan;
 }
 
-aifocore::Status
-MrxsPlanBuilder::ValidateRequest(const core::TileRequest &request,
-                                 const MrxsReader &reader) {
+aifocore::Status MrxsPlanBuilder::ValidateRequest(
+    const core::TileRequest& request, const MrxsReader& reader) {
 
   if (request.level < 0 || request.level >= reader.GetLevelCount()) {
     return aifocore::Status(
@@ -105,10 +105,10 @@ MrxsPlanBuilder::ValidateRequest(const core::TileRequest &request,
   return aifocore::Status::OkStatus();
 }
 
-void MrxsPlanBuilder::DetermineRegionBounds(const core::TileRequest &request,
-                                            const LevelInfo &level_info,
-                                            double &x, double &y,
-                                            uint32_t &width, uint32_t &height) {
+void MrxsPlanBuilder::DetermineRegionBounds(const core::TileRequest& request,
+                                            const LevelInfo& level_info,
+                                            double& x, double& y,
+                                            uint32_t& width, uint32_t& height) {
 
   if (request.IsRegionRequest() && request.region_bounds->IsValid()) {
     // Use fractional region bounds from request
@@ -126,18 +126,18 @@ void MrxsPlanBuilder::DetermineRegionBounds(const core::TileRequest &request,
 }
 
 std::vector<core::TileReadOp> MrxsPlanBuilder::CreateTileOperations(
-    const core::TileRequest &request,
-    const mrxs::MrxsSpatialIndex &spatial_index, double x, double y,
+    const core::TileRequest& request,
+    const mrxs::MrxsSpatialIndex& spatial_index, double x, double y,
     uint32_t width, uint32_t height) {
 
   auto tile_indices = spatial_index.QueryRegion(x, y, width, height);
-  const auto &spatial_tiles = spatial_index.GetSpatialTiles();
+  const auto& spatial_tiles = spatial_index.GetSpatialTiles();
 
   std::vector<core::TileReadOp> operations;
   operations.reserve(tile_indices.size());
 
   for (size_t idx : tile_indices) {
-    const auto &spatial_tile = spatial_tiles[idx];
+    const auto& spatial_tile = spatial_tiles[idx];
     auto op_opt =
         CreateTileOperation(request, spatial_tile, x, y, width, height);
     if (op_opt) {
@@ -149,10 +149,10 @@ std::vector<core::TileReadOp> MrxsPlanBuilder::CreateTileOperations(
 }
 
 std::optional<core::TileReadOp> MrxsPlanBuilder::CreateTileOperation(
-    const core::TileRequest &request, const mrxs::SpatialTile &spatial_tile,
+    const core::TileRequest& request, const mrxs::SpatialTile& spatial_tile,
     double x, double y, uint32_t width, uint32_t height) {
 
-  const auto &tile = spatial_tile.tile_info;
+  const auto& tile = spatial_tile.tile_info;
 
   core::TileReadOp op;
   op.level = request.level;
@@ -230,24 +230,23 @@ std::optional<core::TileReadOp> MrxsPlanBuilder::CreateTileOperation(
   core::BlendMetadata blend;
   blend.fractional_x = frac_x;
   blend.fractional_y = frac_y;
-  blend.weight = 1.0;                     // Equal weight for all tiles
-  blend.gain = tile.gain;                 // Intensity correction factor
-  blend.mode = core::BlendMode::kAverage; // MRXS uses averaging for overlaps
+  blend.weight = 1.0;                      // Equal weight for all tiles
+  blend.gain = tile.gain;                  // Intensity correction factor
+  blend.mode = core::BlendMode::kAverage;  // MRXS uses averaging for overlaps
   blend.enable_subpixel_resampling = true;
   op.blend_metadata = blend;
 
   return op;
 }
 
-core::OutputSpec
-MrxsPlanBuilder::CreateOutputSpec(uint32_t width, uint32_t height,
-                                  const mrxs::SlideZoomLevel &zoom_level) {
+core::OutputSpec MrxsPlanBuilder::CreateOutputSpec(
+    uint32_t width, uint32_t height, const mrxs::SlideZoomLevel& zoom_level) {
 
   core::OutputSpec spec;
   spec.dimensions = {width, height};
-  spec.channels = 3; // RGB
+  spec.channels = 3;  // RGB
   spec.pixel_format = core::OutputSpec::PixelFormat::kUInt8;
-  // TODO; This seems duplicated
+  // TODO(jonasteuwen): This seems duplicated
   spec.background = {
       static_cast<uint8_t>((zoom_level.background_color_rgb >> 16) & 0xFF),
       static_cast<uint8_t>((zoom_level.background_color_rgb >> 8) & 0xFF),
@@ -257,19 +256,19 @@ MrxsPlanBuilder::CreateOutputSpec(uint32_t width, uint32_t height,
 }
 
 core::TilePlan::Cost MrxsPlanBuilder::CalculateCosts(
-    const std::vector<core::TileReadOp> &operations) {
+    const std::vector<core::TileReadOp>& operations) {
 
   core::TilePlan::Cost cost;
   cost.total_tiles = operations.size();
   cost.total_bytes_to_read = 0;
-  for (const auto &op : operations) {
+  for (const auto& op : operations) {
     cost.total_bytes_to_read += op.byte_size;
   }
   cost.tiles_to_decode = cost.total_tiles;
-  cost.tiles_from_cache = 0; // Assume no cache for now
-  cost.estimated_time_ms = cost.total_bytes_to_read / 1000.0; // Rough estimate
+  cost.tiles_from_cache = 0;  // Assume no cache for now
+  cost.estimated_time_ms = cost.total_bytes_to_read / 1000.0;  // Rough estimate
 
   return cost;
 }
 
-} // namespace fastslide
+}  // namespace fastslide

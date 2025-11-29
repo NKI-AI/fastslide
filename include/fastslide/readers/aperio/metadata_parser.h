@@ -26,14 +26,14 @@ namespace aperio {
 
 /// @brief Metadata extracted from Aperio SVS image descriptions
 struct AperioMetadata {
-  aifocore::Size<double, 2> mpp = {0.0, 0.0}; ///< Microns per pixel (x, y)
-  double app_mag = 0.0;                       ///< Apparent magnification
-  std::string scanner_id;                     ///< Scanner ID string
+  aifocore::Size<double, 2> mpp = {0.0, 0.0};  ///< Microns per pixel (x, y)
+  double app_mag = 0.0;                        ///< Apparent magnification
+  std::string scanner_id;                      ///< Scanner ID string
 };
 
 /// @brief Parser for Aperio SVS metadata from TIFF image descriptions
 class AperioMetadataParser {
-public:
+ public:
   /// @brief Parse Aperio metadata from image description
   ///
   /// Extracts metadata from Aperio-formatted image description strings
@@ -43,13 +43,13 @@ public:
   /// @param description Image description string from TIFF
   /// @param metadata Output metadata structure to populate
   /// @return Status indicating success or failure with details
-  static aifocore::Status ParseFromDescription(const std::string &description,
-                                               AperioMetadata &metadata);
+  static aifocore::Status ParseFromDescription(const std::string& description,
+                                               AperioMetadata& metadata);
 
   /// @brief Check if an image description contains Aperio metadata
   /// @param description Image description string to check
   /// @return true if the description appears to contain Aperio metadata
-  static bool IsAperioFormat(const std::string &description);
+  static bool IsAperioFormat(const std::string& description);
 
   /// @brief Parse associated image name from Aperio description
   ///
@@ -58,19 +58,19 @@ public:
   ///
   /// @param description Image description string
   /// @return Associated image name, or empty string if not found
-  static std::string ParseAssociatedImageName(const std::string &description);
+  static std::string ParseAssociatedImageName(const std::string& description);
 
-private:
+ private:
   /// @brief Extract key-value pairs from pipe-separated description
   /// @param description Full description string
   /// @param key Key to search for
   /// @return Value associated with the key, or empty string if not found
-  static std::string ExtractValue(const std::string &description,
-                                  const std::string &key);
+  static std::string ExtractValue(const std::string& description,
+                                  const std::string& key);
 };
 
-} // namespace aperio
-} // namespace formats
-} // namespace fastslide
+}  // namespace aperio
+}  // namespace formats
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_APERIO_METADATA_PARSER_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_APERIO_METADATA_PARSER_H_

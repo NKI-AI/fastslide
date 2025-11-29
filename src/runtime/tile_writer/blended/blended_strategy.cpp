@@ -38,7 +38,7 @@
 
 namespace fastslide::runtime {
 
-BlendedStrategy::BlendedStrategy(const TileWriter::Config &config)
+BlendedStrategy::BlendedStrategy(const TileWriter::Config& config)
     : config_(config) {
   if (config_.dimensions[0] == 0 || config_.dimensions[1] == 0 ||
       config_.channels == 0 || config_.background.values.empty()) {
@@ -69,7 +69,7 @@ BlendedStrategy::BlendedStrategy(const TileWriter::Config &config)
   }
 }
 
-aifocore::Status BlendedStrategy::WriteTile(const core::TileReadOp &operation,
+aifocore::Status BlendedStrategy::WriteTile(const core::TileReadOp& operation,
                                             std::span<const uint8_t> pixel_data,
                                             uint32_t tile_width,
                                             uint32_t tile_height,
@@ -79,12 +79,12 @@ aifocore::Status BlendedStrategy::WriteTile(const core::TileReadOp &operation,
                    tile_channels, internal_mutex_);
 }
 
-aifocore::Status BlendedStrategy::WriteTile(const core::TileReadOp &operation,
+aifocore::Status BlendedStrategy::WriteTile(const core::TileReadOp& operation,
                                             std::span<const uint8_t> pixel_data,
                                             uint32_t tile_width,
                                             uint32_t tile_height,
                                             uint32_t tile_channels,
-                                            std::mutex &accumulator_mutex) {
+                                            std::mutex& accumulator_mutex) {
   if (config_.channels == 3 && tile_channels == 3) {
     return WriteRGBTileBlended(operation, pixel_data, tile_width, tile_height,
                                accumulator_mutex);
@@ -103,7 +103,7 @@ aifocore::Status BlendedStrategy::Finalize() {
         std::make_unique<Image>(config_.dimensions, ImageFormat::kRGB,
                                 config_.data_type, config_.planar_config);
 
-    uint8_t *out = output_image_->GetData();
+    uint8_t* out = output_image_->GetData();
 
     FinalizeLinearToSrgb8(accumulator_r_.data(), accumulator_g_.data(),
                           accumulator_b_.data(), weight_sum_.data(),
@@ -119,7 +119,9 @@ ImageDimensions BlendedStrategy::GetDimensions() const {
   return config_.dimensions;
 }
 
-uint32_t BlendedStrategy::GetChannels() const { return config_.channels; }
+uint32_t BlendedStrategy::GetChannels() const {
+  return config_.channels;
+}
 
 aifocore::Result<Image> BlendedStrategy::GetOutput() {
   if (!finalized_) {
@@ -132,9 +134,11 @@ aifocore::Result<Image> BlendedStrategy::GetOutput() {
   return std::move(*output_image_);
 }
 
-std::string BlendedStrategy::GetName() const { return "NativeBlended"; }
+std::string BlendedStrategy::GetName() const {
+  return "NativeBlended";
+}
 
-uint8_t *BlendedStrategy::GetOutputBuffer() {
+uint8_t* BlendedStrategy::GetOutputBuffer() {
   if (!output_image_ && config_.channels == 3) {
     output_image_ =
         std::make_unique<Image>(config_.dimensions, ImageFormat::kRGB,
@@ -151,8 +155,8 @@ size_t BlendedStrategy::GetOutputBufferSize() const {
 }
 
 aifocore::Status BlendedStrategy::WriteRGBTileBlended(
-    const core::TileReadOp &operation, std::span<const uint8_t> pixel_data,
-    uint32_t tile_width, uint32_t tile_height, std::mutex &accumulator_mutex) {
+    const core::TileReadOp& operation, std::span<const uint8_t> pixel_data,
+    uint32_t tile_width, uint32_t tile_height, std::mutex& accumulator_mutex) {
   const bool has_blend_meta = operation.blend_metadata.has_value();
   const double frac_x =
       has_blend_meta ? operation.blend_metadata->fractional_x : 0.0;
@@ -181,7 +185,7 @@ aifocore::Status BlendedStrategy::WriteRGBTileBlended(
   }
 
   // Step 2: Apply subpixel shift if needed
-  const float *use_linear = src_linear.data();
+  const float* use_linear = src_linear.data();
   hwy::AlignedVector<float> resampled_linear;
   if (enable_subpixel) {
     // Skip for very small tiles
@@ -211,16 +215,16 @@ aifocore::Status BlendedStrategy::WriteRGBTileBlended(
 }
 
 aifocore::Status BlendedStrategy::WriteMultiChannelTileSimple(
-    const core::TileReadOp &operation, std::span<const uint8_t> pixel_data,
+    const core::TileReadOp& operation, std::span<const uint8_t> pixel_data,
     uint32_t tile_width, uint32_t tile_height, uint32_t tile_channels) {
   if (!output_image_) {
     return aifocore::Status(aifocore::StatusCode::kInternal,
                             "No output image for multi-channel");
   }
 
-  const auto &src = operation.transform.source;
-  const auto &dst = operation.transform.dest;
-  uint8_t *image_data = output_image_->GetData();
+  const auto& src = operation.transform.source;
+  const auto& dst = operation.transform.dest;
+  uint8_t* image_data = output_image_->GetData();
   const uint32_t bytes_per_sample = output_image_->GetBytesPerSample();
 
   CopyRectGeneral(
@@ -236,4 +240,4 @@ aifocore::Status BlendedStrategy::WriteMultiChannelTileSimple(
   return aifocore::Status::OkStatus();
 }
 
-} // namespace fastslide::runtime
+}  // namespace fastslide::runtime

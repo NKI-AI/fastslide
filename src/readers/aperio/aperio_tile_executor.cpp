@@ -15,6 +15,7 @@
 #include "fastslide/readers/aperio/aperio_tile_executor.h"
 
 #include <cstring>
+#include <iostream>
 #include <span>
 #include <vector>
 
@@ -30,18 +31,18 @@
 namespace fastslide {
 
 aifocore::Status AperioTileExecutor::ExecutePlan(
-    const core::TilePlan &plan, const AperioReader &reader,
-    runtime::TileWriter &writer, const TiffStructureMetadata &tiff_metadata) {
+    const core::TilePlan& plan, const AperioReader& reader,
+    runtime::TileWriter& writer, const TiffStructureMetadata& tiff_metadata) {
   if (plan.operations.empty()) {
     // No tiles to read - fill with background color
-    const auto &bg = plan.output.background;
+    const auto& bg = plan.output.background;
     return writer.FillWithColor(bg.r, bg.g, bg.b);
   }
 
   // Execute all tiles sequentially
   // Thread-local buffers provide cache locality benefits without parallelism
   // overhead
-  for (const auto &op : plan.operations) {
+  for (const auto& op : plan.operations) {
     auto status = ExecuteTileOperation(
         op, reader, tiff_metadata.page, tiff_metadata.tile_width,
         tiff_metadata.tile_height, tiff_metadata.samples_per_pixel,
@@ -57,19 +58,19 @@ aifocore::Status AperioTileExecutor::ExecutePlan(
 }
 
 aifocore::Status AperioTileExecutor::ExecuteTileOperation(
-    const core::TileReadOp &op, const AperioReader &reader, uint16_t page,
+    const core::TileReadOp& op, const AperioReader& reader, uint16_t page,
     uint32_t tile_width, uint32_t tile_height, uint16_t samples_per_pixel,
-    bool is_tiled, runtime::TileWriter &writer) {
+    bool is_tiled, runtime::TileWriter& writer) {
   // Read and decode the tile (returns span view of thread-local buffer)
   auto tile_data_or = ReadAndDecodeTile(
       op, reader, page, tile_width, tile_height, samples_per_pixel, is_tiled);
   if (!tile_data_or.ok()) {
     std::cerr << "Failed to read/decode tile at (" << op.tile_coord.x << ", "
               << op.tile_coord.y << "): " << tile_data_or.status().ToString();
-    return aifocore::Status::OkStatus(); // Continue processing other tiles
+    return aifocore::Status::OkStatus();  // Continue processing other tiles
   }
 
-  const auto &tile_data = *tile_data_or; // span reference, not vector copy
+  const auto& tile_data = *tile_data_or;  // span reference, not vector copy
 
   // Extract sub-region if needed
   const uint32_t src_x = op.transform.source.x;
@@ -80,8 +81,8 @@ aifocore::Status AperioTileExecutor::ExecuteTileOperation(
 
   // Use thread-local buffer from CRTP base class
   // This eliminates the second per-tile allocation
-  uint8_t *cropped_data = GetBuffers().GetCropBuffer(crop_size);
-  std::memset(cropped_data, 0, crop_size); // Zero initialize
+  uint8_t* cropped_data = GetBuffers().GetCropBuffer(crop_size);
+  std::memset(cropped_data, 0, crop_size);  // Zero initialize
 
   // Extract the region from the tile buffer
   // IMPORTANT: Use tile_width as stride because TIFF tiles are always
@@ -119,15 +120,15 @@ aifocore::Status AperioTileExecutor::ExecuteTileOperation(
 
   if (!write_status.ok()) {
     std::cerr << "Failed to write tile: " << write_status.ToString();
-    return aifocore::Status::OkStatus(); // Continue processing other tiles
+    return aifocore::Status::OkStatus();  // Continue processing other tiles
   }
 
   return aifocore::Status::OkStatus();
 }
 
 aifocore::Result<std::span<const uint8_t>>
-AperioTileExecutor::ReadAndDecodeTile(const core::TileReadOp &op,
-                                      const AperioReader &reader, uint16_t page,
+AperioTileExecutor::ReadAndDecodeTile(const core::TileReadOp& op,
+                                      const AperioReader& reader, uint16_t page,
                                       uint32_t tile_width, uint32_t tile_height,
                                       uint16_t samples_per_pixel,
                                       bool is_tiled) {
@@ -137,7 +138,7 @@ AperioTileExecutor::ReadAndDecodeTile(const core::TileReadOp &op,
   static thread_local std::vector<uint8_t> tile_buffer;
 
   // Get TiffIndex from reader
-  const auto &tiff_index = reader.GetTiffIndex();
+  const auto& tiff_index = reader.GetTiffIndex();
 
   // op.byte_offset is actually the linear tile index (tile_y * tiles_across +
   // tile_x)
@@ -169,4 +170,4 @@ AperioTileExecutor::ReadAndDecodeTile(const core::TileReadOp &op,
   return std::span<const uint8_t>(tile_buffer.data(), tile_buffer.size());
 }
 
-} // namespace fastslide
+}  // namespace fastslide

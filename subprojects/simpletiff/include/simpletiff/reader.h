@@ -13,8 +13,8 @@
 // limitations under the License.
 // High-level reader functions for extracting image data
 
-#ifndef SIMPLETIFF_READER_H_
-#define SIMPLETIFF_READER_H_
+#ifndef AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_READER_H_
+#define AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_READER_H_
 
 #include <cstdint>
 #include <vector>
@@ -36,13 +36,13 @@ using aifocore::Result;
 /// state. Create one context per reading thread for best performance.
 struct DecodeContext {
   std::vector<uint8_t>
-      jpeg_stream_buffer;           ///< Reusable buffer for JPEG composition
-  std::vector<uint8_t> temp_buffer; ///< General-purpose temporary buffer
+      jpeg_stream_buffer;            ///< Reusable buffer for JPEG composition
+  std::vector<uint8_t> temp_buffer;  ///< General-purpose temporary buffer
 
   // JPEG decompressor state (opaque pointers to avoid exposing jpeglib.h)
   // Lazily initialized on first use
-  jpeg_decompress_struct *jpeg_cinfo = nullptr;
-  jpeg_error_mgr *jpeg_err = nullptr;
+  jpeg_decompress_struct* jpeg_cinfo = nullptr;
+  jpeg_error_mgr* jpeg_err = nullptr;
 
   /// Constructor
   DecodeContext();
@@ -51,12 +51,12 @@ struct DecodeContext {
   ~DecodeContext();
 
   // Disable copy (JPEG state is non-copyable)
-  DecodeContext(const DecodeContext &) = delete;
-  DecodeContext &operator=(const DecodeContext &) = delete;
+  DecodeContext(const DecodeContext&) = delete;
+  DecodeContext& operator=(const DecodeContext&) = delete;
 
   // Enable move semantics
-  DecodeContext(DecodeContext &&other) noexcept;
-  DecodeContext &operator=(DecodeContext &&other) noexcept;
+  DecodeContext(DecodeContext&& other) noexcept;
+  DecodeContext& operator=(DecodeContext&& other) noexcept;
 };
 
 /// Read a single tile by index
@@ -72,10 +72,10 @@ struct DecodeContext {
 /// @param out_width Output tile width (actual decoded size)
 /// @param out_height Output tile height (actual decoded size)
 /// @return Result indicating success or descriptive error
-Result<void> ReadTile(const TiffIndex &index, uint32_t page_index,
-                      uint32_t tile_index, DecodeContext &ctx,
-                      std::vector<uint8_t> &dst, int &out_width,
-                      int &out_height);
+Result<void> ReadTile(const TiffIndex& index, uint32_t page_index,
+                      uint32_t tile_index, DecodeContext& ctx,
+                      std::vector<uint8_t>& dst, int& out_width,
+                      int& out_height);
 
 /// Read raw compressed tile data without decompression
 ///
@@ -91,8 +91,8 @@ Result<void> ReadTile(const TiffIndex &index, uint32_t page_index,
 /// for strips)
 /// @param dst Destination buffer (will be resized to fit raw compressed data)
 /// @return Result indicating success or descriptive error
-Result<void> ReadRawTile(const TiffIndex &index, uint32_t page_index,
-                         uint32_t tile_index, std::vector<uint8_t> &dst);
+Result<void> ReadRawTile(const TiffIndex& index, uint32_t page_index,
+                         uint32_t tile_index, std::vector<uint8_t>& dst);
 
 /// Read a tiled page into the provided buffer
 ///
@@ -103,8 +103,8 @@ Result<void> ReadRawTile(const TiffIndex &index, uint32_t page_index,
 /// @param dst Destination buffer (must be pre-allocated)
 /// @param dst_stride Row stride in bytes
 /// @return Result indicating success or descriptive error
-Result<void> ReadTiledPage(const TiffIndex &index, uint32_t page_index,
-                           const Roi &roi, DecodeContext &ctx, uint8_t *dst,
+Result<void> ReadTiledPage(const TiffIndex& index, uint32_t page_index,
+                           const Roi& roi, DecodeContext& ctx, uint8_t* dst,
                            int dst_stride);
 
 /// Read and decompress a single strip
@@ -115,9 +115,9 @@ Result<void> ReadTiledPage(const TiffIndex &index, uint32_t page_index,
 /// @param ctx Decode context for buffer reuse
 /// @param decompressed Output buffer (will be resized)
 /// @return Result indicating success or descriptive error
-Result<void> ReadStripe(const TiffIndex &index, uint32_t page_index,
-                        uint32_t strip_index, DecodeContext &ctx,
-                        std::vector<uint8_t> &decompressed);
+Result<void> ReadStripe(const TiffIndex& index, uint32_t page_index,
+                        uint32_t strip_index, DecodeContext& ctx,
+                        std::vector<uint8_t>& decompressed);
 
 /// Read a strip-based page into the provided buffer
 ///
@@ -128,8 +128,8 @@ Result<void> ReadStripe(const TiffIndex &index, uint32_t page_index,
 /// @param dst Destination buffer (must be pre-allocated for full page)
 /// @param dst_stride Row stride in bytes
 /// @return Result indicating success or descriptive error
-Result<void> ReadStripedPage(const TiffIndex &index, uint32_t page_index,
-                             const Roi &roi, DecodeContext &ctx, uint8_t *dst,
+Result<void> ReadStripedPage(const TiffIndex& index, uint32_t page_index,
+                             const Roi& roi, DecodeContext& ctx, uint8_t* dst,
                              int dst_stride);
 
 /// Read a single JPEG page into the provided buffer
@@ -142,10 +142,10 @@ Result<void> ReadStripedPage(const TiffIndex &index, uint32_t page_index,
 /// @param out_width Output width
 /// @param out_height Output height
 /// @return Result indicating success or descriptive error
-Result<void> ReadSingleJpegPage(const TiffIndex &index, uint32_t page_index,
-                                DecodeContext &ctx, std::vector<uint8_t> &dst,
-                                int &dst_stride, int &out_width,
-                                int &out_height);
+Result<void> ReadSingleJpegPage(const TiffIndex& index, uint32_t page_index,
+                                DecodeContext& ctx, std::vector<uint8_t>& dst,
+                                int& dst_stride, int& out_width,
+                                int& out_height);
 
 /// Read any page (dispatches based on storage type)
 ///
@@ -156,10 +156,10 @@ Result<void> ReadSingleJpegPage(const TiffIndex &index, uint32_t page_index,
 /// @param dst Destination buffer
 /// @param dst_stride Row stride in bytes
 /// @return Result indicating success or descriptive error
-Result<void> ReadPage(const TiffIndex &index, uint32_t page_index,
-                      const Roi &roi, DecodeContext &ctx, uint8_t *dst,
+Result<void> ReadPage(const TiffIndex& index, uint32_t page_index,
+                      const Roi& roi, DecodeContext& ctx, uint8_t* dst,
                       int dst_stride);
 
-} // namespace simpletiff
+}  // namespace simpletiff
 
-#endif // SIMPLETIFF_READER_H_
+#endif  // AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_READER_H_

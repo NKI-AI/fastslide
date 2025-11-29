@@ -51,7 +51,7 @@ void TiffBasedReader::SetCache(std::shared_ptr<ITileCache> cache) {
   // For TIFF-based readers, we store in the old TileCache system
   // TODO(fastslide): Update tiff_cache_service to use ITileCache directly
   // For now, ITileCache is used primarily by MRXS readers
-  (void)cache; // Suppress unused parameter warning
+  (void)cache;  // Suppress unused parameter warning
 }
 
 int TiffBasedReader::GetBestLevelForDownsampleImpl(
@@ -76,4 +76,4 @@ int TiffBasedReader::GetBestLevelForDownsampleImpl(
   return best_level;
 }
 
-} // namespace fastslide
+}  // namespace fastslide

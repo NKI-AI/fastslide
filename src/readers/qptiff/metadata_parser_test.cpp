@@ -14,6 +14,8 @@
 
 #include "fastslide/readers/qptiff/metadata_parser.h"
 
+#include <string>
+
 #include "aifocore/status/result.h"
 #include "gtest/gtest.h"
 
@@ -146,8 +148,8 @@ TEST_F(QpTiffMetadataParserTest, GetTextHelper) {
     </root>
   )";
 
-  // This is a bit tricky to test directly since GetText expects a pugi::xml_node*
-  // For now, we'll test it indirectly through other methods
+  // This is a bit tricky to test directly since GetText expects a
+  // pugi::xml_node* For now, we'll test it indirectly through other methods
   EXPECT_TRUE(true);  // Placeholder - GetText is tested through other methods
 }
 

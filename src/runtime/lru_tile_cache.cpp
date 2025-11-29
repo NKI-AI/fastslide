@@ -25,8 +25,8 @@
 namespace fastslide {
 namespace runtime {
 
-aifocore::Result<std::shared_ptr<LRUTileCache>>
-LRUTileCache::Create(size_t capacity) {
+aifocore::Result<std::shared_ptr<LRUTileCache>> LRUTileCache::Create(
+    size_t capacity) {
   if (capacity == 0) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
                             "Cache capacity must be greater than 0");
@@ -37,7 +37,7 @@ LRUTileCache::Create(size_t capacity) {
 LRUTileCache::LRUTileCache(size_t capacity)
     : capacity_(capacity), cache_{}, lru_list_{}, hits_(0), misses_(0) {}
 
-std::shared_ptr<CachedTileData> LRUTileCache::Get(const TileKey &key) {
+std::shared_ptr<CachedTileData> LRUTileCache::Get(const TileKey& key) {
   std::lock_guard<std::mutex> lock(mutex_);
 
   auto iter = cache_.find(key);
@@ -56,10 +56,10 @@ std::shared_ptr<CachedTileData> LRUTileCache::Get(const TileKey &key) {
   return iter->second.tile;
 }
 
-void LRUTileCache::Put(const TileKey &key,
+void LRUTileCache::Put(const TileKey& key,
                        std::shared_ptr<CachedTileData> tile) {
   if (!tile) {
-    return; // Don't cache null tiles
+    return;  // Don't cache null tiles
   }
 
   std::lock_guard<std::mutex> lock(mutex_);
@@ -120,7 +120,7 @@ size_t LRUTileCache::GetMemoryUsage() const {
   std::lock_guard<std::mutex> lock(mutex_);
 
   size_t memory_usage_bytes = 0;
-  for (const auto &[key, entry] : cache_) {
+  for (const auto& [key, entry] : cache_) {
     if (entry.tile) {
       memory_usage_bytes += entry.tile->GetMemoryUsage();
     }
@@ -139,7 +139,7 @@ ITileCache::Stats LRUTileCache::GetStats() const {
   }
 
   size_t memory_usage_bytes = 0;
-  for (const auto &[key, entry] : cache_) {
+  for (const auto& [key, entry] : cache_) {
     if (entry.tile) {
       memory_usage_bytes += entry.tile->GetMemoryUsage();
     }
@@ -171,5 +171,5 @@ aifocore::Status LRUTileCache::SetCapacity(size_t capacity) {
   return aifocore::Status::OkStatus();
 }
 
-} // namespace runtime
-} // namespace fastslide
+}  // namespace runtime
+}  // namespace fastslide

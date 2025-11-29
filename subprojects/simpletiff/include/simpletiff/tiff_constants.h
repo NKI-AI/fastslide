@@ -14,8 +14,8 @@
 //
 // TIFF compression and photometric interpretation type constants
 
-#ifndef SIMPLETIFF_TIFF_CONSTANTS_H_
-#define SIMPLETIFF_TIFF_CONSTANTS_H_
+#ifndef AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_TIFF_CONSTANTS_H_
+#define AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_TIFF_CONSTANTS_H_
 
 #include <cstdint>
 
@@ -152,4 +152,4 @@ constexpr uint32_t ComputeBytesPerSample(uint16_t bits_per_sample) {
 
 }  // namespace simpletiff
 
-#endif  // SIMPLETIFF_TIFF_CONSTANTS_H_
+#endif  // AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_TIFF_CONSTANTS_H_

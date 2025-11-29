@@ -14,16 +14,15 @@
 
 #include "fastslide/readers/mrxs/mrxs_decoder.h"
 
+#include <jpeg-compressor/jpgd.h>
+
 #include <algorithm>
 #include <cstring>
 #include <string>
 #include <vector>
 
-#include <jpeg-compressor/jpgd.h>
-
-
-#include "absl/strings/str_format.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
+#include "aifocore/utilities/fmt.h"
 #include "lodepng/lodepng.h"
 
 namespace fastslide::mrxs::internal {
@@ -36,9 +35,10 @@ namespace fastslide::mrxs::internal {
 /// @param data Compressed image data
 /// @param format Image format (JPEG/PNG/BMP)
 /// @return StatusOr containing decoded RGB image or error
-/// @retval absl::InvalidArgumentError if format is unknown or unsupported
-absl::StatusOr<RGBImage> DecodeImage(const std::vector<uint8_t>& data,
-                                     MrxsImageFormat format) {
+/// @retval aifocore::Status::InvalidArgumentError if format is unknown or
+/// unsupported
+aifocore::Result<RGBImage> DecodeImage(const std::vector<uint8_t>& data,
+                                       MrxsImageFormat format) {
   switch (format) {
     case MrxsImageFormat::kJpeg:
       return DecodeJpeg(data);
@@ -47,8 +47,8 @@ absl::StatusOr<RGBImage> DecodeImage(const std::vector<uint8_t>& data,
     case MrxsImageFormat::kBmp:
       return DecodeBmp(data);
     default:
-      return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                         "Unknown or unsupported image format");
+      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                              "Unknown or unsupported image format");
   }
 }
 
@@ -60,11 +60,12 @@ absl::StatusOr<RGBImage> DecodeImage(const std::vector<uint8_t>& data,
 ///
 /// @param data JPEG-compressed data
 /// @return StatusOr containing decoded RGB image or error
-/// @retval absl::InvalidArgumentError if data is empty
-/// @retval absl::InternalError if JPEG decompression fails
-absl::StatusOr<RGBImage> DecodeJpeg(const std::vector<uint8_t>& data) {
+/// @retval aifocore::Status::InvalidArgumentError if data is empty
+/// @retval aifocore::Status::InternalError if JPEG decompression fails
+aifocore::Result<RGBImage> DecodeJpeg(const std::vector<uint8_t>& data) {
   if (data.empty()) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument, "Empty JPEG data");
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "Empty JPEG data");
   }
 
   // jpgd will allocate and decompress the image
@@ -82,8 +83,8 @@ absl::StatusOr<RGBImage> DecodeJpeg(const std::vector<uint8_t>& data) {
       &actual_comps, 3, flags);
 
   if (!decoded) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
-                       "jpgd JPEG decompression failed");
+    return aifocore::Status(aifocore::StatusCode::kInternal,
+                            "jpgd JPEG decompression failed");
   }
 
   const uint32_t u_width = static_cast<uint32_t>(width);
@@ -111,11 +112,12 @@ absl::StatusOr<RGBImage> DecodeJpeg(const std::vector<uint8_t>& data) {
 ///
 /// @param data PNG-compressed data
 /// @return StatusOr containing decoded RGB image or error
-/// @retval absl::InvalidArgumentError if data is empty
-/// @retval absl::InternalError if PNG decompression fails
-absl::StatusOr<RGBImage> DecodePng(const std::vector<uint8_t>& data) {
+/// @retval aifocore::Status::InvalidArgumentError if data is empty
+/// @retval aifocore::Status::InternalError if PNG decompression fails
+aifocore::Result<RGBImage> DecodePng(const std::vector<uint8_t>& data) {
   if (data.empty()) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument, "Empty PNG data");
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "Empty PNG data");
   }
 
   std::vector<unsigned char> image;
@@ -125,9 +127,10 @@ absl::StatusOr<RGBImage> DecodePng(const std::vector<uint8_t>& data) {
   unsigned int error = lodepng::decode(image, width, height, data, LCT_RGB, 8);
 
   if (error) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
-                       absl::StrFormat("PNG decode error %d: %s", error,
-                                       lodepng_error_text(error)));
+    return aifocore::Status(
+        aifocore::StatusCode::kInternal,
+        aifocore::fmt::format("PNG decode error {}: {}", error,
+                              lodepng_error_text(error)));
   }
 
   // Create RGB image
@@ -149,19 +152,21 @@ absl::StatusOr<RGBImage> DecodePng(const std::vector<uint8_t>& data) {
 ///
 /// @param data BMP image data
 /// @return StatusOr containing decoded RGB image or error
-/// @retval absl::InvalidArgumentError if data is too small or invalid
-/// @retval absl::UnimplementedError if BMP is not 24-bit uncompressed
-absl::StatusOr<RGBImage> DecodeBmp(const std::vector<uint8_t>& data) {
+/// @retval aifocore::Status::InvalidArgumentError if data is too small or
+/// invalid
+/// @retval aifocore::Status::UnimplementedError if BMP is not 24-bit
+/// uncompressed
+aifocore::Result<RGBImage> DecodeBmp(const std::vector<uint8_t>& data) {
   // Simplified BMP decoder for 24-bit uncompressed BMP
   if (data.size() < 54) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       "BMP data too small");
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "BMP data too small");
   }
 
   // Check BMP signature
   if (data[0] != 'B' || data[1] != 'M') {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       "Invalid BMP signature");
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "Invalid BMP signature");
   }
 
   // Read header
@@ -172,9 +177,10 @@ absl::StatusOr<RGBImage> DecodeBmp(const std::vector<uint8_t>& data) {
 
   // Only support 24-bit BMP
   if (bits_per_pixel != 24) {
-    return MAKE_STATUS(absl::StatusCode::kUnimplemented,
-                       absl::StrFormat("Only 24-bit BMP supported, got %d-bit",
-                                       bits_per_pixel));
+    return aifocore::Status(
+        aifocore::StatusCode::kUnimplemented,
+        aifocore::fmt::format("Only 24-bit BMP supported, got %d-bit",
+                              bits_per_pixel));
   }
 
   const int32_t height = std::abs(height_raw);
@@ -185,8 +191,8 @@ absl::StatusOr<RGBImage> DecodeBmp(const std::vector<uint8_t>& data) {
 
   if (data_offset + row_stride_src * height >
       static_cast<int32_t>(data.size())) {
-    return MAKE_STATUS(absl::StatusCode::kInvalidArgument,
-                       "BMP data truncated");
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "BMP data truncated");
   }
 
   // Create RGB image

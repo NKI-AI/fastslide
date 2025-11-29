@@ -35,9 +35,9 @@ class DirectStrategy : public ITileWriterStrategy {
   explicit DirectStrategy(const TileWriter::Config& config);
 
   aifocore::Status WriteTile(const core::TileReadOp& op,
-                         std::span<const uint8_t> pixel_data,
-                         uint32_t tile_width, uint32_t tile_height,
-                         uint32_t tile_channels) override;
+                             std::span<const uint8_t> pixel_data,
+                             uint32_t tile_width, uint32_t tile_height,
+                             uint32_t tile_channels) override;
 
   aifocore::Status Finalize() override;
   ImageDimensions GetDimensions() const override;
@@ -49,14 +49,15 @@ class DirectStrategy : public ITileWriterStrategy {
 
  private:
   aifocore::Status WriteTilePlanar(const core::TileReadOp& op,
-                               std::span<const uint8_t> pixel_data,
-                               uint32_t tile_width, uint32_t tile_height,
-                               uint32_t tile_channels);
+                                   std::span<const uint8_t> pixel_data,
+                                   uint32_t tile_width, uint32_t tile_height,
+                                   uint32_t tile_channels);
 
   aifocore::Status WriteTileInterleaved(const core::TileReadOp& op,
-                                    std::span<const uint8_t> pixel_data,
-                                    uint32_t tile_width, uint32_t tile_height,
-                                    uint32_t tile_channels);
+                                        std::span<const uint8_t> pixel_data,
+                                        uint32_t tile_width,
+                                        uint32_t tile_height,
+                                        uint32_t tile_channels);
 
   TileWriter::Config config_;
   std::unique_ptr<Image> output_image_;

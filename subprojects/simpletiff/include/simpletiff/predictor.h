@@ -14,8 +14,8 @@
 //
 // TIFF predictor operations
 
-#ifndef SIMPLETIFF_PREDICTOR_H_
-#define SIMPLETIFF_PREDICTOR_H_
+#ifndef AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_PREDICTOR_H_
+#define AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_PREDICTOR_H_
 
 #include <cstdint>
 #include <vector>
@@ -41,4 +41,4 @@ void ApplyHorizontalPredictor(std::vector<uint8_t>& data, int width, int height,
 
 }  // namespace simpletiff
 
-#endif  // SIMPLETIFF_PREDICTOR_H_
+#endif  // AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_PREDICTOR_H_

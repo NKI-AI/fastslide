@@ -143,8 +143,10 @@ aifocore::Result<std::array<uint8_t, 3>> ParseRgb(const std::string& str) {
     }
 
     if (value < 0 || value > 255) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument, aifocore::fmt::format(
-          "Invalid RGB value: {} (must be in range [0, 255])", value));
+      return aifocore::Status(
+          aifocore::StatusCode::kInvalidArgument,
+          aifocore::fmt::format(
+              "Invalid RGB value: {} (must be in range [0, 255])", value));
     }
 
     component = static_cast<uint8_t>(value);

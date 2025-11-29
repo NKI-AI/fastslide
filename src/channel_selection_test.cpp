@@ -12,27 +12,27 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fastslide/slide_reader.h"
-
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <string>
 #include <string_view>
 #include <vector>
 
 #include "aifocore/status/result.h"
+#include "fastslide/slide_reader.h"
 
 namespace fastslide {
 
 /// @brief Mock reader for testing channel selection
 class MockReaderForChannelSelection : public SlideReader {
-public:
+ public:
   MockReaderForChannelSelection() = default;
 
   [[nodiscard]] int GetLevelCount() const override { return 1; }
 
-  [[nodiscard]] aifocore::Result<LevelInfo>
-  GetLevelInfo(int level) const override {
+  [[nodiscard]] aifocore::Result<LevelInfo> GetLevelInfo(
+      int level) const override {
     if (level != 0) {
       return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
                               "Invalid level");
@@ -43,23 +43,23 @@ public:
     return info;
   }
 
-  [[nodiscard]] const SlideProperties &GetProperties() const override {
+  [[nodiscard]] const SlideProperties& GetProperties() const override {
     static SlideProperties props;
     return props;
   }
 
-  [[nodiscard]] std::vector<std::string>
-  GetAssociatedImageNames() const override {
+  [[nodiscard]] std::vector<std::string> GetAssociatedImageNames()
+      const override {
     return {};
   }
 
-  [[nodiscard]] aifocore::Result<ImageDimensions>
-  GetAssociatedImageDimensions(std::string_view name) const override {
+  [[nodiscard]] aifocore::Result<ImageDimensions> GetAssociatedImageDimensions(
+      std::string_view name) const override {
     return aifocore::Status(aifocore::StatusCode::kNotFound, "Not found");
   }
 
-  [[nodiscard]] aifocore::Result<Image>
-  ReadAssociatedImage(std::string_view name) const override {
+  [[nodiscard]] aifocore::Result<Image> ReadAssociatedImage(
+      std::string_view name) const override {
     return aifocore::Status(aifocore::StatusCode::kNotFound, "Not found");
   }
 
@@ -77,8 +77,8 @@ public:
     return ImageDimensions{256, 256};
   }
 
-  [[nodiscard]] std::vector<ChannelMetadata>
-  GetChannelMetadata() const override {
+  [[nodiscard]] std::vector<ChannelMetadata> GetChannelMetadata()
+      const override {
     std::vector<ChannelMetadata> channels;
     channels.emplace_back("RGB", "RGB", ColorRGB(255, 255, 255), 0, 8);
     return channels;
@@ -92,8 +92,8 @@ public:
 TEST(ChannelSelectionTest, DefaultAllChannelsVisible) {
   MockReaderForChannelSelection reader;
 
-  const auto &channels = reader.GetVisibleChannels();
-  EXPECT_TRUE(channels.empty()); // Empty means all channels
+  const auto& channels = reader.GetVisibleChannels();
+  EXPECT_TRUE(channels.empty());  // Empty means all channels
 }
 
 TEST(ChannelSelectionTest, SetSingleChannel) {
@@ -101,7 +101,7 @@ TEST(ChannelSelectionTest, SetSingleChannel) {
 
   reader.SetVisibleChannels({0});
 
-  const auto &channels = reader.GetVisibleChannels();
+  const auto& channels = reader.GetVisibleChannels();
   EXPECT_EQ(channels.size(), 1);
   EXPECT_EQ(channels[0], 0);
 }
@@ -111,7 +111,7 @@ TEST(ChannelSelectionTest, SetMultipleChannels) {
 
   reader.SetVisibleChannels({0, 2, 4});
 
-  const auto &channels = reader.GetVisibleChannels();
+  const auto& channels = reader.GetVisibleChannels();
   EXPECT_EQ(channels.size(), 3);
   EXPECT_EQ(channels[0], 0);
   EXPECT_EQ(channels[1], 2);
@@ -123,7 +123,7 @@ TEST(ChannelSelectionTest, SetRGBChannels) {
 
   reader.SetVisibleChannels({0, 1, 2});
 
-  const auto &channels = reader.GetVisibleChannels();
+  const auto& channels = reader.GetVisibleChannels();
   EXPECT_EQ(channels.size(), 3);
   EXPECT_EQ(channels[0], 0);
   EXPECT_EQ(channels[1], 1);
@@ -179,7 +179,7 @@ TEST(ChannelSelectionTest, LargeChannelIndices) {
   // Test with large (but valid) channel indices
   reader.SetVisibleChannels({100, 200, 300});
 
-  const auto &channels = reader.GetVisibleChannels();
+  const auto& channels = reader.GetVisibleChannels();
   EXPECT_EQ(channels.size(), 3);
   EXPECT_EQ(channels[0], 100);
   EXPECT_EQ(channels[1], 200);
@@ -191,7 +191,7 @@ TEST(ChannelSelectionTest, NonSequentialChannels) {
 
   reader.SetVisibleChannels({5, 2, 8, 1});
 
-  const auto &channels = reader.GetVisibleChannels();
+  const auto& channels = reader.GetVisibleChannels();
   EXPECT_EQ(channels.size(), 4);
   // Should preserve order as provided
   EXPECT_EQ(channels[0], 5);
@@ -206,7 +206,7 @@ TEST(ChannelSelectionTest, DuplicateChannels) {
   // Set with duplicates
   reader.SetVisibleChannels({0, 0, 1, 1, 2});
 
-  const auto &channels = reader.GetVisibleChannels();
+  const auto& channels = reader.GetVisibleChannels();
   EXPECT_EQ(channels.size(), 5);
   // Should preserve duplicates as provided (up to implementation)
 }
@@ -222,7 +222,7 @@ TEST(ChannelSelectionTest, ManyChannels) {
 
   reader.SetVisibleChannels(many_channels);
 
-  const auto &channels = reader.GetVisibleChannels();
+  const auto& channels = reader.GetVisibleChannels();
   EXPECT_EQ(channels.size(), 50);
   EXPECT_EQ(channels[0], 0);
   EXPECT_EQ(channels[49], 49);
@@ -272,10 +272,10 @@ TEST(ChannelSelectionTest, SpectralImagingUseCase) {
   MockReaderForChannelSelection reader;
 
   // Select specific spectral bands for visualization
-  std::vector<size_t> spectral_bands = {5, 15, 25}; // e.g., R, G, B mapping
+  std::vector<size_t> spectral_bands = {5, 15, 25};  // e.g., R, G, B mapping
   reader.SetVisibleChannels(spectral_bands);
 
-  const auto &channels = reader.GetVisibleChannels();
+  const auto& channels = reader.GetVisibleChannels();
   EXPECT_EQ(channels.size(), 3);
   EXPECT_EQ(channels[0], 5);
   EXPECT_EQ(channels[1], 15);
@@ -287,10 +287,10 @@ TEST(ChannelSelectionTest, FluorescenceImagingUseCase) {
 
   // Select specific fluorescence channels
   std::vector<size_t> fluorescence_channels = {0, 1, 2,
-                                               3}; // DAPI, FITC, TRITC, Cy5
+                                               3};  // DAPI, FITC, TRITC, Cy5
   reader.SetVisibleChannels(fluorescence_channels);
 
-  const auto &channels = reader.GetVisibleChannels();
+  const auto& channels = reader.GetVisibleChannels();
   EXPECT_EQ(channels.size(), 4);
 }
 
@@ -300,7 +300,7 @@ TEST(ChannelSelectionTest, SingleChannelVisualization) {
   // View only one channel at a time (common for analysis)
   reader.SetVisibleChannels({0});
 
-  const auto &channels = reader.GetVisibleChannels();
+  const auto& channels = reader.GetVisibleChannels();
   EXPECT_EQ(channels.size(), 1);
   EXPECT_EQ(channels[0], 0);
 
@@ -317,7 +317,7 @@ TEST(ChannelSelectionTest, ChannelSubsetForPerformance) {
   // For example, a 16-channel slide but only need 3 for current analysis
   reader.SetVisibleChannels({2, 7, 12});
 
-  const auto &channels = reader.GetVisibleChannels();
+  const auto& channels = reader.GetVisibleChannels();
   EXPECT_EQ(channels.size(), 3);
   // This should reduce I/O and memory usage
 }
@@ -331,7 +331,7 @@ TEST(ChannelSelectionTest, ZeroChannel) {
 
   reader.SetVisibleChannels({0});
 
-  const auto &channels = reader.GetVisibleChannels();
+  const auto& channels = reader.GetVisibleChannels();
   EXPECT_EQ(channels.size(), 1);
   EXPECT_EQ(channels[0], 0);
 }
@@ -344,9 +344,9 @@ TEST(ChannelSelectionTest, ConsecutiveOperations) {
   reader.SetVisibleChannels({1});
   reader.SetVisibleChannels({2});
 
-  const auto &channels = reader.GetVisibleChannels();
+  const auto& channels = reader.GetVisibleChannels();
   EXPECT_EQ(channels.size(), 1);
-  EXPECT_EQ(channels[0], 2); // Last set wins
+  EXPECT_EQ(channels[0], 2);  // Last set wins
 }
 
 TEST(ChannelSelectionTest, AlternatingSetAndReset) {
@@ -391,9 +391,9 @@ TEST(ChannelSelectionTest, PreservedAcrossQueries) {
   auto metadata = reader.GetMetadata();
 
   // Channel selection should still be set
-  const auto &channels = reader.GetVisibleChannels();
+  const auto& channels = reader.GetVisibleChannels();
   EXPECT_EQ(channels.size(), 3);
   EXPECT_EQ(channels[0], 2);
 }
 
-} // namespace fastslide
+}  // namespace fastslide

@@ -14,8 +14,8 @@
 
 // Image writer utilities for saving decoded TIFF data
 
-#ifndef SIMPLETIFF_IMAGE_WRITER_H_
-#define SIMPLETIFF_IMAGE_WRITER_H_
+#ifndef AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_IMAGE_WRITER_H_
+#define AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_IMAGE_WRITER_H_
 
 #include <cstdint>
 #include <string_view>
@@ -57,4 +57,4 @@ bool WritePpm(std::string_view filename, const uint8_t* rgb, int width,
 
 }  // namespace simpletiff
 
-#endif  // SIMPLETIFF_IMAGE_WRITER_H_
+#endif  // AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_IMAGE_WRITER_H_

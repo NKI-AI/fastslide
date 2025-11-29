@@ -42,15 +42,15 @@ struct CacheInspectionStats {
 
 /// @brief Cache manager with inspection capabilities
 class CacheManager {
-private:
+ private:
   std::shared_ptr<TileCache> cache_;
 
-public:
+ public:
   /// @brief Create a CacheManager with given capacity
   /// @param capacity Cache capacity
   /// @return Result containing the CacheManager
-  [[nodiscard]] static aifocore::Result<std::shared_ptr<CacheManager>>
-  Create(size_t capacity = 1000);
+  [[nodiscard]] static aifocore::Result<std::shared_ptr<CacheManager>> Create(
+      size_t capacity = 1000);
 
   [[nodiscard]] std::shared_ptr<TileCache> GetCache() const;
 
@@ -62,14 +62,14 @@ public:
 
   [[nodiscard]] aifocore::Status Resize(size_t new_capacity);
 
-private:
+ private:
   explicit CacheManager(std::shared_ptr<TileCache> cache);
 };
 
 /// @brief Global cache manager singleton
 class GlobalCacheManager {
-public:
-  [[nodiscard]] static GlobalCacheManager &Instance();
+ public:
+  [[nodiscard]] static GlobalCacheManager& Instance();
 
   [[nodiscard]] std::shared_ptr<TileCache> GetCache();
 
@@ -82,4 +82,4 @@ public:
   void Clear();
 };
 
-} // namespace fastslide::python
+}  // namespace fastslide::python

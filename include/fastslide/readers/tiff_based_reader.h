@@ -67,7 +67,8 @@ namespace fs = std::filesystem;
 namespace fastslide {
 
 // Forward declaration for friend class
-template <typename Derived> class TiffReaderFactory;
+template <typename Derived>
+class TiffReaderFactory;
 
 /// @brief Base class for TIFF-based slide readers
 ///
@@ -78,9 +79,10 @@ template <typename Derived> class TiffReaderFactory;
 /// @note All readers now use simpletiff directly for TIFF operations, providing
 /// better performance and thread safety without the need for handle pools.
 class TiffBasedReader : public SlideReader {
-public:
+ public:
   /// @brief Allow TiffReaderFactory to access protected methods
-  template <typename Derived> friend class TiffReaderFactory;
+  template <typename Derived>
+  friend class TiffReaderFactory;
 
   /// @brief Virtual destructor
   virtual ~TiffBasedReader() = default;
@@ -95,7 +97,7 @@ public:
   /// caching)
   void SetCache(std::shared_ptr<ITileCache> cache);
 
-protected:
+ protected:
   /// @brief Constructor for derived classes
   /// @param filename Path to the TIFF file
   explicit TiffBasedReader(fs::path filename);
@@ -116,6 +118,6 @@ protected:
   SlideProperties properties_;
 };
 
-} // namespace fastslide
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_TIFF_BASED_READER_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_TIFF_BASED_READER_H_

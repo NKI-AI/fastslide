@@ -40,7 +40,7 @@ std::size_t GetThreadCountFromEnv() {
 
   // Try to parse as integer
   char* end = nullptr;
-  const long value = std::strtol(env_value, &end, 10);
+  const int64_t value = std::strtol(env_value, &end, 10);
 
   // Check if parsing was successful and value is reasonable
   if (end == env_value || *end != '\0' || value < 0) {

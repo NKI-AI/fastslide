@@ -17,8 +17,13 @@
 #include <algorithm>
 #include <atomic>
 #include <cstring>
+#include <iostream>
+#include <memory>
 #include <mutex>
 #include <span>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
@@ -34,22 +39,23 @@ namespace fastslide {
 
 namespace {
 // Helper to convert status if needed
-template <typename T> aifocore::Status ToAifoStatus(const T &status) {
+template <typename T>
+aifocore::Status ToAifoStatus(const T& status) {
   if (status.ok())
     return aifocore::Status::OkStatus();
   return aifocore::Status(
       static_cast<aifocore::StatusCode>(static_cast<int>(status.code())),
       std::string(status.message()));
 }
-} // namespace
+}  // namespace
 
-aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan &plan,
-                                               const MrxsReader &reader,
-                                               runtime::TileWriter &writer) {
+aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
+                                               const MrxsReader& reader,
+                                               runtime::TileWriter& writer) {
 
   if (plan.operations.empty()) {
     // No tiles to read - fill with background color
-    const auto &bg = plan.output.background;
+    const auto& bg = plan.output.background;
     return writer.FillWithColor(bg.r, bg.g, bg.b);
   }
 
@@ -59,17 +65,17 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan &plan,
                             aifocore::fmt::format("Invalid level: {}", level));
   }
 
-  const auto &slide_info = reader.GetMrxsInfo();
-  const auto &zoom_level = slide_info.zoom_levels[level];
+  const auto& slide_info = reader.GetMrxsInfo();
+  const auto& zoom_level = slide_info.zoom_levels[level];
 
   // Get global thread pool for parallel tile processing
-  auto &pool = aifocore::ThreadPoolManager::GetInstance();
+  auto& pool = aifocore::ThreadPoolManager::GetInstance();
   std::mutex accumulator_mutex;
   std::atomic<int> error_count{0};
 
   // Submit all tiles to thread pool for parallel processing
   auto futures = pool.submit_sequence(0, plan.operations.size(), [&](size_t i) {
-    const auto &op = plan.operations[i];
+    const auto& op = plan.operations[i];
     auto status =
         ExecuteTileOperation(op, reader, zoom_level, writer, accumulator_mutex);
     if (!status.ok()) {
@@ -91,16 +97,16 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan &plan,
 }
 
 aifocore::Status MrxsTileExecutor::ExecuteTileOperation(
-    const core::TileReadOp &op, const MrxsReader &reader,
-    const mrxs::SlideZoomLevel &zoom_level, runtime::TileWriter &writer,
-    std::mutex &accumulator_mutex) {
+    const core::TileReadOp& op, const MrxsReader& reader,
+    const mrxs::SlideZoomLevel& zoom_level, runtime::TileWriter& writer,
+    std::mutex& accumulator_mutex) {
 
   // Read and decode the tile
   auto image_or = ReadAndDecodeTile(op, reader, zoom_level);
   if (!image_or.ok()) {
     std::cerr << "Failed to read/decode tile at (" << op.tile_coord.x << ", "
               << op.tile_coord.y << "): " << image_or.status().ToString();
-    return aifocore::Status::OkStatus(); // Continue processing other tiles
+    return aifocore::Status::OkStatus();  // Continue processing other tiles
   }
 
   // Extract sub-region if needed
@@ -119,20 +125,19 @@ aifocore::Status MrxsTileExecutor::ExecuteTileOperation(
       op,
       std::span<const uint8_t>(tile_to_write.GetData(),
                                tile_to_write.GetDataVector().size()),
-      tile_to_write.GetWidth(), tile_to_write.GetHeight(), 3, // RGB
+      tile_to_write.GetWidth(), tile_to_write.GetHeight(), 3,  // RGB
       accumulator_mutex);
 
   if (!status.ok()) {
-    return aifocore::Status::OkStatus(); // Continue processing other tiles
+    return aifocore::Status::OkStatus();  // Continue processing other tiles
   }
 
   return aifocore::Status::OkStatus();
 }
 
-aifocore::Result<RGBImage>
-MrxsTileExecutor::ReadAndDecodeTile(const core::TileReadOp &op,
-                                    const MrxsReader &reader,
-                                    const mrxs::SlideZoomLevel &zoom_level) {
+aifocore::Result<RGBImage> MrxsTileExecutor::ReadAndDecodeTile(
+    const core::TileReadOp& op, const MrxsReader& reader,
+    const mrxs::SlideZoomLevel& zoom_level) {
 
   // Reconstruct tile info from operation
   mrxs::MiraxTileRecord tile;
@@ -146,7 +151,7 @@ MrxsTileExecutor::ReadAndDecodeTile(const core::TileReadOp &op,
   float gain = 1.0f;
   if (op.blend_metadata) {
     gain = op.blend_metadata->gain;
-    tile.gain = gain; // Store in tile for logging
+    tile.gain = gain;  // Store in tile for logging
   }
 
   // Try cache first if available
@@ -156,8 +161,8 @@ MrxsTileExecutor::ReadAndDecodeTile(const core::TileReadOp &op,
     // Use dirname from slide info as unique identifier
     runtime::TileKey cache_key(
         reader.GetMrxsInfo().dirname, op.level,
-        static_cast<uint32_t>(op.source_id),  // Use data_file_number as tile_x
-        static_cast<uint32_t>(op.byte_offset) // Use offset as tile_y
+        static_cast<uint32_t>(op.source_id),   // Use data_file_number as tile_x
+        static_cast<uint32_t>(op.byte_offset)  // Use offset as tile_y
     );
 
     auto cached_data = cache->Get(cache_key);
@@ -190,7 +195,7 @@ MrxsTileExecutor::ReadAndDecodeTile(const core::TileReadOp &op,
                                static_cast<uint32_t>(op.byte_offset));
 
     // Create cached tile data
-    const auto &image = *image_or;
+    const auto& image = *image_or;
     const size_t data_size = image.GetWidth() * image.GetHeight() * 3;
     std::vector<uint8_t> tile_data(data_size);
     std::memcpy(tile_data.data(), image.GetData(), data_size);
@@ -198,7 +203,7 @@ MrxsTileExecutor::ReadAndDecodeTile(const core::TileReadOp &op,
     auto cached_tile = std::make_shared<runtime::CachedTileData>(
         std::move(tile_data),
         aifocore::Size<uint32_t, 2>{image.GetWidth(), image.GetHeight()},
-        3 // RGB channels
+        3  // RGB channels
     );
 
     cache->Put(cache_key, cached_tile);
@@ -207,8 +212,8 @@ MrxsTileExecutor::ReadAndDecodeTile(const core::TileReadOp &op,
   return *image_or;
 }
 
-RGBImage MrxsTileExecutor::ExtractSubRegion(const RGBImage &image,
-                                            const core::TileReadOp &op) {
+RGBImage MrxsTileExecutor::ExtractSubRegion(const RGBImage& image,
+                                            const core::TileReadOp& op) {
 
   const uint32_t img_w = image.GetWidth();
   const uint32_t img_h = image.GetHeight();
@@ -219,8 +224,8 @@ RGBImage MrxsTileExecutor::ExtractSubRegion(const RGBImage &image,
 
   // Extract sub-region using row-wise memcpy
   RGBImage extracted({crop_w, crop_h}, ImageFormat::kRGB, DataType::kUInt8);
-  uint8_t *dst_data = extracted.GetData();
-  const uint8_t *src_data = image.GetData();
+  uint8_t* dst_data = extracted.GetData();
+  const uint8_t* src_data = image.GetData();
 
   for (uint32_t cy = 0; cy < crop_h; ++cy) {
     const uint32_t src_offset = ((crop_y + cy) * img_w + crop_x) * 3;
@@ -239,4 +244,4 @@ bool MrxsTileExecutor::NeedsSubRegionExtraction(uint32_t image_width,
   return image_width > expected_width || image_height > expected_height;
 }
 
-} // namespace fastslide
+}  // namespace fastslide

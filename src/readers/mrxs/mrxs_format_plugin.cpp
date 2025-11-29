@@ -41,8 +41,8 @@ namespace {
 /// @param cache Optional tile cache (nullptr = no caching)
 /// @param filename Path to the .mrxs file
 /// @return StatusOr containing unique pointer to SlideReader or error
-aifocore::Result<std::unique_ptr<SlideReader>>
-CreateMrxsReader(std::shared_ptr<ITileCache> cache, std::string_view filename) {
+aifocore::Result<std::unique_ptr<SlideReader>> CreateMrxsReader(
+    std::shared_ptr<ITileCache> cache, std::string_view filename) {
 
   auto reader_or = MrxsReader::Create(std::string(filename));
   if (!reader_or.ok()) {
@@ -58,7 +58,7 @@ CreateMrxsReader(std::shared_ptr<ITileCache> cache, std::string_view filename) {
   return std::unique_ptr<SlideReader>(std::move(reader));
 }
 
-} // namespace
+}  // namespace
 
 /// @brief Create a format descriptor for MRXS files
 ///
@@ -102,6 +102,6 @@ FormatDescriptor CreateMrxsFormatDescriptor() {
   return desc;
 }
 
-} // namespace mrxs
-} // namespace formats
-} // namespace fastslide
+}  // namespace mrxs
+}  // namespace formats
+}  // namespace fastslide

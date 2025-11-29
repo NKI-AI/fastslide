@@ -37,16 +37,18 @@ using runtime::TileKeyHash;
 
 /// @brief Cached tile with access time for LRU
 struct CachedTile {
-  std::vector<uint8_t> data;        ///< Raw tile image data
-  aifocore::Size<uint32_t, 2> size; ///< Tile size in pixels
-  uint32_t channels; ///< Number of color channels (e.g., 3 for RGB)
+  std::vector<uint8_t> data;         ///< Raw tile image data
+  aifocore::Size<uint32_t, 2> size;  ///< Tile size in pixels
+  uint32_t channels;  ///< Number of color channels (e.g., 3 for RGB)
   std::chrono::steady_clock::time_point
-      access_time; ///< Last access time for LRU
+      access_time;  ///< Last access time for LRU
 
   /// @brief Constructor for CachedTile
-  CachedTile(std::vector<uint8_t> &&tile_data,
+  CachedTile(std::vector<uint8_t>&& tile_data,
              aifocore::Size<uint32_t, 2> tile_size, uint32_t num_channels)
-      : data(std::move(tile_data)), size(tile_size), channels(num_channels),
+      : data(std::move(tile_data)),
+        size(tile_size),
+        channels(num_channels),
         access_time(std::chrono::steady_clock::now()) {}
 };
 
@@ -64,7 +66,7 @@ struct CachedTile {
 /// The cache automatically evicts the least recently used tiles when capacity
 /// is exceeded, ensuring memory usage stays bounded.
 class TileCache {
-public:
+ public:
   /// @brief Create a new TileCache instance (preferred method)
   /// @param capacity Maximum number of tiles to cache
   /// @return StatusOr containing the TileCache instance, or an error status
@@ -73,8 +75,8 @@ public:
   /// @brief Create a shared TileCache instance for Python bindings
   /// @param capacity Maximum number of tiles to cache
   /// @return StatusOr containing shared pointer to TileCache instance
-  static aifocore::Result<std::shared_ptr<TileCache>>
-  CreateShared(size_t capacity = 1000);
+  static aifocore::Result<std::shared_ptr<TileCache>> CreateShared(
+      size_t capacity = 1000);
 
   /// @brief Constructor (internal use - prefer Create() method)
   /// @param capacity Maximum number of tiles to cache
@@ -85,11 +87,11 @@ public:
   ~TileCache() = default;
 
   // Non-copyable but movable
-  TileCache(const TileCache &) = delete;
-  TileCache &operator=(const TileCache &) = delete;
+  TileCache(const TileCache&) = delete;
+  TileCache& operator=(const TileCache&) = delete;
 
-  TileCache(TileCache &&) = default;
-  TileCache &operator=(TileCache &&) = default;
+  TileCache(TileCache&&) = default;
+  TileCache& operator=(TileCache&&) = default;
 
   /// @brief Get a tile from cache
   ///
@@ -99,7 +101,7 @@ public:
   /// @param key Tile key identifying the requested tile
   /// @return Cached tile if found, nullptr otherwise
   /// @note This method is thread-safe
-  std::shared_ptr<CachedTile> Get(const TileKey &key);
+  std::shared_ptr<CachedTile> Get(const TileKey& key);
 
   /// @brief Put a tile in cache
   ///
@@ -110,7 +112,7 @@ public:
   /// @param key Tile key identifying the tile
   /// @param tile Shared pointer to the tile data
   /// @note This method is thread-safe
-  void Put(const TileKey &key, std::shared_ptr<CachedTile> tile);
+  void Put(const TileKey& key, std::shared_ptr<CachedTile> tile);
 
   /// @brief Clear all cached tiles
   ///
@@ -124,12 +126,12 @@ public:
   /// Returns current cache statistics including capacity, size, hit/miss
   /// counts, and hit ratio.
   struct Stats {
-    size_t capacity;           ///< Maximum cache capacity
-    size_t size;               ///< Current number of cached tiles
-    size_t hits;               ///< Number of cache hits
-    size_t misses;             ///< Number of cache misses
-    double hit_ratio;          ///< Hit ratio (hits / (hits + misses))
-    size_t memory_usage_bytes; ///< Total memory usage in bytes
+    size_t capacity;            ///< Maximum cache capacity
+    size_t size;                ///< Current number of cached tiles
+    size_t hits;                ///< Number of cache hits
+    size_t misses;              ///< Number of cache misses
+    double hit_ratio;           ///< Hit ratio (hits / (hits + misses))
+    size_t memory_usage_bytes;  ///< Total memory usage in bytes
   };
 
   /// @brief Get current cache statistics
@@ -162,15 +164,15 @@ public:
   /// @note This method is thread-safe
   aifocore::Status SetCapacity(size_t capacity);
 
-private:
+ private:
   /// @brief Internal cache entry structure
   ///
   /// Combines the tile data with an iterator to its position in the LRU list
   /// for efficient LRU management.
   struct CacheEntry {
-    TileKey key;                         ///< Cache key
-    std::shared_ptr<CachedTile> tile;    ///< Cached tile data
-    std::list<TileKey>::iterator lru_it; ///< Iterator to LRU list position
+    TileKey key;                          ///< Cache key
+    std::shared_ptr<CachedTile> tile;     ///< Cached tile data
+    std::list<TileKey>::iterator lru_it;  ///< Iterator to LRU list position
   };
 
   /// @brief Evict the least recently used tile
@@ -194,7 +196,7 @@ private:
 /// The global cache is thread-safe and can be safely accessed from multiple
 /// threads simultaneously.
 class GlobalTileCache {
-public:
+ public:
   /// @brief Get singleton instance
   ///
   /// Returns the global singleton instance of the tile cache. The instance
@@ -202,7 +204,7 @@ public:
   ///
   /// @return Reference to the global cache instance
   /// @note This method is thread-safe
-  static GlobalTileCache &Instance();
+  static GlobalTileCache& Instance();
 
   /// @brief Get the tile cache
   ///
@@ -211,7 +213,7 @@ public:
   ///
   /// @return Reference to the tile cache
   /// @note This method is thread-safe
-  TileCache &GetCache();
+  TileCache& GetCache();
 
   /// @brief Get the tile cache (const version)
   ///
@@ -220,7 +222,7 @@ public:
   ///
   /// @return Const reference to the tile cache
   /// @note This method is thread-safe
-  const TileCache &GetCache() const;
+  const TileCache& GetCache() const;
 
   /// @brief Set cache capacity
   ///
@@ -237,14 +239,14 @@ public:
   /// @note This method is thread-safe
   size_t GetCapacity() const;
 
-private:
+ private:
   /// @brief Private constructor for singleton
   GlobalTileCache();
 
-  mutable std::mutex mutex_;         ///< Mutex for thread safety
-  std::unique_ptr<TileCache> cache_; ///< The actual cache instance
+  mutable std::mutex mutex_;          ///< Mutex for thread safety
+  std::unique_ptr<TileCache> cache_;  ///< The actual cache instance
 };
 
-} // namespace fastslide
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_UTILITIES_CACHE_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_UTILITIES_CACHE_H_

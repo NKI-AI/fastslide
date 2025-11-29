@@ -47,7 +47,7 @@ using fastslide::python::FastSlide;
 namespace {
 
 /// @brief Convert aifocore::Status to Python exception
-void ThrowPyErrorFromStatus(const aifocore::Status &status) {
+void ThrowPyErrorFromStatus(const aifocore::Status& status) {
   if (status.code() == aifocore::StatusCode::kInvalidArgument) {
     throw py::value_error(status.ToString());
   }
@@ -55,7 +55,7 @@ void ThrowPyErrorFromStatus(const aifocore::Status &status) {
   throw std::runtime_error(status.ToString());
 }
 
-} // namespace
+}  // namespace
 
 PYBIND11_MODULE(_fastslide, m) {
   m.doc() =
@@ -101,7 +101,7 @@ PYBIND11_MODULE(_fastslide, m) {
            "Get detailed cache statistics")
       .def(
           "resize",
-          [](CacheManager &self, size_t new_capacity) {
+          [](CacheManager& self, size_t new_capacity) {
             auto status = self.Resize(new_capacity);
             if (!status.ok()) {
               ThrowPyErrorFromStatus(status);
@@ -120,7 +120,7 @@ PYBIND11_MODULE(_fastslide, m) {
                   py::return_value_policy::reference)
       .def(
           "set_capacity",
-          [](RuntimeGlobalCacheManager &self, size_t capacity) {
+          [](RuntimeGlobalCacheManager& self, size_t capacity) {
             auto status = self.SetCapacity(capacity);
             if (!status.ok()) {
               ThrowPyErrorFromStatus(status);
@@ -194,7 +194,7 @@ PYBIND11_MODULE(_fastslide, m) {
   py::class_<FastSlide>(m, "FastSlide")
       .def_static(
           "from_file_path",
-          [](const py::object &file_path) {
+          [](const py::object& file_path) {
             std::string path_str;
             if (py::isinstance<py::str>(file_path)) {
               path_str = py::cast<std::string>(file_path);
@@ -215,8 +215,8 @@ PYBIND11_MODULE(_fastslide, m) {
       // Main reading method (level-native coordinates)
       .def(
           "read_region",
-          [](FastSlide &self, const std::tuple<uint32_t, uint32_t> &location,
-             int level, const std::tuple<uint32_t, uint32_t> &size) {
+          [](FastSlide& self, const std::tuple<uint32_t, uint32_t>& location,
+             int level, const std::tuple<uint32_t, uint32_t>& size) {
             auto [x, y] = location;
             auto [width, height] = size;
             return self.ReadRegion(x, y, width, height, level);
@@ -320,7 +320,7 @@ PYBIND11_MODULE(_fastslide, m) {
       // Channel visibility controls
       .def(
           "set_visible_channels",
-          [](FastSlide &self, const py::object &channels) {
+          [](FastSlide& self, const py::object& channels) {
             std::vector<size_t> channel_indices;
 
             // Handle None - show all channels
@@ -403,7 +403,7 @@ PYBIND11_MODULE(_fastslide, m) {
 
   m.def(
       "is_supported",
-      [](const std::string &filename) {
+      [](const std::string& filename) {
         auto reader_or =
             fastslide::runtime::GetGlobalRegistry().CreateReader(filename);
         return reader_or.ok();

@@ -14,13 +14,14 @@
 
 // Example: Read a TIFF file and extract a region from the first page
 
-#include "aifocore/platform/portability.h"
-
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <iostream>
+#include <string>
 #include <vector>
 
+#include "aifocore/platform/portability.h"
 #include "simpletiff/index.h"
 #include "simpletiff/reader.h"
 #include "simpletiff/tiff_constants.h"
@@ -32,7 +33,7 @@
 
 namespace {
 
-bool EndsWith(const char *str, const char *suffix) {
+bool EndsWith(const char* str, const char* suffix) {
   size_t str_len = std::strlen(str);
   size_t suffix_len = std::strlen(suffix);
   if (suffix_len > str_len)
@@ -40,7 +41,7 @@ bool EndsWith(const char *str, const char *suffix) {
   return std::strcmp(str + str_len - suffix_len, suffix) == 0;
 }
 
-void PrintUsage(const char *prog_name) {
+void PrintUsage(const char* prog_name) {
   std::cerr << "Usage: " << prog_name << " <tiff_file> [options]\n\n";
   std::cerr << "Options:\n";
   std::cerr
@@ -59,20 +60,20 @@ void PrintUsage(const char *prog_name) {
   std::cerr << "  " << prog_name << " slide.tiff --dump 2 thumbnail.ppm\n";
 }
 
-} // namespace
+}  // namespace
 
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
   if (argc < 2) {
     PrintUsage(argv[0]);
     return 1;
   }
 
-  const char *input_file = argv[1];
+  const char* input_file = argv[1];
 
   // Parse command-line arguments
   bool dump_mode = false;
   int dump_page = -1;
-  const char *output_file = nullptr;
+  const char* output_file = nullptr;
 
   for (int i = 2; i < argc; ++i) {
     if (std::strcmp(argv[i], "--dump") == 0) {
@@ -118,7 +119,7 @@ int main(int argc, char *argv[]) {
 
   // Display information about all pages
   for (size_t i = 0; i < index.NumPages(); ++i) {
-    const auto &page = index.Page(i);
+    const auto& page = index.Page(i);
     std::cout << "=== Page " << i << " ===\n";
     std::cout << "  Image Width: " << page.width
               << " Image Length: " << page.height << "\n";
@@ -154,18 +155,18 @@ int main(int argc, char *argv[]) {
         std::cout << " ";
         uint16_t unit = page.resolution_unit.value();
         switch (unit) {
-        case 1:
-          std::cout << "(unitless)";
-          break;
-        case 2:
-          std::cout << "pixels/inch";
-          break;
-        case 3:
-          std::cout << "pixels/cm";
-          break;
-        default:
-          std::cout << "(unit=" << unit << ")";
-          break;
+          case 1:
+            std::cout << "(unitless)";
+            break;
+          case 2:
+            std::cout << "pixels/inch";
+            break;
+          case 3:
+            std::cout << "pixels/cm";
+            break;
+          default:
+            std::cout << "(unit=" << unit << ")";
+            break;
         }
       }
       std::cout << "\n";
@@ -215,35 +216,35 @@ int main(int argc, char *argv[]) {
 
     std::cout << "  Storage: ";
     switch (page.storage) {
-    case simpletiff::Storage::kTiles: {
-      const auto &tiles = index.Tiles(page.payload_id);
-      std::cout << "Tiled\n";
-      std::cout << "    Tile Width: " << tiles.tile_w
-                << " Tile Length: " << tiles.tile_h << "\n";
-      std::cout << "    Tiles: " << tiles.tiles_x << "x" << tiles.tiles_y
-                << " (" << tiles.tiles_x * tiles.tiles_y << " total)\n";
-      if (tiles.jpeg_tables_len > 0) {
-        std::cout << "    JPEG Tables: (" << tiles.jpeg_tables_len
-                  << " bytes)\n";
-      }
-    } break;
-    case simpletiff::Storage::kStrips: {
-      const auto &strips = index.Strips(page.payload_id);
-      std::cout << "Strips\n";
-      std::cout << "    Rows/Strip: " << strips.rows_per_strip << "\n";
-      auto offs = index.Offsets(strips.offsets);
-      std::cout << "    Strip Count: " << offs.size() << "\n";
-      if (strips.jpeg_tables_len > 0) {
-        std::cout << "    JPEG Tables: (" << strips.jpeg_tables_len
-                  << " bytes)\n";
-      }
-    } break;
-    case simpletiff::Storage::kSingleJpeg:
-      std::cout << "Single JPEG\n";
-      break;
-    case simpletiff::Storage::kUnknown:
-      std::cout << "Unknown\n";
-      break;
+      case simpletiff::Storage::kTiles: {
+        const auto& tiles = index.Tiles(page.payload_id);
+        std::cout << "Tiled\n";
+        std::cout << "    Tile Width: " << tiles.tile_w
+                  << " Tile Length: " << tiles.tile_h << "\n";
+        std::cout << "    Tiles: " << tiles.tiles_x << "x" << tiles.tiles_y
+                  << " (" << tiles.tiles_x * tiles.tiles_y << " total)\n";
+        if (tiles.jpeg_tables_len > 0) {
+          std::cout << "    JPEG Tables: (" << tiles.jpeg_tables_len
+                    << " bytes)\n";
+        }
+      } break;
+      case simpletiff::Storage::kStrips: {
+        const auto& strips = index.Strips(page.payload_id);
+        std::cout << "Strips\n";
+        std::cout << "    Rows/Strip: " << strips.rows_per_strip << "\n";
+        auto offs = index.Offsets(strips.offsets);
+        std::cout << "    Strip Count: " << offs.size() << "\n";
+        if (strips.jpeg_tables_len > 0) {
+          std::cout << "    JPEG Tables: (" << strips.jpeg_tables_len
+                    << " bytes)\n";
+        }
+      } break;
+      case simpletiff::Storage::kSingleJpeg:
+        std::cout << "Single JPEG\n";
+        break;
+      case simpletiff::Storage::kUnknown:
+        std::cout << "Unknown\n";
+        break;
     }
     std::cout << "\n";
   }
@@ -263,7 +264,7 @@ int main(int argc, char *argv[]) {
     return 1;
   }
 
-  const auto &page_to_dump = index.Page(dump_page);
+  const auto& page_to_dump = index.Page(dump_page);
 
   // Determine region to read
   uint32_t read_width = page_to_dump.width;

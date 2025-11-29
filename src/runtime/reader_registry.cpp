@@ -18,8 +18,8 @@
 #include <cctype>
 #include <filesystem>
 #include <map>
-#include <mutex>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -54,23 +54,22 @@ void ReaderRegistry::RegisterFormat(FormatDescriptor descriptor) {
   formats_[normalized] = std::move(descriptor);
 
   // Also register aliases
-  auto &desc = formats_[normalized];
-  for (const auto &alias : desc.aliases) {
+  auto& desc = formats_[normalized];
+  for (const auto& alias : desc.aliases) {
     std::string normalized_alias = NormalizeExtension(alias);
-    formats_[normalized_alias] = desc; // Copy descriptor for alias
+    formats_[normalized_alias] = desc;  // Copy descriptor for alias
   }
 }
 
 void ReaderRegistry::RegisterFormats(
     std::vector<FormatDescriptor> descriptors) {
-  for (auto &desc : descriptors) {
+  for (auto& desc : descriptors) {
     RegisterFormat(std::move(desc));
   }
 }
 
-aifocore::Result<std::unique_ptr<SlideReader>>
-ReaderRegistry::CreateReader(std::string_view filename,
-                             std::shared_ptr<ITileCache> cache) const {
+aifocore::Result<std::unique_ptr<SlideReader>> ReaderRegistry::CreateReader(
+    std::string_view filename, std::shared_ptr<ITileCache> cache) const {
   // Extract extension
   std::filesystem::path path(filename);
   std::string extension = path.extension().string();
@@ -95,7 +94,7 @@ ReaderRegistry::CreateReader(std::string_view filename,
   }
 
   // Create reader using factory
-  const auto &descriptor = it->second;
+  const auto& descriptor = it->second;
   if (!descriptor.factory) {
     return aifocore::Status(
         aifocore::StatusCode::kInternal,
@@ -114,7 +113,7 @@ std::vector<std::string> ReaderRegistry::ListFormats() const {
 
   // Collect unique format names (avoid duplicates from aliases)
   std::map<std::string, bool> seen;
-  for (const auto &[ext, desc] : formats_) {
+  for (const auto& [ext, desc] : formats_) {
     if (seen.find(desc.format_name) == seen.end()) {
       formats.push_back(desc.format_name);
       seen[desc.format_name] = true;
@@ -125,8 +124,8 @@ std::vector<std::string> ReaderRegistry::ListFormats() const {
   return formats;
 }
 
-const FormatDescriptor *
-ReaderRegistry::GetFormat(std::string_view extension) const {
+const FormatDescriptor* ReaderRegistry::GetFormat(
+    std::string_view extension) const {
   std::string normalized = NormalizeExtension(extension);
 
   std::lock_guard<std::mutex> lock(mutex_);
@@ -145,7 +144,7 @@ bool ReaderRegistry::SupportsExtension(std::string_view extension) const {
 
 bool ReaderRegistry::SupportsCapability(std::string_view extension,
                                         FormatCapability capability) const {
-  const auto *format = GetFormat(extension);
+  const auto* format = GetFormat(extension);
   if (!format) {
     return false;
   }
@@ -153,15 +152,15 @@ bool ReaderRegistry::SupportsCapability(std::string_view extension,
   return HasCapability(format->capabilities, capability);
 }
 
-std::vector<std::string>
-ReaderRegistry::ListFormatsByCapability(FormatCapability capability) const {
+std::vector<std::string> ReaderRegistry::ListFormatsByCapability(
+    FormatCapability capability) const {
   std::lock_guard<std::mutex> lock(mutex_);
 
   std::vector<std::string> formats;
 
   // Collect unique format names that support the capability
   std::map<std::string, bool> seen;
-  for (const auto &[ext, desc] : formats_) {
+  for (const auto& [ext, desc] : formats_) {
     if (HasCapability(desc.capabilities, capability)) {
       if (seen.find(desc.format_name) == seen.end()) {
         formats.push_back(desc.format_name);
@@ -180,7 +179,7 @@ std::vector<std::string> ReaderRegistry::GetSupportedExtensions() const {
   std::vector<std::string> extensions;
   extensions.reserve(formats_.size());
 
-  for (const auto &[ext, desc] : formats_) {
+  for (const auto& [ext, desc] : formats_) {
     extensions.push_back(ext);
   }
 
@@ -194,14 +193,14 @@ void ReaderRegistry::Clear() {
 }
 
 // Global registry implementation
-ReaderRegistry &GetGlobalRegistry() {
-  static ReaderRegistry *global_registry = []() {
-    auto *registry = new ReaderRegistry();
+ReaderRegistry& GetGlobalRegistry() {
+  static ReaderRegistry* global_registry = []() {
+    auto* registry = new ReaderRegistry();
     // Register built-in formats (will be done in register_builtin_formats.cc)
     return registry;
   }();
   return *global_registry;
 }
 
-} // namespace runtime
-} // namespace fastslide
+}  // namespace runtime
+}  // namespace fastslide

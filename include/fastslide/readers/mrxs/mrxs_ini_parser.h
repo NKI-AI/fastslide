@@ -36,11 +36,11 @@ namespace internal {
 /// - Key=Value pairs
 /// - Comments starting with ; or #
 class IniFile {
-public:
+ public:
   /// @brief Load and parse an INI file
   /// @param path Path to the INI file
   /// @return Result containing parsed IniFile or error
-  static aifocore::Result<IniFile> Load(const fs::path &path);
+  static aifocore::Result<IniFile> Load(const fs::path& path);
 
   /// @brief Get string value from section
   /// @param section Section name
@@ -68,12 +68,12 @@ public:
   /// @return True if section exists
   bool HasSection(std::string_view section) const;
 
-private:
+ private:
   std::map<std::string, std::map<std::string, std::string>> data_;
 };
 
-} // namespace internal
-} // namespace mrxs
-} // namespace fastslide
+}  // namespace internal
+}  // namespace mrxs
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_INI_PARSER_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_INI_PARSER_H_

@@ -12,15 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fastslide/slide_reader.h"
-
 #include <gtest/gtest.h>
 
+#include <limits>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <vector>
 
 #include "aifocore/status/result.h"
+#include "fastslide/slide_reader.h"
 
 namespace fastslide {
 

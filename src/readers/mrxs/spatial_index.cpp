@@ -91,9 +91,13 @@ MrxsSpatialIndex::MrxsSpatialIndex(
                                  std::vector<size_t>>
         cell_index,
     std::vector<SpatialTile> tiles, double step_x, double step_y)
-    : cell_index_(std::move(cell_index)), spatial_tiles_(std::move(tiles)),
-      step_x_(step_x), step_y_(step_y), query_epoch_(1),
-      seen_epoch_(spatial_tiles_.size(), 0), inv_step_x_(1.0 / step_x),
+    : cell_index_(std::move(cell_index)),
+      spatial_tiles_(std::move(tiles)),
+      step_x_(step_x),
+      step_y_(step_y),
+      query_epoch_(1),
+      seen_epoch_(spatial_tiles_.size(), 0),
+      inv_step_x_(1.0 / step_x),
       inv_step_y_(1.0 / step_y) {
   // Build Structure of Arrays (SoA) layout for fast queries
   //
@@ -124,7 +128,7 @@ MrxsSpatialIndex::MrxsSpatialIndex(
   bbox_max_x_.reserve(n);
   bbox_max_y_.reserve(n);
 
-  for (const auto &tile : spatial_tiles_) {
+  for (const auto& tile : spatial_tiles_) {
     bbox_min_x_.push_back(static_cast<float>(tile.bbox.min[0]));
     bbox_min_y_.push_back(static_cast<float>(tile.bbox.min[1]));
     bbox_max_x_.push_back(static_cast<float>(tile.bbox.max[0]));
@@ -132,10 +136,10 @@ MrxsSpatialIndex::MrxsSpatialIndex(
   }
 }
 
-aifocore::Result<std::unique_ptr<MrxsSpatialIndex>>
-MrxsSpatialIndex::Build(const std::vector<MiraxTileRecord> &tiles,
-                        const PyramidLevelParameters &level_params, int level,
-                        const SlideDataInfo &slide_info) {
+aifocore::Result<std::unique_ptr<MrxsSpatialIndex>> MrxsSpatialIndex::Build(
+    const std::vector<MiraxTileRecord>& tiles,
+    const PyramidLevelParameters& level_params, int level,
+    const SlideDataInfo& slide_info) {
   if (tiles.empty()) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
                             "Cannot build spatial index from empty tile list");
@@ -148,7 +152,7 @@ MrxsSpatialIndex::Build(const std::vector<MiraxTileRecord> &tiles,
         aifocore::fmt::format("Invalid level {} (must be 0-{})", level,
                               slide_info.zoom_levels.size() - 1));
   }
-  const auto &zoom_level = slide_info.zoom_levels[level];
+  const auto& zoom_level = slide_info.zoom_levels[level];
   const int image_width = zoom_level.image_width;
   const int image_height = zoom_level.image_height;
 
@@ -167,9 +171,9 @@ MrxsSpatialIndex::Build(const std::vector<MiraxTileRecord> &tiles,
   // postings list per grid cell
   ankerl::unordered_dense::map<std::pair<int32_t, int32_t>, std::vector<size_t>>
       cell_index;
-  cell_index.reserve(tiles.size()); // good heuristic starting point
+  cell_index.reserve(tiles.size());  // good heuristic starting point
 
-  for (const auto &tinfo : tiles) {
+  for (const auto& tinfo : tiles) {
     // Compute bbox in level coordinates (filters inactive cameras via negative
     // min)
     Box bbox = CalculateTileBoundingBox(tinfo, level_params, level, slide_info);
@@ -251,7 +255,7 @@ std::vector<size_t> MrxsSpatialIndex::QueryRegion(double x, double y,
   // Bump epoch and handle wrap (rare). If we wrap, zero the vector.
   // Use double-checked locking to ensure only one thread handles the wrap.
   uint32_t epoch = ++query_epoch_;
-  if (epoch == 0) { // wrapped to 0
+  if (epoch == 0) {  // wrapped to 0
     // Acquire lock to ensure atomic wrap handling
     std::lock_guard<std::mutex> lock(epoch_wrap_mutex_);
 
@@ -310,10 +314,10 @@ std::vector<size_t> MrxsSpatialIndex::QueryRegion(double x, double y,
       if (it == cell_index_.end())
         continue;
 
-      const auto &posting = it->second;
+      const auto& posting = it->second;
       for (size_t idx : posting) {
         if (seen_epoch_[idx] == epoch)
-          continue; // already added this query
+          continue;  // already added this query
 
         // Branchless intersection test using bitwise OR.
         // Returns true (1) if separated, false (0) if intersecting.
@@ -340,10 +344,10 @@ std::vector<size_t> MrxsSpatialIndex::QueryRegion(double x, double y,
 
 // Unchanged math, kept for correctness and clarity.
 Box MrxsSpatialIndex::CalculateTileBoundingBox(
-    const MiraxTileRecord &tile, const PyramidLevelParameters &level_params,
-    int level, const SlideDataInfo &slide_info) {
+    const MiraxTileRecord& tile, const PyramidLevelParameters& level_params,
+    int level, const SlideDataInfo& slide_info) {
   // Extract zoom level and dimensions
-  const auto &zoom_level = slide_info.zoom_levels[level];
+  const auto& zoom_level = slide_info.zoom_levels[level];
   const int image_width = zoom_level.image_width;
   const int image_height = zoom_level.image_height;
   const int image_divisions = slide_info.image_divisions;
@@ -403,5 +407,5 @@ Box MrxsSpatialIndex::CalculateTileBoundingBox(
   return Box{{x, y}, {x + w, y + h}};
 }
 
-} // namespace mrxs
-} // namespace fastslide
+}  // namespace mrxs
+}  // namespace fastslide

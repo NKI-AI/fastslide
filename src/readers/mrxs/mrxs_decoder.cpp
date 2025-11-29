@@ -14,6 +14,8 @@
 
 #include "fastslide/readers/mrxs/mrxs_decoder.h"
 
+#include <jpeglib.h>
+
 #include <algorithm>
 #include <array>
 #include <csetjmp>
@@ -21,15 +23,13 @@
 #include <string>
 #include <vector>
 
-#include <jpeglib.h>
-
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "lodepng/lodepng.h"
 
 namespace fastslide::mrxs::internal {
 
-namespace { // ---- JPEG: thread-local reusable decompressor ----
+namespace {  // ---- JPEG: thread-local reusable decompressor ----
 
 struct ThreadLocalJpeg {
   jpeg_decompress_struct cinfo{};
@@ -49,15 +49,15 @@ struct ThreadLocalJpeg {
   /// process. Instead, we capture the error message and jump back to the
   /// setjmp point in the calling code.
   static void ErrorExit(j_common_ptr cinfo) {
-    ThreadLocalJpeg *self =
-        reinterpret_cast<ThreadLocalJpeg *>(cinfo->client_data);
+    ThreadLocalJpeg* self =
+        reinterpret_cast<ThreadLocalJpeg*>(cinfo->client_data);
     // Format the error message for later retrieval
     (*cinfo->err->format_message)(cinfo, self->error_message);
     // Jump back to setjmp in Get() or decode function
     std::longjmp(self->jump_buffer, 1);
   }
 
-  jpeg_decompress_struct *Get() {
+  jpeg_decompress_struct* Get() {
     if (!inited) {
       cinfo.err = jpeg_std_error(&jerr);
       jerr.error_exit = ErrorExit;
@@ -73,7 +73,7 @@ struct ThreadLocalJpeg {
 };
 
 static thread_local ThreadLocalJpeg g_tls_jpeg;
-} // namespace
+}  // namespace
 
 /// @brief Decode compressed image data based on the specified format
 ///
@@ -84,18 +84,18 @@ static thread_local ThreadLocalJpeg g_tls_jpeg;
 /// @param format Image format (JPEG/PNG/BMP)
 /// @return Result containing decoded RGB image or error
 /// @retval InvalidArgument if format is unknown or unsupported
-aifocore::Result<RGBImage> DecodeImage(const std::vector<uint8_t> &data,
+aifocore::Result<RGBImage> DecodeImage(const std::vector<uint8_t>& data,
                                        MrxsImageFormat format) {
   switch (format) {
-  case MrxsImageFormat::kJpeg:
-    return DecodeJpeg(data);
-  case MrxsImageFormat::kPng:
-    return DecodePng(data);
-  case MrxsImageFormat::kBmp:
-    return DecodeBmp(data);
-  default:
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Unknown or unsupported image format");
+    case MrxsImageFormat::kJpeg:
+      return DecodeJpeg(data);
+    case MrxsImageFormat::kPng:
+      return DecodePng(data);
+    case MrxsImageFormat::kBmp:
+      return DecodeBmp(data);
+    default:
+      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                              "Unknown or unsupported image format");
   }
 }
 
@@ -112,13 +112,13 @@ aifocore::Result<RGBImage> DecodeImage(const std::vector<uint8_t> &data,
 /// @return Result containing decoded RGB image or error
 /// @retval InvalidArgument if data is empty
 /// @retval Internal if JPEG decompression fails
-aifocore::Result<RGBImage> DecodeJpeg(const std::vector<uint8_t> &data) {
+aifocore::Result<RGBImage> DecodeJpeg(const std::vector<uint8_t>& data) {
   if (data.empty()) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
                             "Empty JPEG data");
   }
 
-  jpeg_decompress_struct *c = g_tls_jpeg.Get();
+  jpeg_decompress_struct* c = g_tls_jpeg.Get();
 
   // Set up error handling - if any JPEG operation fails, we'll longjmp here
   if (setjmp(g_tls_jpeg.jump_buffer)) {
@@ -139,15 +139,15 @@ aifocore::Result<RGBImage> DecodeJpeg(const std::vector<uint8_t> &data) {
   }
 
   // ---- Fast knobs (good quality, much faster) ----
-  c->dct_method = JDCT_IFAST;     // fast integer DCT
-  c->do_fancy_upsampling = FALSE; // faster chroma upsampling
-  c->do_block_smoothing = FALSE;  // faster for progressive images
-  c->quantize_colors = FALSE;     // ensure no palette quantization
+  c->dct_method = JDCT_IFAST;      // fast integer DCT
+  c->do_fancy_upsampling = FALSE;  // faster chroma upsampling
+  c->do_block_smoothing = FALSE;   // faster for progressive image
+  c->quantize_colors = FALSE;      // ensure no palette quantization
   c->dither_mode = JDITHER_NONE;
 
   // Prefer libjpeg-turbo's packed RGB SIMD path if available.
 #ifdef JCS_EXT_RGB
-  c->out_color_space = JCS_EXT_RGB; // fastest packed RGB on turbo
+  c->out_color_space = JCS_EXT_RGB;  // fastest packed RGB on turbo
 #else
   c->out_color_space = JCS_RGB;
 #endif
@@ -163,7 +163,7 @@ aifocore::Result<RGBImage> DecodeJpeg(const std::vector<uint8_t> &data) {
 
   const uint32_t width = static_cast<uint32_t>(c->output_width);
   const uint32_t height = static_cast<uint32_t>(c->output_height);
-  const int channels = c->output_components; // expect 3 for RGB
+  const int channels = c->output_components;  // expect 3 for RGB
   if (channels != 3) {
     jpeg_finish_decompress(c);
     return aifocore::Status(
@@ -176,7 +176,7 @@ aifocore::Result<RGBImage> DecodeJpeg(const std::vector<uint8_t> &data) {
                   DataType::kUInt8);
 
   // Read scanlines directly into destination buffer (no extra copy)
-  uint8_t *dst = result.GetData();
+  uint8_t* dst = result.GetData();
   const JDIMENSION row_stride = static_cast<JDIMENSION>(width * channels);
 
   // Batch a few scanlines to reduce call overhead
@@ -212,7 +212,7 @@ aifocore::Result<RGBImage> DecodeJpeg(const std::vector<uint8_t> &data) {
 /// @return Result containing decoded RGB image or error
 /// @retval InvalidArgument if data is empty
 /// @retval Internal if PNG decompression fails
-aifocore::Result<RGBImage> DecodePng(const std::vector<uint8_t> &data) {
+aifocore::Result<RGBImage> DecodePng(const std::vector<uint8_t>& data) {
   if (data.empty()) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
                             "Empty PNG data");
@@ -251,7 +251,7 @@ aifocore::Result<RGBImage> DecodePng(const std::vector<uint8_t> &data) {
 /// @return Result containing decoded RGB image or error
 /// @retval InvalidArgument if data is too small or invalid
 /// @retval Unimplemented if BMP is not 24-bit uncompressed
-aifocore::Result<RGBImage> DecodeBmp(const std::vector<uint8_t> &data) {
+aifocore::Result<RGBImage> DecodeBmp(const std::vector<uint8_t>& data) {
   // Simplified BMP decoder for 24-bit uncompressed BMP
   if (data.size() < 54) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
@@ -265,10 +265,10 @@ aifocore::Result<RGBImage> DecodeBmp(const std::vector<uint8_t> &data) {
   }
 
   // Read header
-  const int32_t data_offset = *reinterpret_cast<const int32_t *>(&data[10]);
-  const int32_t width = *reinterpret_cast<const int32_t *>(&data[18]);
-  const int32_t height_raw = *reinterpret_cast<const int32_t *>(&data[22]);
-  const int16_t bits_per_pixel = *reinterpret_cast<const int16_t *>(&data[28]);
+  const int32_t data_offset = *reinterpret_cast<const int32_t*>(&data[10]);
+  const int32_t width = *reinterpret_cast<const int32_t*>(&data[18]);
+  const int32_t height_raw = *reinterpret_cast<const int32_t*>(&data[22]);
+  const int16_t bits_per_pixel = *reinterpret_cast<const int16_t*>(&data[28]);
 
   // Only support 24-bit BMP
   if (bits_per_pixel != 24) {
@@ -294,23 +294,23 @@ aifocore::Result<RGBImage> DecodeBmp(const std::vector<uint8_t> &data) {
                                   static_cast<uint32_t>(height)},
                   ImageFormat::kRGB, DataType::kUInt8);
 
-  uint8_t *result_data = result.GetData();
+  uint8_t* result_data = result.GetData();
 
   // BMP stores pixels as BGR, we need RGB
   for (int32_t y = 0; y < height; ++y) {
     const int32_t src_y = top_down ? y : (height - 1 - y);
-    const uint8_t *src_row = &data[data_offset + src_y * row_stride_src];
-    uint8_t *dst_row = &result_data[y * width * 3];
+    const uint8_t* src_row = &data[data_offset + src_y * row_stride_src];
+    uint8_t* dst_row = &result_data[y * width * 3];
 
     for (int32_t x = 0; x < width; ++x) {
       // Convert BGR to RGB
-      dst_row[x * 3 + 0] = src_row[x * 3 + 2]; // R
-      dst_row[x * 3 + 1] = src_row[x * 3 + 1]; // G
-      dst_row[x * 3 + 2] = src_row[x * 3 + 0]; // B
+      dst_row[x * 3 + 0] = src_row[x * 3 + 2];  // R
+      dst_row[x * 3 + 1] = src_row[x * 3 + 1];  // G
+      dst_row[x * 3 + 2] = src_row[x * 3 + 0];  // B
     }
   }
 
   return result;
 }
 
-} // namespace fastslide::mrxs::internal
+}  // namespace fastslide::mrxs::internal

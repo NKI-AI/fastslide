@@ -1,0 +1,12 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "vector_module",
+    srcs = ["vector_module.cpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//aifo/aifocore:shared",
+        "//aifo/aifocore:shared_python",
+        "@pybind11",
+    ],
+)

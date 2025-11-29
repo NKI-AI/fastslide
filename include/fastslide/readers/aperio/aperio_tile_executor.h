@@ -46,7 +46,7 @@ struct TiffStructureMetadata;
 /// locality, providing performance benefits in both sequential and parallel
 /// contexts.
 class AperioTileExecutor : public TiffBasedTileExecutor<AperioTileExecutor> {
-public:
+ public:
   /// @brief Execute a tile plan sequentially with thread-local buffer
   /// optimization
   /// @param plan Pre-computed tile plan from PrepareRequest
@@ -55,12 +55,11 @@ public:
   /// @param tiff_metadata TIFF structure metadata from plan builder
   /// @return Status indicating success or failure
   /// @note Continues processing even if individual tiles fail (logs warnings)
-  static aifocore::Status
-  ExecutePlan(const core::TilePlan &plan, const AperioReader &reader,
-              runtime::TileWriter &writer,
-              const TiffStructureMetadata &tiff_metadata);
+  static aifocore::Status ExecutePlan(
+      const core::TilePlan& plan, const AperioReader& reader,
+      runtime::TileWriter& writer, const TiffStructureMetadata& tiff_metadata);
 
-private:
+ private:
   /// @brief Execute a single tile operation (called sequentially)
   /// @param op Tile operation descriptor
   /// @param reader Aperio reader instance
@@ -71,11 +70,10 @@ private:
   /// @param is_tiled Whether TIFF is tiled or stripped
   /// @param writer Tile writer for output
   /// @return Status indicating success or failure
-  static aifocore::Status
-  ExecuteTileOperation(const core::TileReadOp &op, const AperioReader &reader,
-                       uint16_t page, uint32_t tile_width, uint32_t tile_height,
-                       uint16_t samples_per_pixel, bool is_tiled,
-                       runtime::TileWriter &writer);
+  static aifocore::Status ExecuteTileOperation(
+      const core::TileReadOp& op, const AperioReader& reader, uint16_t page,
+      uint32_t tile_width, uint32_t tile_height, uint16_t samples_per_pixel,
+      bool is_tiled, runtime::TileWriter& writer);
 
   /// @brief Read and decode a single TIFF tile/strip
   /// @param op Tile operation descriptor
@@ -89,12 +87,12 @@ private:
   /// @note The returned span is valid until the next call to this function on
   ///       the same thread. Uses thread-local buffers to eliminate per-tile
   ///       allocation overhead in parallel processing.
-  static aifocore::Result<std::span<const uint8_t>>
-  ReadAndDecodeTile(const core::TileReadOp &op, const AperioReader &reader,
-                    uint16_t page, uint32_t tile_width, uint32_t tile_height,
-                    uint16_t samples_per_pixel, bool is_tiled);
+  static aifocore::Result<std::span<const uint8_t>> ReadAndDecodeTile(
+      const core::TileReadOp& op, const AperioReader& reader, uint16_t page,
+      uint32_t tile_width, uint32_t tile_height, uint16_t samples_per_pixel,
+      bool is_tiled);
 };
 
-} // namespace fastslide
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_APERIO_APERIO_TILE_EXECUTOR_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_APERIO_APERIO_TILE_EXECUTOR_H_

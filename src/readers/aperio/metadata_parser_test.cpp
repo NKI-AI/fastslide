@@ -14,6 +14,8 @@
 
 #include "fastslide/readers/aperio/metadata_parser.h"
 
+#include <string>
+
 #include "aifocore/status/result.h"
 #include "gtest/gtest.h"
 

@@ -14,6 +14,8 @@
 
 #include "simpletiff/index.h"
 
+#include <utility>
+
 #include "aifocore/platform/portability.h"
 
 namespace simpletiff {
@@ -24,9 +26,11 @@ TiffIndex::~TiffIndex() {
   }
 }
 
-TiffIndex::TiffIndex(TiffIndex &&other) noexcept
-    : bigtiff_(other.bigtiff_), little_endian_(other.little_endian_),
-      file_size_(other.file_size_), fd_(other.fd_),
+TiffIndex::TiffIndex(TiffIndex&& other) noexcept
+    : bigtiff_(other.bigtiff_),
+      little_endian_(other.little_endian_),
+      file_size_(other.file_size_),
+      fd_(other.fd_),
       pages_(std::move(other.pages_)),
       tiles_pool_(std::move(other.tiles_pool_)),
       strips_pool_(std::move(other.strips_pool_)),
@@ -37,7 +41,7 @@ TiffIndex::TiffIndex(TiffIndex &&other) noexcept
   other.fd_ = -1;
 }
 
-TiffIndex &TiffIndex::operator=(TiffIndex &&other) noexcept {
+TiffIndex& TiffIndex::operator=(TiffIndex&& other) noexcept {
   if (this != &other) {
     // Clean up existing fd
     if (fd_ >= 0) {
@@ -62,4 +66,4 @@ TiffIndex &TiffIndex::operator=(TiffIndex &&other) noexcept {
   return *this;
 }
 
-} // namespace simpletiff
+}  // namespace simpletiff

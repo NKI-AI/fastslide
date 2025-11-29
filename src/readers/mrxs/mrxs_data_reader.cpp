@@ -15,6 +15,8 @@
 #include "fastslide/readers/mrxs/mrxs_data_reader.h"
 
 #include <limits>
+#include <string>
+#include <vector>
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
@@ -24,8 +26,8 @@
 namespace fastslide {
 namespace mrxs {
 
-aifocore::Status
-TileDataValidator::ValidateTileParams(const MiraxTileRecord &tile) {
+aifocore::Status TileDataValidator::ValidateTileParams(
+    const MiraxTileRecord& tile) {
   // Validate offset
   if (tile.offset < 0) {
     return aifocore::Status(
@@ -78,10 +80,9 @@ aifocore::Status TileDataValidator::ValidateFileNumber(int32_t file_number,
   return aifocore::Status::OkStatus();
 }
 
-aifocore::Result<std::vector<uint8_t>>
-MrxsDataReader::ReadTileData(const fs::path &dirname,
-                             const MiraxTileRecord &tile,
-                             const std::vector<std::string> &datafile_paths) {
+aifocore::Result<std::vector<uint8_t>> MrxsDataReader::ReadTileData(
+    const fs::path& dirname, const MiraxTileRecord& tile,
+    const std::vector<std::string>& datafile_paths) {
   // Validate file number
   AIFOCORE_RETURN_IF_ERROR(TileDataValidator::ValidateFileNumber(
       tile.data_file_number, datafile_paths.size()));
@@ -122,9 +123,8 @@ MrxsDataReader::ReadTileData(const fs::path &dirname,
   return data;
 }
 
-aifocore::Result<std::vector<uint8_t>>
-MrxsDataReader::ReadData(const fs::path &datafile_path, int64_t offset,
-                         int64_t size) {
+aifocore::Result<std::vector<uint8_t>> MrxsDataReader::ReadData(
+    const fs::path& datafile_path, int64_t offset, int64_t size) {
   // Validate parameters
   if (offset < 0) {
     return aifocore::Status(
@@ -151,5 +151,5 @@ MrxsDataReader::ReadData(const fs::path &datafile_path, int64_t offset,
   return data;
 }
 
-} // namespace mrxs
-} // namespace fastslide
+}  // namespace mrxs
+}  // namespace fastslide

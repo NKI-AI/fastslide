@@ -85,16 +85,16 @@ class ITileWriterStrategy;
 /// TileWriter writer(config);
 /// ```
 class TileWriter {
-public:
+ public:
   /// @brief Destructor (required for PIMPL with incomplete strategy types)
   virtual ~TileWriter();
 
   /// @brief Background color specification (multi-channel)
   struct BackgroundColor {
-    std::vector<double> values; // Per-channel background values [0-255]
+    std::vector<double> values;  // Per-channel background values [0-255]
 
     // Convenience constructors
-    BackgroundColor() : values{255.0} {} // White/max for single channel
+    BackgroundColor() : values{255.0} {}  // White/max for single channel
 
     explicit BackgroundColor(uint8_t gray)
         : values{static_cast<double>(gray)} {}
@@ -114,7 +114,7 @@ public:
     DataType data_type = DataType::kUInt8;
     PlanarConfig planar_config = PlanarConfig::kContiguous;
     BackgroundColor background;
-    bool enable_blending = false; // Auto-detected by default
+    bool enable_blending = false;  // Auto-detected by default
     bool enable_subpixel_resampling = true;
   };
 
@@ -129,14 +129,14 @@ public:
   /// - Choose optimal implementation strategy
   ///
   /// @param plan Execution plan containing output spec and operations
-  explicit TileWriter(const core::TilePlan &plan);
+  explicit TileWriter(const core::TilePlan& plan);
 
   /// @brief Create writer with manual configuration
   ///
   /// For advanced users who need specific control over the writer behavior.
   ///
   /// @param config Manual configuration
-  explicit TileWriter(const Config &config);
+  explicit TileWriter(const Config& config);
 
   /// @brief Convenience constructor for RGB output
   ///
@@ -151,9 +151,11 @@ public:
              bool enable_blending = false);
 
   // Tile writer interface methods
-  [[nodiscard]] aifocore::Status
-  WriteTile(const core::TileReadOp &op, std::span<const uint8_t> pixel_data,
-            uint32_t tile_width, uint32_t tile_height, uint32_t tile_channels);
+  [[nodiscard]] aifocore::Status WriteTile(const core::TileReadOp& op,
+                                           std::span<const uint8_t> pixel_data,
+                                           uint32_t tile_width,
+                                           uint32_t tile_height,
+                                           uint32_t tile_channels);
 
   /// @brief Write tile with explicit mutex for thread-safe accumulation
   ///
@@ -167,10 +169,12 @@ public:
   /// @param tile_height Tile height
   /// @param tile_channels Number of channels
   /// @param accumulator_mutex Mutex for thread-safe accumulation
-  [[nodiscard]] aifocore::Status
-  WriteTile(const core::TileReadOp &op, std::span<const uint8_t> pixel_data,
-            uint32_t tile_width, uint32_t tile_height, uint32_t tile_channels,
-            std::mutex &accumulator_mutex);
+  [[nodiscard]] aifocore::Status WriteTile(const core::TileReadOp& op,
+                                           std::span<const uint8_t> pixel_data,
+                                           uint32_t tile_width,
+                                           uint32_t tile_height,
+                                           uint32_t tile_channels,
+                                           std::mutex& accumulator_mutex);
 
   /// @brief Fill entire canvas with solid color (for empty plans)
   ///
@@ -202,18 +206,18 @@ public:
   /// @brief Get the internal strategy type (for debugging/testing)
   [[nodiscard]] std::string GetStrategyName() const;
 
-private:
+ private:
   /// @brief Create appropriate strategy based on configuration
-  std::unique_ptr<ITileWriterStrategy> CreateStrategy(const Config &config);
+  std::unique_ptr<ITileWriterStrategy> CreateStrategy(const Config& config);
 
   /// @brief Analyze plan to determine optimal configuration
-  Config AnalyzePlan(const core::TilePlan &plan);
+  Config AnalyzePlan(const core::TilePlan& plan);
 
   std::unique_ptr<ITileWriterStrategy> strategy_;
   Config config_;
 };
 
-} // namespace runtime
-} // namespace fastslide
+}  // namespace runtime
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_RUNTIME_TILE_WRITER_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_RUNTIME_TILE_WRITER_H_

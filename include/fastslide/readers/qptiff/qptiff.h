@@ -90,34 +90,34 @@ namespace fastslide {
 
 /// @brief Channel metadata for QPTIFF
 struct QpTiffChannelInfo {
-  uint16_t page;            ///< TIFF page number
-  uint32_t width;           ///< Channel width
-  uint32_t height;          ///< Channel height
-  std::string name;         ///< Channel name (e.g., "ATTO 550")
-  std::string biomarker;    ///< Biomarker information (e.g., "Ki-67")
-  uint32_t exposure_time;   ///< Exposure time in microseconds
-  ColorRGB color;           ///< Channel color from XML
-  uint32_t signal_units;    ///< Signal units (bit depth related)
-  bool tiled;               ///< Whether this channel's page is tiled
-  bool allow_random_access; ///< Whether this channel allows random access
+  uint16_t page;             ///< TIFF page number
+  uint32_t width;            ///< Channel width
+  uint32_t height;           ///< Channel height
+  std::string name;          ///< Channel name (e.g., "ATTO 550")
+  std::string biomarker;     ///< Biomarker information (e.g., "Ki-67")
+  uint32_t exposure_time;    ///< Exposure time in microseconds
+  ColorRGB color;            ///< Channel color from XML
+  uint32_t signal_units;     ///< Signal units (bit depth related)
+  bool tiled;                ///< Whether this channel's page is tiled
+  bool allow_random_access;  ///< Whether this channel allows random access
   // (true for tiled, false for non-tiled)
 };
 
 /// @brief General QPTIFF metadata extracted from XML
 struct QpTiffMetadata {
-  std::string acquisition_software; ///< Software used for acquisition
-  std::string camera_name;          ///< Camera model name
-  std::string camera_type;          ///< Camera type identifier
-  std::string instrument_type;      ///< Instrument type
-  std::string lamp_type;            ///< Lamp type used
-  std::string slide_id;             ///< Slide identifier
-  std::string computer_name;        ///< Computer used for acquisition
-  std::string study_name;           ///< Study name
-  std::string operator_name;        ///< Operator name
-  uint16_t bit_depth;               ///< Camera bit depth
-  uint16_t binning;                 ///< Camera binning factor
-  uint16_t gain;                    ///< Camera gain
-  uint16_t offset_counts;           ///< Camera offset counts
+  std::string acquisition_software;  ///< Software used for acquisition
+  std::string camera_name;           ///< Camera model name
+  std::string camera_type;           ///< Camera type identifier
+  std::string instrument_type;       ///< Instrument type
+  std::string lamp_type;             ///< Lamp type used
+  std::string slide_id;              ///< Slide identifier
+  std::string computer_name;         ///< Computer used for acquisition
+  std::string study_name;            ///< Study name
+  std::string operator_name;         ///< Operator name
+  uint16_t bit_depth;                ///< Camera bit depth
+  uint16_t binning;                  ///< Camera binning factor
+  uint16_t gain;                     ///< Camera gain
+  uint16_t offset_counts;            ///< Camera offset counts
 
   /// @brief Default constructor
   QpTiffMetadata() : bit_depth(0), binning(0), gain(0), offset_counts(0) {}
@@ -125,10 +125,10 @@ struct QpTiffMetadata {
 
 /// @brief Pyramid level metadata for QPTIFF
 struct QpTiffLevelInfo {
-  std::vector<uint16_t> pages;   ///< TIFF pages for this level
-  ImageDimensions size = {0, 0}; ///< Level dimensions (width, height)
-  bool tiled;                    ///< Whether all pages in this level are tiled
-  bool allow_random_access;      ///< Whether this level allows random access
+  std::vector<uint16_t> pages;    ///< TIFF pages for this level
+  ImageDimensions size = {0, 0};  ///< Level dimensions (width, height)
+  bool tiled;                     ///< Whether all pages in this level are tiled
+  bool allow_random_access;       ///< Whether this level allows random access
 
   /// @brief Reserve space for vectors
   /// @param n Number of elements to reserve
@@ -137,16 +137,16 @@ struct QpTiffLevelInfo {
 
 /// @brief Associated image metadata for QPTIFF
 struct QpTiffAssociatedInfo {
-  uint16_t page;                 ///< TIFF page number
-  ImageDimensions size = {0, 0}; ///< Image dimensions (width, height)
+  uint16_t page;                  ///< TIFF page number
+  ImageDimensions size = {0, 0};  ///< Image dimensions (width, height)
 };
 
 /// @brief Slide metadata structure
 struct SlideMetadata {
-  double mpp_x;               ///< Microns per pixel in X direction
-  double mpp_y;               ///< Microns per pixel in Y direction
-  double magnification;       ///< Objective magnification
-  std::string objective_name; ///< Objective name (e.g., "10x")
+  double mpp_x;                ///< Microns per pixel in X direction
+  double mpp_y;                ///< Microns per pixel in Y direction
+  double magnification;        ///< Objective magnification
+  std::string objective_name;  ///< Objective name (e.g., "10x")
 
   /// @brief Default constructor
   SlideMetadata() : mpp_x(0.0), mpp_y(0.0), magnification(0.0) {}
@@ -155,29 +155,29 @@ struct SlideMetadata {
 /// @brief QPTIFF reader class implementing the SlideReader interface
 class QpTiffReader : public TiffBasedReader,
                      public TiffReaderFactory<QpTiffReader> {
-public:
+ public:
   /// @brief Factory method to create a QpTiffReader instance
   /// @param filename Path to the QPTIFF file
   /// @return StatusOr containing the reader instance or an error
-  static aifocore::Result<std::unique_ptr<QpTiffReader>>
-  Create(std::string_view filename);
+  static aifocore::Result<std::unique_ptr<QpTiffReader>> Create(
+      std::string_view filename);
 
   /// @brief Destructor
   ~QpTiffReader() override = default;
 
   // SlideReader interface implementation
   [[nodiscard]] int GetLevelCount() const override;
-  [[nodiscard]] aifocore::Result<LevelInfo>
-  GetLevelInfo(int level) const override;
-  [[nodiscard]] const SlideProperties &GetProperties() const override;
-  [[nodiscard]] std::vector<ChannelMetadata>
-  GetChannelMetadata() const override;
-  [[nodiscard]] std::vector<std::string>
-  GetAssociatedImageNames() const override;
-  [[nodiscard]] aifocore::Result<ImageDimensions>
-  GetAssociatedImageDimensions(std::string_view name) const override;
-  [[nodiscard]] aifocore::Result<RGBImage>
-  ReadAssociatedImage(std::string_view name) const override;
+  [[nodiscard]] aifocore::Result<LevelInfo> GetLevelInfo(
+      int level) const override;
+  [[nodiscard]] const SlideProperties& GetProperties() const override;
+  [[nodiscard]] std::vector<ChannelMetadata> GetChannelMetadata()
+      const override;
+  [[nodiscard]] std::vector<std::string> GetAssociatedImageNames()
+      const override;
+  [[nodiscard]] aifocore::Result<ImageDimensions> GetAssociatedImageDimensions(
+      std::string_view name) const override;
+  [[nodiscard]] aifocore::Result<RGBImage> ReadAssociatedImage(
+      std::string_view name) const override;
 
   [[nodiscard]] Metadata GetMetadata() const override;
 
@@ -188,43 +188,42 @@ public:
   [[nodiscard]] ImageDimensions GetTileSize() const override;
 
   // Two-stage pipeline implementation
-  [[nodiscard]] aifocore::Result<core::TilePlan>
-  PrepareRequest(const core::TileRequest &request) const override;
+  [[nodiscard]] aifocore::Result<core::TilePlan> PrepareRequest(
+      const core::TileRequest& request) const override;
 
-  [[nodiscard]] aifocore::Status
-  ExecutePlan(const core::TilePlan &plan,
-              runtime::TileWriter &writer) const override;
+  [[nodiscard]] aifocore::Status ExecutePlan(
+      const core::TilePlan& plan, runtime::TileWriter& writer) const override;
 
   // Additional QPTIFF-specific methods
   /// @brief Get QPTIFF-specific metadata
   /// @return QPTIFF metadata structure with camera info, etc.
-  [[nodiscard]] const QpTiffMetadata &GetQpTiffMetadata() const {
+  [[nodiscard]] const QpTiffMetadata& GetQpTiffMetadata() const {
     return qptiff_metadata_;
   }
 
   // Additional interface methods
   /// @brief Get pyramid metadata
   /// @return Reference to pyramid levels vector
-  [[nodiscard]] const std::vector<QpTiffLevelInfo> &GetPyramid() const {
+  [[nodiscard]] const std::vector<QpTiffLevelInfo>& GetPyramid() const {
     return pyramid_;
   }
 
   /// @brief Get associated images metadata
   /// @return Reference to associated images map
-  [[nodiscard]] const std::map<std::string, QpTiffAssociatedInfo> &
+  [[nodiscard]] const std::map<std::string, QpTiffAssociatedInfo>&
   GetAssociatedImages() const {
     return associated_images_;
   }
 
   /// @brief Get slide metadata
   /// @return Reference to slide metadata
-  [[nodiscard]] const SlideMetadata &GetSlideMetadata() const {
+  [[nodiscard]] const SlideMetadata& GetSlideMetadata() const {
     return metadata_;
   }
 
   /// @brief Get TIFF index for structure queries
   /// @return Const reference to TIFF index
-  [[nodiscard]] const simpletiff::TiffIndex &GetTiffIndex() const {
+  [[nodiscard]] const simpletiff::TiffIndex& GetTiffIndex() const {
     return *tiff_index_;
   }
 
@@ -255,9 +254,9 @@ public:
   /// @param node XML node
   /// @param tag Tag name
   /// @return Text content
-  static std::string GetText(const void *node, const char *tag);
+  static std::string GetText(const void* node, const char* tag);
 
-private:
+ private:
   /// @brief Allow factory access to private constructor and methods
   friend class TiffReaderFactory<QpTiffReader>;
 
@@ -266,17 +265,17 @@ private:
   explicit QpTiffReader(std::string_view filename);
 
   std::vector<QpTiffLevelInfo>
-      pyramid_; ///< Pyramid levels (index = level number)
+      pyramid_;  ///< Pyramid levels (index = level number)
   std::map<std::string, QpTiffAssociatedInfo>
-      associated_images_;          ///< Associated images
-  SlideMetadata metadata_;         ///< Slide metadata
-  QpTiffMetadata qptiff_metadata_; ///< QPTIFF-specific metadata
+      associated_images_;           ///< Associated images
+  SlideMetadata metadata_;          ///< Slide metadata
+  QpTiffMetadata qptiff_metadata_;  ///< QPTIFF-specific metadata
   std::vector<QpTiffChannelInfo>
-      channels_; ///< Channel information for all channels
+      channels_;  ///< Channel information for all channels
   PlanarConfig output_planar_config_ =
-      PlanarConfig::kSeparate; ///< Default to kSeparate for spectral images
+      PlanarConfig::kSeparate;  ///< Default to kSeparate for spectral images
   ImageFormat format_ =
-      ImageFormat::kSpectral; ///< Image format (RGB or Spectral)
+      ImageFormat::kSpectral;  ///< Image format (RGB or Spectral)
 
   /// @brief SimpleTiff index for thread-safe TIFF operations
   std::unique_ptr<simpletiff::TiffIndex> tiff_index_;
@@ -289,6 +288,6 @@ private:
   void PopulateSlideProperties();
 };
 
-} // namespace fastslide
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_QPTIFF_QPTIFF_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_QPTIFF_QPTIFF_H_

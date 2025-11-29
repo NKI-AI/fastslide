@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <cstring>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 namespace simpletiff {
@@ -195,7 +196,7 @@ std::vector<uint8_t> ReadTestDataFile(const char* filename) {
   }
 
   fseek(f, 0, SEEK_END);
-  long size = ftell(f);
+  int64_t size = ftell(f);
   fseek(f, 0, SEEK_SET);
   std::vector<uint8_t> data(size);
   fread(data.data(), 1, size, f);

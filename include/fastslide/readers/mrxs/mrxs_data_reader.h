@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <string>
 #include <vector>
 
 #include "aifocore/status/result.h"
@@ -40,7 +41,7 @@ namespace mrxs {
 /// prevent crashes from malformed data. This centralizes validation logic
 /// that was previously duplicated across multiple locations.
 class TileDataValidator {
-public:
+ public:
   /// @brief Validate tile parameters
   ///
   /// Checks that tile offset, length, and derived values are valid and safe:
@@ -50,7 +51,7 @@ public:
   ///
   /// @param tile Tile record to validate
   /// @return OkStatus if valid, error otherwise
-  static aifocore::Status ValidateTileParams(const MiraxTileRecord &tile);
+  static aifocore::Status ValidateTileParams(const MiraxTileRecord& tile);
 
   /// @brief Validate file number is within range
   ///
@@ -70,7 +71,7 @@ public:
 /// Note: This class intentionally doesn't cache file handles. File handle
 /// pooling should be implemented at a higher level if needed for performance.
 class MrxsDataReader {
-public:
+ public:
   /// @brief Read raw tile data from a data file
   ///
   /// Opens the appropriate data file, seeks to the tile's offset, and reads
@@ -84,9 +85,9 @@ public:
   /// @retval InvalidArgument if tile params are invalid
   /// @retval NotFound if data file cannot be opened
   /// @retval Internal if seek or read fails
-  static aifocore::Result<std::vector<uint8_t>>
-  ReadTileData(const fs::path &dirname, const MiraxTileRecord &tile,
-               const std::vector<std::string> &datafile_paths);
+  static aifocore::Result<std::vector<uint8_t>> ReadTileData(
+      const fs::path& dirname, const MiraxTileRecord& tile,
+      const std::vector<std::string>& datafile_paths);
 
   /// @brief Read data from a specific offset in a data file
   ///
@@ -97,11 +98,11 @@ public:
   /// @param offset Byte offset in file
   /// @param size Number of bytes to read
   /// @return Raw data or error
-  static aifocore::Result<std::vector<uint8_t>>
-  ReadData(const fs::path &datafile_path, int64_t offset, int64_t size);
+  static aifocore::Result<std::vector<uint8_t>> ReadData(
+      const fs::path& datafile_path, int64_t offset, int64_t size);
 };
 
-} // namespace mrxs
-} // namespace fastslide
+}  // namespace mrxs
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_DATA_READER_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_DATA_READER_H_

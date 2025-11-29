@@ -1,0 +1,30 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+
+cc_binary(
+    name = "fastslide_tile_benchmark",
+    srcs = ["fastslide_tile_benchmark.cpp"],
+    copts = [
+        "-std=c++20",
+        "-O3",
+    ],
+    deps = [
+        "//aifo/fastslide:fastslide_lib",
+        "//aifo/fastslide:formats_aperio",
+        "//aifo/fastslide:formats_mrxs",
+        "//aifo/fastslide:formats_qptiff",
+        "@google_benchmark//:benchmark",
+    ],
+)
+
+cc_binary(
+    name = "openslide_tile_benchmark",
+    srcs = ["openslide_tile_benchmark.cpp"],
+    copts = [
+        "-std=c++20",
+        "-O3",
+    ],
+    deps = [
+        "@google_benchmark//:benchmark",
+        "@openslide",
+    ],
+)

@@ -31,7 +31,7 @@ namespace internal {
 /// @param format Image format (JPEG/PNG/BMP)
 /// @return Result containing decoded RGB image or error
 aifocore::Result<RGBImage> DecodeImage(const std::vector<uint8_t>& data,
-                                     MrxsImageFormat format);
+                                       MrxsImageFormat format);
 
 /// @brief Decode JPEG image data
 /// @param data JPEG compressed data

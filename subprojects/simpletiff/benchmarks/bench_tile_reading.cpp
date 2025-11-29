@@ -14,7 +14,6 @@
 
 #include <benchmark/benchmark.h>
 #include <tiffio.h>
-#include "aifocore/platform/portability.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -22,6 +21,7 @@
 #include <random>
 #include <vector>
 
+#include "aifocore/platform/portability.h"
 #include "simpletiff/index.h"
 #include "simpletiff/reader.h"
 #include "simpletiff/tiff_parser.h"

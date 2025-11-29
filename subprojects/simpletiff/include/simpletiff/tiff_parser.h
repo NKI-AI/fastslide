@@ -14,11 +14,12 @@
 //
 // TIFF parser for building the index structure
 
-#ifndef SIMPLETIFF_TIFF_PARSER_H_
-#define SIMPLETIFF_TIFF_PARSER_H_
+#ifndef AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_TIFF_PARSER_H_
+#define AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_TIFF_PARSER_H_
 
 #include <cstdint>
 #include <string_view>
+#include <vector>
 
 #include "simpletiff/index.h"
 
@@ -115,4 +116,4 @@ void AddSingleJpegPage(TiffIndex& index, const PageHeader& header,
 
 }  // namespace simpletiff
 
-#endif  // SIMPLETIFF_TIFF_PARSER_H_
+#endif  // AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_TIFF_PARSER_H_

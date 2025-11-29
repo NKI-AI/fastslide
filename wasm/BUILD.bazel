@@ -1,0 +1,62 @@
+load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+# WASM wrapper binary
+cc_binary(
+    name = "fastslide_multiplex",
+    srcs = [
+        "fastslide_wrapper.cpp",
+    ],
+    copts = [
+        "-std=c++20",
+        "-Wno-unused-parameter",
+        "-fexceptions",  # Enable C++ exceptions
+        "-UNDEBUG",  # Enable debug output and assertions
+    ],
+    linkopts = [
+        # Emscripten-specific link options
+        "-sWASM=1",
+        "-sEXPORT_ES6=1",
+        "-sMODULARIZE=1",
+        "-sENVIRONMENT=web,worker,node",
+        "-sNO_EXIT_RUNTIME=1",
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sINITIAL_MEMORY=134217728",  # 128MB initial memory
+        "-sMAXIMUM_MEMORY=4294967296",  # 4GB maximum memory
+        "-sFILESYSTEM=1",  # Enable virtual filesystem
+        "-sFORCE_FILESYSTEM=1",  # Force filesystem to be included
+        "-sEXPORT_NAME=createFastSlideModule",
+        # Export FS API for filesystem operations
+        "-sEXPORTED_RUNTIME_METHODS=['FS','WORKERFS']",
+        # Enable embind for C++ bindings (non-threaded)
+        "-lembind",
+        # Force WORKERFS to be included (required for lazy file loading)
+        "-lworkerfs.js",
+        # Exception handling - MUST be enabled for C++ exceptions to work
+        "-fexceptions",
+        "-sDISABLE_EXCEPTION_CATCHING=0",
+        # Disable pthread/shared memory to avoid linking issues
+        "-sUSE_PTHREADS=0",
+        # Optimize
+        "-O2",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:wasm32",
+    ],
+    deps = [
+        "//aifo/fastslide:fastslide_lib",
+    ],
+)
+
+wasm_cc_binary(
+    name = "fastslide_multiplex_wasm",
+    cc_target = ":fastslide_multiplex",
+    visibility = ["//visibility:public"],
+)
+
+# Convenient aliases for building with different platforms
+alias(
+    name = "wasm",
+    actual = ":fastslide_multiplex_wasm",
+    visibility = ["//visibility:public"],
+)

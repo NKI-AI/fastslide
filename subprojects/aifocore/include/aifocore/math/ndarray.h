@@ -30,14 +30,15 @@
 /// Lifetime safety: Expressions and views hold raw pointers. Use ref-qualifiers
 /// to prevent creating expressions/views from rvalues (which would dangle).
 
-#ifndef AIFOCORE_MATH_NDARRAY_H_
-#define AIFOCORE_MATH_NDARRAY_H_
+#ifndef AIFO_AIFOCORE_INCLUDE_AIFOCORE_MATH_NDARRAY_H_
+#define AIFO_AIFOCORE_INCLUDE_AIFOCORE_MATH_NDARRAY_H_
 
 #include <array>
 #include <concepts>
 #include <cstddef>
 #include <stdexcept>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace aifocore::math {
@@ -541,6 +542,7 @@ class NDArray : public NDArrayExpression<NDArray<T, N>> {
 
     requires NDArrayExpressionConcept<Expr, T, N> &&
                  (!std::is_same_v<std::decay_t<Expr>, NDArray>)
+  // NOLINTNEXTLINE(runtime/explicit)
   NDArray(const Expr& expr)
       : shape_(expr.Shape()),
         strides_(ComputeStrides(shape_)),
@@ -704,4 +706,4 @@ class NDArray : public NDArrayExpression<NDArray<T, N>> {
 
 }  // namespace aifocore::math
 
-#endif  // AIFOCORE_MATH_NDARRAY_H_
+#endif  // AIFO_AIFOCORE_INCLUDE_AIFOCORE_MATH_NDARRAY_H_

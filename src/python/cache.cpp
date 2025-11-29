@@ -27,16 +27,20 @@ namespace fastslide::python {
 CacheManager::CacheManager(std::shared_ptr<TileCache> cache)
     : cache_(std::move(cache)) {}
 
-aifocore::Result<std::shared_ptr<CacheManager>>
-CacheManager::Create(size_t capacity) {
+aifocore::Result<std::shared_ptr<CacheManager>> CacheManager::Create(
+    size_t capacity) {
   std::shared_ptr<TileCache> cache;
   AIFOCORE_ASSIGN_OR_RETURN(cache, TileCache::CreateShared(capacity));
   return std::shared_ptr<CacheManager>(new CacheManager(std::move(cache)));
 }
 
-std::shared_ptr<TileCache> CacheManager::GetCache() const { return cache_; }
+std::shared_ptr<TileCache> CacheManager::GetCache() const {
+  return cache_;
+}
 
-void CacheManager::Clear() { cache_->Clear(); }
+void CacheManager::Clear() {
+  cache_->Clear();
+}
 
 TileCache::Stats CacheManager::GetBasicStats() const {
   return cache_->GetStats();
@@ -51,7 +55,7 @@ CacheInspectionStats CacheManager::GetDetailedStats() const {
   detailed.misses = basic.misses;
   detailed.hit_ratio = basic.hit_ratio;
   detailed.memory_usage_mb =
-      basic.memory_usage_bytes / (1024.0 * 1024.0); // Convert bytes to MB
+      basic.memory_usage_bytes / (1024.0 * 1024.0);  // Convert bytes to MB
   // TODO(jonasteuwen): Add actual key tracking if needed
   return detailed;
 }
@@ -65,14 +69,14 @@ aifocore::Status CacheManager::Resize(size_t new_capacity) {
 }
 
 // GlobalCacheManager implementation
-GlobalCacheManager &GlobalCacheManager::Instance() {
+GlobalCacheManager& GlobalCacheManager::Instance() {
   static GlobalCacheManager instance;
   return instance;
 }
 
 std::shared_ptr<TileCache> GlobalCacheManager::GetCache() {
   return std::shared_ptr<TileCache>(&GlobalTileCache::Instance().GetCache(),
-                                    [](TileCache *) {});
+                                    [](TileCache*) {});
 }
 
 aifocore::Status GlobalCacheManager::SetCapacity(size_t capacity) {
@@ -92,7 +96,7 @@ CacheInspectionStats GlobalCacheManager::GetDetailedStats() {
   detailed.misses = basic.misses;
   detailed.hit_ratio = basic.hit_ratio;
   detailed.memory_usage_mb =
-      basic.memory_usage_bytes / (1024.0 * 1024.0); // Convert bytes to MB
+      basic.memory_usage_bytes / (1024.0 * 1024.0);  // Convert bytes to MB
   // TODO(jonasteuwen): Add actual key tracking if needed
   return detailed;
 }
@@ -101,4 +105,4 @@ void GlobalCacheManager::Clear() {
   GlobalTileCache::Instance().GetCache().Clear();
 }
 
-} // namespace fastslide::python
+}  // namespace fastslide::python

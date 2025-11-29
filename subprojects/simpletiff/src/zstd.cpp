@@ -17,6 +17,7 @@
 #include <zstd.h>
 
 #include <cstdio>
+#include <vector>
 
 namespace simpletiff {
 
@@ -27,7 +28,7 @@ bool DecompressZstd(std::span<const uint8_t> compressed,
   }
 
   // Get decompressed size from compressed frame
-  const unsigned long long decompressed_size =
+  const size_t decompressed_size =
       ZSTD_getFrameContentSize(compressed.data(), compressed.size());
 
   if (decompressed_size == ZSTD_CONTENTSIZE_ERROR) {

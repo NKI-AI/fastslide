@@ -1,0 +1,15 @@
+load("@aspect_rules_py//py:defs.bzl", "py_test")
+load("@pip//:requirements.bzl", "requirement")
+
+REQUIREMENTS = [
+    requirement("pytest"),
+    requirement("pytest-mock"),
+    requirement("numpy"),
+    "//aifo/fastslide/python:fastslide",
+]
+
+py_test(
+    name = "cache_test",
+    srcs = ["cache_test.py"],
+    deps = REQUIREMENTS,
+)

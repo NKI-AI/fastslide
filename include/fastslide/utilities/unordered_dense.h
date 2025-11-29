@@ -1,5 +1,5 @@
 ///////////////////////// ankerl::unordered_dense::{map, set} /////////////////////////
-
+// NOLINTBEGIN
 // A fast & densely stored hashmap and hashset based on robin-hood backward shift deletion.
 // Version 4.5.0
 // https://github.com/martinus/unordered_dense
@@ -2298,3 +2298,4 @@ auto erase_if(ankerl::unordered_dense::detail::table<
 
 #endif
 #endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_UTILITIES_UNORDERED_DENSE_H_
+// NOLINTEND

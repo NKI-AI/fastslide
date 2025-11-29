@@ -32,9 +32,9 @@ class ITileWriterStrategy {
   virtual ~ITileWriterStrategy() = default;
 
   virtual aifocore::Status WriteTile(const core::TileReadOp& op,
-                                 std::span<const uint8_t> pixel_data,
-                                 uint32_t tile_width, uint32_t tile_height,
-                                 uint32_t tile_channels) = 0;
+                                     std::span<const uint8_t> pixel_data,
+                                     uint32_t tile_width, uint32_t tile_height,
+                                     uint32_t tile_channels) = 0;
 
   virtual aifocore::Status Finalize() = 0;
   virtual ImageDimensions GetDimensions() const = 0;

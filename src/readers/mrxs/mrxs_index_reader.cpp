@@ -16,6 +16,9 @@
 
 #include <cstring>
 #include <limits>
+#include <tuple>
+#include <utility>
+#include <vector>
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
@@ -25,9 +28,8 @@
 namespace fastslide {
 namespace mrxs {
 
-aifocore::Result<MrxsIndexReader>
-MrxsIndexReader::Open(const fs::path &index_path,
-                      const SlideDataInfo &slide_info) {
+aifocore::Result<MrxsIndexReader> MrxsIndexReader::Open(
+    const fs::path& index_path, const SlideDataInfo& slide_info) {
   // Open index file
   FileReader file;
   AIFOCORE_ASSIGN_OR_RETURN(file, FileReader::Open(index_path, "rb"));
@@ -42,9 +44,8 @@ MrxsIndexReader::Open(const fs::path &index_path,
                          nonhier_root);
 }
 
-aifocore::Result<std::tuple<int64_t, int64_t>>
-MrxsIndexReader::ReadHeader(const FileReader &file,
-                            const SlideDataInfo &slide_info) {
+aifocore::Result<std::tuple<int64_t, int64_t>> MrxsIndexReader::ReadHeader(
+    const FileReader& file, const SlideDataInfo& slide_info) {
   // Read version
   char version[constants::kIndexVersionSize + 1] = {0};
   AIFOCORE_RETURN_IF_ERROR(file.Read(version, constants::kIndexVersionSize));
@@ -74,15 +75,16 @@ MrxsIndexReader::ReadHeader(const FileReader &file,
 }
 
 MrxsIndexReader::MrxsIndexReader(FileReader file,
-                                 const SlideDataInfo *slide_info,
+                                 const SlideDataInfo* slide_info,
                                  int64_t hierarchical_root,
                                  int64_t nonhier_root)
-    : file_(std::move(file)), slide_info_(slide_info),
-      hierarchical_root_(hierarchical_root), nonhier_root_(nonhier_root) {}
+    : file_(std::move(file)),
+      slide_info_(slide_info),
+      hierarchical_root_(hierarchical_root),
+      nonhier_root_(nonhier_root) {}
 
-aifocore::Result<std::vector<MiraxTileRecord>>
-MrxsIndexReader::ReadLevelTiles(int level_index,
-                                const PyramidLevelParameters &level_params) {
+aifocore::Result<std::vector<MiraxTileRecord>> MrxsIndexReader::ReadLevelTiles(
+    int level_index, const PyramidLevelParameters& level_params) {
   const int zoom_levels = static_cast<int>(slide_info_->zoom_levels.size());
   if (level_index < 0 || level_index >= zoom_levels) {
     return aifocore::Status(
@@ -122,7 +124,7 @@ MrxsIndexReader::ReadLevelTiles(int level_index,
 
   // Get slide dimensions
   const int total_images_horizontal = slide_info_->images_x;
-  const SlideZoomLevel &zoom_level = slide_info_->zoom_levels[level_index];
+  const SlideZoomLevel& zoom_level = slide_info_->zoom_levels[level_index];
 
   // Parse paged image records
   std::vector<MiraxTileRecord> tiles;
@@ -210,7 +212,7 @@ MrxsIndexReader::ReadLevelTiles(int level_index,
 
     // Check if there are more pages
     if (next_page_pointer == 0) {
-      break; // End of page list
+      break;  // End of page list
     }
 
     // Navigate to next page
@@ -223,8 +225,8 @@ MrxsIndexReader::ReadLevelTiles(int level_index,
 std::vector<MiraxTileRecord> MrxsIndexReader::SubdivideImage(
     int64_t image_index, int32_t image_grid_x, int32_t image_grid_y,
     int64_t data_offset, int64_t data_length, int64_t data_file_number,
-    int level_index, const PyramidLevelParameters &level_params,
-    const SlideZoomLevel &zoom_level) {
+    int level_index, const PyramidLevelParameters& level_params,
+    const SlideZoomLevel& zoom_level) {
 
   std::vector<MiraxTileRecord> tiles;
 
@@ -244,7 +246,7 @@ std::vector<MiraxTileRecord> MrxsIndexReader::SubdivideImage(
     const int tile_grid_y =
         image_grid_y + (sub_tile_y_idx * camera_image_divisions);
     if (tile_grid_y >= total_images_vertical) {
-      break; // Outside slide bounds
+      break;  // Outside slide bounds
     }
 
     for (int sub_tile_x_idx = 0;
@@ -253,7 +255,7 @@ std::vector<MiraxTileRecord> MrxsIndexReader::SubdivideImage(
       const int tile_grid_x =
           image_grid_x + (sub_tile_x_idx * camera_image_divisions);
       if (tile_grid_x >= total_images_horizontal) {
-        break; // Outside slide bounds
+        break;  // Outside slide bounds
       }
 
       // Create tile metadata
@@ -289,8 +291,8 @@ std::vector<MiraxTileRecord> MrxsIndexReader::SubdivideImage(
   return tiles;
 }
 
-aifocore::Result<NonHierRecordData>
-MrxsIndexReader::ReadNonHierRecord(int record_index) {
+aifocore::Result<NonHierRecordData> MrxsIndexReader::ReadNonHierRecord(
+    int record_index) {
   // Navigate to non-hierarchical root
   AIFOCORE_RETURN_IF_ERROR(file_.Seek(nonhier_root_));
 
@@ -347,7 +349,7 @@ MrxsIndexReader::ReadNonHierRecord(int record_index) {
   for (int i = 0; i < 3; ++i) {
     int32_t skip;
     AIFOCORE_ASSIGN_OR_RETURN(skip, ReadLeInt32(file_.Get()));
-    (void)skip; // Intentionally unused
+    (void)skip;  // Intentionally unused
   }
 
   // Read actual data location
@@ -381,5 +383,5 @@ MrxsIndexReader::ReadNonHierRecord(int record_index) {
   return result;
 }
 
-} // namespace mrxs
-} // namespace fastslide
+}  // namespace mrxs
+}  // namespace fastslide

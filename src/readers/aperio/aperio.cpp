@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <iostream>
 #include <map>
 #include <memory>
 #include <string>
@@ -40,8 +41,8 @@ namespace fs = std::filesystem;
 namespace fastslide {
 
 // AperioReader implementation
-aifocore::Result<std::unique_ptr<AperioReader>>
-AperioReader::Create(fs::path filename) {
+aifocore::Result<std::unique_ptr<AperioReader>> AperioReader::Create(
+    fs::path filename) {
   return CreateImpl(filename);
 }
 
@@ -65,7 +66,7 @@ aifocore::Result<LevelInfo> AperioReader::GetLevelInfo(int level) const {
                             aifocore::fmt::format("Level {} not found", level));
   }
 
-  const auto &aperio_level = pyramid_levels_[level];
+  const auto& aperio_level = pyramid_levels_[level];
   LevelInfo level_info;
   level_info.dimensions = {aperio_level.size[0], aperio_level.size[1]};
   level_info.downsample_factor = aperio_level.downsample_factor;
@@ -73,7 +74,7 @@ aifocore::Result<LevelInfo> AperioReader::GetLevelInfo(int level) const {
   return level_info;
 }
 
-const SlideProperties &AperioReader::GetProperties() const {
+const SlideProperties& AperioReader::GetProperties() const {
   return properties_;
 }
 
@@ -87,15 +88,15 @@ std::vector<ChannelMetadata> AperioReader::GetChannelMetadata() const {
 std::vector<std::string> AperioReader::GetAssociatedImageNames() const {
   std::vector<std::string> names;
   names.reserve(associated_images_.size());
-  for (const auto &img : associated_images_) {
+  for (const auto& img : associated_images_) {
     names.push_back(img.name);
   }
   return names;
 }
 
-aifocore::Result<ImageDimensions>
-AperioReader::GetAssociatedImageDimensions(std::string_view name) const {
-  for (const auto &img : associated_images_) {
+aifocore::Result<ImageDimensions> AperioReader::GetAssociatedImageDimensions(
+    std::string_view name) const {
+  for (const auto& img : associated_images_) {
     if (img.name == name) {
       return ImageDimensions{img.size[0], img.size[1]};
     }
@@ -105,10 +106,10 @@ AperioReader::GetAssociatedImageDimensions(std::string_view name) const {
       aifocore::fmt::format("Associated image '{}' not found", name));
 }
 
-aifocore::Result<RGBImage>
-AperioReader::ReadAssociatedImage(std::string_view name) const {
-  const AperioAssociatedInfo *info = nullptr;
-  for (const auto &img : associated_images_) {
+aifocore::Result<RGBImage> AperioReader::ReadAssociatedImage(
+    std::string_view name) const {
+  const AperioAssociatedInfo* info = nullptr;
+  for (const auto& img : associated_images_) {
     if (img.name == name) {
       info = &img;
       break;
@@ -129,7 +130,7 @@ AperioReader::ReadAssociatedImage(std::string_view name) const {
                               info->page, name));
   }
 
-  const auto &page_header = tiff_index_->Page(info->page);
+  const auto& page_header = tiff_index_->Page(info->page);
   const uint32_t width = info->size[0];
   const uint32_t height = info->size[1];
   const uint16_t samples_per_pixel = page_header.samples_per_pixel;
@@ -159,22 +160,22 @@ AperioReader::ReadAssociatedImage(std::string_view name) const {
 ImageDimensions AperioReader::GetTileSize() const {
   // Try to get tile size from level 0
   if (pyramid_levels_.empty() || !tiff_index_) {
-    return ImageDimensions{256, 256}; // Default for Aperio
+    return ImageDimensions{256, 256};  // Default for Aperio
   }
 
   // Get tile dimensions from the first level using simpletiff
   const uint16_t page = pyramid_levels_[0].page;
   if (page >= tiff_index_->NumPages()) {
-    return ImageDimensions{256, 256}; // Default fallback
+    return ImageDimensions{256, 256};  // Default fallback
   }
 
-  const auto &page_header = tiff_index_->Page(page);
+  const auto& page_header = tiff_index_->Page(page);
   if (page_header.storage == simpletiff::Storage::kTiles) {
-    const auto &tiles = tiff_index_->Tiles(page_header.payload_id);
+    const auto& tiles = tiff_index_->Tiles(page_header.payload_id);
     return ImageDimensions{tiles.tile_w, tiles.tile_h};
   }
 
-  return ImageDimensions{256, 256}; // Default for Aperio
+  return ImageDimensions{256, 256};  // Default for Aperio
 }
 
 aifocore::Result<std::string> AperioReader::GetQuickHash() const {
@@ -194,22 +195,22 @@ aifocore::Result<std::string> AperioReader::GetQuickHash() const {
     return hasher.Finalize();
   }
 
-  const auto &lowest_res = pyramid_levels_.back();
+  const auto& lowest_res = pyramid_levels_.back();
   const uint16_t page = lowest_res.page;
 
   if (page >= tiff_index_->NumPages()) {
     return hasher.Finalize();
   }
 
-  const auto &page_header = tiff_index_->Page(page);
+  const auto& page_header = tiff_index_->Page(page);
 
   // Get tile/strip info
   uint32_t total_tiles = 0;
   if (page_header.storage == simpletiff::Storage::kTiles) {
-    const auto &tiles = tiff_index_->Tiles(page_header.payload_id);
+    const auto& tiles = tiff_index_->Tiles(page_header.payload_id);
     total_tiles = tiles.tiles_x * tiles.tiles_y;
   } else if (page_header.storage == simpletiff::Storage::kStrips) {
-    const auto &strips = tiff_index_->Strips(page_header.payload_id);
+    const auto& strips = tiff_index_->Strips(page_header.payload_id);
     // Calculate number of strips
     const uint32_t rows_per_strip =
         strips.rows_per_strip > 0 ? strips.rows_per_strip : lowest_res.size[1];
@@ -236,28 +237,27 @@ aifocore::Result<std::string> AperioReader::GetQuickHash() const {
   // Hash TIFF properties from directory 0 (matches OpenSlide's
   // store_and_hash_properties)
   if (tiff_index_->NumPages() > 0) {
-    const auto &page0 = tiff_index_->Page(0);
+    const auto& page0 = tiff_index_->Page(0);
 
     // Helper lambda to hash property name + value (with null terminators)
-    auto hash_string_prop = [&](const char *prop_name,
-                                const std::string &value_str) {
+    auto hash_string_prop = [&](const char* prop_name,
+                                const std::string& value_str) {
       // Hash property name (with null terminator)
       auto name_status = hasher.HashData(
-          reinterpret_cast<const uint8_t *>(prop_name), strlen(prop_name) + 1);
+          reinterpret_cast<const uint8_t*>(prop_name), strlen(prop_name) + 1);
       if (!name_status.ok()) {
-        return; // Skip this property if hashing fails
+        return;  // Skip this property if hashing fails
       }
 
       // Hash property value (with null terminator)
       aifocore::Status value_status;
       if (!value_str.empty()) {
-        value_status = hasher.HashData(
-            reinterpret_cast<const uint8_t *>(value_str.c_str()),
-            value_str.length() + 1);
+        value_status =
+            hasher.HashData(reinterpret_cast<const uint8_t*>(value_str.c_str()),
+                            value_str.length() + 1);
       } else {
         // Hash empty string with null terminator if property doesn't exist
-        value_status =
-            hasher.HashData(reinterpret_cast<const uint8_t *>(""), 1);
+        value_status = hasher.HashData(reinterpret_cast<const uint8_t*>(""), 1);
       }
       // Continue even if value hashing fails (quickhash is best-effort)
       if (!value_status.ok()) {
@@ -300,7 +300,7 @@ Metadata AperioReader::GetMetadata() const {
   metadata[std::string(MetadataKeys::kScannerID)] = aperio_metadata_.scanner_id;
   metadata[std::string(MetadataKeys::kScannerModel)] = std::string("Aperio");
   metadata[std::string(MetadataKeys::kChannels)] =
-      static_cast<size_t>(3); // RGB
+      static_cast<size_t>(3);  // RGB
   metadata[std::string(MetadataKeys::kAssociatedImages)] =
       associated_images_.size();
 
@@ -336,7 +336,7 @@ aifocore::Status AperioReader::LoadDirectories() {
   // Iterate over all pages in the TIFF index
   bool metadata_extracted = false;
   for (size_t i = 0; i < tiff_index_->NumPages(); ++i) {
-    const auto &page = tiff_index_->Page(i);
+    const auto& page = tiff_index_->Page(i);
 
     // Validate dimensions
     if (page.width == 0 || page.height == 0) {
@@ -395,7 +395,7 @@ aifocore::Status AperioReader::LoadDirectories() {
 
   // Sort tiled directories by area (largest first)
   std::sort(tiled_directories.begin(), tiled_directories.end(),
-            [](const TiledDirectoryInfo &a, const TiledDirectoryInfo &b) {
+            [](const TiledDirectoryInfo& a, const TiledDirectoryInfo& b) {
               return a.area > b.area;
             });
 
@@ -404,7 +404,7 @@ aifocore::Status AperioReader::LoadDirectories() {
 
   if (!tiled_directories.empty()) {
     // First (largest) becomes level 0
-    const auto &level0 = tiled_directories[0];
+    const auto& level0 = tiled_directories[0];
     pyramid_levels_.push_back(
         AperioLevelInfo{.page = level0.page,
                         .size = {level0.size[0], level0.size[1]},
@@ -412,7 +412,7 @@ aifocore::Status AperioReader::LoadDirectories() {
 
     // Calculate downsample factors for remaining levels
     for (size_t i = 1; i < tiled_directories.size(); ++i) {
-      const auto &level = tiled_directories[i];
+      const auto& level = tiled_directories[i];
 
       // Calculate downsample as average of width and height ratios
       double downsample = (static_cast<double>(level0.size[0]) /
@@ -443,7 +443,7 @@ void AperioReader::PopulateSlideProperties() {
   // Set bounds to full slide (Aperio has complete coverage)
   auto level0_or = GetLevelInfo(0);
   if (level0_or.ok()) {
-    const auto &level0 = *level0_or;
+    const auto& level0 = *level0_or;
     properties_.bounds =
         SlideBounds(0, 0, level0.dimensions[0], level0.dimensions[1]);
   }
@@ -462,16 +462,16 @@ void AperioReader::PopulateSlideProperties() {
 //    sub-region if the tile is partially clipped, and writes to output.
 // ============================================================================
 
-aifocore::Result<core::TilePlan>
-AperioReader::PrepareRequest(const core::TileRequest &request) const {
+aifocore::Result<core::TilePlan> AperioReader::PrepareRequest(
+    const core::TileRequest& request) const {
   // Delegate to plan builder which handles all planning logic
   return AperioPlanBuilder::BuildPlan(request, *this, tiff_metadata_);
 }
 
-aifocore::Status AperioReader::ExecutePlan(const core::TilePlan &plan,
-                                           runtime::TileWriter &writer) const {
+aifocore::Status AperioReader::ExecutePlan(const core::TilePlan& plan,
+                                           runtime::TileWriter& writer) const {
   // Delegate to executor which handles tile reading with handle pool
   return AperioTileExecutor::ExecutePlan(plan, *this, writer, tiff_metadata_);
 }
 
-} // namespace fastslide
+}  // namespace fastslide

@@ -15,6 +15,7 @@
 #include "fastslide/readers/qptiff/qptiff_tile_executor.h"
 
 #include <cstring>
+#include <iostream>
 #include <limits>
 #include <span>
 #include <vector>
@@ -27,12 +28,12 @@
 namespace fastslide {
 
 aifocore::Status QptiffTileExecutor::ExecutePlan(
-    const core::TilePlan &plan, const std::vector<QpTiffLevelInfo> &pyramid,
-    const simpletiff::TiffIndex &tiff_index, runtime::TileWriter &writer) {
+    const core::TilePlan& plan, const std::vector<QpTiffLevelInfo>& pyramid,
+    const simpletiff::TiffIndex& tiff_index, runtime::TileWriter& writer) {
 
   if (plan.operations.empty()) {
     // No tiles to read - fill with background color
-    const auto &bg = plan.output.background;
+    const auto& bg = plan.output.background;
     return writer.FillWithColor(bg.r, bg.g, bg.b);
   }
 
@@ -42,11 +43,11 @@ aifocore::Status QptiffTileExecutor::ExecutePlan(
                             aifocore::fmt::format("Invalid level: {}", level));
   }
 
-  const QpTiffLevelInfo &level_info = pyramid[level];
+  const QpTiffLevelInfo& level_info = pyramid[level];
   PageState page_state;
 
   // Process each tile operation
-  for (const auto &op : plan.operations) {
+  for (const auto& op : plan.operations) {
     AIFOCORE_RETURN_IF_ERROR(
         ExecuteTileOperation(op, level_info, tiff_index, writer, page_state));
   }
@@ -55,12 +56,12 @@ aifocore::Status QptiffTileExecutor::ExecutePlan(
 }
 
 aifocore::Status QptiffTileExecutor::ExecuteTileOperation(
-    const core::TileReadOp &op, const QpTiffLevelInfo &level_info,
-    const simpletiff::TiffIndex &tiff_index, runtime::TileWriter &writer,
-    PageState &page_state) {
+    const core::TileReadOp& op, const QpTiffLevelInfo& level_info,
+    const simpletiff::TiffIndex& tiff_index, runtime::TileWriter& writer,
+    PageState& page_state) {
 
   const uint16_t page = op.source_id;
-  const size_t ch_idx = op.tile_coord.x; // Channel index stored in X coord
+  const size_t ch_idx = op.tile_coord.x;  // Channel index stored in X coord
 
   // Update page state if needed
   AIFOCORE_RETURN_IF_ERROR(
@@ -105,8 +106,8 @@ aifocore::Status QptiffTileExecutor::ExecuteTileOperation(
 }
 
 aifocore::Status QptiffTileExecutor::UpdatePageState(
-    uint16_t page, const QpTiffLevelInfo &level_info,
-    const simpletiff::TiffIndex &tiff_index, PageState &page_state) {
+    uint16_t page, const QpTiffLevelInfo& level_info,
+    const simpletiff::TiffIndex& tiff_index, PageState& page_state) {
 
   if (page != page_state.current_page) {
     if (page >= tiff_index.NumPages()) {
@@ -115,7 +116,7 @@ aifocore::Status QptiffTileExecutor::UpdatePageState(
           aifocore::fmt::format("Page {} out of range", page));
     }
 
-    const auto &page_header = tiff_index.Page(page);
+    const auto& page_header = tiff_index.Page(page);
 
     page_state.current_page = page;
     page_state.is_tiled = (page_header.storage == simpletiff::Storage::kTiles);
@@ -129,7 +130,7 @@ aifocore::Status QptiffTileExecutor::UpdatePageState(
 
     // Get tile dimensions
     if (page_state.is_tiled) {
-      const auto &tiles = tiff_index.Tiles(page_header.payload_id);
+      const auto& tiles = tiff_index.Tiles(page_header.payload_id);
       page_state.tile_width = tiles.tile_w;
     } else {
       page_state.tile_width = level_info.size[0];
@@ -139,10 +140,9 @@ aifocore::Status QptiffTileExecutor::UpdatePageState(
   return aifocore::Status::OkStatus();
 }
 
-aifocore::Result<std::span<const uint8_t>>
-QptiffTileExecutor::ReadTileData(const core::TileReadOp &op,
-                                 const simpletiff::TiffIndex &tiff_index,
-                                 const PageState &page_state) {
+aifocore::Result<std::span<const uint8_t>> QptiffTileExecutor::ReadTileData(
+    const core::TileReadOp& op, const simpletiff::TiffIndex& tiff_index,
+    const PageState& page_state) {
 
   // Each worker thread uses its own DecodeContext for decompression
   // This is thread-safe and avoids per-tile allocations
@@ -153,7 +153,7 @@ QptiffTileExecutor::ReadTileData(const core::TileReadOp &op,
   const uint32_t tile_index = static_cast<uint32_t>(op.byte_offset);
 
   // Get page info for debugging
-  const auto &page_header = tiff_index.Page(page);
+  const auto& page_header = tiff_index.Page(page);
 
   // Use appropriate simpletiff function based on storage type
   simpletiff::Result<void> result;
@@ -193,7 +193,7 @@ QptiffTileExecutor::ReadTileData(const core::TileReadOp &op,
 }
 
 std::span<const uint8_t> QptiffTileExecutor::ExtractRegionFromTile(
-    std::span<const uint8_t> tile_data, const core::TileReadOp &op,
+    std::span<const uint8_t> tile_data, const core::TileReadOp& op,
     uint32_t tile_width, size_t bytes_per_pixel) {
 
   const uint32_t src_x = op.transform.source.x;
@@ -204,8 +204,8 @@ std::span<const uint8_t> QptiffTileExecutor::ExtractRegionFromTile(
 
   // Use thread-local buffer from CRTP base class
   // This eliminates the second per-tile allocation
-  uint8_t *cropped_data = GetBuffers().GetCropBuffer(crop_size);
-  std::memset(cropped_data, 0, crop_size); // Zero initialize
+  uint8_t* cropped_data = GetBuffers().GetCropBuffer(crop_size);
+  std::memset(cropped_data, 0, crop_size);  // Zero initialize
 
   // Extract the region from the tile buffer
   // IMPORTANT: Use tile_width (not actual dimensions) as stride because
@@ -233,4 +233,4 @@ std::span<const uint8_t> QptiffTileExecutor::ExtractRegionFromTile(
   return std::span<const uint8_t>(cropped_data, crop_size);
 }
 
-} // namespace fastslide
+}  // namespace fastslide

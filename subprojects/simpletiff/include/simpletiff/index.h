@@ -15,8 +15,8 @@
 // TIFF index structures using Structure of Arrays (SoA) design
 // for optimal cache locality and minimal allocations.
 
-#ifndef SIMPLETIFF_INDEX_H_
-#define SIMPLETIFF_INDEX_H_
+#ifndef AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_INDEX_H_
+#define AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_INDEX_H_
 
 #include <atomic>
 #include <cstdint>
@@ -24,6 +24,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace simpletiff {
@@ -379,4 +380,4 @@ class TiffIndex {
 
 }  // namespace simpletiff
 
-#endif  // SIMPLETIFF_INDEX_H_
+#endif  // AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_INDEX_H_

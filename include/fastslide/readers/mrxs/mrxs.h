@@ -23,8 +23,8 @@
 #include <string_view>
 #include <vector>
 
-#include "aifocore/status/result.h"
 #include <mutex>
+#include "aifocore/status/result.h"
 #include "fastslide/associated_data.h"
 #include "fastslide/image.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
@@ -87,7 +87,7 @@ namespace fastslide {
 // Forward declarations
 namespace mrxs {
 class MrxsSpatialIndex;
-} // namespace mrxs
+}  // namespace mrxs
 
 /// @brief MRXS (MIRAX) reader class implementing the SlideReader interface
 ///
@@ -102,29 +102,29 @@ class MrxsSpatialIndex;
 /// - JPEG/PNG/BMP tile decompression
 /// - Thread-safe tile reading
 class MrxsReader : public SlideReader, public ReaderFactory<MrxsReader> {
-public:
+ public:
   /// @brief Factory method to create an MrxsReader instance
   /// @param filename Path to the .mrxs file
   /// @return Result containing the reader instance or an error
-  static aifocore::Result<std::unique_ptr<MrxsReader>>
-  Create(fs::path filename);
+  static aifocore::Result<std::unique_ptr<MrxsReader>> Create(
+      fs::path filename);
 
   /// @brief Destructor
   ~MrxsReader() override = default;
 
   // SlideReader interface implementation
   [[nodiscard]] int GetLevelCount() const override;
-  [[nodiscard]] aifocore::Result<LevelInfo>
-  GetLevelInfo(int level) const override;
-  [[nodiscard]] const SlideProperties &GetProperties() const override;
-  [[nodiscard]] std::vector<ChannelMetadata>
-  GetChannelMetadata() const override;
-  [[nodiscard]] std::vector<std::string>
-  GetAssociatedImageNames() const override;
-  [[nodiscard]] aifocore::Result<ImageDimensions>
-  GetAssociatedImageDimensions(std::string_view name) const override;
-  [[nodiscard]] aifocore::Result<RGBImage>
-  ReadAssociatedImage(std::string_view name) const override;
+  [[nodiscard]] aifocore::Result<LevelInfo> GetLevelInfo(
+      int level) const override;
+  [[nodiscard]] const SlideProperties& GetProperties() const override;
+  [[nodiscard]] std::vector<ChannelMetadata> GetChannelMetadata()
+      const override;
+  [[nodiscard]] std::vector<std::string> GetAssociatedImageNames()
+      const override;
+  [[nodiscard]] aifocore::Result<ImageDimensions> GetAssociatedImageDimensions(
+      std::string_view name) const override;
+  [[nodiscard]] aifocore::Result<RGBImage> ReadAssociatedImage(
+      std::string_view name) const override;
 
   [[nodiscard]] Metadata GetMetadata() const override;
 
@@ -139,12 +139,11 @@ public:
   [[nodiscard]] aifocore::Result<std::string> GetQuickHash() const override;
 
   // Two-stage pipeline implementation
-  [[nodiscard]] aifocore::Result<core::TilePlan>
-  PrepareRequest(const core::TileRequest &request) const override;
+  [[nodiscard]] aifocore::Result<core::TilePlan> PrepareRequest(
+      const core::TileRequest& request) const override;
 
-  [[nodiscard]] aifocore::Status
-  ExecutePlan(const core::TilePlan &plan,
-              runtime::TileWriter &writer) const override;
+  [[nodiscard]] aifocore::Status ExecutePlan(
+      const core::TilePlan& plan, runtime::TileWriter& writer) const override;
 
   /// @brief Read a region with fractional positioning (MRXS-specific)
   ///
@@ -157,13 +156,12 @@ public:
   /// @param width Width in pixels (unsigned)
   /// @param height Height in pixels (unsigned)
   /// @return Result containing the RGB image or an error
-  [[nodiscard]] aifocore::Result<RGBImage>
-  ReadRegionFractional(int level, double x, double y, uint32_t width,
-                       uint32_t height) const;
+  [[nodiscard]] aifocore::Result<RGBImage> ReadRegionFractional(
+      int level, double x, double y, uint32_t width, uint32_t height) const;
 
   /// @brief Get MRXS-specific slide information
   /// @return Reference to MRXS slide info
-  [[nodiscard]] const mrxs::SlideDataInfo &GetMrxsInfo() const {
+  [[nodiscard]] const mrxs::SlideDataInfo& GetMrxsInfo() const {
     return slide_info_;
   }
 
@@ -174,20 +172,20 @@ public:
   /// @brief Get information about associated data without loading it
   /// @param name Data name
   /// @return Result containing data info or error
-  [[nodiscard]] aifocore::Result<AssociatedDataInfo>
-  GetAssociatedDataInfo(std::string_view name) const;
+  [[nodiscard]] aifocore::Result<AssociatedDataInfo> GetAssociatedDataInfo(
+      std::string_view name) const;
 
   /// @brief Load associated data (lazily loaded on first access)
   /// @param name Data name
   /// @return Result containing associated data or error
-  [[nodiscard]] aifocore::Result<AssociatedData>
-  LoadAssociatedData(std::string_view name) const;
+  [[nodiscard]] aifocore::Result<AssociatedData> LoadAssociatedData(
+      std::string_view name) const;
 
   /// @brief Read raw tile data from data file (needed by tile executor)
   /// @param tile Tile information
   /// @return Result containing the raw data or error
-  [[nodiscard]] aifocore::Result<std::vector<uint8_t>>
-  ReadTileData(const mrxs::MiraxTileRecord &tile) const;
+  [[nodiscard]] aifocore::Result<std::vector<uint8_t>> ReadTileData(
+      const mrxs::MiraxTileRecord& tile) const;
 
   /// @brief Get or build spatial index for a level (needed by plan builder)
   /// @param level Level index
@@ -208,7 +206,7 @@ public:
   /// @return Shared pointer to cache (may be nullptr)
   [[nodiscard]] std::shared_ptr<ITileCache> GetITileCache() const;
 
-private:
+ private:
   /// @brief Allow factory access to private constructor and methods
   friend class ReaderFactory<MrxsReader>;
 
@@ -220,38 +218,38 @@ private:
   /// @brief Hook 1: Validate input file (used by ReaderFactory)
   /// @param filename Path to the .mrxs file
   /// @return Status indicating validation success or failure
-  static aifocore::Status ValidateInput(const fs::path &filename);
+  static aifocore::Status ValidateInput(const fs::path& filename);
 
   /// @brief Hook 2: Create reader with metadata loading (used by ReaderFactory)
   /// @param filename Path to the .mrxs file
   /// @return Result containing the reader instance or error
-  static aifocore::Result<std::unique_ptr<MrxsReader>>
-  CreateReaderImpl(const fs::path &filename);
+  static aifocore::Result<std::unique_ptr<MrxsReader>> CreateReaderImpl(
+      const fs::path& filename);
 
   /// @brief Read and parse the Slidedat.ini file
   /// @param slidedat_path Path to Slidedat.ini
   /// @param dirname Path to MRXS directory for cache keys
   /// @return Result containing SlideDataInfo or error
-  static aifocore::Result<mrxs::SlideDataInfo>
-  ReadSlidedatIni(const fs::path &slidedat_path, const fs::path &dirname);
+  static aifocore::Result<mrxs::SlideDataInfo> ReadSlidedatIni(
+      const fs::path& slidedat_path, const fs::path& dirname);
 
   /// @brief Read a nonhier record from the index file
   /// @param record_index Record number to read
   /// @return Tuple of (datafile_path, offset, size) or error
-  aifocore::Result<std::tuple<std::string, int64_t, int64_t>>
-  ReadNonHierRecord(int record_index) const;
+  aifocore::Result<std::tuple<std::string, int64_t, int64_t>> ReadNonHierRecord(
+      int record_index) const;
 
   /// @brief Read camera positions from position buffer
   /// @param dirname Directory containing MRXS files
   /// @param slide_info Slide information to update with positions
   /// @return Status indicating success or error
-  static aifocore::Status ReadCameraPositions(const fs::path &dirname,
-                                              mrxs::SlideDataInfo &slide_info);
+  static aifocore::Status ReadCameraPositions(const fs::path& dirname,
+                                              mrxs::SlideDataInfo& slide_info);
 
   /// @brief Detect type of associated data from magic bytes
   /// @param data Raw data bytes
   /// @return Detected data type
-  static AssociatedDataType DetectDataType(const std::vector<uint8_t> &data);
+  static AssociatedDataType DetectDataType(const std::vector<uint8_t>& data);
 
   /// @brief Calculate level parameters for all zoom levels
   /// @return Vector of level parameters
@@ -260,14 +258,14 @@ private:
   /// @brief Read tile information from the index file for a specific level
   /// @param level_index Zoom level index (0 = highest resolution)
   /// @return Vector of tile information or error
-  aifocore::Result<std::vector<mrxs::MiraxTileRecord>>
-  ReadLevelTiles(int level_index) const;
+  aifocore::Result<std::vector<mrxs::MiraxTileRecord>> ReadLevelTiles(
+      int level_index) const;
 
   /// @brief Decode tile data into RGB image
   /// @param data Compressed tile data
   /// @param format Image format
   /// @return Result containing decoded RGB image or error
-  aifocore::Result<RGBImage> DecodeTile(const std::vector<uint8_t> &data,
+  aifocore::Result<RGBImage> DecodeTile(const std::vector<uint8_t>& data,
                                         mrxs::MrxsImageFormat format) const;
 
   /// @brief Stitch tiles together with overlap averaging
@@ -278,9 +276,9 @@ private:
   /// @param width Width in pixels
   /// @param height Height in pixels
   /// @return Result containing stitched RGB image or error
-  aifocore::Result<RGBImage>
-  StitchTiles(const std::vector<mrxs::MiraxTileRecord> &tiles, int level,
-              double x, double y, uint32_t width, uint32_t height) const;
+  aifocore::Result<RGBImage> StitchTiles(
+      const std::vector<mrxs::MiraxTileRecord>& tiles, int level, double x,
+      double y, uint32_t width, uint32_t height) const;
 
   /// @brief Initialize properties from slide info
   aifocore::Status InitializeProperties();
@@ -289,11 +287,11 @@ private:
   /// @return Result containing SlideBounds or error
   aifocore::Result<SlideBounds> CalculateBounds();
 
-  fs::path dirname_;               ///< MRXS directory path
-  mrxs::SlideDataInfo slide_info_; ///< Slide information
-  SlideProperties properties_;     ///< Standard slide properties
+  fs::path dirname_;                ///< MRXS directory path
+  mrxs::SlideDataInfo slide_info_;  ///< Slide information
+  SlideProperties properties_;      ///< Standard slide properties
   std::vector<mrxs::PyramidLevelParameters>
-      level_params_; ///< Cached level parameters
+      level_params_;  ///< Cached level parameters
 
   // Spatial indices (lazy-initialized, one per level)
   mutable std::vector<std::shared_ptr<mrxs::MrxsSpatialIndex>> spatial_indices_;
@@ -304,6 +302,6 @@ private:
   mutable std::mutex cache_mutex_;
 };
 
-} // namespace fastslide
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_H_

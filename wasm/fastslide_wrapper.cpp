@@ -13,6 +13,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "fastslide/fastslide.h"
@@ -170,21 +171,25 @@ class FastSlideReaderWrapper {
 
 // Emscripten bindings
 EMSCRIPTEN_BINDINGS(fastslide) {
-  using namespace fastslide::wasm;
+  emscripten::class_<fastslide::wasm::FastSlideLevelInfo>("FastSlideLevelInfo")
+      .property("width", &fastslide::wasm::FastSlideLevelInfo::width)
+      .property("height", &fastslide::wasm::FastSlideLevelInfo::height)
+      .property("downsampleFactor",
+                &fastslide::wasm::FastSlideLevelInfo::downsampleFactor);
 
-  emscripten::class_<FastSlideLevelInfo>("FastSlideLevelInfo")
-      .property("width", &FastSlideLevelInfo::width)
-      .property("height", &FastSlideLevelInfo::height)
-      .property("downsampleFactor", &FastSlideLevelInfo::downsampleFactor);
-
-  emscripten::class_<FastSlideReaderWrapper>("FastSlideReader")
-      .class_function("fromFilePath", &FastSlideReaderWrapper::fromFilePath)
-      .property("numLevels", &FastSlideReaderWrapper::numLevels)
-      .property("dimensions", &FastSlideReaderWrapper::dimensions)
-      .property("format", &FastSlideReaderWrapper::format)
-      .property("mpp", &FastSlideReaderWrapper::mpp)
-      .function("getLevelInfo", &FastSlideReaderWrapper::getLevelInfo)
+  emscripten::class_<fastslide::wasm::FastSlideReaderWrapper>("FastSlideReader")
+      .class_function("fromFilePath",
+                      &fastslide::wasm::FastSlideReaderWrapper::fromFilePath)
+      .property("numLevels",
+                &fastslide::wasm::FastSlideReaderWrapper::numLevels)
+      .property("dimensions",
+                &fastslide::wasm::FastSlideReaderWrapper::dimensions)
+      .property("format", &fastslide::wasm::FastSlideReaderWrapper::format)
+      .property("mpp", &fastslide::wasm::FastSlideReaderWrapper::mpp)
+      .function("getLevelInfo",
+                &fastslide::wasm::FastSlideReaderWrapper::getLevelInfo)
       .function("getLevelDimensions",
-                &FastSlideReaderWrapper::getLevelDimensions)
-      .function("readRegion", &FastSlideReaderWrapper::readRegion);
+                &fastslide::wasm::FastSlideReaderWrapper::getLevelDimensions)
+      .function("readRegion",
+                &fastslide::wasm::FastSlideReaderWrapper::readRegion);
 }

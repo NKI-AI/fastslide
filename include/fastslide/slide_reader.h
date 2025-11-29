@@ -42,7 +42,7 @@ namespace fastslide {
 namespace runtime {
 class TileWriter;
 }
-} // namespace fastslide
+}  // namespace fastslide
 
 namespace fastslide {
 
@@ -63,17 +63,17 @@ using core::SlideProperties;
 
 /// @brief Abstract base class for slide readers
 class SlideReader {
-public:
+ public:
   /// @brief Virtual destructor
   virtual ~SlideReader() = default;
 
   /// @brief Delete copy constructor and assignment
-  SlideReader(const SlideReader &) = delete;
-  SlideReader &operator=(const SlideReader &) = delete;
+  SlideReader(const SlideReader&) = delete;
+  SlideReader& operator=(const SlideReader&) = delete;
 
   /// @brief Delete move constructor and assignment
-  SlideReader(SlideReader &&) = delete;
-  SlideReader &operator=(SlideReader &&) = delete;
+  SlideReader(SlideReader&&) = delete;
+  SlideReader& operator=(SlideReader&&) = delete;
 
   /// @brief Get number of pyramid levels
   /// @return Number of levels (level 0 is full resolution)
@@ -82,22 +82,22 @@ public:
   /// @brief Get level information
   /// @param level Pyramid level
   /// @return Level information or error status
-  [[nodiscard]] virtual aifocore::Result<LevelInfo>
-  GetLevelInfo(int level) const = 0;
+  [[nodiscard]] virtual aifocore::Result<LevelInfo> GetLevelInfo(
+      int level) const = 0;
 
   /// @brief Get slide physical properties
   /// @return Slide properties
-  [[nodiscard]] virtual const SlideProperties &GetProperties() const = 0;
+  [[nodiscard]] virtual const SlideProperties& GetProperties() const = 0;
 
   /// @brief Get channel metadata for all channels
   /// @return Vector of channel metadata (index corresponds to channel index)
-  [[nodiscard]] virtual std::vector<ChannelMetadata>
-  GetChannelMetadata() const = 0;
+  [[nodiscard]] virtual std::vector<ChannelMetadata> GetChannelMetadata()
+      const = 0;
 
   /// @brief Get available associated image names
   /// @return Vector of associated image names (e.g., "thumbnail", "macro")
-  [[nodiscard]] virtual std::vector<std::string>
-  GetAssociatedImageNames() const = 0;
+  [[nodiscard]] virtual std::vector<std::string> GetAssociatedImageNames()
+      const = 0;
 
   /// @brief Get dimensions of an associated image
   /// @param name Associated image name
@@ -133,8 +133,8 @@ public:
   /// @param request Tile request specification
   /// @return Execution plan or error status
   /// @note Default implementation returns UnimplementedError
-  [[nodiscard]] virtual aifocore::Result<core::TilePlan>
-  PrepareRequest(const core::TileRequest &request) const {
+  [[nodiscard]] virtual aifocore::Result<core::TilePlan> PrepareRequest(
+      const core::TileRequest& request) const {
     return aifocore::Status(aifocore::StatusCode::kUnimplemented,
                             "PrepareRequest not implemented for this reader");
   }
@@ -156,8 +156,8 @@ public:
   /// @param writer Destination for decoded pixels
   /// @return Status indicating success or errors
   /// @note Default implementation returns UnimplementedError
-  [[nodiscard]] virtual aifocore::Status
-  ExecutePlan(const core::TilePlan &plan, runtime::TileWriter &writer) const {
+  [[nodiscard]] virtual aifocore::Status ExecutePlan(
+      const core::TilePlan& plan, runtime::TileWriter& writer) const {
     return aifocore::Status(aifocore::StatusCode::kUnimplemented,
                             "ExecutePlan not implemented for this reader");
   }
@@ -170,12 +170,12 @@ public:
   /// @param requests Vector of tile requests
   /// @return Batch execution plan or error
   /// @note Default implementation creates independent plans
-  [[nodiscard]] virtual aifocore::Result<core::BatchTilePlan>
-  PrepareBatch(std::span<const core::TileRequest> requests) const {
+  [[nodiscard]] virtual aifocore::Result<core::BatchTilePlan> PrepareBatch(
+      std::span<const core::TileRequest> requests) const {
     core::BatchTilePlan batch;
     batch.plans.reserve(requests.size());
 
-    for (const auto &req : requests) {
+    for (const auto& req : requests) {
       core::TilePlan plan;
       AIFOCORE_ASSIGN_OR_RETURN(plan, PrepareRequest(req));
       batch.plans.push_back(plan);
@@ -203,8 +203,8 @@ public:
   ///       - ✅ MRXS: Implements PrepareRequest/ExecutePlan
   ///
   ///       All built-in readers now comply with v2.0 architecture.
-  [[nodiscard]] virtual aifocore::Result<Image>
-  ReadRegion(const RegionSpec &region) const {
+  [[nodiscard]] virtual aifocore::Result<Image> ReadRegion(
+      const RegionSpec& region) const {
     return ReadRegionViaPipeline(region);
   }
 
@@ -213,16 +213,16 @@ public:
   /// @param options Read options including coordinate space and color
   /// correction
   /// @return Image or error status
-  [[nodiscard]] virtual aifocore::Result<Image>
-  ReadRegion(const RegionSpec &region, const RegionReadOptions &options) const {
+  [[nodiscard]] virtual aifocore::Result<Image> ReadRegion(
+      const RegionSpec& region, const RegionReadOptions& options) const {
     return ReadRegion(region);
   }
 
   /// @brief Read an associated image
   /// @param name Associated image name
   /// @return Image or error status
-  [[nodiscard]] virtual aifocore::Result<Image>
-  ReadAssociatedImage(std::string_view name) const = 0;
+  [[nodiscard]] virtual aifocore::Result<Image> ReadAssociatedImage(
+      std::string_view name) const = 0;
 
   /// @brief Get format-specific metadata as key-value pairs
   /// @return Metadata map
@@ -276,20 +276,20 @@ public:
   /// @details Only the specified channels will be loaded and combined in
   /// ReadRegion. This can significantly improve performance for multichannel
   /// formats when only a subset of channels is needed for visualization.
-  virtual void SetVisibleChannels(const std::vector<size_t> &channel_indices) {
+  virtual void SetVisibleChannels(const std::vector<size_t>& channel_indices) {
     visible_channels_ = channel_indices;
   }
 
   /// @brief Get currently visible channel indices
   /// @return Vector of visible channel indices (empty = all channels visible)
-  [[nodiscard]] virtual const std::vector<size_t> &GetVisibleChannels() const {
+  [[nodiscard]] virtual const std::vector<size_t>& GetVisibleChannels() const {
     return visible_channels_;
   }
 
   /// @brief Reset to show all channels
   virtual void ShowAllChannels() { visible_channels_.clear(); }
 
-protected:
+ protected:
   /// @brief Protected constructor (only derived classes can instantiate)
   SlideReader() = default;
 
@@ -297,8 +297,8 @@ protected:
   /// @param region Input region specification
   /// @param image_dims Image dimensions to clamp against
   /// @return Clamped region specification
-  static RegionSpec ClampRegion(const RegionSpec &region,
-                                const ImageDimensions &image_dims);
+  static RegionSpec ClampRegion(const RegionSpec& region,
+                                const ImageDimensions& image_dims);
 
   // =========================================================================
   // Protected Helpers for Two-Stage Pipeline Migration
@@ -327,8 +327,8 @@ protected:
   /// @param region Region specification
   /// @return Image or error status
   /// @note Requires PrepareRequest() and ExecutePlan() to be implemented
-  [[nodiscard]] aifocore::Result<Image>
-  ReadRegionViaPipeline(const RegionSpec &region) const;
+  [[nodiscard]] aifocore::Result<Image> ReadRegionViaPipeline(
+      const RegionSpec& region) const;
 
   /// @brief Convert RegionSpec to TileRequest (helper)
   ///
@@ -337,15 +337,15 @@ protected:
   ///
   /// @param region Region specification
   /// @return Tile request or error status
-  [[nodiscard]] aifocore::Result<core::TileRequest>
-  RegionToTileRequest(const RegionSpec &region) const;
+  [[nodiscard]] aifocore::Result<core::TileRequest> RegionToTileRequest(
+      const RegionSpec& region) const;
 
   /// @brief Channel indices to load (empty = all channels)
   /// @details Protected so derived classes can access for implementing
   /// selective loading
   std::vector<size_t> visible_channels_;
 
-private:
+ private:
   /// @brief Optional tile cache for decoded internal tiles
   std::shared_ptr<TileCache> cache_;
 };
@@ -353,6 +353,6 @@ private:
 // Format plugins and ReaderRegistry are defined in fastslide/runtime/ and
 // fastslide/readers/ (include separately when needed)
 
-} // namespace fastslide
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_SLIDE_READER_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_SLIDE_READER_H_

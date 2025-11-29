@@ -1,35 +1,62 @@
+// Copyright (c) 2024 Barak Shoshany
+// NOLINTBEGIN
 /**
- * ██████  ███████       ████████ ██   ██ ██████  ███████  █████  ██████          ██████   ██████   ██████  ██
- * ██   ██ ██      ██ ██    ██    ██   ██ ██   ██ ██      ██   ██ ██   ██         ██   ██ ██    ██ ██    ██ ██
- * ██████  ███████          ██    ███████ ██████  █████   ███████ ██   ██         ██████  ██    ██ ██    ██ ██
- * ██   ██      ██ ██ ██    ██    ██   ██ ██   ██ ██      ██   ██ ██   ██         ██      ██    ██ ██    ██ ██
- * ██████  ███████          ██    ██   ██ ██   ██ ███████ ██   ██ ██████  ███████ ██       ██████   ██████  ███████
+ * ██████  ███████       ████████ ██   ██ ██████  ███████  █████  ██████ ██████
+ * ██████   ██████  ██ ██   ██ ██      ██ ██    ██    ██   ██ ██   ██ ██      ██
+ * ██ ██   ██         ██   ██ ██    ██ ██    ██ ██ ██████  ███████          ██
+ * ███████ ██████  █████   ███████ ██   ██         ██████  ██    ██ ██    ██ ██
+ * ██   ██      ██ ██ ██    ██    ██   ██ ██   ██ ██      ██   ██ ██   ██ ██ ██
+ * ██ ██    ██ ██ ██████  ███████          ██    ██   ██ ██   ██ ███████ ██   ██
+ * ██████  ███████ ██       ██████   ██████  ███████
  *
  * @file BS_thread_pool.hpp
  * @author Barak Shoshany (baraksh@gmail.com) (https://baraksh.com/)
  * @version 5.0.0
  * @date 2024-12-19
- * @copyright Copyright (c) 2024 Barak Shoshany. Licensed under the MIT license. If you found this project useful, please consider starring it on GitHub! If you use this library in software of any kind, please provide a link to the GitHub repository https://github.com/bshoshany/thread-pool in the source code and documentation. If you use this library in published research, please cite it as follows: Barak Shoshany, "A C++17 Thread Pool for High-Performance Scientific Computing", doi:10.1016/j.softx.2024.101687, SoftwareX 26 (2024) 101687, arXiv:2105.00613
+ * @copyright Copyright (c) 2024 Barak Shoshany. Licensed under the MIT license.
+ * If you found this project useful, please consider starring it on GitHub! If
+ * you use this library in software of any kind, please provide a link to the
+ * GitHub repository https://github.com/bshoshany/thread-pool in the source code
+ * and documentation. If you use this library in published research, please cite
+ * it as follows: Barak Shoshany, "A C++17 Thread Pool for High-Performance
+ * Scientific Computing", doi:10.1016/j.softx.2024.101687, SoftwareX 26 (2024)
+ * 101687, arXiv:2105.00613
  *
- * @brief `BS::thread_pool`: a fast, lightweight, modern, and easy-to-use C++17/C++20/C++23 thread pool library. This header file contains the entire library, and is the only file needed to use the library.
+ * @brief `BS::thread_pool`: a fast, lightweight, modern, and easy-to-use
+ * C++17/C++20/C++23 thread pool library. This header file contains the entire
+ * library, and is the only file needed to use the library.
  */
 
-#ifndef BS_THREAD_POOL_HPP
-#define BS_THREAD_POOL_HPP
+#ifndef AIFO_AIFOCORE_INCLUDE_AIFOCORE_UTILITIES_BS_THREAD_POOL_H_
+#define AIFO_AIFOCORE_INCLUDE_AIFOCORE_UTILITIES_BS_THREAD_POOL_H_
 
-// We need to include <version> since if we're using `import std` it will not define any feature-test macros, including `__cpp_lib_modules`, which we need to check if `import std` is supported in the first place.
+// We need to include <version> since if we're using `import std` it will not
+// define any feature-test macros, including `__cpp_lib_modules`, which we need
+// to check if `import std` is supported in the first place.
 #ifdef __has_include
 #if __has_include(<version>)
 #include <version>  // NOLINT(misc-include-cleaner)
 #endif
 #endif
 
-// If the macro `BS_THREAD_POOL_IMPORT_STD` is defined, import the C++ Standard Library as a module. Otherwise, include the relevant Standard Library header files. This is currently only officially supported by MSVC with Microsoft STL and LLVM Clang (NOT Apple Clang) with LLVM libc++. It is not supported by GCC with any standard library, or any compiler with GNU libstdc++. We also check that the feature is enabled by checking `__cpp_lib_modules`. However, MSVC defines this macro even in C++20 mode, which is not standards-compliant, so we check that we are in C++23 mode; MSVC currently reports `__cplusplus` as `202004L` for C++23 mode, so we use that value.
+// If the macro `BS_THREAD_POOL_IMPORT_STD` is defined, import the C++ Standard
+// Library as a module. Otherwise, include the relevant Standard Library header
+// files. This is currently only officially supported by MSVC with Microsoft STL
+// and LLVM Clang (NOT Apple Clang) with LLVM libc++. It is not supported by GCC
+// with any standard library, or any compiler with GNU libstdc++. We also check
+// that the feature is enabled by checking `__cpp_lib_modules`. However, MSVC
+// defines this macro even in C++20 mode, which is not standards-compliant, so
+// we check that we are in C++23 mode; MSVC currently reports `__cplusplus` as
+// `202004L` for C++23 mode, so we use that value.
 #if defined(BS_THREAD_POOL_IMPORT_STD) && defined(__cpp_lib_modules) &&      \
     (__cplusplus >= 202004L) &&                                              \
     (defined(_MSC_VER) || (defined(__clang__) && defined(_LIBCPP_VERSION) && \
                            !defined(__apple_build_version__)))
-// Only allow importing the `std` module if the library itself is imported as a module. If the library is included as a header file, this will force the program that included the header file to also import `std`, which is not desirable and can lead to compilation errors if the program `#include`s any Standard Library header files.
+// Only allow importing the `std` module if the library itself is imported as a
+// module. If the library is included as a header file, this will force the
+// program that included the header file to also import `std`, which is not
+// desirable and can lead to compilation errors if the program `#include`s any
+// Standard Library header files.
 #ifdef BS_THREAD_POOL_MODULE
 import std;
 #else
@@ -101,7 +128,8 @@ import std;
 #endif
 
 #if defined(__linux__)
-// On Linux, <sys/sysmacros.h> defines macros called `major` and `minor`. We undefine them here so the `version` struct can work.
+// On Linux, <sys/sysmacros.h> defines macros called `major` and `minor`. We
+// undefine them here so the `version` struct can work.
 #ifdef major
 #undef major
 #endif
@@ -111,8 +139,8 @@ import std;
 #endif
 
 /**
-  * @brief A namespace used by Barak Shoshany's projects.
-  */
+ * @brief A namespace used by Barak Shoshany's projects.
+ */
 namespace BS {
 // Macros indicating the version of the thread pool library.
 #define BS_THREAD_POOL_VERSION_MAJOR 5
@@ -120,14 +148,16 @@ namespace BS {
 #define BS_THREAD_POOL_VERSION_PATCH 0
 
 /**
-  * @brief A struct used to store a version number, which can be checked and compared at compilation time.
-  */
+ * @brief A struct used to store a version number, which can be checked and
+ * compared at compilation time.
+ */
 struct version {
   constexpr version(const std::uint64_t major_, const std::uint64_t minor_,
                     const std::uint64_t patch_) noexcept
       : major(major_), minor(minor_), patch(patch_) {}
 
-// In C++20 and later we can use the spaceship operator `<=>` to automatically generate comparison operators. In C++17 we have to define them manually.
+// In C++20 and later we can use the spaceship operator `<=>` to automatically
+// generate comparison operators. In C++17 we have to define them manually.
 #ifdef __cpp_impl_three_way_comparison
   std::strong_ordering operator<=>(const version&) const = default;
 #else
@@ -181,55 +211,62 @@ struct version {
 };  // struct version
 
 /**
-  * @brief The version of the thread pool library.
-  */
+ * @brief The version of the thread pool library.
+ */
 inline constexpr version thread_pool_version(BS_THREAD_POOL_VERSION_MAJOR,
                                              BS_THREAD_POOL_VERSION_MINOR,
                                              BS_THREAD_POOL_VERSION_PATCH);
 
 #ifdef BS_THREAD_POOL_MODULE
-// If the library is being compiled as a module, ensure that the version of the module file matches the version of the header file.
+// If the library is being compiled as a module, ensure that the version of the
+// module file matches the version of the header file.
 static_assert(thread_pool_version == version(BS_THREAD_POOL_MODULE),
               "The versions of BS.thread_pool.cppm and BS_thread_pool.hpp do "
               "not match. Aborting compilation.");
 /**
-  * @brief A flag indicating whether the thread pool library was compiled as a C++20 module.
-  */
+ * @brief A flag indicating whether the thread pool library was compiled as a
+ * C++20 module.
+ */
 inline constexpr bool thread_pool_module = true;
 #else
 /**
-  * @brief A flag indicating whether the thread pool library was compiled as a C++20 module.
-  */
+ * @brief A flag indicating whether the thread pool library was compiled as a
+ * C++20 module.
+ */
 inline constexpr bool thread_pool_module = false;
 #endif
 
 #ifdef BS_THREAD_POOL_IMPORT_STD
 /**
-  * @brief A flag indicating whether the thread pool library imported the C++23 Standard Library module using `import std`.
-  */
+ * @brief A flag indicating whether the thread pool library imported the C++23
+ * Standard Library module using `import std`.
+ */
 inline constexpr bool thread_pool_import_std = true;
 #else
 /**
-  * @brief A flag indicating whether the thread pool library imported the C++23 Standard Library module using `import std`.
-  */
+ * @brief A flag indicating whether the thread pool library imported the C++23
+ * Standard Library module using `import std`.
+ */
 inline constexpr bool thread_pool_import_std = false;
 #endif
 
 #ifdef BS_THREAD_POOL_NATIVE_EXTENSIONS
 /**
-  * @brief A flag indicating whether the thread pool library's native extensions are enabled.
-  */
+ * @brief A flag indicating whether the thread pool library's native extensions
+ * are enabled.
+ */
 inline constexpr bool thread_pool_native_extensions = true;
 #else
 /**
-  * @brief A flag indicating whether the thread pool library's native extensions are enabled.
-  */
+ * @brief A flag indicating whether the thread pool library's native extensions
+ * are enabled.
+ */
 inline constexpr bool thread_pool_native_extensions = false;
 #endif
 
 /**
-  * @brief The type used for the bitmask template parameter of the thread pool.
-  */
+ * @brief The type used for the bitmask template parameter of the thread pool.
+ */
 using opt_t = std::uint8_t;
 
 template <opt_t>
@@ -237,39 +274,43 @@ class thread_pool;
 
 #ifdef __cpp_lib_move_only_function
 /**
-  * @brief The template to use to store functions in the task queue and other places. In C++23 and later we use `std::move_only_function`.
-  */
+ * @brief The template to use to store functions in the task queue and other
+ * places. In C++23 and later we use `std::move_only_function`.
+ */
 template <typename... S>
 using function_t = std::move_only_function<S...>;
 #else
 /**
-  * @brief The template to use to store functions in the task queue and other places. In C++17 we use `std::function`.
-  */
+ * @brief The template to use to store functions in the task queue and other
+ * places. In C++17 we use `std::function`.
+ */
 template <typename... S>
 using function_t = std::function<S...>;
 #endif
 
 /**
-  * @brief The type of tasks in the task queue.
-  */
+ * @brief The type of tasks in the task queue.
+ */
 using task_t = function_t<void()>;
 
 #ifdef __cpp_lib_jthread
 /**
-  * @brief The type of threads to use. In C++20 and later we use `std::jthread`.
-  */
+ * @brief The type of threads to use. In C++20 and later we use `std::jthread`.
+ */
 using thread_t = std::jthread;
-// The following macros are used to determine how to stop the workers. In C++20 and later we can use `std::stop_token`.
+// The following macros are used to determine how to stop the workers. In C++20
+// and later we can use `std::stop_token`.
 #define BS_THREAD_POOL_WORKER_TOKEN const std::stop_token &stop_token,
 #define BS_THREAD_POOL_WAIT_TOKEN , stop_token
 #define BS_THREAD_POOL_STOP_CONDITION stop_token.stop_requested()
 #define BS_THREAD_POOL_OR_STOP_CONDITION
 #else
 /**
-  * @brief The type of threads to use. In C++17 we use`std::thread`.
-  */
+ * @brief The type of threads to use. In C++17 we use`std::thread`.
+ */
 using thread_t = std::thread;
-// The following macros are used to determine how to stop the workers. In C++17 we use a manual flag `workers_running`.
+// The following macros are used to determine how to stop the workers. In C++17
+// we use a manual flag `workers_running`.
 #define BS_THREAD_POOL_WORKER_TOKEN
 #define BS_THREAD_POOL_WAIT_TOKEN
 #define BS_THREAD_POOL_STOP_CONDITION !workers_running
@@ -277,13 +318,14 @@ using thread_t = std::thread;
 #endif
 
 /**
-  * @brief A type used to indicate the priority of a task. Defined to be a signed integer with a width of exactly 8 bits (-128 to +127).
-  */
+ * @brief A type used to indicate the priority of a task. Defined to be a signed
+ * integer with a width of exactly 8 bits (-128 to +127).
+ */
 using priority_t = std::int8_t;
 
 /**
-  * @brief An enum containing some pre-defined priorities for convenience.
-  */
+ * @brief An enum containing some pre-defined priorities for convenience.
+ */
 enum pr : priority_t {
   lowest = -128,
   low = -64,
@@ -293,43 +335,45 @@ enum pr : priority_t {
 };
 
 /**
-  * @brief A helper struct to store a task with an assigned priority.
-  */
+ * @brief A helper struct to store a task with an assigned priority.
+ */
 struct [[nodiscard]] pr_task {
   /**
-      * @brief Construct a new task with an assigned priority.
-      *
-      * @param task_ The task.
-      * @param priority_ The desired priority.
-      */
+   * @brief Construct a new task with an assigned priority.
+   *
+   * @param task_ The task.
+   * @param priority_ The desired priority.
+   */
   explicit pr_task(task_t&& task_, const priority_t priority_ = 0) noexcept(
       std::is_nothrow_move_constructible_v<task_t>)
       : task(std::move(task_)), priority(priority_) {}
 
   /**
-      * @brief Compare the priority of two tasks.
-      *
-      * @param lhs The first task.
-      * @param rhs The second task.
-      * @return `true` if the first task has a lower priority than the second task, `false` otherwise.
-      */
+   * @brief Compare the priority of two tasks.
+   *
+   * @param lhs The first task.
+   * @param rhs The second task.
+   * @return `true` if the first task has a lower priority than the second task,
+   * `false` otherwise.
+   */
   [[nodiscard]] friend bool operator<(const pr_task& lhs,
                                       const pr_task& rhs) noexcept {
     return lhs.priority < rhs.priority;
   }
 
   /**
-      * @brief The task.
-      */
+   * @brief The task.
+   */
   task_t task;
 
   /**
-      * @brief The priority of the task.
-      */
+   * @brief The priority of the task.
+   */
   priority_t priority = 0;
 };  // struct pr_task
 
-// In C++20 and later we can use concepts. In C++17 we instead use SFINAE ("Substitution Failure Is Not An Error") with `std::enable_if_t`.
+// In C++20 and later we can use concepts. In C++17 we instead use SFINAE
+// ("Substitution Failure Is Not An Error") with `std::enable_if_t`.
 #ifdef __cpp_concepts
 #define BS_THREAD_POOL_IF_PAUSE_ENABLED \
   template <bool P = pause_enabled>     \
@@ -348,10 +392,11 @@ concept init_func_c = std::invocable<F> || std::invocable<F, std::size_t>;
 #endif
 
 /**
-  * @brief A helper class to facilitate waiting for and/or getting the results of multiple futures at once.
-  *
-  * @tparam T The return type of the futures.
-  */
+ * @brief A helper class to facilitate waiting for and/or getting the results of
+ * multiple futures at once.
+ *
+ * @tparam T The return type of the futures.
+ */
 template <typename T>
 class [[nodiscard]] multi_future : public std::vector<std::future<T>> {
  public:
@@ -359,10 +404,12 @@ class [[nodiscard]] multi_future : public std::vector<std::future<T>> {
   using std::vector<std::future<T>>::vector;
 
   /**
-      * @brief Get the results from all the futures stored in this `BS::multi_future`, rethrowing any stored exceptions.
-      *
-      * @return If the futures return `void`, this function returns `void` as well. Otherwise, it returns a vector containing the results.
-      */
+   * @brief Get the results from all the futures stored in this
+   * `BS::multi_future`, rethrowing any stored exceptions.
+   *
+   * @return If the futures return `void`, this function returns `void` as well.
+   * Otherwise, it returns a vector containing the results.
+   */
   [[nodiscard]] std::conditional_t<std::is_void_v<T>, void, std::vector<T>>
   get() {
     if constexpr (std::is_void_v<T>) {
@@ -379,10 +426,11 @@ class [[nodiscard]] multi_future : public std::vector<std::future<T>> {
   }
 
   /**
-      * @brief Check how many of the futures stored in this `BS::multi_future` are ready.
-      *
-      * @return The number of ready futures.
-      */
+   * @brief Check how many of the futures stored in this `BS::multi_future` are
+   * ready.
+   *
+   * @return The number of ready futures.
+   */
   [[nodiscard]] std::size_t ready_count() const {
     std::size_t count = 0;
     for (const std::future<T>& future : *this) {
@@ -394,10 +442,12 @@ class [[nodiscard]] multi_future : public std::vector<std::future<T>> {
   }
 
   /**
-      * @brief Check if all the futures stored in this `BS::multi_future` are valid.
-      *
-      * @return `true` if all futures are valid, `false` if at least one of the futures is not valid.
-      */
+   * @brief Check if all the futures stored in this `BS::multi_future` are
+   * valid.
+   *
+   * @return `true` if all futures are valid, `false` if at least one of the
+   * futures is not valid.
+   */
   [[nodiscard]] bool valid() const noexcept {
     bool is_valid = true;
     for (const std::future<T>& future : *this)
@@ -406,21 +456,27 @@ class [[nodiscard]] multi_future : public std::vector<std::future<T>> {
   }
 
   /**
-      * @brief Wait for all the futures stored in this `BS::multi_future`.
-      */
+   * @brief Wait for all the futures stored in this `BS::multi_future`.
+   */
   void wait() const {
     for (const std::future<T>& future : *this)
       future.wait();
   }
 
   /**
-      * @brief Wait for all the futures stored in this `BS::multi_future`, but stop waiting after the specified duration has passed. This function first waits for the first future for the desired duration. If that future is ready before the duration expires, this function waits for the second future for whatever remains of the duration. It continues similarly until the duration expires.
-      *
-      * @tparam R An arithmetic type representing the number of ticks to wait.
-      * @tparam P An `std::ratio` representing the length of each tick in seconds.
-      * @param duration The amount of time to wait.
-      * @return `true` if all futures have been waited for before the duration expired, `false` otherwise.
-      */
+   * @brief Wait for all the futures stored in this `BS::multi_future`, but stop
+   * waiting after the specified duration has passed. This function first waits
+   * for the first future for the desired duration. If that future is ready
+   * before the duration expires, this function waits for the second future for
+   * whatever remains of the duration. It continues similarly until the duration
+   * expires.
+   *
+   * @tparam R An arithmetic type representing the number of ticks to wait.
+   * @tparam P An `std::ratio` representing the length of each tick in seconds.
+   * @param duration The amount of time to wait.
+   * @return `true` if all futures have been waited for before the duration
+   * expired, `false` otherwise.
+   */
   template <typename R, typename P>
   bool wait_for(const std::chrono::duration<R, P>& duration) const {
     const std::chrono::time_point<std::chrono::steady_clock> start_time =
@@ -435,13 +491,19 @@ class [[nodiscard]] multi_future : public std::vector<std::future<T>> {
   }
 
   /**
-      * @brief Wait for all the futures stored in this `BS::multi_future`, but stop waiting after the specified time point has been reached. This function first waits for the first future until the desired time point. If that future is ready before the time point is reached, this function waits for the second future until the desired time point. It continues similarly until the time point is reached.
-      *
-      * @tparam C The type of the clock used to measure time.
-      * @tparam D An `std::chrono::duration` type used to indicate the time point.
-      * @param timeout_time The time point at which to stop waiting.
-      * @return `true` if all futures have been waited for before the time point was reached, `false` otherwise.
-      */
+   * @brief Wait for all the futures stored in this `BS::multi_future`, but stop
+   * waiting after the specified time point has been reached. This function
+   * first waits for the first future until the desired time point. If that
+   * future is ready before the time point is reached, this function waits for
+   * the second future until the desired time point. It continues similarly
+   * until the time point is reached.
+   *
+   * @tparam C The type of the clock used to measure time.
+   * @tparam D An `std::chrono::duration` type used to indicate the time point.
+   * @param timeout_time The time point at which to stop waiting.
+   * @return `true` if all futures have been waited for before the time point
+   * was reached, `false` otherwise.
+   */
   template <typename C, typename D>
   bool wait_until(const std::chrono::time_point<C, D>& timeout_time) const {
     for (const std::future<T>& future : *this) {
@@ -454,20 +516,21 @@ class [[nodiscard]] multi_future : public std::vector<std::future<T>> {
 };  // class multi_future
 
 /**
-  * @brief A helper class to divide a range into blocks. Used by `detach_blocks()`, `submit_blocks()`, `detach_loop()`, and `submit_loop()`.
-  *
-  * @tparam T The type of the indices. Should be a signed or unsigned integer.
-  */
+ * @brief A helper class to divide a range into blocks. Used by
+ * `detach_blocks()`, `submit_blocks()`, `detach_loop()`, and `submit_loop()`.
+ *
+ * @tparam T The type of the indices. Should be a signed or unsigned integer.
+ */
 template <typename T>
 class [[nodiscard]] blocks {
  public:
   /**
-      * @brief Construct a `blocks` object with the given specifications.
-      *
-      * @param first_index_ The first index in the range.
-      * @param index_after_last_ The index after the last index in the range.
-      * @param num_blocks_ The desired number of blocks to divide the range into.
-      */
+   * @brief Construct a `blocks` object with the given specifications.
+   *
+   * @param first_index_ The first index in the range.
+   * @param index_after_last_ The index after the last index in the range.
+   * @param num_blocks_ The desired number of blocks to divide the range into.
+   */
   blocks(const T first_index_, const T index_after_last_,
          const std::size_t num_blocks_) noexcept
       : first_index(first_index_),
@@ -489,30 +552,31 @@ class [[nodiscard]] blocks {
   }
 
   /**
-      * @brief Get the index after the last index of a block.
-      *
-      * @param block The block number.
-      * @return The index after the last index.
-      */
+   * @brief Get the index after the last index of a block.
+   *
+   * @param block The block number.
+   * @return The index after the last index.
+   */
   [[nodiscard]] T end(const std::size_t block) const noexcept {
     return (block == num_blocks - 1) ? index_after_last : start(block + 1);
   }
 
   /**
-      * @brief Get the number of blocks. Note that this may be different than the desired number of blocks that was passed to the constructor.
-      *
-      * @return The number of blocks.
-      */
+   * @brief Get the number of blocks. Note that this may be different than the
+   * desired number of blocks that was passed to the constructor.
+   *
+   * @return The number of blocks.
+   */
   [[nodiscard]] std::size_t get_num_blocks() const noexcept {
     return num_blocks;
   }
 
   /**
-      * @brief Get the first index of a block.
-      *
-      * @param block The block number.
-      * @return The first index.
-      */
+   * @brief Get the first index of a block.
+   *
+   * @param block The block number.
+   * @return The first index.
+   */
   [[nodiscard]] T start(const std::size_t block) const noexcept {
     return first_index + static_cast<T>(block * block_size) +
            static_cast<T>(block < remainder ? block : remainder);
@@ -520,35 +584,40 @@ class [[nodiscard]] blocks {
 
  private:
   /**
-      * @brief The size of each block (except possibly the last block).
-      */
+   * @brief The size of each block (except possibly the last block).
+   */
   std::size_t block_size = 0;
 
   /**
-      * @brief The first index in the range.
-      */
+   * @brief The first index in the range.
+   */
   T first_index = 0;
 
   /**
-      * @brief The index after the last index in the range.
-      */
+   * @brief The index after the last index in the range.
+   */
   T index_after_last = 0;
 
   /**
-      * @brief The number of blocks.
-      */
+   * @brief The number of blocks.
+   */
   std::size_t num_blocks = 0;
 
   /**
-      * @brief The remainder obtained after dividing the total size by the number of blocks.
-      */
+   * @brief The remainder obtained after dividing the total size by the number
+   * of blocks.
+   */
   std::size_t remainder = 0;
 };  // class blocks
 
 #ifdef __cpp_exceptions
 /**
-  * @brief An exception that will be thrown by `wait()`, `wait_for()`, and `wait_until()` if the user tries to call them from within a thread of the same pool, which would result in a deadlock. Only used if the flag `BS:tp::wait_deadlock_checks` is enabled in the template parameter of `BS::thread_pool`.
-  */
+ * @brief An exception that will be thrown by `wait()`, `wait_for()`, and
+ * `wait_until()` if the user tries to call them from within a thread of the
+ * same pool, which would result in a deadlock. Only used if the flag
+ * `BS:tp::wait_deadlock_checks` is enabled in the template parameter of
+ * `BS::thread_pool`.
+ */
 struct wait_deadlock : public std::runtime_error {
   wait_deadlock() : std::runtime_error("BS::wait_deadlock"){};
 };
@@ -557,8 +626,9 @@ struct wait_deadlock : public std::runtime_error {
 #ifdef BS_THREAD_POOL_NATIVE_EXTENSIONS
 #if defined(_WIN32)
 /**
-  * @brief An enum containing pre-defined OS-specific process priority values for portability.
-  */
+ * @brief An enum containing pre-defined OS-specific process priority values for
+ * portability.
+ */
 enum class os_process_priority {
   idle = IDLE_PRIORITY_CLASS,
   below_normal = BELOW_NORMAL_PRIORITY_CLASS,
@@ -569,8 +639,9 @@ enum class os_process_priority {
 };
 
 /**
-  * @brief An enum containing pre-defined OS-specific thread priority values for portability.
-  */
+ * @brief An enum containing pre-defined OS-specific thread priority values for
+ * portability.
+ */
 enum class os_thread_priority {
   idle = THREAD_PRIORITY_IDLE,
   lowest = THREAD_PRIORITY_LOWEST,
@@ -582,8 +653,9 @@ enum class os_thread_priority {
 };
 #elif defined(__linux__) || defined(__APPLE__)
 /**
-  * @brief An enum containing pre-defined OS-specific process priority values for portability.
-  */
+ * @brief An enum containing pre-defined OS-specific process priority values for
+ * portability.
+ */
 enum class os_process_priority {
   idle = PRIO_MAX - 2,
   below_normal = PRIO_MAX / 2,
@@ -594,8 +666,9 @@ enum class os_process_priority {
 };
 
 /**
-  * @brief An enum containing pre-defined OS-specific thread priority values for portability.
-  */
+ * @brief An enum containing pre-defined OS-specific thread priority values for
+ * portability.
+ */
 enum class os_thread_priority {
   idle,
   lowest,
@@ -608,10 +681,16 @@ enum class os_thread_priority {
 #endif
 
 /**
-  * @brief Get the processor affinity of the current process using the current platform's native API. This should work on Windows and Linux, but is not possible on macOS as the native API does not allow it.
-  *
-  * @return An `std::optional` object, optionally containing the processor affinity of the current process as an `std::vector<bool>` where each element corresponds to a logical processor. If the returned object does not contain a value, then the affinity could not be determined. On macOS, this function always returns `std::nullopt`.
-  */
+ * @brief Get the processor affinity of the current process using the current
+ * platform's native API. This should work on Windows and Linux, but is not
+ * possible on macOS as the native API does not allow it.
+ *
+ * @return An `std::optional` object, optionally containing the processor
+ * affinity of the current process as an `std::vector<bool>` where each element
+ * corresponds to a logical processor. If the returned object does not contain a
+ * value, then the affinity could not be determined. On macOS, this function
+ * always returns `std::nullopt`.
+ */
 [[nodiscard]] inline std::optional<std::vector<bool>>
 get_os_process_affinity() {
 #if defined(_WIN32)
@@ -653,11 +732,15 @@ get_os_process_affinity() {
 }
 
 /**
-  * @brief Set the processor affinity of the current process using the current platform's native API. This should work on Windows and Linux, but is not possible on macOS as the native API does not allow it.
-  *
-  * @param affinity The processor affinity to set, as an `std::vector<bool>` where each element corresponds to a logical processor.
-  * @return `true` if the affinity was set successfully, `false` otherwise. On macOS, this function always returns `false`.
-  */
+ * @brief Set the processor affinity of the current process using the current
+ * platform's native API. This should work on Windows and Linux, but is not
+ * possible on macOS as the native API does not allow it.
+ *
+ * @param affinity The processor affinity to set, as an `std::vector<bool>`
+ * where each element corresponds to a logical processor.
+ * @return `true` if the affinity was set successfully, `false` otherwise. On
+ * macOS, this function always returns `false`.
+ */
 inline bool set_os_process_affinity(const std::vector<bool>& affinity) {
 #if defined(_WIN32)
   DWORD_PTR process_mask = 0;
@@ -676,15 +759,21 @@ inline bool set_os_process_affinity(const std::vector<bool>& affinity) {
   return sched_setaffinity(getpid(), sizeof(cpu_set_t), &cpu_set) == 0;
 #elif defined(__APPLE__)
   return affinity[0] &&
-         false;  // NOLINT(readability-simplify-boolean-expr) // Using `affinity` to suppress unused parameter warning.
+         false;  // NOLINT(readability-simplify-boolean-expr) // Using `affinity`
+                 // to suppress unused parameter warning.
 #endif
 }
 
 /**
-  * @brief Get the priority of the current process using the current platform's native API. This should work on Windows, Linux, and macOS.
-  *
-  * @return An `std::optional` object, optionally containing the priority of the current process, as a member of the enum `BS::os_process_priority`. If the returned object does not contain a value, then either the priority could not be determined, or it is not one of the pre-defined values and therefore cannot be represented in a portable way.
-  */
+ * @brief Get the priority of the current process using the current platform's
+ * native API. This should work on Windows, Linux, and macOS.
+ *
+ * @return An `std::optional` object, optionally containing the priority of the
+ * current process, as a member of the enum `BS::os_process_priority`. If the
+ * returned object does not contain a value, then either the priority could not
+ * be determined, or it is not one of the pre-defined values and therefore
+ * cannot be represented in a portable way.
+ */
 [[nodiscard]] inline std::optional<os_process_priority>
 get_os_process_priority() {
 #if defined(_WIN32)
@@ -694,7 +783,14 @@ get_os_process_priority() {
     return std::nullopt;
   return static_cast<os_process_priority>(priority);
 #elif defined(__linux__) || defined(__APPLE__)
-  // On Linux/macOS there is no direct analogue of `GetPriorityClass()` on Windows, so instead we get the "nice" value. The usual range is -20 to 19 or 20, with higher values corresponding to lower priorities. However, we are only using 6 pre-defined values for portability, so if the value was set via any means other than `BS::set_os_process_priority()`, it may not match one of our pre-defined values. Note that `getpriority()` returns -1 on error, but since this does not correspond to any of our pre-defined values, this function will return `std::nullopt` anyway.
+  // On Linux/macOS there is no direct analogue of `GetPriorityClass()` on
+  // Windows, so instead we get the "nice" value. The usual range is -20 to 19
+  // or 20, with higher values corresponding to lower priorities. However, we
+  // are only using 6 pre-defined values for portability, so if the value was
+  // set via any means other than `BS::set_os_process_priority()`, it may not
+  // match one of our pre-defined values. Note that `getpriority()` returns -1
+  // on error, but since this does not correspond to any of our pre-defined
+  // values, this function will return `std::nullopt` anyway.
   const int nice_val = getpriority(PRIO_PROCESS, static_cast<id_t>(getpid()));
   switch (nice_val) {
     case static_cast<int>(os_process_priority::idle):
@@ -716,19 +812,34 @@ get_os_process_priority() {
 }
 
 /**
-  * @brief Set the priority of the current process using the current platform's native API. This should work on Windows, Linux, and macOS. However, note that higher priorities might require elevated permissions.
-  *
-  * @param priority The priority to set. Must be a value from the enum `BS::os_process_priority`.
-  * @return `true` if the priority was set successfully, `false` otherwise. Usually, `false` means that the user does not have the necessary permissions to set the desired priority.
-  */
+ * @brief Set the priority of the current process using the current platform's
+ * native API. This should work on Windows, Linux, and macOS. However, note that
+ * higher priorities might require elevated permissions.
+ *
+ * @param priority The priority to set. Must be a value from the enum
+ * `BS::os_process_priority`.
+ * @return `true` if the priority was set successfully, `false` otherwise.
+ * Usually, `false` means that the user does not have the necessary permissions
+ * to set the desired priority.
+ */
 inline bool set_os_process_priority(const os_process_priority priority) {
 #if defined(_WIN32)
   // On Windows, this is straightforward.
   return SetPriorityClass(GetCurrentProcess(), static_cast<DWORD>(priority)) !=
          0;
 #elif defined(__linux__) || defined(__APPLE__)
-  // On Linux/macOS there is no direct analogue of `SetPriorityClass()` on Windows, so instead we set the "nice" value. The usual range is -20 to 19 or 20, with higher values corresponding to lower priorities. However, we are only using 6 pre-defined values for portability. Note that the "nice" values are only relevant for the `SCHED_OTHER` policy, but we do not set that policy here, as it is per-thread rather than per-process.
-  // Also, it's important to note that a non-root user cannot decrease the nice value (i.e. increase the process priority), only increase it. This can cause confusing behavior. For example, if the current priority is `BS::os_process_priority::normal` and the user sets it to `BS::os_process_priority::idle`, they cannot change it back `BS::os_process_priority::normal`.
+  // On Linux/macOS there is no direct analogue of `SetPriorityClass()` on
+  // Windows, so instead we set the "nice" value. The usual range is -20 to 19
+  // or 20, with higher values corresponding to lower priorities. However, we
+  // are only using 6 pre-defined values for portability. Note that the "nice"
+  // values are only relevant for the `SCHED_OTHER` policy, but we do not set
+  // that policy here, as it is per-thread rather than per-process. Also, it's
+  // important to note that a non-root user cannot decrease the nice value (i.e.
+  // increase the process priority), only increase it. This can cause confusing
+  // behavior. For example, if the current priority is
+  // `BS::os_process_priority::normal` and the user sets it to
+  // `BS::os_process_priority::idle`, they cannot change it back
+  // `BS::os_process_priority::normal`.
   return setpriority(PRIO_PROCESS, static_cast<id_t>(getpid()),
                      static_cast<int>(priority)) == 0;
 #endif
@@ -736,41 +847,63 @@ inline bool set_os_process_priority(const os_process_priority priority) {
 #endif
 
 /**
-  * @brief A class used to obtain information about the current thread and, if native extensions are enabled, set its priority and affinity.
-  */
+ * @brief A class used to obtain information about the current thread and, if
+ * native extensions are enabled, set its priority and affinity.
+ */
 class [[nodiscard]] this_thread {
   template <opt_t>
   friend class thread_pool;
 
  public:
   /**
-      * @brief Get the index of the current thread. If this thread belongs to a `BS::thread_pool` object, the return value will be an index in the range `[0, N)` where `N == BS::thread_pool::get_thread_count()`. Otherwise, for example if this thread is the main thread or an independent thread not in any pools, `std::nullopt` will be returned.
-      *
-      * @return An `std::optional` object, optionally containing a thread index.
-      */
+   * @brief Get the index of the current thread. If this thread belongs to a
+   * `BS::thread_pool` object, the return value will be an index in the range
+   * `[0, N)` where `N == BS::thread_pool::get_thread_count()`. Otherwise, for
+   * example if this thread is the main thread or an independent thread not in
+   * any pools, `std::nullopt` will be returned.
+   *
+   * @return An `std::optional` object, optionally containing a thread index.
+   */
   [[nodiscard]] static std::optional<std::size_t> get_index() noexcept {
     return my_index;
   }
 
   /**
-      * @brief Get a pointer to the thread pool that owns the current thread. If this thread belongs to a `BS::thread_pool` object, the return value will be a `void` pointer to that object. Otherwise, for example if this thread is the main thread or an independent thread not in any pools, `std::nullopt` will be returned.
-      *
-      * @return An `std::optional` object, optionally containing a pointer to a thread pool. Note that this will be a `void` pointer, so it must be cast to the desired instantiation of the `BS::thread_pool` template in order to use any member functions.
-      */
+   * @brief Get a pointer to the thread pool that owns the current thread. If
+   * this thread belongs to a `BS::thread_pool` object, the return value will be
+   * a `void` pointer to that object. Otherwise, for example if this thread is
+   * the main thread or an independent thread not in any pools, `std::nullopt`
+   * will be returned.
+   *
+   * @return An `std::optional` object, optionally containing a pointer to a
+   * thread pool. Note that this will be a `void` pointer, so it must be cast to
+   * the desired instantiation of the `BS::thread_pool` template in order to use
+   * any member functions.
+   */
   [[nodiscard]] static std::optional<void*> get_pool() noexcept {
     return my_pool;
   }
 
 #ifdef BS_THREAD_POOL_NATIVE_EXTENSIONS
   /**
-      * @brief Get the processor affinity of the current thread using the current platform's native API. This should work on Windows and Linux, but is not possible on macOS as the native API does not allow it.
-      *
-      * @return An `std::optional` object, optionally containing the processor affinity of the current thread as an `std::vector<bool>` where each element corresponds to a logical processor. If the returned object does not contain a value, then the affinity could not be determined. On macOS, this function always returns `std::nullopt`.
-      */
+   * @brief Get the processor affinity of the current thread using the current
+   * platform's native API. This should work on Windows and Linux, but is not
+   * possible on macOS as the native API does not allow it.
+   *
+   * @return An `std::optional` object, optionally containing the processor
+   * affinity of the current thread as an `std::vector<bool>` where each element
+   * corresponds to a logical processor. If the returned object does not contain
+   * a value, then the affinity could not be determined. On macOS, this function
+   * always returns `std::nullopt`.
+   */
   [[nodiscard]] static std::optional<std::vector<bool>>
   get_os_thread_affinity() {
 #if defined(_WIN32)
-    // Windows does not have a `GetThreadAffinityMask()` function, but `SetThreadAffinityMask()` returns the previous affinity mask, so we can use that to get the current affinity and then restore it. It's a bit of a hack, but it works. Since the thread affinity must be a subset of the process affinity, we use the process affinity as the temporary value.
+    // Windows does not have a `GetThreadAffinityMask()` function, but
+    // `SetThreadAffinityMask()` returns the previous affinity mask, so we can
+    // use that to get the current affinity and then restore it. It's a bit of a
+    // hack, but it works. Since the thread affinity must be a subset of the
+    // process affinity, we use the process affinity as the temporary value.
     DWORD_PTR process_mask = 0;
     DWORD_PTR system_mask = 0;
     if (GetProcessAffinityMask(GetCurrentProcess(), &process_mask,
@@ -815,11 +948,17 @@ class [[nodiscard]] this_thread {
   }
 
   /**
-      * @brief Set the processor affinity of the current thread using the current platform's native API. This should work on Windows and Linux, but is not possible on macOS as the native API does not allow it. Note that the thread affinity must be a subset of the process affinity (as obtained using `BS::get_os_process_affinity()`) for the containing process of a thread.
-      *
-      * @param affinity The processor affinity to set, as an `std::vector<bool>` where each element corresponds to a logical processor.
-      * @return `true` if the affinity was set successfully, `false` otherwise. On macOS, this function always returns `false`.
-      */
+   * @brief Set the processor affinity of the current thread using the current
+   * platform's native API. This should work on Windows and Linux, but is not
+   * possible on macOS as the native API does not allow it. Note that the thread
+   * affinity must be a subset of the process affinity (as obtained using
+   * `BS::get_os_process_affinity()`) for the containing process of a thread.
+   *
+   * @param affinity The processor affinity to set, as an `std::vector<bool>`
+   * where each element corresponds to a logical processor.
+   * @return `true` if the affinity was set successfully, `false` otherwise. On
+   * macOS, this function always returns `false`.
+   */
   static bool set_os_thread_affinity(const std::vector<bool>& affinity) {
 #if defined(_WIN32)
     DWORD_PTR thread_mask = 0;
@@ -839,18 +978,23 @@ class [[nodiscard]] this_thread {
                                   &cpu_set) == 0;
 #elif defined(__APPLE__)
     return affinity[0] &&
-           false;  // NOLINT(readability-simplify-boolean-expr) // Using `affinity` to suppress unused parameter warning.
+           false;  // NOLINT(readability-simplify-boolean-expr) // Using
+                   // `affinity` to suppress unused parameter warning.
 #endif
   }
 
   /**
-      * @brief Get the name of the current thread using the current platform's native API. This should work on Windows, Linux, and macOS.
-      *
-      * @return An `std::optional` object, optionally containing the name of the current thread. If the returned object does not contain a value, then the name could not be determined.
-      */
+   * @brief Get the name of the current thread using the current platform's
+   * native API. This should work on Windows, Linux, and macOS.
+   *
+   * @return An `std::optional` object, optionally containing the name of the
+   * current thread. If the returned object does not contain a value, then the
+   * name could not be determined.
+   */
   [[nodiscard]] static std::optional<std::string> get_os_thread_name() {
 #if defined(_WIN32)
-    // On Windows thread names are wide strings, so we need to convert them to normal strings.
+    // On Windows thread names are wide strings, so we need to convert them to
+    // normal strings.
     PWSTR data = nullptr;
     const HRESULT hr = GetThreadDescription(GetCurrentThread(), &data);
     if (FAILED(hr))
@@ -872,10 +1016,12 @@ class [[nodiscard]] this_thread {
     return name;
 #elif defined(__linux__) || defined(__APPLE__)
 #ifdef __linux__
-    // On Linux thread names are limited to 16 characters, including the null terminator.
+    // On Linux thread names are limited to 16 characters, including the null
+    // terminator.
     constexpr std::size_t buffer_size = 16;
 #else
-    // On macOS thread names are limited to 64 characters, including the null terminator.
+    // On macOS thread names are limited to 64 characters, including the null
+    // terminator.
     constexpr std::size_t buffer_size = 64;
 #endif
     char name[buffer_size] = {};
@@ -886,14 +1032,18 @@ class [[nodiscard]] this_thread {
   }
 
   /**
-      * @brief Set the name of the current thread using the current platform's native API. This should work on Windows, Linux, and macOS. Note that on Linux thread names are limited to 16 characters, including the null terminator.
-      *
-      * @param name The name to set.
-      * @return `true` if the name was set successfully, `false` otherwise.
-      */
+   * @brief Set the name of the current thread using the current platform's
+   * native API. This should work on Windows, Linux, and macOS. Note that on
+   * Linux thread names are limited to 16 characters, including the null
+   * terminator.
+   *
+   * @param name The name to set.
+   * @return `true` if the name was set successfully, `false` otherwise.
+   */
   static bool set_os_thread_name(const std::string& name) {
 #if defined(_WIN32)
-    // On Windows thread names are wide strings, so we need to convert them from normal strings.
+    // On Windows thread names are wide strings, so we need to convert them from
+    // normal strings.
     const int size =
         MultiByteToWideChar(CP_UTF8, 0, name.data(), -1, nullptr, 0);
     if (size == 0)
@@ -908,16 +1058,21 @@ class [[nodiscard]] this_thread {
     // On Linux this is straightforward.
     return pthread_setname_np(pthread_self(), name.data()) == 0;
 #elif defined(__APPLE__)
-    // On macOS, unlike Linux, a thread can only set a name for itself, so the signature is different.
+    // On macOS, unlike Linux, a thread can only set a name for itself, so the
+    // signature is different.
     return pthread_setname_np(name.data()) == 0;
 #endif
   }
 
   /**
-      * @brief Get the priority of the current thread using the current platform's native API. This should work on Windows, Linux, and macOS.
-      *
-      * @return An `std::optional` object, optionally containing the priority of the current thread, as a member of the enum `BS::os_thread_priority`. If the returned object does not contain a value, then either the priority could not be determined, or it is not one of the pre-defined values.
-      */
+   * @brief Get the priority of the current thread using the current platform's
+   * native API. This should work on Windows, Linux, and macOS.
+   *
+   * @return An `std::optional` object, optionally containing the priority of
+   * the current thread, as a member of the enum `BS::os_thread_priority`. If
+   * the returned object does not contain a value, then either the priority
+   * could not be determined, or it is not one of the pre-defined values.
+   */
   [[nodiscard]] static std::optional<os_thread_priority>
   get_os_thread_priority() {
 #if defined(_WIN32)
@@ -927,14 +1082,20 @@ class [[nodiscard]] this_thread {
       return std::nullopt;
     return static_cast<os_thread_priority>(priority);
 #elif defined(__linux__)
-    // On Linux, we distill the choices of scheduling policy, priority, and "nice" value into 7 pre-defined levels, for simplicity and portability. The total number of possible combinations of policies and priorities is much larger, so if the value was set via any means other than `BS::this_thread::set_os_thread_priority()`, it may not match one of our pre-defined values.
+    // On Linux, we distill the choices of scheduling policy, priority, and
+    // "nice" value into 7 pre-defined levels, for simplicity and portability.
+    // The total number of possible combinations of policies and priorities is
+    // much larger, so if the value was set via any means other than
+    // `BS::this_thread::set_os_thread_priority()`, it may not match one of our
+    // pre-defined values.
     int policy = 0;
     struct sched_param param = {};
     if (pthread_getschedparam(pthread_self(), &policy, &param) != 0)
       return std::nullopt;
     if (policy == SCHED_FIFO &&
         param.sched_priority == sched_get_priority_max(SCHED_FIFO)) {
-      // The only pre-defined priority that uses SCHED_FIFO and the maximum available priority value is the "realtime" priority.
+      // The only pre-defined priority that uses SCHED_FIFO and the maximum
+      // available priority value is the "realtime" priority.
       return os_thread_priority::realtime;
     }
     if (policy == SCHED_RR &&
@@ -942,17 +1103,23 @@ class [[nodiscard]] this_thread {
                                     (sched_get_priority_max(SCHED_RR) -
                                      sched_get_priority_min(SCHED_RR)) /
                                         2) {
-      // The only pre-defined priority that uses SCHED_RR and a priority in the middle of the available range is the "highest" priority.
+      // The only pre-defined priority that uses SCHED_RR and a priority in the
+      // middle of the available range is the "highest" priority.
       return os_thread_priority::highest;
     }
 #ifdef __linux__
     if (policy == SCHED_IDLE) {
-      // The only pre-defined priority that uses SCHED_IDLE is the "idle" priority. Note that this scheduling policy is not available on macOS.
+      // The only pre-defined priority that uses SCHED_IDLE is the "idle"
+      // priority. Note that this scheduling policy is not available on macOS.
       return os_thread_priority::idle;
     }
 #endif
     if (policy == SCHED_OTHER) {
-      // For SCHED_OTHER, the result depends on the "nice" value. The usual range is -20 to 19 or 20, with higher values corresponding to lower priorities. Note that `getpriority()` returns -1 on error, but since this does not correspond to any of our pre-defined values, this function will return `std::nullopt` anyway.
+      // For SCHED_OTHER, the result depends on the "nice" value. The usual
+      // range is -20 to 19 or 20, with higher values corresponding to lower
+      // priorities. Note that `getpriority()` returns -1 on error, but since
+      // this does not correspond to any of our pre-defined values, this
+      // function will return `std::nullopt` anyway.
       const int nice_val =
           getpriority(PRIO_PROCESS, static_cast<id_t>(syscall(SYS_gettid)));
       switch (nice_val) {
@@ -965,7 +1132,8 @@ class [[nodiscard]] this_thread {
         case PRIO_MAX - 3:
           return os_thread_priority::lowest;
 #ifdef __APPLE__
-        // `SCHED_IDLE` doesn't exist on macOS, so we use the policy `SCHED_OTHER` with a "nice" value of `PRIO_MAX - 2`.
+        // `SCHED_IDLE` doesn't exist on macOS, so we use the policy `SCHED_OTHER`
+        // with a "nice" value of `PRIO_MAX - 2`.
         case PRIO_MAX - 2:
           return os_thread_priority::idle;
 #endif
@@ -975,14 +1143,20 @@ class [[nodiscard]] this_thread {
     }
     return std::nullopt;
 #elif defined(__APPLE__)
-    // On macOS, we distill the choices of scheduling policy and priority into 7 pre-defined levels, for simplicity and portability. The total number of possible combinations of policies and priorities is much larger, so if the value was set via any means other than `BS::this_thread::set_os_thread_priority()`, it may not match one of our pre-defined values.
+    // On macOS, we distill the choices of scheduling policy and priority into 7
+    // pre-defined levels, for simplicity and portability. The total number of
+    // possible combinations of policies and priorities is much larger, so if
+    // the value was set via any means other than
+    // `BS::this_thread::set_os_thread_priority()`, it may not match one of our
+    // pre-defined values.
     int policy = 0;
     struct sched_param param = {};
     if (pthread_getschedparam(pthread_self(), &policy, &param) != 0)
       return std::nullopt;
     if (policy == SCHED_FIFO &&
         param.sched_priority == sched_get_priority_max(SCHED_FIFO)) {
-      // The only pre-defined priority that uses SCHED_FIFO and the maximum available priority value is the "realtime" priority.
+      // The only pre-defined priority that uses SCHED_FIFO and the maximum
+      // available priority value is the "realtime" priority.
       return os_thread_priority::realtime;
     }
     if (policy == SCHED_RR &&
@@ -990,11 +1164,13 @@ class [[nodiscard]] this_thread {
                                     (sched_get_priority_max(SCHED_RR) -
                                      sched_get_priority_min(SCHED_RR)) /
                                         2) {
-      // The only pre-defined priority that uses SCHED_RR and a priority in the middle of the available range is the "highest" priority.
+      // The only pre-defined priority that uses SCHED_RR and a priority in the
+      // middle of the available range is the "highest" priority.
       return os_thread_priority::highest;
     }
     if (policy == SCHED_OTHER) {
-      // For SCHED_OTHER, the result depends on the specific value of the priority.
+      // For SCHED_OTHER, the result depends on the specific value of the
+      // priority.
       if (param.sched_priority == sched_get_priority_max(SCHED_OTHER))
         return os_thread_priority::above_normal;
       if (param.sched_priority == sched_get_priority_min(SCHED_OTHER) +
@@ -1021,29 +1197,40 @@ class [[nodiscard]] this_thread {
   }
 
   /**
-      * @brief Set the priority of the current thread using the current platform's native API. This should work on Windows, Linux, and macOS. However, note that higher priorities might require elevated permissions.
-      *
-      * @param priority The priority to set. Must be a value from the enum `BS::os_thread_priority`.
-      * @return `true` if the priority was set successfully, `false` otherwise. Usually, `false` means that the user does not have the necessary permissions to set the desired priority.
-      */
+   * @brief Set the priority of the current thread using the current platform's
+   * native API. This should work on Windows, Linux, and macOS. However, note
+   * that higher priorities might require elevated permissions.
+   *
+   * @param priority The priority to set. Must be a value from the enum
+   * `BS::os_thread_priority`.
+   * @return `true` if the priority was set successfully, `false` otherwise.
+   * Usually, `false` means that the user does not have the necessary
+   * permissions to set the desired priority.
+   */
   static bool set_os_thread_priority(const os_thread_priority priority) {
 #if defined(_WIN32)
     // On Windows, this is straightforward.
     return SetThreadPriority(GetCurrentThread(), static_cast<int>(priority)) !=
            0;
 #elif defined(__linux__)
-    // On Linux, we distill the choices of scheduling policy, priority, and "nice" value into 7 pre-defined levels, for simplicity and portability. The total number of possible combinations of policies and priorities is much larger, but allowing more fine-grained control would not be portable.
+    // On Linux, we distill the choices of scheduling policy, priority, and
+    // "nice" value into 7 pre-defined levels, for simplicity and portability.
+    // The total number of possible combinations of policies and priorities is
+    // much larger, but allowing more fine-grained control would not be
+    // portable.
     int policy = 0;
     struct sched_param param = {};
     std::optional<int> nice_val = std::nullopt;
     switch (priority) {
       case os_thread_priority::realtime:
-        // "Realtime" pre-defined priority: We use the policy `SCHED_FIFO` with the highest possible priority.
+        // "Realtime" pre-defined priority: We use the policy `SCHED_FIFO` with
+        // the highest possible priority.
         policy = SCHED_FIFO;
         param.sched_priority = sched_get_priority_max(SCHED_FIFO);
         break;
       case os_thread_priority::highest:
-        // "Highest" pre-defined priority: We use the policy `SCHED_RR` ("round-robin") with a priority in the middle of the available range.
+        // "Highest" pre-defined priority: We use the policy `SCHED_RR`
+        // ("round-robin") with a priority in the middle of the available range.
         policy = SCHED_RR;
         param.sched_priority = sched_get_priority_min(SCHED_RR) +
                                (sched_get_priority_max(SCHED_RR) -
@@ -1051,31 +1238,42 @@ class [[nodiscard]] this_thread {
                                    2;
         break;
       case os_thread_priority::above_normal:
-        // "Above normal" pre-defined priority: We use the policy `SCHED_OTHER` (the default). This policy does not accept a priority value, so priority must be 0. However, we set the "nice" value to the minimum value as given by `PRIO_MIN`, plus 2 (which should evaluate to -18). The usual range is -20 to 19 or 20, with higher values corresponding to lower priorities.
+        // "Above normal" pre-defined priority: We use the policy `SCHED_OTHER`
+        // (the default). This policy does not accept a priority value, so
+        // priority must be 0. However, we set the "nice" value to the minimum
+        // value as given by `PRIO_MIN`, plus 2 (which should evaluate to -18).
+        // The usual range is -20 to 19 or 20, with higher values corresponding to
+        // lower priorities.
         policy = SCHED_OTHER;
         param.sched_priority = 0;
         nice_val = PRIO_MIN + 2;
         break;
       case os_thread_priority::normal:
-        // "Normal" pre-defined priority: We use the policy `SCHED_OTHER`, priority must be 0, and we set the "nice" value to 0 (the default).
+        // "Normal" pre-defined priority: We use the policy `SCHED_OTHER`,
+        // priority must be 0, and we set the "nice" value to 0 (the default).
         policy = SCHED_OTHER;
         param.sched_priority = 0;
         nice_val = 0;
         break;
       case os_thread_priority::below_normal:
-        // "Below normal" pre-defined priority: We use the policy `SCHED_OTHER`, priority must be 0, and we set the "nice" value to half the maximum value as given by `PRIO_MAX`, rounded up (which should evaluate to 10).
+        // "Below normal" pre-defined priority: We use the policy `SCHED_OTHER`,
+        // priority must be 0, and we set the "nice" value to half the maximum
+        // value as given by `PRIO_MAX`, rounded up (which should evaluate to 10).
         policy = SCHED_OTHER;
         param.sched_priority = 0;
         nice_val = (PRIO_MAX / 2) + (PRIO_MAX % 2);
         break;
       case os_thread_priority::lowest:
-        // "Lowest" pre-defined priority: We use the policy `SCHED_OTHER`, priority must be 0, and we set the "nice" value to the maximum value as given by `PRIO_MAX`, minus 3 (which should evaluate to 17).
+        // "Lowest" pre-defined priority: We use the policy `SCHED_OTHER`,
+        // priority must be 0, and we set the "nice" value to the maximum value as
+        // given by `PRIO_MAX`, minus 3 (which should evaluate to 17).
         policy = SCHED_OTHER;
         param.sched_priority = 0;
         nice_val = PRIO_MAX - 3;
         break;
       case os_thread_priority::idle:
-        // "Idle" pre-defined priority on Linux: We use the policy `SCHED_IDLE`, priority must be 0, and we don't touch the "nice" value.
+        // "Idle" pre-defined priority on Linux: We use the policy `SCHED_IDLE`,
+        // priority must be 0, and we don't touch the "nice" value.
         policy = SCHED_IDLE;
         param.sched_priority = 0;
         break;
@@ -1089,17 +1287,25 @@ class [[nodiscard]] this_thread {
                                         nice_val.value()) == 0);
     return success;
 #elif defined(__APPLE__)
-    // On macOS, unlike Linux, the "nice" value is per-process, not per-thread (in compliance with the POSIX standard). However, unlike Linux, `SCHED_OTHER` on macOS does have a range of priorities. So for `realtime` and `highest` priorities we use `SCHED_FIFO` and `SCHED_RR` respectively as for Linux, but for the other priorities we use `SCHED_OTHER` with a priority in the range given by `sched_get_priority_min(SCHED_OTHER)` to `sched_get_priority_max(SCHED_OTHER)`.
+    // On macOS, unlike Linux, the "nice" value is per-process, not per-thread
+    // (in compliance with the POSIX standard). However, unlike Linux,
+    // `SCHED_OTHER` on macOS does have a range of priorities. So for `realtime`
+    // and `highest` priorities we use `SCHED_FIFO` and `SCHED_RR` respectively
+    // as for Linux, but for the other priorities we use `SCHED_OTHER` with a
+    // priority in the range given by `sched_get_priority_min(SCHED_OTHER)` to
+    // `sched_get_priority_max(SCHED_OTHER)`.
     int policy = 0;
     struct sched_param param = {};
     switch (priority) {
       case os_thread_priority::realtime:
-        // "Realtime" pre-defined priority: We use the policy `SCHED_FIFO` with the highest possible priority.
+        // "Realtime" pre-defined priority: We use the policy `SCHED_FIFO` with
+        // the highest possible priority.
         policy = SCHED_FIFO;
         param.sched_priority = sched_get_priority_max(SCHED_FIFO);
         break;
       case os_thread_priority::highest:
-        // "Highest" pre-defined priority: We use the policy `SCHED_RR` ("round-robin") with a priority in the middle of the available range.
+        // "Highest" pre-defined priority: We use the policy `SCHED_RR`
+        // ("round-robin") with a priority in the middle of the available range.
         policy = SCHED_RR;
         param.sched_priority = sched_get_priority_min(SCHED_RR) +
                                (sched_get_priority_max(SCHED_RR) -
@@ -1107,12 +1313,15 @@ class [[nodiscard]] this_thread {
                                    2;
         break;
       case os_thread_priority::above_normal:
-        // "Above normal" pre-defined priority: We use the policy `SCHED_OTHER` (the default) with the highest possible priority.
+        // "Above normal" pre-defined priority: We use the policy `SCHED_OTHER`
+        // (the default) with the highest possible priority.
         policy = SCHED_OTHER;
         param.sched_priority = sched_get_priority_max(SCHED_OTHER);
         break;
       case os_thread_priority::normal:
-        // "Normal" pre-defined priority: We use the policy `SCHED_OTHER` (the default) with a priority in the middle of the available range (which appears to be the default?).
+        // "Normal" pre-defined priority: We use the policy `SCHED_OTHER` (the
+        // default) with a priority in the middle of the available range (which
+        // appears to be the default?).
         policy = SCHED_OTHER;
         param.sched_priority = sched_get_priority_min(SCHED_OTHER) +
                                (sched_get_priority_max(SCHED_OTHER) -
@@ -1120,7 +1329,8 @@ class [[nodiscard]] this_thread {
                                    2;
         break;
       case os_thread_priority::below_normal:
-        // "Below normal" pre-defined priority: We use the policy `SCHED_OTHER` (the default) with a priority equal to 2/3rds of the normal value.
+        // "Below normal" pre-defined priority: We use the policy `SCHED_OTHER`
+        // (the default) with a priority equal to 2/3rds of the normal value.
         policy = SCHED_OTHER;
         param.sched_priority = sched_get_priority_min(SCHED_OTHER) +
                                (sched_get_priority_max(SCHED_OTHER) -
@@ -1128,7 +1338,8 @@ class [[nodiscard]] this_thread {
                                    2 / 3;
         break;
       case os_thread_priority::lowest:
-        // "Lowest" pre-defined priority: We use the policy `SCHED_OTHER` (the default) with a priority equal to 1/3rd of the normal value.
+        // "Lowest" pre-defined priority: We use the policy `SCHED_OTHER` (the
+        // default) with a priority equal to 1/3rd of the normal value.
         policy = SCHED_OTHER;
         param.sched_priority = sched_get_priority_min(SCHED_OTHER) +
                                (sched_get_priority_max(SCHED_OTHER) -
@@ -1136,7 +1347,8 @@ class [[nodiscard]] this_thread {
                                    3;
         break;
       case os_thread_priority::idle:
-        // "Idle" pre-defined priority on macOS: We use the policy `SCHED_OTHER` (the default) with the lowest possible priority.
+        // "Idle" pre-defined priority on macOS: We use the policy `SCHED_OTHER`
+        // (the default) with the lowest possible priority.
         policy = SCHED_OTHER;
         param.sched_priority = sched_get_priority_min(SCHED_OTHER);
         break;
@@ -1154,26 +1366,30 @@ class [[nodiscard]] this_thread {
 };  // class this_thread
 
 /**
-  * @brief A meta-programming template to determine the common type of two integer types. Unlike `std::common_type`, this template maintains correct signedness.
-  *
-  * @tparam T1 The first type.
-  * @tparam T2 The second type.
-  * @tparam Enable A dummy parameter to enable SFINAE in specializations.
-  */
+ * @brief A meta-programming template to determine the common type of two
+ * integer types. Unlike `std::common_type`, this template maintains correct
+ * signedness.
+ *
+ * @tparam T1 The first type.
+ * @tparam T2 The second type.
+ * @tparam Enable A dummy parameter to enable SFINAE in specializations.
+ */
 template <typename T1, typename T2, typename Enable = void>
 struct common_index_type {
   // Fallback to `std::common_type_t` if no specialization matches.
   using type = std::common_type_t<T1, T2>;
 };
 
-// The common type of two signed integers is the larger of the integers, with the same signedness.
+// The common type of two signed integers is the larger of the integers, with
+// the same signedness.
 template <typename T1, typename T2>
 struct common_index_type<
     T1, T2, std::enable_if_t<std::is_signed_v<T1> && std::is_signed_v<T2>>> {
   using type = std::conditional_t<(sizeof(T1) >= sizeof(T2)), T1, T2>;
 };
 
-// The common type of two unsigned integers is the larger of the integers, with the same signedness.
+// The common type of two unsigned integers is the larger of the integers, with
+// the same signedness.
 template <typename T1, typename T2>
 struct common_index_type<
     T1, T2,
@@ -1181,7 +1397,8 @@ struct common_index_type<
   using type = std::conditional_t<(sizeof(T1) >= sizeof(T2)), T1, T2>;
 };
 
-// The common type of a signed and an unsigned integer is a signed integer that can hold the full ranges of both integers.
+// The common type of a signed and an unsigned integer is a signed integer that
+// can hold the full ranges of both integers.
 template <typename T1, typename T2>
 struct common_index_type<
     T1, T2,
@@ -1193,91 +1410,119 @@ struct common_index_type<
       (sizeof(S) > sizeof(U)) ? sizeof(S) : sizeof(U);
   using type = std::conditional_t<
       larger_size <= 4,
-      // If both integers are 32 bits or less, the common type should be a signed type that can hold both of them. If both are 8 bits, or the signed type is 16 bits and the unsigned type is 8 bits, the common type is `std::int16_t`. Otherwise, if both are 16 bits, or the signed type is 32 bits and the unsigned type is smaller, the common type is `std::int32_t`. Otherwise, if both are 32 bits or less, the common type is `std::int64_t`.
+      // If both integers are 32 bits or less, the common type should be a
+      // signed type that can hold both of them. If both are 8 bits, or the
+      // signed type is 16 bits and the unsigned type is 8 bits, the common type
+      // is `std::int16_t`. Otherwise, if both are 16 bits, or the signed type
+      // is 32 bits and the unsigned type is smaller, the common type is
+      // `std::int32_t`. Otherwise, if both are 32 bits or less, the common type
+      // is `std::int64_t`.
       std::conditional_t<
           larger_size == 1 || (sizeof(S) == 2 && sizeof(U) == 1), std::int16_t,
           std::conditional_t<larger_size == 2 ||
                                  (sizeof(S) == 4 && sizeof(U) < 4),
                              std::int32_t, std::int64_t>>,
-      // If the unsigned integer is 64 bits, the common type should also be an unsigned 64-bit integer, that is, `std::uint64_t`. The reason is that the most common scenario where this might happen is where the indices go from 0 to `x` where `x` has been previously defined as `std::size_t`, e.g. the size of a vector. Note that this will fail if the first index is negative; in that case, the user must cast the indices explicitly to the desired common type. If the unsigned integer is not 64 bits, then the signed integer must be 64 bits, hence the common type is `std::int64_t`.
+      // If the unsigned integer is 64 bits, the common type should also be an
+      // unsigned 64-bit integer, that is, `std::uint64_t`. The reason is that
+      // the most common scenario where this might happen is where the indices
+      // go from 0 to `x` where `x` has been previously defined as
+      // `std::size_t`, e.g. the size of a vector. Note that this will fail if
+      // the first index is negative; in that case, the user must cast the
+      // indices explicitly to the desired common type. If the unsigned integer
+      // is not 64 bits, then the signed integer must be 64 bits, hence the
+      // common type is `std::int64_t`.
       std::conditional_t<sizeof(U) == 8, std::uint64_t, std::int64_t>>;
 };
 
 /**
-  * @brief A helper type alias to obtain the common type from the template `BS::common_index_type`.
-  *
-  * @tparam T1 The first type.
-  * @tparam T2 The second type.
-  */
+ * @brief A helper type alias to obtain the common type from the template
+ * `BS::common_index_type`.
+ *
+ * @tparam T1 The first type.
+ * @tparam T2 The second type.
+ */
 template <typename T1, typename T2>
 using common_index_type_t = typename common_index_type<T1, T2>::type;
 
 /**
-  * @brief An enumeration of flags to be used in the bitmask template parameter of `BS::thread_pool` to enable optional features.
-  */
+ * @brief An enumeration of flags to be used in the bitmask template parameter
+ * of `BS::thread_pool` to enable optional features.
+ */
 enum tp : opt_t {
   /**
-      * @brief No optional features enabled.
-      */
+   * @brief No optional features enabled.
+   */
   none = 0,
 
   /**
-      * @brief Enable task priority.
-      */
+   * @brief Enable task priority.
+   */
   priority = 1 << 0,
 
   /**
-      * @brief Enable pausing.
-      */
+   * @brief Enable pausing.
+   */
   pause = 1 << 2,
 
   /**
-      * @brief Enable wait deadlock checks.
-      */
+   * @brief Enable wait deadlock checks.
+   */
   wait_deadlock_checks = 1 << 3
 };
 
 /**
-  * @brief A fast, lightweight, modern, and easy-to-use C++17/C++20/C++23 thread pool class. This alias defines a thread pool with all optional features disabled.
-  */
+ * @brief A fast, lightweight, modern, and easy-to-use C++17/C++20/C++23 thread
+ * pool class. This alias defines a thread pool with all optional features
+ * disabled.
+ */
 using light_thread_pool = thread_pool<tp::none>;
 
 /**
-  * @brief A fast, lightweight, modern, and easy-to-use C++17/C++20/C++23 thread pool class. This alias defines a thread pool with task priority enabled.
-  */
+ * @brief A fast, lightweight, modern, and easy-to-use C++17/C++20/C++23 thread
+ * pool class. This alias defines a thread pool with task priority enabled.
+ */
 using priority_thread_pool = thread_pool<tp::priority>;
 
 /**
-  * @brief A fast, lightweight, modern, and easy-to-use C++17/C++20/C++23 thread pool class. This alias defines a thread pool with pausing enabled.
-  */
+ * @brief A fast, lightweight, modern, and easy-to-use C++17/C++20/C++23 thread
+ * pool class. This alias defines a thread pool with pausing enabled.
+ */
 using pause_thread_pool = thread_pool<tp::pause>;
 
 /**
-  * @brief A fast, lightweight, modern, and easy-to-use C++17/C++20/C++23 thread pool class. This alias defines a thread pool with wait deadlock checks enabled.
-  */
+ * @brief A fast, lightweight, modern, and easy-to-use C++17/C++20/C++23 thread
+ * pool class. This alias defines a thread pool with wait deadlock checks
+ * enabled.
+ */
 using wdc_thread_pool = thread_pool<tp::wait_deadlock_checks>;
 
 /**
-  * @brief A fast, lightweight, modern, and easy-to-use C++17/C++20/C++23 thread pool class.
-  *
-  * @tparam OptFlags A bitmask of flags which can be used to enable optional features. The flags are members of the `BS::tp` enumeration: `BS::tp::priority`, `BS::tp::pause`, and `BS::tp::wait_deadlock_checks`. The default is `BS::tp::none`, which disables all optional features. To enable multiple features, use the bitwise OR operator `|`, e.g. `BS::tp::priority | BS::tp::pause`.
-  */
+ * @brief A fast, lightweight, modern, and easy-to-use C++17/C++20/C++23 thread
+ * pool class.
+ *
+ * @tparam OptFlags A bitmask of flags which can be used to enable optional
+ * features. The flags are members of the `BS::tp` enumeration:
+ * `BS::tp::priority`, `BS::tp::pause`, and `BS::tp::wait_deadlock_checks`. The
+ * default is `BS::tp::none`, which disables all optional features. To enable
+ * multiple features, use the bitwise OR operator `|`, e.g. `BS::tp::priority |
+ * BS::tp::pause`.
+ */
 template <opt_t OptFlags = tp::none>
 class [[nodiscard]] thread_pool {
  public:
   /**
-      * @brief A flag indicating whether task priority is enabled.
-      */
+   * @brief A flag indicating whether task priority is enabled.
+   */
   static constexpr bool priority_enabled = (OptFlags & tp::priority) != 0;
 
   /**
-      * @brief A flag indicating whether pausing is enabled.
-      */
+   * @brief A flag indicating whether pausing is enabled.
+   */
   static constexpr bool pause_enabled = (OptFlags & tp::pause) != 0;
 
   /**
-      * @brief A flag indicating whether wait deadlock checks are enabled.
-      */
+   * @brief A flag indicating whether wait deadlock checks are enabled.
+   */
   static constexpr bool wait_deadlock_checks_enabled =
       (OptFlags & tp::wait_deadlock_checks) != 0;
 
@@ -1292,46 +1537,67 @@ class [[nodiscard]] thread_pool {
   // ============================
 
   /**
-      * @brief Construct a new thread pool. The number of threads will be the total number of hardware threads available, as reported by the implementation. This is usually determined by the number of cores in the CPU. If a core is hyperthreaded, it will count as two threads.
-      */
+   * @brief Construct a new thread pool. The number of threads will be the total
+   * number of hardware threads available, as reported by the implementation.
+   * This is usually determined by the number of cores in the CPU. If a core is
+   * hyperthreaded, it will count as two threads.
+   */
   thread_pool() : thread_pool(0, [] {}) {}
 
   /**
-      * @brief Construct a new thread pool with the specified number of threads.
-      *
-      * @param num_threads The number of threads to use.
-      */
+   * @brief Construct a new thread pool with the specified number of threads.
+   *
+   * @param num_threads The number of threads to use.
+   */
   explicit thread_pool(const std::size_t num_threads)
       : thread_pool(num_threads, [] {}) {}
 
   /**
-      * @brief Construct a new thread pool with the specified initialization function.
-      *
-      * @param init An initialization function to run in each thread before it starts executing any submitted tasks. The function must have no return value, and can either take one argument, the thread index of type `std::size_t`, or zero arguments. It will be executed exactly once per thread, when the thread is first constructed. The initialization function must not throw any exceptions, as that will result in program termination. Any exceptions must be handled explicitly within the function.
-      */
+   * @brief Construct a new thread pool with the specified initialization
+   * function.
+   *
+   * @param init An initialization function to run in each thread before it
+   * starts executing any submitted tasks. The function must have no return
+   * value, and can either take one argument, the thread index of type
+   * `std::size_t`, or zero arguments. It will be executed exactly once per
+   * thread, when the thread is first constructed. The initialization function
+   * must not throw any exceptions, as that will result in program termination.
+   * Any exceptions must be handled explicitly within the function.
+   */
   template <BS_THREAD_POOL_INIT_FUNC_CONCEPT(F)>
   explicit thread_pool(F&& init) : thread_pool(0, std::forward<F>(init)) {}
 
   /**
-      * @brief Construct a new thread pool with the specified number of threads and initialization function.
-      *
-      * @param num_threads The number of threads to use.
-      * @param init An initialization function to run in each thread before it starts executing any submitted tasks. The function must have no return value, and can either take one argument, the thread index of type `std::size_t`, or zero arguments. It will be executed exactly once per thread, when the thread is first constructed. The initialization function must not throw any exceptions, as that will result in program termination. Any exceptions must be handled explicitly within the function.
-      */
+   * @brief Construct a new thread pool with the specified number of threads and
+   * initialization function.
+   *
+   * @param num_threads The number of threads to use.
+   * @param init An initialization function to run in each thread before it
+   * starts executing any submitted tasks. The function must have no return
+   * value, and can either take one argument, the thread index of type
+   * `std::size_t`, or zero arguments. It will be executed exactly once per
+   * thread, when the thread is first constructed. The initialization function
+   * must not throw any exceptions, as that will result in program termination.
+   * Any exceptions must be handled explicitly within the function.
+   */
   template <BS_THREAD_POOL_INIT_FUNC_CONCEPT(F)>
   thread_pool(const std::size_t num_threads, F&& init) {
     create_threads(num_threads, std::forward<F>(init));
   }
 
-  // The copy and move constructors and assignment operators are deleted. The thread pool cannot be copied or moved.
+  // The copy and move constructors and assignment operators are deleted. The
+  // thread pool cannot be copied or moved.
   thread_pool(const thread_pool&) = delete;
   thread_pool(thread_pool&&) = delete;
   thread_pool& operator=(const thread_pool&) = delete;
   thread_pool& operator=(thread_pool&&) = delete;
 
   /**
-      * @brief Destruct the thread pool. Waits for all tasks to complete, then destroys all threads. If a cleanup function was set, it will run in each thread right before it is destroyed. Note that if the pool is paused, then any tasks still in the queue will never be executed.
-      */
+   * @brief Destruct the thread pool. Waits for all tasks to complete, then
+   * destroys all threads. If a cleanup function was set, it will run in each
+   * thread right before it is destroyed. Note that if the pool is paused, then
+   * any tasks still in the queue will never be executed.
+   */
   ~thread_pool() noexcept {
 #ifdef __cpp_exceptions
     try {
@@ -1350,17 +1616,38 @@ class [[nodiscard]] thread_pool {
   // =======================
 
   /**
-      * @brief Parallelize a loop by automatically splitting it into blocks and submitting each block separately to the queue, with the specified priority. The block function takes two arguments, the start and end of the block, so that it is only called once per block, but it is up to the user make sure the block function correctly deals with all the indices in each block. Does not return a `BS::multi_future`, so the user must use `wait()` or some other method to ensure that the loop finishes executing, otherwise bad things will happen.
-      *
-      * @tparam T1 The type of the first index. Should be a signed or unsigned integer.
-      * @tparam T2 The type of the index after the last index. Should be a signed or unsigned integer.
-      * @tparam F The type of the function to loop through.
-      * @param first_index The first index in the loop.
-      * @param index_after_last The index after the last index in the loop. The loop will iterate from `first_index` to `(index_after_last - 1)` inclusive. In other words, it will be equivalent to `for (T i = first_index; i < index_after_last; ++i)`. Note that if `index_after_last <= first_index`, no blocks will be submitted.
-      * @param block A function that will be called once per block. Should take exactly two arguments: the first index in the block and the index after the last index in the block. `block(start, end)` should typically involve a loop of the form `for (T i = start; i < end; ++i)`.
-      * @param num_blocks The maximum number of blocks to split the loop into. The default is 0, which means the number of blocks will be equal to the number of threads in the pool.
-      * @param priority The priority of the tasks. Should be between -128 and +127 (a signed 8-bit integer). The default is 0. Only taken into account if the flag `BS:tp::priority` is enabled in the template parameter, otherwise has no effect.
-      */
+   * @brief Parallelize a loop by automatically splitting it into blocks and
+   * submitting each block separately to the queue, with the specified priority.
+   * The block function takes two arguments, the start and end of the block, so
+   * that it is only called once per block, but it is up to the user make sure
+   * the block function correctly deals with all the indices in each block. Does
+   * not return a `BS::multi_future`, so the user must use `wait()` or some
+   * other method to ensure that the loop finishes executing, otherwise bad
+   * things will happen.
+   *
+   * @tparam T1 The type of the first index. Should be a signed or unsigned
+   * integer.
+   * @tparam T2 The type of the index after the last index. Should be a signed
+   * or unsigned integer.
+   * @tparam F The type of the function to loop through.
+   * @param first_index The first index in the loop.
+   * @param index_after_last The index after the last index in the loop. The
+   * loop will iterate from `first_index` to `(index_after_last - 1)` inclusive.
+   * In other words, it will be equivalent to `for (T i = first_index; i <
+   * index_after_last; ++i)`. Note that if `index_after_last <= first_index`, no
+   * blocks will be submitted.
+   * @param block A function that will be called once per block. Should take
+   * exactly two arguments: the first index in the block and the index after the
+   * last index in the block. `block(start, end)` should typically involve a
+   * loop of the form `for (T i = start; i < end; ++i)`.
+   * @param num_blocks The maximum number of blocks to split the loop into. The
+   * default is 0, which means the number of blocks will be equal to the number
+   * of threads in the pool.
+   * @param priority The priority of the tasks. Should be between -128 and +127
+   * (a signed 8-bit integer). The default is 0. Only taken into account if the
+   * flag `BS:tp::priority` is enabled in the template parameter, otherwise has
+   * no effect.
+   */
   template <typename T1, typename T2, typename T = common_index_type_t<T1, T2>,
             typename F>
   void detach_blocks(const T1 first_index, const T2 index_after_last, F&& block,
@@ -1381,17 +1668,34 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Parallelize a loop by automatically splitting it into blocks and submitting each block separately to the queue, with the specified priority. The loop function takes one argument, the loop index, so that it is called many times per block. Does not return a `BS::multi_future`, so the user must use `wait()` or some other method to ensure that the loop finishes executing, otherwise bad things will happen.
-      *
-      * @tparam T1 The type of the first index. Should be a signed or unsigned integer.
-      * @tparam T2 The type of the index after the last index. Should be a signed or unsigned integer.
-      * @tparam F The type of the function to loop through.
-      * @param first_index The first index in the loop.
-      * @param index_after_last The index after the last index in the loop. The loop will iterate from `first_index` to `(index_after_last - 1)` inclusive. In other words, it will be equivalent to `for (T i = first_index; i < index_after_last; ++i)`. Note that if `index_after_last <= first_index`, no blocks will be submitted.
-      * @param loop The function to loop through. Will be called once per index, many times per block. Should take exactly one argument: the loop index.
-      * @param num_blocks The maximum number of blocks to split the loop into. The default is 0, which means the number of blocks will be equal to the number of threads in the pool.
-      * @param priority The priority of the tasks. Should be between -128 and +127 (a signed 8-bit integer). The default is 0. Only taken into account if the flag `BS:tp::priority` is enabled in the template parameter, otherwise has no effect.
-      */
+   * @brief Parallelize a loop by automatically splitting it into blocks and
+   * submitting each block separately to the queue, with the specified priority.
+   * The loop function takes one argument, the loop index, so that it is called
+   * many times per block. Does not return a `BS::multi_future`, so the user
+   * must use `wait()` or some other method to ensure that the loop finishes
+   * executing, otherwise bad things will happen.
+   *
+   * @tparam T1 The type of the first index. Should be a signed or unsigned
+   * integer.
+   * @tparam T2 The type of the index after the last index. Should be a signed
+   * or unsigned integer.
+   * @tparam F The type of the function to loop through.
+   * @param first_index The first index in the loop.
+   * @param index_after_last The index after the last index in the loop. The
+   * loop will iterate from `first_index` to `(index_after_last - 1)` inclusive.
+   * In other words, it will be equivalent to `for (T i = first_index; i <
+   * index_after_last; ++i)`. Note that if `index_after_last <= first_index`, no
+   * blocks will be submitted.
+   * @param loop The function to loop through. Will be called once per index,
+   * many times per block. Should take exactly one argument: the loop index.
+   * @param num_blocks The maximum number of blocks to split the loop into. The
+   * default is 0, which means the number of blocks will be equal to the number
+   * of threads in the pool.
+   * @param priority The priority of the tasks. Should be between -128 and +127
+   * (a signed 8-bit integer). The default is 0. Only taken into account if the
+   * flag `BS:tp::priority` is enabled in the template parameter, otherwise has
+   * no effect.
+   */
   template <typename T1, typename T2, typename T = common_index_type_t<T1, T2>,
             typename F>
   void detach_loop(const T1 first_index, const T2 index_after_last, F&& loop,
@@ -1415,16 +1719,31 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Submit a sequence of tasks enumerated by indices to the queue, with the specified priority. The sequence function takes one argument, the task index, and will be called once per index. Does not return a `BS::multi_future`, so the user must use `wait()` or some other method to ensure that the sequence finishes executing, otherwise bad things will happen.
-      *
-      * @tparam T1 The type of the first index. Should be a signed or unsigned integer.
-      * @tparam T2 The type of the index after the last index. Should be a signed or unsigned integer.
-      * @tparam F The type of the function used to define the sequence.
-      * @param first_index The first index in the sequence.
-      * @param index_after_last The index after the last index in the sequence. The sequence will iterate from `first_index` to `(index_after_last - 1)` inclusive. In other words, it will be equivalent to `for (T i = first_index; i < index_after_last; ++i)`. Note that if `index_after_last <= first_index`, no tasks will be submitted.
-      * @param sequence The function used to define the sequence. Will be called once per index. Should take exactly one argument, the index.
-      * @param priority The priority of the tasks. Should be between -128 and +127 (a signed 8-bit integer). The default is 0. Only taken into account if the flag `BS:tp::priority` is enabled in the template parameter, otherwise has no effect.
-      */
+   * @brief Submit a sequence of tasks enumerated by indices to the queue, with
+   * the specified priority. The sequence function takes one argument, the task
+   * index, and will be called once per index. Does not return a
+   * `BS::multi_future`, so the user must use `wait()` or some other method to
+   * ensure that the sequence finishes executing, otherwise bad things will
+   * happen.
+   *
+   * @tparam T1 The type of the first index. Should be a signed or unsigned
+   * integer.
+   * @tparam T2 The type of the index after the last index. Should be a signed
+   * or unsigned integer.
+   * @tparam F The type of the function used to define the sequence.
+   * @param first_index The first index in the sequence.
+   * @param index_after_last The index after the last index in the sequence. The
+   * sequence will iterate from `first_index` to `(index_after_last - 1)`
+   * inclusive. In other words, it will be equivalent to `for (T i =
+   * first_index; i < index_after_last; ++i)`. Note that if `index_after_last <=
+   * first_index`, no tasks will be submitted.
+   * @param sequence The function used to define the sequence. Will be called
+   * once per index. Should take exactly one argument, the index.
+   * @param priority The priority of the tasks. Should be between -128 and +127
+   * (a signed 8-bit integer). The default is 0. Only taken into account if the
+   * flag `BS:tp::priority` is enabled in the template parameter, otherwise has
+   * no effect.
+   */
   template <typename T1, typename T2, typename T = common_index_type_t<T1, T2>,
             typename F>
   void detach_sequence(const T1 first_index, const T2 index_after_last,
@@ -1440,12 +1759,19 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Submit a function with no arguments and no return value into the task queue, with the specified priority. To submit a function with arguments, enclose it in a lambda expression. Does not return a future, so the user must use `wait()` or some other method to ensure that the task finishes executing, otherwise bad things will happen.
-      *
-      * @tparam F The type of the function.
-      * @param task The function to submit.
-      * @param priority The priority of the task. Should be between -128 and +127 (a signed 8-bit integer). The default is 0. Only taken into account if the flag `BS:tp::priority` is enabled in the template parameter, otherwise has no effect.
-      */
+   * @brief Submit a function with no arguments and no return value into the
+   * task queue, with the specified priority. To submit a function with
+   * arguments, enclose it in a lambda expression. Does not return a future, so
+   * the user must use `wait()` or some other method to ensure that the task
+   * finishes executing, otherwise bad things will happen.
+   *
+   * @tparam F The type of the function.
+   * @param task The function to submit.
+   * @param priority The priority of the task. Should be between -128 and +127
+   * (a signed 8-bit integer). The default is 0. Only taken into account if the
+   * flag `BS:tp::priority` is enabled in the template parameter, otherwise has
+   * no effect.
+   */
   template <typename F>
   void detach_task(F&& task, const priority_t priority = 0) {
     {
@@ -1460,10 +1786,13 @@ class [[nodiscard]] thread_pool {
 
 #ifdef BS_THREAD_POOL_NATIVE_EXTENSIONS
   /**
-      * @brief Get a vector containing the underlying implementation-defined thread handles for each of the pool's threads, as obtained by `std::thread::native_handle()` (or `std::jthread::native_handle()` in C++20 and later).
-      *
-      * @return The native thread handles.
-      */
+   * @brief Get a vector containing the underlying implementation-defined thread
+   * handles for each of the pool's threads, as obtained by
+   * `std::thread::native_handle()` (or `std::jthread::native_handle()` in C++20
+   * and later).
+   *
+   * @return The native thread handles.
+   */
   [[nodiscard]] std::vector<thread_t::native_handle_type> get_native_handles()
       const {
     std::vector<thread_t::native_handle_type> native_handles(thread_count);
@@ -1474,49 +1803,54 @@ class [[nodiscard]] thread_pool {
 #endif
 
   /**
-      * @brief Get the number of tasks currently waiting in the queue to be executed by the threads.
-      *
-      * @return The number of queued tasks.
-      */
+   * @brief Get the number of tasks currently waiting in the queue to be
+   * executed by the threads.
+   *
+   * @return The number of queued tasks.
+   */
   [[nodiscard]] std::size_t get_tasks_queued() const {
     const std::scoped_lock tasks_lock(tasks_mutex);
     return tasks.size();
   }
 
   /**
-      * @brief Get the number of tasks currently being executed by the threads.
-      *
-      * @return The number of running tasks.
-      */
+   * @brief Get the number of tasks currently being executed by the threads.
+   *
+   * @return The number of running tasks.
+   */
   [[nodiscard]] std::size_t get_tasks_running() const {
     const std::scoped_lock tasks_lock(tasks_mutex);
     return tasks_running;
   }
 
   /**
-      * @brief Get the total number of unfinished tasks: either still waiting in the queue, or running in a thread. Note that `get_tasks_total() == get_tasks_queued() + get_tasks_running()`.
-      *
-      * @return The total number of tasks.
-      */
+   * @brief Get the total number of unfinished tasks: either still waiting in
+   * the queue, or running in a thread. Note that `get_tasks_total() ==
+   * get_tasks_queued() + get_tasks_running()`.
+   *
+   * @return The total number of tasks.
+   */
   [[nodiscard]] std::size_t get_tasks_total() const {
     const std::scoped_lock tasks_lock(tasks_mutex);
     return tasks_running + tasks.size();
   }
 
   /**
-      * @brief Get the number of threads in the pool.
-      *
-      * @return The number of threads.
-      */
+   * @brief Get the number of threads in the pool.
+   *
+   * @return The number of threads.
+   */
   [[nodiscard]] std::size_t get_thread_count() const noexcept {
     return thread_count;
   }
 
   /**
-      * @brief Get a vector containing the unique identifiers for each of the pool's threads, as obtained by `std::thread::get_id()` (or `std::jthread::get_id()` in C++20 and later).
-      *
-      * @return The unique thread identifiers.
-      */
+   * @brief Get a vector containing the unique identifiers for each of the
+   * pool's threads, as obtained by `std::thread::get_id()` (or
+   * `std::jthread::get_id()` in C++20 and later).
+   *
+   * @return The unique thread identifiers.
+   */
   [[nodiscard]] std::vector<thread_t::id> get_thread_ids() const {
     std::vector<thread_t::id> thread_ids(thread_count);
     for (std::size_t i = 0; i < thread_count; ++i)
@@ -1525,10 +1859,11 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Check whether the pool is currently paused. Only enabled if the flag `BS:tp::pause` is enabled in the template parameter.
-      *
-      * @return `true` if the pool is paused, `false` if it is not paused.
-      */
+   * @brief Check whether the pool is currently paused. Only enabled if the flag
+   * `BS:tp::pause` is enabled in the template parameter.
+   *
+   * @return `true` if the pool is paused, `false` if it is not paused.
+   */
   BS_THREAD_POOL_IF_PAUSE_ENABLED
   [[nodiscard]] bool is_paused() const {
     const std::scoped_lock tasks_lock(tasks_mutex);
@@ -1536,8 +1871,11 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Pause the pool. The workers will temporarily stop retrieving new tasks out of the queue, although any tasks already executed will keep running until they are finished. Only enabled if the flag `BS:tp::pause` is enabled in the template parameter.
-      */
+   * @brief Pause the pool. The workers will temporarily stop retrieving new
+   * tasks out of the queue, although any tasks already executed will keep
+   * running until they are finished. Only enabled if the flag `BS:tp::pause` is
+   * enabled in the template parameter.
+   */
   BS_THREAD_POOL_IF_PAUSE_ENABLED
   void pause() {
     const std::scoped_lock tasks_lock(tasks_mutex);
@@ -1545,45 +1883,83 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Purge all the tasks waiting in the queue. Tasks that are currently running will not be affected, but any tasks still waiting in the queue will be discarded, and will never be executed by the threads. Please note that there is no way to restore the purged tasks.
-      */
+   * @brief Purge all the tasks waiting in the queue. Tasks that are currently
+   * running will not be affected, but any tasks still waiting in the queue will
+   * be discarded, and will never be executed by the threads. Please note that
+   * there is no way to restore the purged tasks.
+   */
   void purge() {
     const std::scoped_lock tasks_lock(tasks_mutex);
     tasks = {};
   }
 
   /**
-      * @brief Reset the pool with the total number of hardware threads available, as reported by the implementation. Waits for all currently running tasks to be completed, then destroys all threads in the pool and creates a new thread pool with the new number of threads. Any tasks that were waiting in the queue before the pool was reset will then be executed by the new threads. If the pool was paused before resetting it, the new pool will be paused as well.
-      */
+   * @brief Reset the pool with the total number of hardware threads available,
+   * as reported by the implementation. Waits for all currently running tasks to
+   * be completed, then destroys all threads in the pool and creates a new
+   * thread pool with the new number of threads. Any tasks that were waiting in
+   * the queue before the pool was reset will then be executed by the new
+   * threads. If the pool was paused before resetting it, the new pool will be
+   * paused as well.
+   */
   void reset() {
     reset(0, [](std::size_t) {});
   }
 
   /**
-      * @brief Reset the pool with a new number of threads. Waits for all currently running tasks to be completed, then destroys all threads in the pool and creates a new thread pool with the new number of threads. Any tasks that were waiting in the queue before the pool was reset will then be executed by the new threads. If the pool was paused before resetting it, the new pool will be paused as well.
-      *
-      * @param num_threads The number of threads to use.
-      */
+   * @brief Reset the pool with a new number of threads. Waits for all currently
+   * running tasks to be completed, then destroys all threads in the pool and
+   * creates a new thread pool with the new number of threads. Any tasks that
+   * were waiting in the queue before the pool was reset will then be executed
+   * by the new threads. If the pool was paused before resetting it, the new
+   * pool will be paused as well.
+   *
+   * @param num_threads The number of threads to use.
+   */
   void reset(const std::size_t num_threads) {
     reset(num_threads, [](std::size_t) {});
   }
 
   /**
-      * @brief Reset the pool with the total number of hardware threads available, as reported by the implementation, and a new initialization function. Waits for all currently running tasks to be completed, then destroys all threads in the pool and creates a new thread pool with the new number of threads and initialization function. Any tasks that were waiting in the queue before the pool was reset will then be executed by the new threads. If the pool was paused before resetting it, the new pool will be paused as well.
-      *
-      * @param init An initialization function to run in each thread before it starts executing any submitted tasks. The function must have no return value, and can either take one argument, the thread index of type `std::size_t`, or zero arguments. It will be executed exactly once per thread, when the thread is first constructed. The initialization function must not throw any exceptions, as that will result in program termination. Any exceptions must be handled explicitly within the function.
-      */
+   * @brief Reset the pool with the total number of hardware threads available,
+   * as reported by the implementation, and a new initialization function. Waits
+   * for all currently running tasks to be completed, then destroys all threads
+   * in the pool and creates a new thread pool with the new number of threads
+   * and initialization function. Any tasks that were waiting in the queue
+   * before the pool was reset will then be executed by the new threads. If the
+   * pool was paused before resetting it, the new pool will be paused as well.
+   *
+   * @param init An initialization function to run in each thread before it
+   * starts executing any submitted tasks. The function must have no return
+   * value, and can either take one argument, the thread index of type
+   * `std::size_t`, or zero arguments. It will be executed exactly once per
+   * thread, when the thread is first constructed. The initialization function
+   * must not throw any exceptions, as that will result in program termination.
+   * Any exceptions must be handled explicitly within the function.
+   */
   template <BS_THREAD_POOL_INIT_FUNC_CONCEPT(F)>
   void reset(F&& init) {
     reset(0, std::forward<F>(init));
   }
 
   /**
-      * @brief Reset the pool with a new number of threads and a new initialization function. Waits for all currently running tasks to be completed, then destroys all threads in the pool and creates a new thread pool with the new number of threads and initialization function. Any tasks that were waiting in the queue before the pool was reset will then be executed by the new threads. If the pool was paused before resetting it, the new pool will be paused as well.
-      *
-      * @param num_threads The number of threads to use.
-      * @param init An initialization function to run in each thread before it starts executing any submitted tasks. The function must have no return value, and can either take one argument, the thread index of type `std::size_t`, or zero arguments. It will be executed exactly once per thread, when the thread is first constructed. The initialization function must not throw any exceptions, as that will result in program termination. Any exceptions must be handled explicitly within the function.
-      */
+   * @brief Reset the pool with a new number of threads and a new initialization
+   * function. Waits for all currently running tasks to be completed, then
+   * destroys all threads in the pool and creates a new thread pool with the new
+   * number of threads and initialization function. Any tasks that were waiting
+   * in the queue before the pool was reset will then be executed by the new
+   * threads. If the pool was paused before resetting it, the new pool will be
+   * paused as well.
+   *
+   * @param num_threads The number of threads to use.
+   * @param init An initialization function to run in each thread before it
+   * starts executing any submitted tasks. The function must have no return
+   * value, and can either take one argument, the thread index of type
+   * `std::size_t`, or zero arguments. It will be executed exactly once per
+   * thread, when the thread is first constructed. The initialization function
+   * must not throw any exceptions, as that will result in program termination.
+   * Any exceptions must be handled explicitly within the function.
+   */
   template <BS_THREAD_POOL_INIT_FUNC_CONCEPT(F)>
   void reset(const std::size_t num_threads, F&& init) {
     if constexpr (pause_enabled) {
@@ -1600,10 +1976,15 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Set the thread pool's cleanup function.
-      *
-      * @param cleanup A cleanup function to run in each thread right before it is destroyed, which will happen when the pool is destructed or reset. The function must have no return value, and can either take one argument, the thread index of type `std::size_t`, or zero arguments. The cleanup function must not throw any exceptions, as that will result in program termination. Any exceptions must be handled explicitly within the function.
-      */
+   * @brief Set the thread pool's cleanup function.
+   *
+   * @param cleanup A cleanup function to run in each thread right before it is
+   * destroyed, which will happen when the pool is destructed or reset. The
+   * function must have no return value, and can either take one argument, the
+   * thread index of type `std::size_t`, or zero arguments. The cleanup function
+   * must not throw any exceptions, as that will result in program termination.
+   * Any exceptions must be handled explicitly within the function.
+   */
   template <BS_THREAD_POOL_INIT_FUNC_CONCEPT(F)>
   void set_cleanup_func(F&& cleanup) {
     if constexpr (std::is_invocable_v<F, std::size_t>) {
@@ -1616,19 +1997,41 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Parallelize a loop by automatically splitting it into blocks and submitting each block separately to the queue, with the specified priority. The block function takes two arguments, the start and end of the block, so that it is only called once per block, but it is up to the user make sure the block function correctly deals with all the indices in each block. Returns a `BS::multi_future` that contains the futures for all of the blocks.
-      *
-      * @tparam T1 The type of the first index. Should be a signed or unsigned integer.
-      * @tparam T2 The type of the index after the last index. Should be a signed or unsigned integer.
-      * @tparam F The type of the function to loop through.
-      * @tparam R The return type of the function to loop through (can be `void`).
-      * @param first_index The first index in the loop.
-      * @param index_after_last The index after the last index in the loop. The loop will iterate from `first_index` to `(index_after_last - 1)` inclusive. In other words, it will be equivalent to `for (T i = first_index; i < index_after_last; ++i)`. Note that if `index_after_last <= first_index`, no blocks will be submitted, and an empty `BS::multi_future` will be returned.
-      * @param block A function that will be called once per block. Should take exactly two arguments: the first index in the block and the index after the last index in the block. `block(start, end)` should typically involve a loop of the form `for (T i = start; i < end; ++i)`.
-      * @param num_blocks The maximum number of blocks to split the loop into. The default is 0, which means the number of blocks will be equal to the number of threads in the pool.
-      * @param priority The priority of the tasks. Should be between -128 and +127 (a signed 8-bit integer). The default is 0. Only taken into account if the flag `BS:tp::priority` is enabled in the template parameter, otherwise has no effect.
-      * @return A `BS::multi_future` that can be used to wait for all the blocks to finish. If the block function returns a value, the `BS::multi_future` can also be used to obtain the values returned by each block.
-      */
+   * @brief Parallelize a loop by automatically splitting it into blocks and
+   * submitting each block separately to the queue, with the specified priority.
+   * The block function takes two arguments, the start and end of the block, so
+   * that it is only called once per block, but it is up to the user make sure
+   * the block function correctly deals with all the indices in each block.
+   * Returns a `BS::multi_future` that contains the futures for all of the
+   * blocks.
+   *
+   * @tparam T1 The type of the first index. Should be a signed or unsigned
+   * integer.
+   * @tparam T2 The type of the index after the last index. Should be a signed
+   * or unsigned integer.
+   * @tparam F The type of the function to loop through.
+   * @tparam R The return type of the function to loop through (can be `void`).
+   * @param first_index The first index in the loop.
+   * @param index_after_last The index after the last index in the loop. The
+   * loop will iterate from `first_index` to `(index_after_last - 1)` inclusive.
+   * In other words, it will be equivalent to `for (T i = first_index; i <
+   * index_after_last; ++i)`. Note that if `index_after_last <= first_index`, no
+   * blocks will be submitted, and an empty `BS::multi_future` will be returned.
+   * @param block A function that will be called once per block. Should take
+   * exactly two arguments: the first index in the block and the index after the
+   * last index in the block. `block(start, end)` should typically involve a
+   * loop of the form `for (T i = start; i < end; ++i)`.
+   * @param num_blocks The maximum number of blocks to split the loop into. The
+   * default is 0, which means the number of blocks will be equal to the number
+   * of threads in the pool.
+   * @param priority The priority of the tasks. Should be between -128 and +127
+   * (a signed 8-bit integer). The default is 0. Only taken into account if the
+   * flag `BS:tp::priority` is enabled in the template parameter, otherwise has
+   * no effect.
+   * @return A `BS::multi_future` that can be used to wait for all the blocks to
+   * finish. If the block function returns a value, the `BS::multi_future` can
+   * also be used to obtain the values returned by each block.
+   */
   template <typename T1, typename T2, typename T = common_index_type_t<T1, T2>,
             typename F,
             typename R = std::invoke_result_t<std::decay_t<F>, T, T>>
@@ -1658,18 +2061,36 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Parallelize a loop by automatically splitting it into blocks and submitting each block separately to the queue, with the specified priority. The loop function takes one argument, the loop index, so that it is called many times per block. It must have no return value. Returns a `BS::multi_future` that contains the futures for all of the blocks.
-      *
-      * @tparam T1 The type of the first index. Should be a signed or unsigned integer.
-      * @tparam T2 The type of the index after the last index. Should be a signed or unsigned integer.
-      * @tparam F The type of the function to loop through.
-      * @param first_index The first index in the loop.
-      * @param index_after_last The index after the last index in the loop. The loop will iterate from `first_index` to `(index_after_last - 1)` inclusive. In other words, it will be equivalent to `for (T i = first_index; i < index_after_last; ++i)`. Note that if `index_after_last <= first_index`, no tasks will be submitted, and an empty `BS::multi_future` will be returned.
-      * @param loop The function to loop through. Will be called once per index, many times per block. Should take exactly one argument: the loop index. It cannot have a return value.
-      * @param num_blocks The maximum number of blocks to split the loop into. The default is 0, which means the number of blocks will be equal to the number of threads in the pool.
-      * @param priority The priority of the tasks. Should be between -128 and +127 (a signed 8-bit integer). The default is 0. Only taken into account if the flag `BS:tp::priority` is enabled in the template parameter, otherwise has no effect.
-      * @return A `BS::multi_future` that can be used to wait for all the blocks to finish.
-      */
+   * @brief Parallelize a loop by automatically splitting it into blocks and
+   * submitting each block separately to the queue, with the specified priority.
+   * The loop function takes one argument, the loop index, so that it is called
+   * many times per block. It must have no return value. Returns a
+   * `BS::multi_future` that contains the futures for all of the blocks.
+   *
+   * @tparam T1 The type of the first index. Should be a signed or unsigned
+   * integer.
+   * @tparam T2 The type of the index after the last index. Should be a signed
+   * or unsigned integer.
+   * @tparam F The type of the function to loop through.
+   * @param first_index The first index in the loop.
+   * @param index_after_last The index after the last index in the loop. The
+   * loop will iterate from `first_index` to `(index_after_last - 1)` inclusive.
+   * In other words, it will be equivalent to `for (T i = first_index; i <
+   * index_after_last; ++i)`. Note that if `index_after_last <= first_index`, no
+   * tasks will be submitted, and an empty `BS::multi_future` will be returned.
+   * @param loop The function to loop through. Will be called once per index,
+   * many times per block. Should take exactly one argument: the loop index. It
+   * cannot have a return value.
+   * @param num_blocks The maximum number of blocks to split the loop into. The
+   * default is 0, which means the number of blocks will be equal to the number
+   * of threads in the pool.
+   * @param priority The priority of the tasks. Should be between -128 and +127
+   * (a signed 8-bit integer). The default is 0. Only taken into account if the
+   * flag `BS:tp::priority` is enabled in the template parameter, otherwise has
+   * no effect.
+   * @return A `BS::multi_future` that can be used to wait for all the blocks to
+   * finish.
+   */
   template <typename T1, typename T2, typename T = common_index_type_t<T1, T2>,
             typename F>
   [[nodiscard]] multi_future<void> submit_loop(const T1 first_index,
@@ -1699,18 +2120,35 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Submit a sequence of tasks enumerated by indices to the queue, with the specified priority. The sequence function takes one argument, the task index, and will be called once per index. Returns a `BS::multi_future` that contains the futures for all of the tasks.
-      *
-      * @tparam T1 The type of the first index. Should be a signed or unsigned integer.
-      * @tparam T2 The type of the index after the last index. Should be a signed or unsigned integer.
-      * @tparam F The type of the function used to define the sequence.
-      * @tparam R The return type of the function used to define the sequence (can be `void`).
-      * @param first_index The first index in the sequence.
-      * @param index_after_last The index after the last index in the sequence. The sequence will iterate from `first_index` to `(index_after_last - 1)` inclusive. In other words, it will be equivalent to `for (T i = first_index; i < index_after_last; ++i)`. Note that if `index_after_last <= first_index`, no tasks will be submitted, and an empty `BS::multi_future` will be returned.
-      * @param sequence The function used to define the sequence. Will be called once per index. Should take exactly one argument, the index.
-      * @param priority The priority of the tasks. Should be between -128 and +127 (a signed 8-bit integer). The default is 0. Only taken into account if the flag `BS:tp::priority` is enabled in the template parameter, otherwise has no effect.
-      * @return A `BS::multi_future` that can be used to wait for all the tasks to finish. If the sequence function returns a value, the `BS::multi_future` can also be used to obtain the values returned by each task.
-      */
+   * @brief Submit a sequence of tasks enumerated by indices to the queue, with
+   * the specified priority. The sequence function takes one argument, the task
+   * index, and will be called once per index. Returns a `BS::multi_future` that
+   * contains the futures for all of the tasks.
+   *
+   * @tparam T1 The type of the first index. Should be a signed or unsigned
+   * integer.
+   * @tparam T2 The type of the index after the last index. Should be a signed
+   * or unsigned integer.
+   * @tparam F The type of the function used to define the sequence.
+   * @tparam R The return type of the function used to define the sequence (can
+   * be `void`).
+   * @param first_index The first index in the sequence.
+   * @param index_after_last The index after the last index in the sequence. The
+   * sequence will iterate from `first_index` to `(index_after_last - 1)`
+   * inclusive. In other words, it will be equivalent to `for (T i =
+   * first_index; i < index_after_last; ++i)`. Note that if `index_after_last <=
+   * first_index`, no tasks will be submitted, and an empty `BS::multi_future`
+   * will be returned.
+   * @param sequence The function used to define the sequence. Will be called
+   * once per index. Should take exactly one argument, the index.
+   * @param priority The priority of the tasks. Should be between -128 and +127
+   * (a signed 8-bit integer). The default is 0. Only taken into account if the
+   * flag `BS:tp::priority` is enabled in the template parameter, otherwise has
+   * no effect.
+   * @return A `BS::multi_future` that can be used to wait for all the tasks to
+   * finish. If the sequence function returns a value, the `BS::multi_future`
+   * can also be used to obtain the values returned by each task.
+   */
   template <typename T1, typename T2, typename T = common_index_type_t<T1, T2>,
             typename F, typename R = std::invoke_result_t<std::decay_t<F>, T>>
   [[nodiscard]] multi_future<R> submit_sequence(const T1 first_index,
@@ -1734,14 +2172,22 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Submit a function with no arguments into the task queue, with the specified priority. To submit a function with arguments, enclose it in a lambda expression. If the function has a return value, get a future for the eventual returned value. If the function has no return value, get an `std::future<void>` which can be used to wait until the task finishes.
-      *
-      * @tparam F The type of the function.
-      * @tparam R The return type of the function (can be `void`).
-      * @param task The function to submit.
-      * @param priority The priority of the task. Should be between -128 and +127 (a signed 8-bit integer). The default is 0. Only taken into account if the flag `BS:tp::priority` is enabled in the template parameter, otherwise has no effect.
-      * @return A future to be used later to wait for the function to finish executing and/or obtain its returned value if it has one.
-      */
+   * @brief Submit a function with no arguments into the task queue, with the
+   * specified priority. To submit a function with arguments, enclose it in a
+   * lambda expression. If the function has a return value, get a future for the
+   * eventual returned value. If the function has no return value, get an
+   * `std::future<void>` which can be used to wait until the task finishes.
+   *
+   * @tparam F The type of the function.
+   * @tparam R The return type of the function (can be `void`).
+   * @param task The function to submit.
+   * @param priority The priority of the task. Should be between -128 and +127
+   * (a signed 8-bit integer). The default is 0. Only taken into account if the
+   * flag `BS:tp::priority` is enabled in the template parameter, otherwise has
+   * no effect.
+   * @return A future to be used later to wait for the function to finish
+   * executing and/or obtain its returned value if it has one.
+   */
   template <typename F, typename R = std::invoke_result_t<std::decay_t<F>>>
   [[nodiscard]] std::future<R> submit_task(F&& task,
                                            const priority_t priority = 0) {
@@ -1779,8 +2225,10 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Unpause the pool. The workers will resume retrieving new tasks out of the queue. Only enabled if the flag `BS:tp::pause` is enabled in the template parameter.
-      */
+   * @brief Unpause the pool. The workers will resume retrieving new tasks out
+   * of the queue. Only enabled if the flag `BS:tp::pause` is enabled in the
+   * template parameter.
+   */
   BS_THREAD_POOL_IF_PAUSE_ENABLED
   void unpause() {
     {
@@ -1791,10 +2239,18 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Wait for tasks to be completed. Normally, this function waits for all tasks, both those that are currently running in the threads and those that are still waiting in the queue. However, if the pool is paused, this function only waits for the currently running tasks (otherwise it would wait forever). Note: To wait for just one specific task, use `submit_task()` instead, and call the `wait()` member function of the generated future.
-      *
-      * @throws `wait_deadlock` if called from within a thread of the same pool, which would result in a deadlock. Only enabled if the flag `BS:tp::wait_deadlock_checks` is enabled in the template parameter.
-      */
+   * @brief Wait for tasks to be completed. Normally, this function waits for
+   * all tasks, both those that are currently running in the threads and those
+   * that are still waiting in the queue. However, if the pool is paused, this
+   * function only waits for the currently running tasks (otherwise it would
+   * wait forever). Note: To wait for just one specific task, use
+   * `submit_task()` instead, and call the `wait()` member function of the
+   * generated future.
+   *
+   * @throws `wait_deadlock` if called from within a thread of the same pool,
+   * which would result in a deadlock. Only enabled if the flag
+   * `BS:tp::wait_deadlock_checks` is enabled in the template parameter.
+   */
   void wait() {
 #ifdef __cpp_exceptions
     if constexpr (wait_deadlock_checks_enabled) {
@@ -1814,14 +2270,18 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Wait for tasks to be completed, but stop waiting after the specified duration has passed.
-      *
-      * @tparam R An arithmetic type representing the number of ticks to wait.
-      * @tparam P An `std::ratio` representing the length of each tick in seconds.
-      * @param duration The amount of time to wait.
-      * @return `true` if all tasks finished running, `false` if the duration expired but some tasks are still running.
-      * @throws `wait_deadlock` if called from within a thread of the same pool, which would result in a deadlock. Only enabled if the flag `BS:tp::wait_deadlock_checks` is enabled in the template parameter.
-      */
+   * @brief Wait for tasks to be completed, but stop waiting after the specified
+   * duration has passed.
+   *
+   * @tparam R An arithmetic type representing the number of ticks to wait.
+   * @tparam P An `std::ratio` representing the length of each tick in seconds.
+   * @param duration The amount of time to wait.
+   * @return `true` if all tasks finished running, `false` if the duration
+   * expired but some tasks are still running.
+   * @throws `wait_deadlock` if called from within a thread of the same pool,
+   * which would result in a deadlock. Only enabled if the flag
+   * `BS:tp::wait_deadlock_checks` is enabled in the template parameter.
+   */
   template <typename R, typename P>
   bool wait_for(const std::chrono::duration<R, P>& duration) {
 #ifdef __cpp_exceptions
@@ -1843,14 +2303,18 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Wait for tasks to be completed, but stop waiting after the specified time point has been reached.
-      *
-      * @tparam C The type of the clock used to measure time.
-      * @tparam D An `std::chrono::duration` type used to indicate the time point.
-      * @param timeout_time The time point at which to stop waiting.
-      * @return `true` if all tasks finished running, `false` if the time point was reached but some tasks are still running.
-      * @throws `wait_deadlock` if called from within a thread of the same pool, which would result in a deadlock. Only enabled if the flag `BS:tp::wait_deadlock_checks` is enabled in the template parameter.
-      */
+   * @brief Wait for tasks to be completed, but stop waiting after the specified
+   * time point has been reached.
+   *
+   * @tparam C The type of the clock used to measure time.
+   * @tparam D An `std::chrono::duration` type used to indicate the time point.
+   * @param timeout_time The time point at which to stop waiting.
+   * @return `true` if all tasks finished running, `false` if the time point was
+   * reached but some tasks are still running.
+   * @throws `wait_deadlock` if called from within a thread of the same pool,
+   * which would result in a deadlock. Only enabled if the flag
+   * `BS:tp::wait_deadlock_checks` is enabled in the template parameter.
+   */
   template <typename C, typename D>
   bool wait_until(const std::chrono::time_point<C, D>& timeout_time) {
 #ifdef __cpp_exceptions
@@ -1878,11 +2342,12 @@ class [[nodiscard]] thread_pool {
   // ========================
 
   /**
-      * @brief Create the threads in the pool and assign a worker to each thread.
-      *
-      * @param num_threads The number of threads to use.
-      * @param init An initialization function to run in each thread before it starts executing any submitted tasks.
-      */
+   * @brief Create the threads in the pool and assign a worker to each thread.
+   *
+   * @param num_threads The number of threads to use.
+   * @param init An initialization function to run in each thread before it
+   * starts executing any submitted tasks.
+   */
   template <typename F>
   void create_threads(const std::size_t num_threads, F&& init) {
     if constexpr (std::is_invocable_v<F, std::size_t>) {
@@ -1915,8 +2380,8 @@ class [[nodiscard]] thread_pool {
 
 #ifndef __cpp_lib_jthread
   /**
-      * @brief Destroy the threads in the pool.
-      */
+   * @brief Destroy the threads in the pool.
+   */
   void destroy_threads() {
     {
       const std::scoped_lock tasks_lock(tasks_mutex);
@@ -1929,11 +2394,18 @@ class [[nodiscard]] thread_pool {
 #endif
 
   /**
-      * @brief Determine how many threads the pool should have, based on the parameter passed to the constructor or reset().
-      *
-      * @param num_threads The parameter passed to the constructor or `reset()`. If the parameter is a positive number, then the pool will be created with this number of threads. If the parameter is non-positive, or a parameter was not supplied (in which case it will have the default value of 0), then the pool will be created with the total number of hardware threads available, as obtained from `thread_t::hardware_concurrency()`. If the latter returns zero for some reason, then the pool will be created with just one thread.
-      * @return The number of threads to use for constructing the pool.
-      */
+   * @brief Determine how many threads the pool should have, based on the
+   * parameter passed to the constructor or reset().
+   *
+   * @param num_threads The parameter passed to the constructor or `reset()`. If
+   * the parameter is a positive number, then the pool will be created with this
+   * number of threads. If the parameter is non-positive, or a parameter was not
+   * supplied (in which case it will have the default value of 0), then the pool
+   * will be created with the total number of hardware threads available, as
+   * obtained from `thread_t::hardware_concurrency()`. If the latter returns
+   * zero for some reason, then the pool will be created with just one thread.
+   * @return The number of threads to use for constructing the pool.
+   */
   [[nodiscard]] static std::size_t determine_thread_count(
       const std::size_t num_threads) noexcept {
     if (num_threads > 0)
@@ -1944,10 +2416,10 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Pop a task from the queue.
-      *
-      * @return The task.
-      */
+   * @brief Pop a task from the queue.
+   *
+   * @return The task.
+   */
   [[nodiscard]] task_t pop_task() {
     task_t task;
     if constexpr (priority_enabled)
@@ -1959,11 +2431,15 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief Reset the pool with a new number of threads and a new initialization function. This member function implements the actual reset, while the public member function `reset()` also handles the case where the pool is paused.
-      *
-      * @param num_threads The number of threads to use.
-      * @param init An initialization function to run in each thread before it starts executing any submitted tasks.
-      */
+   * @brief Reset the pool with a new number of threads and a new initialization
+   * function. This member function implements the actual reset, while the
+   * public member function `reset()` also handles the case where the pool is
+   * paused.
+   *
+   * @param num_threads The number of threads to use.
+   * @param init An initialization function to run in each thread before it
+   * starts executing any submitted tasks.
+   */
   template <typename F>
   void reset_pool(const std::size_t num_threads, F&& init) {
     wait();
@@ -1974,10 +2450,13 @@ class [[nodiscard]] thread_pool {
   }
 
   /**
-      * @brief A worker function to be assigned to each thread in the pool. Waits until it is notified by `detach_task()` that a task is available, and then retrieves the task from the queue and executes it. Once the task finishes, the worker notifies `wait()` in case it is waiting.
-      *
-      * @param idx The index of this thread.
-      */
+   * @brief A worker function to be assigned to each thread in the pool. Waits
+   * until it is notified by `detach_task()` that a task is available, and then
+   * retrieves the task from the queue and executes it. Once the task finishes,
+   * the worker notifies `wait()` in case it is waiting.
+   *
+   * @param idx The index of this thread.
+   */
   void worker(BS_THREAD_POOL_WORKER_TOKEN const std::size_t idx) {
     this_thread::my_pool = this;
     this_thread::my_index = idx;
@@ -2002,7 +2481,9 @@ class [[nodiscard]] thread_pool {
         break;
       {
         task_t task =
-            pop_task();  // NOLINT(misc-const-correctness) In C++23 this cannot be const since `std::move_only_function::operator()` is not a const member function.
+            pop_task();  // NOLINT(misc-const-correctness) In C++23 this cannot
+                         // be const since `std::move_only_function::operator()`
+                         // is not a const member function.
         ++tasks_running;
         tasks_lock.unlock();
 #ifdef __cpp_exceptions
@@ -2024,25 +2505,44 @@ class [[nodiscard]] thread_pool {
   // ============
 
   /**
-      * @brief A cleanup function to run in each thread right before it is destroyed, which will happen when the pool is destructed or reset. The function must have no return value, and can either take one argument, the thread index of type `std::size_t`, or zero arguments. The cleanup function must not throw any exceptions, as that will result in program termination. Any exceptions must be handled explicitly within the function. The default is an empty function, i.e., no cleanup will be performed.
-      */
+   * @brief A cleanup function to run in each thread right before it is
+   * destroyed, which will happen when the pool is destructed or reset. The
+   * function must have no return value, and can either take one argument, the
+   * thread index of type `std::size_t`, or zero arguments. The cleanup function
+   * must not throw any exceptions, as that will result in program termination.
+   * Any exceptions must be handled explicitly within the function. The default
+   * is an empty function, i.e., no cleanup will be performed.
+   */
   function_t<void(std::size_t)> cleanup_func = [](std::size_t) {
   };
 
   /**
-      * @brief An initialization function to run in each thread before it starts executing any submitted tasks. The function must have no return value, and can either take one argument, the thread index of type `std::size_t`, or zero arguments. It will be executed exactly once per thread, when the thread is first constructed. The initialization function must not throw any exceptions, as that will result in program termination. Any exceptions must be handled explicitly within the function. The default is an empty function, i.e., no initialization will be performed.
-      */
+   * @brief An initialization function to run in each thread before it starts
+   * executing any submitted tasks. The function must have no return value, and
+   * can either take one argument, the thread index of type `std::size_t`, or
+   * zero arguments. It will be executed exactly once per thread, when the
+   * thread is first constructed. The initialization function must not throw any
+   * exceptions, as that will result in program termination. Any exceptions must
+   * be handled explicitly within the function. The default is an empty
+   * function, i.e., no initialization will be performed.
+   */
   function_t<void(std::size_t)> init_func = [](std::size_t) {
   };
 
   /**
-      * @brief A flag indicating whether the workers should pause. When set to `true`, the workers temporarily stop retrieving new tasks out of the queue, although any tasks already executed will keep running until they are finished. When set to `false` again, the workers resume retrieving tasks. Only enabled if the flag `BS:tp::pause` is enabled in the template parameter.
-      */
+   * @brief A flag indicating whether the workers should pause. When set to
+   * `true`, the workers temporarily stop retrieving new tasks out of the queue,
+   * although any tasks already executed will keep running until they are
+   * finished. When set to `false` again, the workers resume retrieving tasks.
+   * Only enabled if the flag `BS:tp::pause` is enabled in the template
+   * parameter.
+   */
   std::conditional_t<pause_enabled, bool, std::monostate> paused = {};
 
 /**
-  * @brief A condition variable to notify `worker()` that a new task has become available.
-  */
+ * @brief A condition variable to notify `worker()` that a new task has become
+ * available.
+ */
 #ifdef __cpp_lib_jthread
   std::condition_variable_any
 #else
@@ -2051,91 +2551,99 @@ class [[nodiscard]] thread_pool {
       task_available_cv;
 
   /**
-      * @brief A condition variable to notify `wait()` that the tasks are done.
-      */
+   * @brief A condition variable to notify `wait()` that the tasks are done.
+   */
   std::condition_variable tasks_done_cv;
 
   /**
-      * @brief A queue of tasks to be executed by the threads.
-      */
+   * @brief A queue of tasks to be executed by the threads.
+   */
   std::conditional_t<priority_enabled, std::priority_queue<pr_task>,
                      std::queue<task_t>>
       tasks;
 
   /**
-      * @brief A mutex to synchronize access to the task queue by different threads.
-      */
+   * @brief A mutex to synchronize access to the task queue by different
+   * threads.
+   */
   mutable std::mutex tasks_mutex;
 
   /**
-      * @brief A counter for the total number of currently running tasks.
-      */
+   * @brief A counter for the total number of currently running tasks.
+   */
   std::size_t tasks_running = 0;
 
   /**
-      * @brief The number of threads in the pool.
-      */
+   * @brief The number of threads in the pool.
+   */
   std::size_t thread_count = 0;
 
   /**
-      * @brief A smart pointer to manage the memory allocated for the threads.
-      */
+   * @brief A smart pointer to manage the memory allocated for the threads.
+   */
   std::unique_ptr<thread_t[]> threads = nullptr;
 
   /**
-      * @brief A flag indicating that `wait()` is active and expects to be notified whenever a task is done.
-      */
+   * @brief A flag indicating that `wait()` is active and expects to be notified
+   * whenever a task is done.
+   */
   bool waiting = false;
 
 #ifndef __cpp_lib_jthread
   /**
-      * @brief A flag indicating to the workers to keep running. When set to `false`, the workers terminate permanently.
-      */
+   * @brief A flag indicating to the workers to keep running. When set to
+   * `false`, the workers terminate permanently.
+   */
   bool workers_running = false;
 #endif
 };  // class thread_pool
 
 /**
-  * @brief A utility class to synchronize printing to an output stream by different threads.
-  */
+ * @brief A utility class to synchronize printing to an output stream by
+ * different threads.
+ */
 class [[nodiscard]] synced_stream {
  public:
   /**
-      * @brief Construct a new synced stream which prints to `std::cout`.
-      */
+   * @brief Construct a new synced stream which prints to `std::cout`.
+   */
   explicit synced_stream() { add_stream(std::cout); }
 
   /**
-      * @brief Construct a new synced stream which prints to the given output stream(s).
-      *
-      * @tparam T The types of the output streams to print to.
-      * @param streams The output streams to print to.
-      */
+   * @brief Construct a new synced stream which prints to the given output
+   * stream(s).
+   *
+   * @tparam T The types of the output streams to print to.
+   * @param streams The output streams to print to.
+   */
   template <typename... T>
   explicit synced_stream(T&... streams) {
     (add_stream(streams), ...);
   }
 
   /**
-      * @brief Add a stream to the list of output streams to print to.
-      *
-      * @param stream The stream.
-      */
+   * @brief Add a stream to the list of output streams to print to.
+   *
+   * @param stream The stream.
+   */
   void add_stream(std::ostream& stream) { out_streams.push_back(&stream); }
 
   /**
-      * @brief Get a reference to a vector containing pointers to the output streams to print to.
-      *
-      * @return The output streams.
-      */
+   * @brief Get a reference to a vector containing pointers to the output
+   * streams to print to.
+   *
+   * @return The output streams.
+   */
   std::vector<std::ostream*>& get_streams() noexcept { return out_streams; }
 
   /**
-      * @brief Print any number of items into the output stream. Ensures that no other threads print to this stream simultaneously, as long as they all exclusively use the same `BS::synced_stream` object to print.
-      *
-      * @tparam T The types of the items.
-      * @param items The items to print.
-      */
+   * @brief Print any number of items into the output stream. Ensures that no
+   * other threads print to this stream simultaneously, as long as they all
+   * exclusively use the same `BS::synced_stream` object to print.
+   *
+   * @tparam T The types of the items.
+   * @param items The items to print.
+   */
   template <typename... T>
   void print(const T&... items) {
     const std::scoped_lock stream_lock(stream_mutex);
@@ -2144,21 +2652,24 @@ class [[nodiscard]] synced_stream {
   }
 
   /**
-      * @brief Print any number of items into the output stream, followed by a newline character. Ensures that no other threads print to this stream simultaneously, as long as they all exclusively use the same `BS::synced_stream` object to print.
-      *
-      * @tparam T The types of the items.
-      * @param items The items to print.
-      */
+   * @brief Print any number of items into the output stream, followed by a
+   * newline character. Ensures that no other threads print to this stream
+   * simultaneously, as long as they all exclusively use the same
+   * `BS::synced_stream` object to print.
+   *
+   * @tparam T The types of the items.
+   * @param items The items to print.
+   */
   template <typename... T>
   void println(T&&... items) {
     print(std::forward<T>(items)..., '\n');
   }
 
   /**
-      * @brief Remove a stream from the list of output streams to print to.
-      *
-      * @param stream The stream.
-      */
+   * @brief Remove a stream from the list of output streams to print to.
+   *
+   * @param stream The stream.
+   */
   void remove_stream(std::ostream& stream) {
     out_streams.erase(
         std::remove(out_streams.begin(), out_streams.end(), &stream),
@@ -2166,26 +2677,30 @@ class [[nodiscard]] synced_stream {
   }
 
   /**
-      * @brief A stream manipulator to pass to a `BS::synced_stream` (an explicit cast of `std::endl`). Prints a newline character to the stream, and then flushes it. Should only be used if flushing is desired, otherwise a newline character should be used instead.
-      */
+   * @brief A stream manipulator to pass to a `BS::synced_stream` (an explicit
+   * cast of `std::endl`). Prints a newline character to the stream, and then
+   * flushes it. Should only be used if flushing is desired, otherwise a newline
+   * character should be used instead.
+   */
   inline static std::ostream& (&endl)(std::ostream&) =
       static_cast<std::ostream& (&)(std::ostream&)>(std::endl);
 
   /**
-      * @brief A stream manipulator to pass to a `BS::synced_stream` (an explicit cast of `std::flush`). Used to flush the stream.
-      */
+   * @brief A stream manipulator to pass to a `BS::synced_stream` (an explicit
+   * cast of `std::flush`). Used to flush the stream.
+   */
   inline static std::ostream& (&flush)(std::ostream&) =
       static_cast<std::ostream& (&)(std::ostream&)>(std::flush);
 
  private:
   /**
-      * @brief The output streams to print to.
-      */
+   * @brief The output streams to print to.
+   */
   std::vector<std::ostream*> out_streams;
 
   /**
-      * @brief A mutex to synchronize printing.
-      */
+   * @brief A mutex to synchronize printing.
+   */
   mutable std::mutex stream_mutex;
 };  // class synced_stream
 
@@ -2195,10 +2710,18 @@ template <std::ptrdiff_t LeastMaxValue = std::counting_semaphore<>::max()>
 using counting_semaphore = std::counting_semaphore<LeastMaxValue>;
 #else
 /**
-  * @brief A polyfill for `std::counting_semaphore`, to be used if C++20 features are not available. A `counting_semaphore` is a synchronization primitive that allows more than one concurrent access to the same resource. The number of concurrent accessors is limited by the semaphore's counter, which is decremented when a thread acquires the semaphore and incremented when a thread releases the semaphore. If the counter is zero, a thread trying to acquire the semaphore will be blocked until another thread releases the semaphore.
-  *
-  * @tparam LeastMaxValue The least maximum value of the counter. (In this implementation, it is also the actual maximum value.)
-  */
+ * @brief A polyfill for `std::counting_semaphore`, to be used if C++20 features
+ * are not available. A `counting_semaphore` is a synchronization primitive that
+ * allows more than one concurrent access to the same resource. The number of
+ * concurrent accessors is limited by the semaphore's counter, which is
+ * decremented when a thread acquires the semaphore and incremented when a
+ * thread releases the semaphore. If the counter is zero, a thread trying to
+ * acquire the semaphore will be blocked until another thread releases the
+ * semaphore.
+ *
+ * @tparam LeastMaxValue The least maximum value of the counter. (In this
+ * implementation, it is also the actual maximum value.)
+ */
 template <std::ptrdiff_t LeastMaxValue =
               std::numeric_limits<std::ptrdiff_t>::max()>
 class [[nodiscard]] counting_semaphore {
@@ -2208,14 +2731,16 @@ class [[nodiscard]] counting_semaphore {
 
  public:
   /**
-      * @brief Construct a new counting semaphore with the given initial counter value.
-      *
-      * @param desired The initial counter value.
-      */
+   * @brief Construct a new counting semaphore with the given initial counter
+   * value.
+   *
+   * @param desired The initial counter value.
+   */
   constexpr explicit counting_semaphore(const std::ptrdiff_t desired)
       : counter(desired) {}
 
-  // The copy and move constructors and assignment operators are deleted. The semaphore cannot be copied or moved.
+  // The copy and move constructors and assignment operators are deleted. The
+  // semaphore cannot be copied or moved.
   counting_semaphore(const counting_semaphore&) = delete;
   counting_semaphore(counting_semaphore&&) = delete;
   counting_semaphore& operator=(const counting_semaphore&) = delete;
@@ -2223,17 +2748,20 @@ class [[nodiscard]] counting_semaphore {
   ~counting_semaphore() = default;
 
   /**
-      * @brief Returns the internal counter's maximum possible value, which in this implementation is equal to `LeastMaxValue`.
-      *
-      * @return The internal counter's maximum possible value.
-      */
+   * @brief Returns the internal counter's maximum possible value, which in this
+   * implementation is equal to `LeastMaxValue`.
+   *
+   * @return The internal counter's maximum possible value.
+   */
   [[nodiscard]] static constexpr std::ptrdiff_t max() noexcept {
     return LeastMaxValue;
   }
 
   /**
-      * @brief Atomically decrements the internal counter by 1 if it is greater than 0; otherwise blocks until it is greater than 0 and can successfully decrement the internal counter.
-      */
+   * @brief Atomically decrements the internal counter by 1 if it is greater
+   * than 0; otherwise blocks until it is greater than 0 and can successfully
+   * decrement the internal counter.
+   */
   void acquire() {
     std::unique_lock lock(mutex);
     cv.wait(lock, [this] { return counter > 0; });
@@ -2241,10 +2769,13 @@ class [[nodiscard]] counting_semaphore {
   }
 
   /**
-      * @brief Atomically increments the internal counter. Any thread(s) waiting for the counter to be greater than 0, such as due to being blocked in `acquire()`, will subsequently be unblocked.
-      *
-      * @param update The amount to increment the internal counter by. Defaults to 1.
-      */
+   * @brief Atomically increments the internal counter. Any thread(s) waiting
+   * for the counter to be greater than 0, such as due to being blocked in
+   * `acquire()`, will subsequently be unblocked.
+   *
+   * @param update The amount to increment the internal counter by. Defaults
+   * to 1.
+   */
   void release(const std::ptrdiff_t update = 1) {
     {
       const std::scoped_lock lock(mutex);
@@ -2254,10 +2785,11 @@ class [[nodiscard]] counting_semaphore {
   }
 
   /**
-      * @brief Tries to atomically decrement the internal counter by 1 if it is greater than 0; no blocking occurs regardless.
-      *
-      * @return `true` if decremented the internal counter, `false` otherwise.
-      */
+   * @brief Tries to atomically decrement the internal counter by 1 if it is
+   * greater than 0; no blocking occurs regardless.
+   *
+   * @return `true` if decremented the internal counter, `false` otherwise.
+   */
   bool try_acquire() {
     std::scoped_lock lock(mutex);
     if (counter > 0) {
@@ -2268,13 +2800,18 @@ class [[nodiscard]] counting_semaphore {
   }
 
   /**
-      * @brief Tries to atomically decrement the internal counter by 1 if it is greater than 0; otherwise blocks until it is greater than 0 and can successfully decrement the internal counter, or the `rel_time` duration has been exceeded.
-      *
-      * @tparam Rep An arithmetic type representing the number of ticks to wait.
-      * @tparam Period An `std::ratio` representing the length of each tick in seconds.
-      * @param rel_time The duration the function must wait. Note that the function may wait for longer.
-      * @return `true` if decremented the internal counter, `false` otherwise.
-      */
+   * @brief Tries to atomically decrement the internal counter by 1 if it is
+   * greater than 0; otherwise blocks until it is greater than 0 and can
+   * successfully decrement the internal counter, or the `rel_time` duration has
+   * been exceeded.
+   *
+   * @tparam Rep An arithmetic type representing the number of ticks to wait.
+   * @tparam Period An `std::ratio` representing the length of each tick in
+   * seconds.
+   * @param rel_time The duration the function must wait. Note that the function
+   * may wait for longer.
+   * @return `true` if decremented the internal counter, `false` otherwise.
+   */
   template <class Rep, class Period>
   bool try_acquire_for(const std::chrono::duration<Rep, Period>& rel_time) {
     std::unique_lock lock(mutex);
@@ -2285,13 +2822,18 @@ class [[nodiscard]] counting_semaphore {
   }
 
   /**
-      * @brief Tries to atomically decrement the internal counter by 1 if it is greater than 0; otherwise blocks until it is greater than 0 and can successfully decrement the internal counter, or the `abs_time` time point has been passed.
-      *
-      * @tparam Clock The type of the clock used to measure time.
-      * @tparam Duration An `std::chrono::duration` type used to indicate the time point.
-      * @param abs_time The earliest time the function must wait until. Note that the function may wait for longer.
-      * @return `true` if decremented the internal counter, `false` otherwise.
-      */
+   * @brief Tries to atomically decrement the internal counter by 1 if it is
+   * greater than 0; otherwise blocks until it is greater than 0 and can
+   * successfully decrement the internal counter, or the `abs_time` time point
+   * has been passed.
+   *
+   * @tparam Clock The type of the clock used to measure time.
+   * @tparam Duration An `std::chrono::duration` type used to indicate the time
+   * point.
+   * @param abs_time The earliest time the function must wait until. Note that
+   * the function may wait for longer.
+   * @return `true` if decremented the internal counter, `false` otherwise.
+   */
   template <class Clock, class Duration>
   bool try_acquire_until(
       const std::chrono::time_point<Clock, Duration>& abs_time) {
@@ -2304,25 +2846,27 @@ class [[nodiscard]] counting_semaphore {
 
  private:
   /**
-      * @brief The semaphore's counter.
-      */
+   * @brief The semaphore's counter.
+   */
   std::ptrdiff_t counter;
 
   /**
-      * @brief A condition variable used to wait for the counter.
-      */
+   * @brief A condition variable used to wait for the counter.
+   */
   std::condition_variable cv;
 
   /**
-      * @brief A mutex used to synchronize access to the counter.
-      */
+   * @brief A mutex used to synchronize access to the counter.
+   */
   mutable std::mutex mutex;
 };
 
 /**
-  * @brief A polyfill for `std::binary_semaphore`, to be used if C++20 features are not available.
-  */
+ * @brief A polyfill for `std::binary_semaphore`, to be used if C++20 features
+ * are not available.
+ */
 using binary_semaphore = counting_semaphore<1>;
 #endif
 }  // namespace BS
-#endif  // BS_THREAD_POOL_HPP
+#endif  // AIFO_AIFOCORE_INCLUDE_AIFOCORE_UTILITIES_BS_THREAD_POOL_H_ \
+        // NOLINTEND

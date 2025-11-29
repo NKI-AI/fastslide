@@ -62,7 +62,7 @@ namespace fastslide {
 /// @brief Helper class for executing QPTIFF tile read operations with
 /// thread-local buffers
 class QptiffTileExecutor : public TiffBasedTileExecutor<QptiffTileExecutor> {
-public:
+ public:
   /// @brief Execute a tile plan
   /// @param plan The tile plan to execute
   /// @param pyramid Pyramid levels information
@@ -70,10 +70,10 @@ public:
   /// @param writer Tile writer for output
   /// @return Status indicating success or failure
   static aifocore::Status ExecutePlan(
-      const core::TilePlan &plan, const std::vector<QpTiffLevelInfo> &pyramid,
-      const simpletiff::TiffIndex &tiff_index, runtime::TileWriter &writer);
+      const core::TilePlan& plan, const std::vector<QpTiffLevelInfo>& pyramid,
+      const simpletiff::TiffIndex& tiff_index, runtime::TileWriter& writer);
 
-private:
+ private:
   /// @brief State for tracking TIFF page information during execution
   struct PageState {
     uint16_t current_page = std::numeric_limits<uint16_t>::max();
@@ -91,11 +91,10 @@ private:
   /// @param writer Tile writer
   /// @param page_state Current page state (updated if needed)
   /// @return Status indicating success or failure
-  static aifocore::Status
-  ExecuteTileOperation(const core::TileReadOp &op,
-                       const QpTiffLevelInfo &level_info,
-                       const simpletiff::TiffIndex &tiff_index,
-                       runtime::TileWriter &writer, PageState &page_state);
+  static aifocore::Status ExecuteTileOperation(
+      const core::TileReadOp& op, const QpTiffLevelInfo& level_info,
+      const simpletiff::TiffIndex& tiff_index, runtime::TileWriter& writer,
+      PageState& page_state);
 
   /// @brief Update page state if page changed
   /// @param page New page number
@@ -103,10 +102,9 @@ private:
   /// @param tiff_index SimpleTiff index
   /// @param page_state Page state to update
   /// @return Status indicating success or failure
-  static aifocore::Status
-  UpdatePageState(uint16_t page, const QpTiffLevelInfo &level_info,
-                  const simpletiff::TiffIndex &tiff_index,
-                  PageState &page_state);
+  static aifocore::Status UpdatePageState(
+      uint16_t page, const QpTiffLevelInfo& level_info,
+      const simpletiff::TiffIndex& tiff_index, PageState& page_state);
 
   /// @brief Read tile data from TIFF file via simpletiff
   /// @param op The tile operation
@@ -116,10 +114,9 @@ private:
   /// @note The returned span is valid until the next call to this function on
   ///       the same thread. Uses thread-local buffers to eliminate per-tile
   ///       allocation overhead.
-  static aifocore::Result<std::span<const uint8_t>>
-  ReadTileData(const core::TileReadOp &op,
-               const simpletiff::TiffIndex &tiff_index,
-               const PageState &page_state);
+  static aifocore::Result<std::span<const uint8_t>> ReadTileData(
+      const core::TileReadOp& op, const simpletiff::TiffIndex& tiff_index,
+      const PageState& page_state);
 
   /// @brief Extract region from tile buffer to thread-local crop buffer
   /// @param tile_data Full tile data span
@@ -129,12 +126,11 @@ private:
   /// @return Span view of extracted region in thread-local buffer
   /// @note The returned span is valid until the next call to this function on
   ///       the same thread.
-  static std::span<const uint8_t>
-  ExtractRegionFromTile(std::span<const uint8_t> tile_data,
-                        const core::TileReadOp &op, uint32_t tile_width,
-                        size_t bytes_per_pixel);
+  static std::span<const uint8_t> ExtractRegionFromTile(
+      std::span<const uint8_t> tile_data, const core::TileReadOp& op,
+      uint32_t tile_width, size_t bytes_per_pixel);
 };
 
-} // namespace fastslide
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_QPTIFF_QPTIFF_TILE_EXECUTOR_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_QPTIFF_QPTIFF_TILE_EXECUTOR_H_

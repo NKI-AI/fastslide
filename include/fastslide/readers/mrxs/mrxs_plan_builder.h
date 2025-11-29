@@ -50,7 +50,7 @@ class MrxsPlanBuilder {
   /// @param reader The MRXS reader instance
   /// @return Status indicating success or failure
   static aifocore::Status ValidateRequest(const core::TileRequest& request,
-                                      const MrxsReader& reader);
+                                          const MrxsReader& reader);
 
   /// @brief Determine region bounds from request
   /// @param request The tile request

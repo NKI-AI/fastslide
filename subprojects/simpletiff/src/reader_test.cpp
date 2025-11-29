@@ -16,11 +16,12 @@
 
 #include <gtest/gtest.h>
 
-#include <array>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
+#include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "simpletiff/errors.h"
@@ -73,7 +74,7 @@ TEST(DecodeContextTest, ContextReuseAvoidsReallocation) {
 
   // First "read" allocates
   ctx.jpeg_stream_buffer.resize(1024);
-  const void *initial_ptr = ctx.jpeg_stream_buffer.data();
+  const void* initial_ptr = ctx.jpeg_stream_buffer.data();
 
   // Second "read" with smaller size shouldn't reallocate
   ctx.jpeg_stream_buffer.resize(512);
@@ -118,10 +119,10 @@ TEST(DecodeContextTest, ThreadSafety_MultipleThreadsOwnContexts) {
                   pattern);
 
         // Verify data integrity (no cross-thread contamination)
-        for (const auto &byte : ctx.jpeg_stream_buffer) {
+        for (const auto& byte : ctx.jpeg_stream_buffer) {
           if (byte != pattern) {
             success[thread_id] = false;
-            return; // Data corruption detected
+            return;  // Data corruption detected
           }
         }
       }
@@ -131,7 +132,7 @@ TEST(DecodeContextTest, ThreadSafety_MultipleThreadsOwnContexts) {
   }
 
   // Wait for all threads
-  for (auto &thread : threads) {
+  for (auto& thread : threads) {
     thread.join();
   }
 
@@ -169,7 +170,7 @@ TEST(DecodeContextTest, DecodeContext_IsMovable) {
   DecodeContext ctx1;
   ctx1.jpeg_stream_buffer.resize(1024);
   ctx1.temp_buffer.resize(512);
-  const void *original_ptr = ctx1.jpeg_stream_buffer.data();
+  const void* original_ptr = ctx1.jpeg_stream_buffer.data();
 
   // Move construct
   DecodeContext ctx2(std::move(ctx1));
@@ -251,9 +252,9 @@ TEST(RoiTest, SingleJpegPageRespectsRoi) {
   // Simulate copying ROI from full image
   const int full_stride = static_cast<int>(kImageWidth) * kChannels;
   for (uint32_t y = 0; y < roi_h; ++y) {
-    const uint8_t *src_row =
+    const uint8_t* src_row =
         fake_image.data() + (y0 + y) * full_stride + x0 * kChannels;
-    uint8_t *dst_row = dst.data() + y * roi_stride;
+    uint8_t* dst_row = dst.data() + y * roi_stride;
     std::memcpy(dst_row, src_row, roi_w * kChannels);
   }
 
@@ -273,31 +274,31 @@ TEST(RoiTest, RoiClampingPreventsOverflow) {
 
   // Test 1: ROI extends beyond right edge
   {
-    Roi roi{8, 5, 5, 2}; // Starts at x=8, width=5 (would extend to x=13)
+    Roi roi{8, 5, 5, 2};  // Starts at x=8, width=5 (would extend to x=13)
 
     const uint32_t x0 = std::min(roi.x, kImageWidth);
     const uint32_t x1 = std::min(roi.x + roi.width, kImageWidth);
 
     EXPECT_EQ(x0, 8u);
-    EXPECT_EQ(x1, 10u);     // Clamped to image width
-    EXPECT_EQ(x1 - x0, 2u); // Actual ROI width is 2, not 5
+    EXPECT_EQ(x1, 10u);      // Clamped to image width
+    EXPECT_EQ(x1 - x0, 2u);  // Actual ROI width is 2, not 5
   }
 
   // Test 2: ROI extends beyond bottom edge
   {
-    Roi roi{5, 8, 2, 5}; // Starts at y=8, height=5 (would extend to y=13)
+    Roi roi{5, 8, 2, 5};  // Starts at y=8, height=5 (would extend to y=13)
 
     const uint32_t y0 = std::min(roi.y, kImageHeight);
     const uint32_t y1 = std::min(roi.y + roi.height, kImageHeight);
 
     EXPECT_EQ(y0, 8u);
-    EXPECT_EQ(y1, 10u);     // Clamped to image height
-    EXPECT_EQ(y1 - y0, 2u); // Actual ROI height is 2, not 5
+    EXPECT_EQ(y1, 10u);      // Clamped to image height
+    EXPECT_EQ(y1 - y0, 2u);  // Actual ROI height is 2, not 5
   }
 
   // Test 3: ROI completely outside image (should be detected as invalid)
   {
-    Roi roi{15, 20, 5, 5}; // Completely beyond image
+    Roi roi{15, 20, 5, 5};  // Completely beyond image
 
     const uint32_t x0 = std::min(roi.x, kImageWidth);
     const uint32_t x1 = std::min(roi.x + roi.width, kImageWidth);
@@ -322,7 +323,7 @@ TEST(RoiTest, RoiClampingPreventsOverflow) {
 TEST(ResultTest, ResultOkWhenSuccessful) {
   // Test that Result<void>::ok() works correctly for success case
   auto make_success = []() -> Result<void> {
-    return Result<void>(); // Default constructor = success
+    return Result<void>();  // Default constructor = success
   };
 
   auto result = make_success();
@@ -398,8 +399,8 @@ TEST(IndexTest, EmptyIndexHasNoPages) {
   TiffIndex index;
 
   EXPECT_EQ(index.NumPages(), 0u);
-  EXPECT_TRUE(index.IsLittleEndian()); // Default
-  EXPECT_FALSE(index.IsBigTiff());     // Default
+  EXPECT_TRUE(index.IsLittleEndian());  // Default
+  EXPECT_FALSE(index.IsBigTiff());      // Default
 }
 
 TEST(IndexTest, CanAddPages) {
@@ -425,11 +426,11 @@ TEST(IndexTest, CanAddPages) {
   EXPECT_EQ(index.NumPages(), 2u);
 
   // Verify pages are accessible
-  const auto &retrieved1 = index.Page(0);
+  const auto& retrieved1 = index.Page(0);
   EXPECT_EQ(retrieved1.width, 1024u);
   EXPECT_EQ(retrieved1.height, 768u);
 
-  const auto &retrieved2 = index.Page(1);
+  const auto& retrieved2 = index.Page(1);
   EXPECT_EQ(retrieved2.width, 512u);
   EXPECT_EQ(retrieved2.height, 512u);
 }
@@ -492,8 +493,8 @@ TEST(CopyTileTest, BasicTileCopy) {
 
   // Source tile: 2x2 RGB
   std::vector<uint8_t> tile_data = {
-      1, 2, 3, 4,  5,  6, // Row 0
-      7, 8, 9, 10, 11, 12 // Row 1
+      1, 2, 3, 4,  5,  6,  // Row 0
+      7, 8, 9, 10, 11, 12  // Row 1
   };
 
   // Destination: 4x4 RGB (filled with zeros)
@@ -530,7 +531,7 @@ TEST(CopyTileTest, EdgeTileClipping) {
   // Test that edge tiles are properly clipped
   constexpr int kTileWidth = 3;
   constexpr int kTileHeight = 3;
-  constexpr int kChannels = 1; // Grayscale for simplicity
+  constexpr int kChannels = 1;  // Grayscale for simplicity
 
   // Source tile: 3x3
   std::vector<uint8_t> tile_data(kTileWidth * kTileHeight);
@@ -549,10 +550,10 @@ TEST(CopyTileTest, EdgeTileClipping) {
                kTileHeight, 2, 2, kDstWidth, kDstHeight, kChannels);
 
   // Only the top-left 2x2 portion of the tile should be copied
-  EXPECT_EQ(dst[(2 * kDstStride) + 2], 1); // tile[0,0]
-  EXPECT_EQ(dst[(2 * kDstStride) + 3], 2); // tile[0,1]
-  EXPECT_EQ(dst[(3 * kDstStride) + 2], 4); // tile[1,0]
-  EXPECT_EQ(dst[(3 * kDstStride) + 3], 5); // tile[1,1]
+  EXPECT_EQ(dst[(2 * kDstStride) + 2], 1);  // tile[0,0]
+  EXPECT_EQ(dst[(2 * kDstStride) + 3], 2);  // tile[0,1]
+  EXPECT_EQ(dst[(3 * kDstStride) + 2], 4);  // tile[1,0]
+  EXPECT_EQ(dst[(3 * kDstStride) + 3], 5);  // tile[1,1]
 
   // The rest should not be copied (would go out of bounds)
 }
@@ -575,7 +576,7 @@ TEST(CopyTileTest, TileCompletelyOutsideRoi) {
                kTileHeight, 10, 10, kDstWidth, kDstHeight, kChannels);
 
   // Destination should remain all zeros (no copy occurred)
-  for (const auto &byte : dst) {
+  for (const auto& byte : dst) {
     EXPECT_EQ(byte, 0);
   }
 }
@@ -589,12 +590,12 @@ TEST(JpegStreamTest, ComposeWithTablesAndPayload) {
 
   // Fake JPEG tables (without SOI/EOI)
   std::vector<uint8_t> tables = {
-      0xFF, 0xDB, 0x00, 0x43 // DQT marker and some data
+      0xFF, 0xDB, 0x00, 0x43  // DQT marker and some data
   };
 
   // Fake JPEG payload (without SOI/EOI)
   std::vector<uint8_t> payload = {
-      0xFF, 0xDA, 0x00, 0x0C // SOS marker and some data
+      0xFF, 0xDA, 0x00, 0x0C  // SOS marker and some data
   };
 
   std::vector<uint8_t> output;
@@ -603,11 +604,11 @@ TEST(JpegStreamTest, ComposeWithTablesAndPayload) {
   // Should have SOI at start
   ASSERT_GE(output.size(), 2u);
   EXPECT_EQ(output[0], 0xFF);
-  EXPECT_EQ(output[1], 0xD8); // SOI marker
+  EXPECT_EQ(output[1], 0xD8);  // SOI marker
 
   // Should have EOI at end
   EXPECT_EQ(output[output.size() - 2], 0xFF);
-  EXPECT_EQ(output[output.size() - 1], 0xD9); // EOI marker
+  EXPECT_EQ(output[output.size() - 1], 0xD9);  // EOI marker
 
   // Total size should be: SOI (2) + tables (4) + payload (4) + EOI (2) = 12
   EXPECT_EQ(output.size(), 12u);
@@ -618,16 +619,16 @@ TEST(JpegStreamTest, ComposeWithExistingSOIEOI) {
 
   // Tables with SOI and EOI
   std::vector<uint8_t> tables = {
-      0xFF, 0xD8,             // SOI
-      0xFF, 0xDB, 0x00, 0x43, // DQT
-      0xFF, 0xD9              // EOI
+      0xFF, 0xD8,              // SOI
+      0xFF, 0xDB, 0x00, 0x43,  // DQT
+      0xFF, 0xD9               // EOI
   };
 
   // Payload with SOI and EOI
   std::vector<uint8_t> payload = {
-      0xFF, 0xD8,             // SOI
-      0xFF, 0xDA, 0x00, 0x0C, // SOS
-      0xFF, 0xD9              // EOI
+      0xFF, 0xD8,              // SOI
+      0xFF, 0xDA, 0x00, 0x0C,  // SOS
+      0xFF, 0xD9               // EOI
   };
 
   std::vector<uint8_t> output;
@@ -663,10 +664,10 @@ TEST(JpegStreamTest, ComposeWithExistingSOIEOI) {
 
 TEST(JpegStreamTest, ComposeWithEmptyTables) {
   // Test composing when tables are empty (some TIFFs don't use JPEGTables)
-  std::vector<uint8_t> tables; // Empty
+  std::vector<uint8_t> tables;  // Empty
 
   std::vector<uint8_t> payload = {
-      0xFF, 0xDA, 0x00, 0x0C // SOS marker
+      0xFF, 0xDA, 0x00, 0x0C  // SOS marker
   };
 
   std::vector<uint8_t> output;
@@ -675,9 +676,9 @@ TEST(JpegStreamTest, ComposeWithEmptyTables) {
   // Should still have SOI and EOI
   ASSERT_GE(output.size(), 6u);
   EXPECT_EQ(output[0], 0xFF);
-  EXPECT_EQ(output[1], 0xD8); // SOI
+  EXPECT_EQ(output[1], 0xD8);  // SOI
   EXPECT_EQ(output[output.size() - 2], 0xFF);
-  EXPECT_EQ(output[output.size() - 1], 0xD9); // EOI
+  EXPECT_EQ(output[output.size() - 1], 0xD9);  // EOI
 
   // Size should be: SOI (2) + payload (4) + EOI (2) = 8
   EXPECT_EQ(output.size(), 8u);
@@ -706,7 +707,7 @@ TEST(StorageTest, TilesRecStorage) {
   uint32_t tiles_id = index.AddTiles(std::move(tiles));
 
   // Retrieve and verify
-  const auto &retrieved = index.Tiles(tiles_id);
+  const auto& retrieved = index.Tiles(tiles_id);
   EXPECT_EQ(retrieved.tile_w, 256u);
   EXPECT_EQ(retrieved.tile_h, 256u);
   EXPECT_EQ(retrieved.tiles_x, 10u);
@@ -715,7 +716,7 @@ TEST(StorageTest, TilesRecStorage) {
   auto retrieved_offsets = index.Offsets(retrieved.offsets);
   auto retrieved_bytecounts = index.Bytecounts(retrieved.bytecounts);
 
-  EXPECT_EQ(retrieved_offsets.size(), 80u); // 10 * 8
+  EXPECT_EQ(retrieved_offsets.size(), 80u);  // 10 * 8
   EXPECT_EQ(retrieved_bytecounts.size(), 80u);
   EXPECT_EQ(retrieved_offsets[0], 1000u);
   EXPECT_EQ(retrieved_bytecounts[0], 5000u);
@@ -737,7 +738,7 @@ TEST(StorageTest, StripsRecStorage) {
   uint32_t strips_id = index.AddStrips(std::move(strips));
 
   // Retrieve and verify
-  const auto &retrieved = index.Strips(strips_id);
+  const auto& retrieved = index.Strips(strips_id);
   EXPECT_EQ(retrieved.rows_per_strip, 32u);
 
   auto retrieved_offsets = index.Offsets(retrieved.offsets);
@@ -760,7 +761,7 @@ TEST(StorageTest, SingleJpegRecStorage) {
   uint32_t single_id = index.AddSingleJpeg(std::move(single));
 
   // Retrieve and verify
-  const auto &retrieved = index.SingleJpeg(single_id);
+  const auto& retrieved = index.SingleJpeg(single_id);
   EXPECT_EQ(retrieved.offset, 12345u);
   EXPECT_EQ(retrieved.length, 67890u);
 }
@@ -834,5 +835,5 @@ TEST(EdgeCaseTest, MultipleContextsInSequence) {
   // All contexts should be cleaned up by RAII
 }
 
-} // namespace
-} // namespace simpletiff
+}  // namespace
+}  // namespace simpletiff

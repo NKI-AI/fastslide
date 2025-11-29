@@ -21,8 +21,8 @@
 ///
 /// These functions return lazy expressions that are evaluated on assignment.
 
-#ifndef AIFOCORE_MATH_NDARRAY_FUNCTIONS_H_
-#define AIFOCORE_MATH_NDARRAY_FUNCTIONS_H_
+#ifndef AIFO_AIFOCORE_INCLUDE_AIFOCORE_MATH_NDARRAY_FUNCTIONS_H_
+#define AIFO_AIFOCORE_INCLUDE_AIFOCORE_MATH_NDARRAY_FUNCTIONS_H_
 
 #include "aifocore/math/ndarray.h"
 
@@ -97,4 +97,4 @@ auto Min(typename Expr::value_type scalar, const Expr& expr) {
 
 }  // namespace aifocore::math
 
-#endif  // AIFOCORE_MATH_NDARRAY_FUNCTIONS_H_
+#endif  // AIFO_AIFOCORE_INCLUDE_AIFOCORE_MATH_NDARRAY_FUNCTIONS_H_

@@ -15,15 +15,15 @@
 
 #include <jpeglib.h>
 
-#include "aifocore/platform/portability.h"
-
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <mutex>
 #include <span>
+#include <utility>
 #include <vector>
 
+#include "aifocore/platform/portability.h"
 #include "simpletiff/reader.h"
 
 namespace simpletiff {
@@ -221,7 +221,7 @@ bool DecodeJpeg(DecodeContext& ctx, std::span<const uint8_t> jpeg_data,
 
   // Use memory source
   jpeg_mem_src(&cinfo, const_cast<uint8_t*>(jpeg_data.data()),
-               static_cast<unsigned long>(jpeg_data.size()));
+               static_cast<size_t>(jpeg_data.size()));
 
   if (jpeg_read_header(&cinfo, TRUE) != JPEG_HEADER_OK) {
     return false;

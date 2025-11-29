@@ -14,11 +14,11 @@
 //
 // Convenience header for decompression utilities
 
-#ifndef SIMPLETIFF_DECOMPRESSION_H_
-#define SIMPLETIFF_DECOMPRESSION_H_
+#ifndef AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_DECOMPRESSION_H_
+#define AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_DECOMPRESSION_H_
 
 #include "simpletiff/lzw.h"
 #include "simpletiff/predictor.h"
 #include "simpletiff/zstd.h"
 
-#endif  // SIMPLETIFF_DECOMPRESSION_H_
+#endif  // AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_DECOMPRESSION_H_

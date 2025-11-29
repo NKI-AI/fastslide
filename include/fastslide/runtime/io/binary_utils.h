@@ -38,13 +38,13 @@ namespace io {
 /// @param file File pointer (must be open for reading)
 /// @return 32-bit integer value or error
 /// @note Does not change file pointer on error
-aifocore::Result<int32_t> ReadLeInt32(FILE *file);
+aifocore::Result<int32_t> ReadLeInt32(FILE* file);
 
 /// @brief Read a little-endian 32-bit unsigned integer from a file
 /// @param file File pointer (must be open for reading)
 /// @return 32-bit unsigned integer value or error
 /// @note Does not change file pointer on error
-aifocore::Result<uint32_t> ReadLeUInt32(FILE *file);
+aifocore::Result<uint32_t> ReadLeUInt32(FILE* file);
 
 /// @brief Decompress zlib-compressed data
 /// @param data Pointer to compressed data
@@ -52,18 +52,18 @@ aifocore::Result<uint32_t> ReadLeUInt32(FILE *file);
 /// @param expected_size Expected size of decompressed data in bytes
 /// @return Decompressed data or error
 /// @note Uses zlib inflate() for decompression
-aifocore::Result<std::vector<uint8_t>> DecompressZlib(const uint8_t *data,
+aifocore::Result<std::vector<uint8_t>> DecompressZlib(const uint8_t* data,
                                                       size_t compressed_size,
                                                       size_t expected_size);
 
-} // namespace io
-} // namespace runtime
+}  // namespace io
+}  // namespace runtime
 
 // Import into fastslide namespace for convenience
 using runtime::io::DecompressZlib;
 using runtime::io::ReadLeInt32;
 using runtime::io::ReadLeUInt32;
 
-} // namespace fastslide
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_RUNTIME_IO_BINARY_UTILS_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_RUNTIME_IO_BINARY_UTILS_H_

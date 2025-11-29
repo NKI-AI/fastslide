@@ -1,0 +1,204 @@
+load("@bazel_skylib//rules:copy_directory.bzl", "copy_directory")
+load("@doxygen//:doxygen.bzl", "doxygen")
+load("@rules_multirun//:defs.bzl", "multirun")
+load("@rules_python//sphinxdocs:sphinx.bzl", "sphinx_build_binary", "sphinx_docs")
+load("@rules_python//sphinxdocs:sphinx_docs_library.bzl", "sphinx_docs_library")
+load("@rules_uv//uv:pip.bzl", "pip_compile")
+
+COMPATIBLE_TARGETS = select({
+    "@platforms//os:linux": [],
+    "@platforms//os:macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+# Generate platform-specific requirements lock files
+pip_compile(
+    name = "generate_requirements_linux_txt",
+    python_platform = "x86_64-unknown-linux-gnu",
+    requirements_in = "requirements.in",
+    requirements_txt = "requirements_linux.txt",
+)
+
+pip_compile(
+    name = "generate_requirements_darwin_txt",
+    python_platform = "aarch64-apple-darwin",
+    requirements_in = "requirements.in",
+    requirements_txt = "requirements_darwin.txt",
+)
+
+multirun(
+    name = "generate_requirements_lock",
+    commands = [
+        ":generate_requirements_linux_txt",
+        ":generate_requirements_darwin_txt",
+    ],
+    # Running in single threaded mode allows consecutive `uv` invocations to benefit from cache
+    jobs = 1,
+)
+
+# Generate Doxygen documentation
+# Settings extracted from docs/Doxyfile (adapted for Bazel)
+doxygen(
+    name = "doxygen_build",
+    srcs = [
+        "//aifo/fastslide:fastslide_headers",
+        "//aifo/fastslide:fastslide_sources",
+    ],
+    outs = [
+        "html",
+        "xml",
+    ],
+    collaboration_graph = True,
+
+    # C++ preprocessing
+    enable_preprocessing = True,
+    expand_only_predef = False,
+
+    # Extraction settings - document everything
+    extract_all = True,
+    extract_package = True,
+    extract_priv_virtual = True,
+    extract_private = True,
+    extract_static = True,
+    file_patterns = [
+        "*.h",
+        "*.hpp",
+        "*.cpp",
+    ],
+
+    # Output configuration
+    generate_html = True,
+    generate_latex = False,
+    generate_xml = True,
+
+    # Disable graphs for faster builds
+    have_dot = True,
+    html_output = "html",
+    include_graph = True,
+    macro_expansion = True,
+    predefined = "__cplusplus=202002L __restrict= __restrict__=",
+    project_brief = "High-performance whole slide image reader",
+
+    # Project metadata
+    project_name = "FastSlide",
+
+    # Warning configuration
+    quiet = True,
+
+    # Input configuration
+    recursive = True,
+    target_compatible_with = COMPATIBLE_TARGETS,
+    warn_if_doc_error = True,
+    warn_if_undocumented = False,
+    warnings = True,
+    xml_output = "xml",
+)
+
+# Create sphinx-build binary with all required dependencies
+sphinx_build_binary(
+    name = "sphinx_build",
+    deps = [
+        # Sphinx core and extensions
+        "@docs_pip//sphinx",
+        "@docs_pip//sphinx_rtd_theme",
+        "@docs_pip//breathe",
+        "@docs_pip//sphinx_design",
+        "@docs_pip//sphinx_copybutton",
+        "@docs_pip//sphinx_inline_tabs",
+        "@docs_pip//sphinxcontrib_mermaid",
+        "@docs_pip//sphinxext_opengraph",
+        "@docs_pip//sphinx_autodoc_typehints",
+        "@docs_pip//myst_parser",
+        "@docs_pip//matplotlib",
+        "//aifo/fastslide/python:fastslide",
+        "//aifo/dlup",
+    ],
+)
+
+# Extract Doxygen XML output for Breathe integration
+# Following Pigweed pattern: use output_group to select just the xml
+filegroup(
+    name = "_doxygen_xml",
+    srcs = [":doxygen_build"],
+    output_group = "xml",
+)
+
+# Wrap Doxygen XML as a sphinx_docs_library for Breathe
+# This places the XML at _doxygen/ which Breathe can access
+sphinx_docs_library(
+    name = "doxygen_xml_lib",
+    srcs = [":_doxygen_xml"],
+    prefix = "_doxygen/",
+    target_compatible_with = COMPATIBLE_TARGETS,
+)
+
+# Extract Doxygen HTML output
+filegroup(
+    name = "_doxygen_html",
+    srcs = [":doxygen_build"],
+    output_group = "html",
+)
+
+# Copy Doxygen HTML to doxygen/api/ for deployment
+copy_directory(
+    name = "_doxygen_html_copy",
+    src = ":_doxygen_html",
+    out = "cc",
+)
+
+# Wrap Doxygen HTML as a sphinx_docs_library
+sphinx_docs_library(
+    name = "doxygen_html_lib",
+    srcs = [":_doxygen_html_copy"],
+    prefix = "doxygen/api/",
+    target_compatible_with = COMPATIBLE_TARGETS,
+)
+
+# Build Sphinx documentation with full Breathe integration
+# Following Pigweed pattern: list source files directly in srcs,
+# and add Doxygen XML/HTML via deps
+sphinx_docs(
+    name = "sphinx_html",
+    srcs = glob([
+        "source/**/*.rst",
+        "source/**/*.md",
+        "source/**/*.py",
+        "source/_static/**/*",
+        "source/_templates/**/*",
+    ]),
+    config = "source/conf.py",
+    # Don't fail on warnings (some classes are not in Doxygen XML yet)
+    extra_opts = [
+        "--keep-going",  # Continue despite warnings
+    ],
+    formats = ["html"],
+    sphinx = ":sphinx_build",
+    strip_prefix = "aifo/fastslide/docs/source/",
+    target_compatible_with = COMPATIBLE_TARGETS,
+    deps = [
+        ":doxygen_html_lib",
+        ":doxygen_xml_lib",
+    ],
+)
+
+# Expose both Sphinx and Doxygen docs as separate targets
+filegroup(
+    name = "docs",
+    srcs = [
+        ":doxygen_build",
+        ":sphinx_html",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Build all documentation (separate Sphinx and Doxygen outputs)
+# Note: For a combined output, use the Make build (make all) which merges them.
+# Bazel outputs:
+#   - Sphinx HTML: bazel-bin/aifo/fastslide/docs/sphinx_html/_build/html
+#   - Doxygen HTML: bazel-bin/aifo/fastslide/docs/html
+#   - Doxygen XML: bazel-bin/aifo/fastslide/docs/xml
+alias(
+    name = "all_docs",
+    actual = ":docs",
+    visibility = ["//visibility:public"],
+)

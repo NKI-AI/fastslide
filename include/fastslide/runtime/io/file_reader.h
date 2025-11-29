@@ -51,7 +51,7 @@ class FileReader {
   /// @return FileReader instance or error
   /// @retval NotFoundError if file cannot be opened
   static aifocore::Result<FileReader> Open(const fs::path& path,
-                                         const char* mode);
+                                           const char* mode);
 
   /// @brief Move constructor
   FileReader(FileReader&& other) noexcept = default;

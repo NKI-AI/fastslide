@@ -37,7 +37,8 @@ namespace {
 aifocore::Result<std::unique_ptr<SlideReader>> CreateQptiffReader(
     std::shared_ptr<ITileCache> cache, std::string_view filename) {
   // Create the QPTIFF reader (using existing implementation)
-  AIFOCORE_ASSIGN_OR_RETURN(auto reader, QpTiffReader::Create(std::string(filename)));
+  AIFOCORE_ASSIGN_OR_RETURN(auto reader,
+                            QpTiffReader::Create(std::string(filename)));
 
   // Apply cache if provided
   if (cache) {

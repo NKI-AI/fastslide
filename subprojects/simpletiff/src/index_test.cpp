@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <vector>
 
 namespace simpletiff {
 namespace {

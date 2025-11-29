@@ -34,7 +34,7 @@
 
 namespace fastslide::runtime {
 
-DirectStrategy::DirectStrategy(const TileWriter::Config &config)
+DirectStrategy::DirectStrategy(const TileWriter::Config& config)
     : config_(config) {
   if (config_.dimensions[0] == 0 || config_.dimensions[1] == 0 ||
       config_.channels == 0 || config_.background.values.empty()) {
@@ -65,7 +65,7 @@ DirectStrategy::DirectStrategy(const TileWriter::Config &config)
   ZeroInit(output_image_->GetData(), output_image_->SizeBytes());
 }
 
-aifocore::Status DirectStrategy::WriteTile(const core::TileReadOp &operation,
+aifocore::Status DirectStrategy::WriteTile(const core::TileReadOp& operation,
                                            std::span<const uint8_t> pixel_data,
                                            uint32_t tile_width,
                                            uint32_t tile_height,
@@ -75,7 +75,7 @@ aifocore::Status DirectStrategy::WriteTile(const core::TileReadOp &operation,
                             "DirectStrategy has null image pointer");
   }
 
-  const auto &dst = operation.transform.dest;
+  const auto& dst = operation.transform.dest;
 
   if (dst.x + dst.width > config_.dimensions[0] ||
       dst.y + dst.height > config_.dimensions[1]) {
@@ -104,7 +104,9 @@ ImageDimensions DirectStrategy::GetDimensions() const {
   return config_.dimensions;
 }
 
-uint32_t DirectStrategy::GetChannels() const { return config_.channels; }
+uint32_t DirectStrategy::GetChannels() const {
+  return config_.channels;
+}
 
 aifocore::Result<Image> DirectStrategy::GetOutput() {
   if (!output_image_) {
@@ -114,9 +116,11 @@ aifocore::Result<Image> DirectStrategy::GetOutput() {
   return std::move(*output_image_);
 }
 
-std::string DirectStrategy::GetName() const { return "NativeDirect"; }
+std::string DirectStrategy::GetName() const {
+  return "NativeDirect";
+}
 
-uint8_t *DirectStrategy::GetOutputBuffer() {
+uint8_t* DirectStrategy::GetOutputBuffer() {
   return output_image_ ? output_image_->GetData() : nullptr;
 }
 
@@ -125,16 +129,16 @@ size_t DirectStrategy::GetOutputBufferSize() const {
 }
 
 aifocore::Status DirectStrategy::WriteTilePlanar(
-    const core::TileReadOp &operation, std::span<const uint8_t> pixel_data,
+    const core::TileReadOp& operation, std::span<const uint8_t> pixel_data,
     uint32_t tile_width, uint32_t tile_height, uint32_t /*tile_channels*/) {
   if (!output_image_) {
     return aifocore::Status(aifocore::StatusCode::kInternal,
                             "DirectStrategy has null image pointer");
   }
 
-  const auto &src = operation.transform.source;
-  const auto &dst = operation.transform.dest;
-  uint8_t *image_data = output_image_->GetData();
+  const auto& src = operation.transform.source;
+  const auto& dst = operation.transform.dest;
+  uint8_t* image_data = output_image_->GetData();
   const uint32_t bytes_per_sample = output_image_->GetBytesPerSample();
   const uint32_t target_channel = operation.tile_coord.x;
 
@@ -162,16 +166,16 @@ aifocore::Status DirectStrategy::WriteTilePlanar(
 }
 
 aifocore::Status DirectStrategy::WriteTileInterleaved(
-    const core::TileReadOp &operation, std::span<const uint8_t> pixel_data,
+    const core::TileReadOp& operation, std::span<const uint8_t> pixel_data,
     uint32_t tile_width, uint32_t tile_height, uint32_t tile_channels) {
   if (!output_image_) {
     return aifocore::Status(aifocore::StatusCode::kInternal,
                             "DirectStrategy has null image pointer");
   }
 
-  const auto &src = operation.transform.source;
-  const auto &dst = operation.transform.dest;
-  uint8_t *image_data = output_image_->GetData();
+  const auto& src = operation.transform.source;
+  const auto& dst = operation.transform.dest;
+  uint8_t* image_data = output_image_->GetData();
   const uint32_t bytes_per_sample = output_image_->GetBytesPerSample();
 
   // HOT PATH: RGB8, channels match, uint8, contiguous copy
@@ -205,4 +209,4 @@ aifocore::Status DirectStrategy::WriteTileInterleaved(
   return aifocore::Status::OkStatus();
 }
 
-} // namespace fastslide::runtime
+}  // namespace fastslide::runtime

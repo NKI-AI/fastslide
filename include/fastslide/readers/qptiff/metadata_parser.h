@@ -29,24 +29,24 @@ namespace fastslide::formats::qptiff {
 
 /// @brief Slide-level metadata extracted from QPTIFF XML
 struct QpTiffSlideMetadata {
-  double mpp_x = 0.0;         ///< Microns per pixel X
-  double mpp_y = 0.0;         ///< Microns per pixel Y
-  double magnification = 0.0; ///< Objective magnification
-  std::string objective_name; ///< Objective lens name
+  double mpp_x = 0.0;          ///< Microns per pixel X
+  double mpp_y = 0.0;          ///< Microns per pixel Y
+  double magnification = 0.0;  ///< Objective magnification
+  std::string objective_name;  ///< Objective lens name
 };
 
 /// @brief Channel-specific metadata extracted from QPTIFF XML
 struct QpTiffChannelInfo {
-  std::string name;           ///< Channel name
-  std::string biomarker;      ///< Biomarker name
-  ColorRGB color;             ///< Channel display color
-  uint64_t exposure_time = 0; ///< Exposure time in milliseconds
-  uint64_t signal_units = 0;  ///< Signal units/scale factor
+  std::string name;            ///< Channel name
+  std::string biomarker;       ///< Biomarker name
+  ColorRGB color;              ///< Channel display color
+  uint64_t exposure_time = 0;  ///< Exposure time in milliseconds
+  uint64_t signal_units = 0;   ///< Signal units/scale factor
 };
 
 /// @brief Parser for QPTIFF XML metadata
 class QpTiffMetadataParser {
-public:
+ public:
   /// @brief Parse slide-level metadata from QPTIFF XML
   ///
   /// Extracts resolution, magnification, and objective information
@@ -55,8 +55,8 @@ public:
   /// @param xml_content Raw XML content string
   /// @param metadata Output metadata structure
   /// @return Status indicating success or failure
-  static aifocore::Status ParseSlideMetadata(const std::string &xml_content,
-                                             QpTiffSlideMetadata &metadata);
+  static aifocore::Status ParseSlideMetadata(const std::string& xml_content,
+                                             QpTiffSlideMetadata& metadata);
 
   /// @brief Parse channel information from QPTIFF XML
   ///
@@ -66,8 +66,8 @@ public:
   /// @param xml_content Raw XML content string
   /// @param channel_index Index of the channel (for default naming)
   /// @return Channel info or error status
-  static aifocore::Result<QpTiffChannelInfo>
-  ParseChannelInfo(const std::string &xml_content, int channel_index);
+  static aifocore::Result<QpTiffChannelInfo> ParseChannelInfo(
+      const std::string& xml_content, int channel_index);
 
   /// @brief Extract image type from QPTIFF XML
   ///
@@ -76,12 +76,12 @@ public:
   ///
   /// @param xml_content Raw XML content string
   /// @return Image type string, or empty if not found
-  static std::string ExtractImageType(const std::string &xml_content);
+  static std::string ExtractImageType(const std::string& xml_content);
 
   /// @brief Check if XML content is valid QPTIFF format
   /// @param xml_content Raw XML content string
   /// @return true if the XML appears to be QPTIFF format
-  static bool IsQpTiffFormat(const std::string &xml_content);
+  static bool IsQpTiffFormat(const std::string& xml_content);
 
   /// @brief Extract text content from XML node by tag name
   ///
@@ -90,24 +90,24 @@ public:
   /// @param node_ptr Pointer to XML node (expected to be pugi::xml_node*)
   /// @param tag Tag name to search for
   /// @return Text content or empty string if not found
-  static std::string GetText(const void *node_ptr, const char *tag);
+  static std::string GetText(const void* node_ptr, const char* tag);
 
-private:
+ private:
   /// @brief Validate and extract resolution information from XML
   /// @param root_node XML root node
   /// @param metadata Output metadata structure
   /// @return Status indicating success or failure
-  static aifocore::Status ExtractResolutionInfo(const pugi::xml_node &root_node,
-                                                QpTiffSlideMetadata &metadata);
+  static aifocore::Status ExtractResolutionInfo(const pugi::xml_node& root_node,
+                                                QpTiffSlideMetadata& metadata);
 
   /// @brief Extract channel color from XML color string
   /// @param color_str XML color string (format: "R,G,B")
   /// @param default_color Fallback color if parsing fails
   /// @return Parsed color or default color
-  static ColorRGB ParseChannelColor(const std::string &color_str,
-                                    const ColorRGB &default_color);
+  static ColorRGB ParseChannelColor(const std::string& color_str,
+                                    const ColorRGB& default_color);
 };
 
-} // namespace fastslide::formats::qptiff
+}  // namespace fastslide::formats::qptiff
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_QPTIFF_METADATA_PARSER_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_QPTIFF_METADATA_PARSER_H_

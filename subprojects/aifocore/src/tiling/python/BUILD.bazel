@@ -1,0 +1,12 @@
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "grid_module",
+    srcs = ["grid_module.cpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//aifo/aifocore:tiling",
+        "//aifo/aifocore:tiling_python",
+        "@pybind11",
+    ],
+)

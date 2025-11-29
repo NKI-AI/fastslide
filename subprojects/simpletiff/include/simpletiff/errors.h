@@ -14,8 +14,8 @@
 //
 // Error types for SimpleTIFF library
 
-#ifndef SIMPLETIFF_ERRORS_H_
-#define SIMPLETIFF_ERRORS_H_
+#ifndef AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_ERRORS_H_
+#define AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_ERRORS_H_
 
 #include <cstdint>
 #include <stdexcept>
@@ -118,4 +118,4 @@ class IndexError : public TiffError {
 
 }  // namespace simpletiff
 
-#endif  // SIMPLETIFF_ERRORS_H_
+#endif  // AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_ERRORS_H_

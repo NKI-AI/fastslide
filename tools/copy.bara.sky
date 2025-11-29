@@ -42,6 +42,7 @@ SRC_GLOBS = [
     "aifo/fastslide/src/**",
     "aifo/fastslide/include/**",
     "aifo/fastslide/python/**",
+    "aifo/fastslide/wasm/**",
     "aifo/aifocore/src/**",
     "aifo/aifocore/include/**",
     "aifo/simpletiff/src/**",

@@ -81,11 +81,11 @@ std::vector<uint8_t> CreateTestPixelData(uint32_t width, uint32_t height,
       const size_t pixel_idx = (y * width + x) * channels;
 
       // Create gradient pattern
-      data[pixel_idx + 0] = static_cast<uint8_t>(x % 256); // R
+      data[pixel_idx + 0] = static_cast<uint8_t>(x % 256);  // R
       if (channels > 1)
-        data[pixel_idx + 1] = static_cast<uint8_t>(y % 256); // G
+        data[pixel_idx + 1] = static_cast<uint8_t>(y % 256);  // G
       if (channels > 2)
-        data[pixel_idx + 2] = static_cast<uint8_t>((x + y) % 256); // B
+        data[pixel_idx + 2] = static_cast<uint8_t>((x + y) % 256);  // B
     }
   }
 
@@ -166,7 +166,7 @@ TEST(TileWriterTest, WriteSingleTileRGB) {
   auto pixel_data = CreateTestPixelData(256, 256, 3);
 
   // Write tile
-  const auto &op = plan.operations[0];
+  const auto& op = plan.operations[0];
   auto status = writer.WriteTile(op, pixel_data, 256, 256, 3);
   ASSERT_TRUE(status.ok()) << status.ToString();
 
@@ -178,7 +178,7 @@ TEST(TileWriterTest, WriteSingleTileRGB) {
   auto result = writer.GetOutput();
   ASSERT_TRUE(result.ok()) << result.status().ToString();
 
-  const auto &output = result.value();
+  const auto& output = result.value();
   EXPECT_EQ(output.GetDimensions()[0], 256);
   EXPECT_EQ(output.GetDimensions()[1], 256);
   EXPECT_EQ(output.GetChannels(), 3);
@@ -194,7 +194,7 @@ TEST(TileWriterTest, WritePartialTile) {
   op.level = 0;
   op.tile_coord = {0, 0};
   op.transform.source = {0, 0, 256, 256};
-  op.transform.dest = {0, 0, 256, 256}; // Top-left quadrant
+  op.transform.dest = {0, 0, 256, 256};  // Top-left quadrant
   op.source_id = 0;
   op.byte_offset = 0;
   op.byte_size = 256 * 256 * 3;
@@ -240,7 +240,7 @@ TEST(TileWriterTest, WriteMultipleTiles) {
   auto result = writer.GetOutput();
   ASSERT_TRUE(result.ok()) << result.status().ToString();
 
-  const auto &output = result.value();
+  const auto& output = result.value();
   EXPECT_EQ(output.GetDimensions()[0], 512);
   EXPECT_EQ(output.GetDimensions()[1], 512);
 }
@@ -253,7 +253,7 @@ TEST(TileWriterTest, WriteTileWithCropping) {
   core::TileReadOp op;
   op.level = 0;
   op.tile_coord = {0, 0};
-  op.transform.source = {64, 64, 128, 128}; // Crop from middle
+  op.transform.source = {64, 64, 128, 128};  // Crop from middle
   op.transform.dest = {0, 0, 128, 128};
   op.source_id = 0;
   op.byte_offset = 0;
@@ -276,7 +276,7 @@ TEST(TileWriterTest, WriteTileWithCropping) {
 // ============================================================================
 
 TEST(TileWriterTest, BlendedStrategyDetection) {
-  auto plan = CreateSimpleRGBPlan(256, 256, true); // Enable blending
+  auto plan = CreateSimpleRGBPlan(256, 256, true);  // Enable blending
 
   TileWriter writer(plan);
 
@@ -345,7 +345,7 @@ TEST(TileWriterTest, BlendedOverlappingTiles) {
   op2.level = 0;
   op2.tile_coord = {1, 0};
   op2.transform.source = {0, 0, 256, 256};
-  op2.transform.dest = {240, 0, 256, 256}; // Overlaps at x=240-256
+  op2.transform.dest = {240, 0, 256, 256};  // Overlaps at x=240-256
   op2.source_id = 0;
   op2.byte_offset = 0;
   op2.byte_size = 256 * 256 * 3;
@@ -379,7 +379,7 @@ TEST(TileWriterTest, OutOfBoundsWrite) {
   op.level = 0;
   op.tile_coord = {0, 0};
   op.transform.source = {0, 0, 256, 256};
-  op.transform.dest = {512, 512, 256, 256}; // Way out of bounds
+  op.transform.dest = {512, 512, 256, 256};  // Way out of bounds
   op.source_id = 0;
   op.byte_offset = 0;
   op.byte_size = 256 * 256 * 3;
@@ -396,7 +396,7 @@ TEST(TileWriterTest, InsufficientPixelData) {
   TileWriter writer(plan);
 
   // Provide insufficient pixel data
-  std::vector<uint8_t> insufficient_data(100); // Way too small
+  std::vector<uint8_t> insufficient_data(100);  // Way too small
 
   core::TileReadOp op;
   op.level = 0;
@@ -495,8 +495,8 @@ TEST(TileWriterTest, LargeImage) {
 
   // Write tiles in 256x256 chunks
   const uint32_t tile_size = 256;
-  const uint32_t tiles_x = 4096 / tile_size; // 16
-  const uint32_t tiles_y = 4096 / tile_size; // 16
+  const uint32_t tiles_x = 4096 / tile_size;  // 16
+  const uint32_t tiles_y = 4096 / tile_size;  // 16
 
   for (uint32_t ty = 0; ty < tiles_y; ++ty) {
     for (uint32_t tx = 0; tx < tiles_x; ++tx) {
@@ -523,11 +523,11 @@ TEST(TileWriterTest, LargeImage) {
   auto result = writer.GetOutput();
   ASSERT_TRUE(result.ok()) << result.status().ToString();
 
-  const auto &output = result.value();
+  const auto& output = result.value();
   EXPECT_EQ(output.GetDimensions()[0], 4096);
   EXPECT_EQ(output.GetDimensions()[1], 4096);
   EXPECT_EQ(output.SizeBytes(), 4096 * 4096 * 3);
 }
 
-} // namespace runtime
-} // namespace fastslide
+}  // namespace runtime
+}  // namespace fastslide

@@ -27,7 +27,8 @@ namespace fastslide {
 
 /// @brief Function type for loading tiles when cache misses occur
 /// @return StatusOr containing the loaded tile data, or an error status
-using TileLoader = std::function<aifocore::Result<std::shared_ptr<CachedTile>>()>;
+using TileLoader =
+    std::function<aifocore::Result<std::shared_ptr<CachedTile>>()>;
 
 /// @brief Manager for tile caching that abstracts cache operations
 ///

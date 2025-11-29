@@ -94,10 +94,10 @@ class QptiffPlanBuilder {
   /// @param tile_height Output tile height
   /// @param is_tiled Output whether pages are tiled
   /// @return Status indicating success or failure
-  static aifocore::Status GetTileDimensions(const simpletiff::TiffIndex& tiff_index,
-                                        const QpTiffLevelInfo& level_info,
-                                        uint32_t& tile_width,
-                                        uint32_t& tile_height, bool& is_tiled);
+  static aifocore::Status GetTileDimensions(
+      const simpletiff::TiffIndex& tiff_index,
+      const QpTiffLevelInfo& level_info, uint32_t& tile_width,
+      uint32_t& tile_height, bool& is_tiled);
 
   /// @brief Create tile operations for intersecting tiles
   /// @param request The tile request

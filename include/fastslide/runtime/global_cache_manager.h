@@ -58,7 +58,7 @@ namespace runtime {
 /// auto reader = registry.CreateReader("slide.mrxs");
 /// @endcode
 class GlobalCacheManager {
-public:
+ public:
   /// @brief Get the singleton instance
   ///
   /// Returns the global singleton instance of the cache manager. The instance
@@ -66,7 +66,7 @@ public:
   ///
   /// @return Reference to the global cache manager
   /// @note Thread-safe
-  static GlobalCacheManager &Instance();
+  static GlobalCacheManager& Instance();
 
   /// @brief Get the global tile cache
   ///
@@ -119,7 +119,7 @@ public:
   /// @note Thread-safe
   void Clear();
 
-private:
+ private:
   /// @brief Private constructor for singleton
   GlobalCacheManager();
 
@@ -127,20 +127,20 @@ private:
   ~GlobalCacheManager() = default;
 
   // Non-copyable, non-movable
-  GlobalCacheManager(const GlobalCacheManager &) = delete;
-  GlobalCacheManager &operator=(const GlobalCacheManager &) = delete;
-  GlobalCacheManager(GlobalCacheManager &&) = delete;
-  GlobalCacheManager &operator=(GlobalCacheManager &&) = delete;
+  GlobalCacheManager(const GlobalCacheManager&) = delete;
+  GlobalCacheManager& operator=(const GlobalCacheManager&) = delete;
+  GlobalCacheManager(GlobalCacheManager&&) = delete;
+  GlobalCacheManager& operator=(GlobalCacheManager&&) = delete;
 
-  mutable std::mutex mutex_;          ///< Mutex for thread safety
-  std::shared_ptr<ITileCache> cache_; ///< The global cache instance
+  mutable std::mutex mutex_;           ///< Mutex for thread safety
+  std::shared_ptr<ITileCache> cache_;  ///< The global cache instance
 };
 
-} // namespace runtime
+}  // namespace runtime
 
 // Import into fastslide namespace
 using runtime::GlobalCacheManager;
 
-} // namespace fastslide
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_RUNTIME_GLOBAL_CACHE_MANAGER_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_RUNTIME_GLOBAL_CACHE_MANAGER_H_

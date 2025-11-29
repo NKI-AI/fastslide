@@ -48,7 +48,7 @@ namespace internal {
 /// @param path Filesystem path to the INI file
 /// @return Result containing parsed IniFile object or error
 /// @retval NotFound if file cannot be opened
-aifocore::Result<IniFile> IniFile::Load(const fs::path &path) {
+aifocore::Result<IniFile> IniFile::Load(const fs::path& path) {
   // Standard ifstream handles fs::path correctly on modern platforms (including
   // Windows with MSVC)
   std::ifstream file{path};
@@ -79,7 +79,7 @@ aifocore::Result<IniFile> IniFile::Load(const fs::path &path) {
         last != std::string::npos) {
       line.erase(last + 1);
     } else {
-      line.clear(); // All whitespace
+      line.clear();  // All whitespace
     }
 
     // Skip empty lines and comments
@@ -170,7 +170,7 @@ aifocore::Result<int> IniFile::GetInt(std::string_view section,
 
   try {
     return std::stoi(str_result);
-  } catch (const std::exception &e) {
+  } catch (const std::exception& e) {
     return aifocore::Status(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format(
@@ -196,7 +196,7 @@ aifocore::Result<double> IniFile::GetDouble(std::string_view section,
 
   try {
     return std::stod(str_result);
-  } catch (const std::exception &e) {
+  } catch (const std::exception& e) {
     return aifocore::Status(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format(
@@ -213,6 +213,6 @@ bool IniFile::HasSection(std::string_view section) const {
   return data_.find(std::string(section)) != data_.end();
 }
 
-} // namespace internal
-} // namespace mrxs
-} // namespace fastslide
+}  // namespace internal
+}  // namespace mrxs
+}  // namespace fastslide

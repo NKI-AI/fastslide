@@ -37,7 +37,7 @@ GlobalCacheManager::GlobalCacheManager() {
   }
 }
 
-GlobalCacheManager &GlobalCacheManager::Instance() {
+GlobalCacheManager& GlobalCacheManager::Instance() {
   static GlobalCacheManager instance;
   return instance;
 }
@@ -90,5 +90,5 @@ void GlobalCacheManager::Clear() {
   }
 }
 
-} // namespace runtime
-} // namespace fastslide
+}  // namespace runtime
+}  // namespace fastslide

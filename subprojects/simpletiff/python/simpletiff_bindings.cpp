@@ -1,9 +1,5 @@
 // Copyright 2025 SimpleTIFF Authors
 
-#include "simpletiff/index.h"
-#include "simpletiff/reader.h"
-#include "simpletiff/tiff_parser.h"
-
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
@@ -13,9 +9,15 @@
 #include <cstring>
 #include <memory>
 #include <stdexcept>
+#include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
+
 #include "aifocore/platform/portability.h"
+#include "simpletiff/index.h"
+#include "simpletiff/reader.h"
+#include "simpletiff/tiff_parser.h"
 
 namespace py = pybind11;
 

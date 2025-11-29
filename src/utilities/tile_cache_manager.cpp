@@ -25,10 +25,9 @@ namespace fastslide {
 TileCacheManager::TileCacheManager(std::shared_ptr<TileCache> cache)
     : cache_(std::move(cache)) {}
 
-aifocore::Result<std::shared_ptr<CachedTile>>
-TileCacheManager::GetTile(const std::string &filename, uint16_t level,
-                          const aifocore::Size<uint32_t, 2> &tile_coords,
-                          TileLoader loader) {
+aifocore::Result<std::shared_ptr<CachedTile>> TileCacheManager::GetTile(
+    const std::string& filename, uint16_t level,
+    const aifocore::Size<uint32_t, 2>& tile_coords, TileLoader loader) {
   // Try to get from cache first
   auto cached_tile =
       GetTileFromCache(filename, level, tile_coords[0], tile_coords[1]);
@@ -51,9 +50,9 @@ TileCacheManager::GetTile(const std::string &filename, uint16_t level,
   return tile;
 }
 
-std::shared_ptr<CachedTile>
-TileCacheManager::GetTileFromCache(const std::string &filename, uint16_t level,
-                                   uint32_t tile_x, uint32_t tile_y) {
+std::shared_ptr<CachedTile> TileCacheManager::GetTileFromCache(
+    const std::string& filename, uint16_t level, uint32_t tile_x,
+    uint32_t tile_y) {
   if (!IsCacheEnabled()) {
     return nullptr;
   }
@@ -62,7 +61,7 @@ TileCacheManager::GetTileFromCache(const std::string &filename, uint16_t level,
   return cache_->Get(key);
 }
 
-void TileCacheManager::PutTile(const std::string &filename, uint16_t level,
+void TileCacheManager::PutTile(const std::string& filename, uint16_t level,
                                uint32_t tile_x, uint32_t tile_y,
                                std::shared_ptr<CachedTile> tile) {
   if (!IsCacheEnabled()) {
@@ -73,13 +72,17 @@ void TileCacheManager::PutTile(const std::string &filename, uint16_t level,
   cache_->Put(key, std::move(tile));
 }
 
-bool TileCacheManager::IsCacheEnabled() const { return cache_ != nullptr; }
+bool TileCacheManager::IsCacheEnabled() const {
+  return cache_ != nullptr;
+}
 
 void TileCacheManager::SetCache(std::shared_ptr<TileCache> cache) {
   cache_ = std::move(cache);
 }
 
-std::shared_ptr<TileCache> TileCacheManager::GetCache() const { return cache_; }
+std::shared_ptr<TileCache> TileCacheManager::GetCache() const {
+  return cache_;
+}
 
 TileCache::Stats TileCacheManager::GetStats() const {
   if (!IsCacheEnabled()) {
@@ -99,11 +102,11 @@ void TileCacheManager::Clear() {
   }
 }
 
-runtime::TileKey TileCacheManager::CreateCacheKey(const std::string &filename,
+runtime::TileKey TileCacheManager::CreateCacheKey(const std::string& filename,
                                                   uint16_t level,
                                                   uint32_t tile_x,
                                                   uint32_t tile_y) const {
   return runtime::TileKey(filename, level, tile_x, tile_y);
 }
 
-} // namespace fastslide
+}  // namespace fastslide

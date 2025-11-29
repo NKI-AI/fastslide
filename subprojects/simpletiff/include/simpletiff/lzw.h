@@ -14,8 +14,8 @@
 //
 // LZW decompression for TIFF
 
-#ifndef SIMPLETIFF_LZW_H_
-#define SIMPLETIFF_LZW_H_
+#ifndef AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_LZW_H_
+#define AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_LZW_H_
 
 #include <cstdint>
 #include <span>
@@ -33,4 +33,4 @@ bool DecompressLzw(std::span<const uint8_t> compressed,
 
 }  // namespace simpletiff
 
-#endif  // SIMPLETIFF_LZW_H_
+#endif  // AIFO_SIMPLETIFF_INCLUDE_SIMPLETIFF_LZW_H_

@@ -75,44 +75,44 @@ namespace fastslide {
 
 /// @brief Pyramid level metadata for Aperio
 struct AperioLevelInfo {
-  uint16_t page = 0;              ///< TIFF page number
-  ImageDimensions size = {0, 0};  ///< Level dimensions (width, height)
-  double downsample_factor = 0.0; ///< Downsample factor relative to level 0
+  uint16_t page = 0;               ///< TIFF page number
+  ImageDimensions size = {0, 0};   ///< Level dimensions (width, height)
+  double downsample_factor = 0.0;  ///< Downsample factor relative to level 0
 };
 
 /// @brief Associated image metadata for Aperio
 struct AperioAssociatedInfo {
-  uint16_t page;                 ///< TIFF page number
-  ImageDimensions size = {0, 0}; ///< Image dimensions (width, height)
-  std::string name;              ///< Image name (e.g., "thumbnail", "macro")
+  uint16_t page;                  ///< TIFF page number
+  ImageDimensions size = {0, 0};  ///< Image dimensions (width, height)
+  std::string name;               ///< Image name (e.g., "thumbnail", "macro")
 };
 
 /// @brief Aperio reader class implementing the SlideReader interface
 class AperioReader : public TiffBasedReader,
                      public TiffReaderFactory<AperioReader> {
-public:
+ public:
   /// @brief Factory method to create an AperioReader instance
   /// @param filename Path to the Aperio file
   /// @return StatusOr containing the reader instance or an error
-  static aifocore::Result<std::unique_ptr<AperioReader>>
-  Create(fs::path filename);
+  static aifocore::Result<std::unique_ptr<AperioReader>> Create(
+      fs::path filename);
 
   /// @brief Destructor
   ~AperioReader() override = default;
 
   // SlideReader interface implementation
   [[nodiscard]] int GetLevelCount() const override;
-  [[nodiscard]] aifocore::Result<LevelInfo>
-  GetLevelInfo(int level) const override;
-  [[nodiscard]] const SlideProperties &GetProperties() const override;
-  [[nodiscard]] std::vector<ChannelMetadata>
-  GetChannelMetadata() const override;
-  [[nodiscard]] std::vector<std::string>
-  GetAssociatedImageNames() const override;
-  [[nodiscard]] aifocore::Result<ImageDimensions>
-  GetAssociatedImageDimensions(std::string_view name) const override;
-  [[nodiscard]] aifocore::Result<RGBImage>
-  ReadAssociatedImage(std::string_view name) const override;
+  [[nodiscard]] aifocore::Result<LevelInfo> GetLevelInfo(
+      int level) const override;
+  [[nodiscard]] const SlideProperties& GetProperties() const override;
+  [[nodiscard]] std::vector<ChannelMetadata> GetChannelMetadata()
+      const override;
+  [[nodiscard]] std::vector<std::string> GetAssociatedImageNames()
+      const override;
+  [[nodiscard]] aifocore::Result<ImageDimensions> GetAssociatedImageDimensions(
+      std::string_view name) const override;
+  [[nodiscard]] aifocore::Result<RGBImage> ReadAssociatedImage(
+      std::string_view name) const override;
 
   [[nodiscard]] Metadata GetMetadata() const override;
 
@@ -127,40 +127,39 @@ public:
   [[nodiscard]] aifocore::Result<std::string> GetQuickHash() const override;
 
   // Two-stage pipeline implementation
-  [[nodiscard]] aifocore::Result<core::TilePlan>
-  PrepareRequest(const core::TileRequest &request) const override;
+  [[nodiscard]] aifocore::Result<core::TilePlan> PrepareRequest(
+      const core::TileRequest& request) const override;
 
-  [[nodiscard]] aifocore::Status
-  ExecutePlan(const core::TilePlan &plan,
-              runtime::TileWriter &writer) const override;
+  [[nodiscard]] aifocore::Status ExecutePlan(
+      const core::TilePlan& plan, runtime::TileWriter& writer) const override;
 
   /// @brief Get Aperio metadata (format-specific)
   /// @return Reference to Aperio metadata
-  [[nodiscard]] const formats::aperio::AperioMetadata &
-  GetAperioMetadata() const {
+  [[nodiscard]] const formats::aperio::AperioMetadata& GetAperioMetadata()
+      const {
     return aperio_metadata_;
   }
 
   /// @brief Get pyramid levels (format-specific)
   /// @return Reference to pyramid levels
-  [[nodiscard]] const std::vector<AperioLevelInfo> &GetPyramidLevels() const {
+  [[nodiscard]] const std::vector<AperioLevelInfo>& GetPyramidLevels() const {
     return pyramid_levels_;
   }
 
   /// @brief Get associated images (format-specific)
   /// @return Reference to associated images
-  [[nodiscard]] const std::vector<AperioAssociatedInfo> &
-  GetAssociatedImages() const {
+  [[nodiscard]] const std::vector<AperioAssociatedInfo>& GetAssociatedImages()
+      const {
     return associated_images_;
   }
 
   /// @brief Get TIFF index for structure queries
   /// @return Const reference to TIFF index
-  [[nodiscard]] const simpletiff::TiffIndex &GetTiffIndex() const {
+  [[nodiscard]] const simpletiff::TiffIndex& GetTiffIndex() const {
     return *tiff_index_;
   }
 
-private:
+ private:
   /// @brief Allow factory access to private constructor and methods
   friend class TiffReaderFactory<AperioReader>;
 
@@ -169,9 +168,9 @@ private:
   explicit AperioReader(fs::path filename);
 
   formats::aperio::AperioMetadata
-      aperio_metadata_;                         ///< Aperio-specific metadata
-  std::vector<AperioLevelInfo> pyramid_levels_; ///< Pyramid levels
-  std::vector<AperioAssociatedInfo> associated_images_; ///< Associated images
+      aperio_metadata_;                          ///< Aperio-specific metadata
+  std::vector<AperioLevelInfo> pyramid_levels_;  ///< Pyramid levels
+  std::vector<AperioAssociatedInfo> associated_images_;  ///< Associated images
 
   /// @brief SimpleTiff index for thread-safe TIFF operations
   std::unique_ptr<simpletiff::TiffIndex> tiff_index_;
@@ -192,6 +191,6 @@ private:
   void PopulateSlideProperties();
 };
 
-} // namespace fastslide
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_APERIO_APERIO_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_APERIO_APERIO_H_

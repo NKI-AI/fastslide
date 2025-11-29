@@ -36,7 +36,7 @@ struct BuiltInFormatRegistrar {
     // effectively. Applications should verify supported formats via
     // GetSupportedExtensions() if critical.
 
-    auto &registry = GetGlobalRegistry();
+    auto& registry = GetGlobalRegistry();
     (void)BuiltInPluginsInitializer::RegisterAll(registry);
   }
 };
@@ -44,7 +44,7 @@ struct BuiltInFormatRegistrar {
 // Instantiate registrar
 static BuiltInFormatRegistrar g_builtin_registrar;
 
-} // namespace
+}  // namespace
 
-} // namespace runtime
-} // namespace fastslide
+}  // namespace runtime
+}  // namespace fastslide

@@ -28,9 +28,8 @@ namespace fastslide {
 namespace formats {
 namespace qptiff {
 
-aifocore::Status
-QpTiffMetadataParser::ParseSlideMetadata(const std::string &xml_content,
-                                         QpTiffSlideMetadata &metadata) {
+aifocore::Status QpTiffMetadataParser::ParseSlideMetadata(
+    const std::string& xml_content, QpTiffSlideMetadata& metadata) {
 
   if (!IsQpTiffFormat(xml_content)) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
@@ -52,9 +51,8 @@ QpTiffMetadataParser::ParseSlideMetadata(const std::string &xml_content,
   return ExtractResolutionInfo(root, metadata);
 }
 
-aifocore::Result<QpTiffChannelInfo>
-QpTiffMetadataParser::ParseChannelInfo(const std::string &xml_content,
-                                       int channel_index) {
+aifocore::Result<QpTiffChannelInfo> QpTiffMetadataParser::ParseChannelInfo(
+    const std::string& xml_content, int channel_index) {
 
   pugi::xml_document doc;
   if (!doc.load_string(xml_content.c_str())) {
@@ -98,8 +96,8 @@ QpTiffMetadataParser::ParseChannelInfo(const std::string &xml_content,
   return channel;
 }
 
-std::string
-QpTiffMetadataParser::ExtractImageType(const std::string &xml_content) {
+std::string QpTiffMetadataParser::ExtractImageType(
+    const std::string& xml_content) {
   pugi::xml_document doc;
   if (!doc.load_string(xml_content.c_str())) {
     return "";
@@ -113,21 +111,20 @@ QpTiffMetadataParser::ExtractImageType(const std::string &xml_content) {
   return GetText(&root, "ImageType");
 }
 
-bool QpTiffMetadataParser::IsQpTiffFormat(const std::string &xml_content) {
+bool QpTiffMetadataParser::IsQpTiffFormat(const std::string& xml_content) {
   return xml_content.find("PerkinElmer-QPI-ImageDescription") !=
          std::string::npos;
 }
 
-std::string QpTiffMetadataParser::GetText(const void *node_ptr,
-                                          const char *tag) {
-  const auto *const node = static_cast<const pugi::xml_node *>(node_ptr);
+std::string QpTiffMetadataParser::GetText(const void* node_ptr,
+                                          const char* tag) {
+  const auto* const node = static_cast<const pugi::xml_node*>(node_ptr);
   auto child = node->child(tag);
   return !child.empty() ? child.text().as_string() : std::string{};
 }
 
-aifocore::Status
-QpTiffMetadataParser::ExtractResolutionInfo(const pugi::xml_node &root_node,
-                                            QpTiffSlideMetadata &metadata) {
+aifocore::Status QpTiffMetadataParser::ExtractResolutionInfo(
+    const pugi::xml_node& root_node, QpTiffSlideMetadata& metadata) {
 
   auto resolution_node = root_node.child("ScanProfile").child("root");
   if (resolution_node.empty()) {
@@ -165,9 +162,8 @@ QpTiffMetadataParser::ExtractResolutionInfo(const pugi::xml_node &root_node,
   return aifocore::Status::OkStatus();
 }
 
-ColorRGB
-QpTiffMetadataParser::ParseChannelColor(const std::string &color_str,
-                                        const ColorRGB &default_color) {
+ColorRGB QpTiffMetadataParser::ParseChannelColor(
+    const std::string& color_str, const ColorRGB& default_color) {
 
   if (color_str.empty()) {
     return default_color;
@@ -178,10 +174,10 @@ QpTiffMetadataParser::ParseChannelColor(const std::string &color_str,
     return default_color;
   }
 
-  const auto &rgb_array = color_result.value();
+  const auto& rgb_array = color_result.value();
   return ColorRGB(rgb_array[0], rgb_array[1], rgb_array[2]);
 }
 
-} // namespace qptiff
-} // namespace formats
-} // namespace fastslide
+}  // namespace qptiff
+}  // namespace formats
+}  // namespace fastslide
