@@ -8,6 +8,17 @@ cc_library(
 )
 
 cc_library(
+    name = "concepts",
+    hdrs = ["include/aifocore/concepts/numeric.h"],
+    strip_include_prefix = "include",
+    visibility = ["//aifo:__subpackages__"],
+    deps = [
+        "@cereal",
+        "@fmt",
+    ],
+)
+
+cc_library(
     name = "math",
     hdrs = ["include/aifocore/concepts/math.h"],
     strip_include_prefix = "include",
