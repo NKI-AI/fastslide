@@ -38,7 +38,7 @@ GENERAL_FILES = [
     "aifo/simpletiff/BUILD.bazel",
     "aifo/simpletiff/README.md",
     "aifo/aifocore/meson.build",
-    "aifo/aifocore/BUILD.bazel",
+    "aifo/aifocore/BUILD_external.bazel",
     "aifo/aifocore/LICENSE",
     "aifo/aifocore/README.md",
     "third_party/hwy_mac_fix.patch",
@@ -108,6 +108,10 @@ core.workflow(
         core.move(
             before = "aifo/fastslide/MODULE_external.bazel", 
             after = "MODULE.bazel"
+        ),
+        core.move(
+            before = "aifo/aifocore/BUILD_external.bazel",
+            after = "subprojects/aifocore/BUILD.bazel"
         ),
         core.move(
             before = "aifo/jpeg-compressor/",
