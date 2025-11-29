@@ -132,15 +132,15 @@ core.workflow(
         core.replace(
             before = "//aifo/fastslide/",
             after = "//",
-            paths = glob(["**/BUILD.bazel"])) + ["BUILD.bazel"],
+            paths = glob(["**/BUILD.bazel"]) + ["BUILD.bazel"]),
         core.replace(
             before = "//aifo/aifocore",
             after = "//subprojects/aifocore",
-            paths = glob(["**/BUILD.bazel"])) + ["BUILD.bazel"],
+            paths = glob(["**/BUILD.bazel"]) + ["BUILD.bazel"]),
         core.replace(
             before = "//aifo/simpletiff",
             after = "//subprojects/simpletiff",
-            paths = glob(["**/BUILD.bazel"])) + ["BUILD.bazel"],
+            paths = glob(["**/BUILD.bazel"]) + ["BUILD.bazel"]),
         core.move(
             before = "README_PUBLIC.md",
             after = "README.md"
