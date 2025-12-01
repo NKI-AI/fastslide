@@ -559,7 +559,9 @@ extern "C" FastSlideImage* fastslide_image_create_solid_color(
                                  static_cast<int16_t>(blue));
         break;
       case fastslide::DataType::kUInt32:
-        rgb_image->FillWithColor(red, green, blue);
+        rgb_image->FillWithColor(static_cast<uint32_t>(red),
+                                 static_cast<uint32_t>(green),
+                                 static_cast<uint32_t>(blue));
         break;
       case fastslide::DataType::kInt32:
         rgb_image->FillWithColor(static_cast<int32_t>(red),

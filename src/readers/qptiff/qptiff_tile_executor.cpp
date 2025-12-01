@@ -34,7 +34,7 @@ aifocore::Status QptiffTileExecutor::ExecutePlan(
   if (plan.operations.empty()) {
     // No tiles to read - fill with background color
     const auto& bg = plan.output.background;
-    return writer.FillWithColor(bg.r, bg.g, bg.b);
+    return writer.FillBackground(bg.r, bg.g, bg.b);
   }
 
   const int level = plan.request.level;

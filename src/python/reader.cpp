@@ -32,6 +32,52 @@ namespace fastslide::python {
 
 using fastslide::RegionSpec;
 
+namespace {
+
+template <typename T>
+py::array_t<T> CreatePyArray(const std::vector<ssize_t>& shape,
+                             const fastslide::Image& image) {
+  py::array_t<T> result(shape);
+  std::memcpy(result.mutable_data(), image.GetData(), image.SizeBytes());
+  return result;
+}
+
+py::array ImageToPyArray(const fastslide::Image& image) {
+  std::vector<ssize_t> shape;
+  if (image.GetPlanarConfig() == fastslide::PlanarConfig::kContiguous) {
+    // H, W, C for interleaved
+    shape = {static_cast<ssize_t>(image.GetHeight()),
+             static_cast<ssize_t>(image.GetWidth()),
+             static_cast<ssize_t>(image.GetChannels())};
+  } else {
+    // C, H, W for planar
+    shape = {static_cast<ssize_t>(image.GetChannels()),
+             static_cast<ssize_t>(image.GetHeight()),
+             static_cast<ssize_t>(image.GetWidth())};
+  }
+
+  switch (image.GetDataType()) {
+    case fastslide::DataType::kUInt8:
+      return CreatePyArray<uint8_t>(shape, image);
+    case fastslide::DataType::kUInt16:
+      return CreatePyArray<uint16_t>(shape, image);
+    case fastslide::DataType::kInt16:
+      return CreatePyArray<int16_t>(shape, image);
+    case fastslide::DataType::kUInt32:
+      return CreatePyArray<uint32_t>(shape, image);
+    case fastslide::DataType::kInt32:
+      return CreatePyArray<int32_t>(shape, image);
+    case fastslide::DataType::kFloat32:
+      return CreatePyArray<float>(shape, image);
+    case fastslide::DataType::kFloat64:
+      return CreatePyArray<double>(shape, image);
+    default:
+      throw std::runtime_error("Unsupported data type");
+  }
+}
+
+}  // namespace
+
 // AssociatedImages implementation
 AssociatedImages::AssociatedImages(std::shared_ptr<SlideReader> reader)
     : reader_(reader) {}
@@ -69,7 +115,7 @@ void AssociatedImages::EnsureNamesLoaded() const {
   }
 }
 
-py::array_t<uint8_t> AssociatedImages::GetItem(const std::string& name) const {
+py::array AssociatedImages::GetItem(const std::string& name) const {
   EnsureNamesLoaded();
 
   // Check if image exists
@@ -98,12 +144,7 @@ py::array_t<uint8_t> AssociatedImages::GetItem(const std::string& name) const {
       if (data_or.ok() && data_or->IsImage()) {
         const auto* image = data_or->GetImage();
         if (image) {
-          const auto& dims = image->GetDimensions();
-          std::vector<ssize_t> shape = {static_cast<ssize_t>(dims[1]),
-                                        static_cast<ssize_t>(dims[0]), 3};
-          py::array_t<uint8_t> result_array(shape);
-          std::memcpy(result_array.mutable_data(), image->GetData(),
-                      dims[0] * dims[1] * 3);
+          auto result_array = ImageToPyArray(*image);
           cache_[name] = result_array;
           return result_array;
         }
@@ -115,13 +156,7 @@ py::array_t<uint8_t> AssociatedImages::GetItem(const std::string& name) const {
   }
 
   const auto& image = result.value();
-  std::vector<ssize_t> shape = {static_cast<ssize_t>(image.GetDimensions()[1]),
-                                static_cast<ssize_t>(image.GetDimensions()[0]),
-                                3};
-
-  py::array_t<uint8_t> result_array(shape);
-  auto buf = result_array.request();
-  std::memcpy(buf.ptr, image.GetData(), image.SizeBytes());
+  auto result_array = ImageToPyArray(image);
 
   // Cache the result
   cache_[name] = result_array;
@@ -361,9 +396,8 @@ bool FastSlide::__exit__(py::object exc_type, py::object exc_value,
   return false;
 }
 
-py::array_t<uint8_t> FastSlide::ReadRegion(uint32_t x, uint32_t y,
-                                           uint32_t width, uint32_t height,
-                                           int level) {
+py::array FastSlide::ReadRegion(uint32_t x, uint32_t y, uint32_t width,
+                                uint32_t height, int level) {
   if (is_closed_) {
     throw std::runtime_error("Cannot read region: slide reader is closed");
   }
@@ -377,15 +411,7 @@ py::array_t<uint8_t> FastSlide::ReadRegion(uint32_t x, uint32_t y,
                              std::string(result.status().message()));
   }
 
-  const auto& image = result.value();
-  std::vector<ssize_t> shape = {static_cast<ssize_t>(image.GetDimensions()[1]),
-                                static_cast<ssize_t>(image.GetDimensions()[0]),
-                                3};
-
-  py::array_t<uint8_t> result_array(shape);
-  auto buf = result_array.request();
-  std::memcpy(buf.ptr, image.GetData(), image.SizeBytes());
-  return result_array;
+  return ImageToPyArray(result.value());
 }
 
 AssociatedImages& FastSlide::GetAssociatedImages() {

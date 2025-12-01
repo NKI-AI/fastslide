@@ -28,6 +28,10 @@
 #include <tuple>
 #include <vector>
 
+#if defined(_WIN32) || defined(_WIN64)
+#include <malloc.h>  // for _aligned_malloc
+#endif
+
 #include "fastslide/image.h"
 #include "fastslide/resample/utilities.h"
 
@@ -50,14 +54,29 @@ namespace fastslide::resample {
 
 /// @brief Custom deleter for 64-byte aligned memory allocation
 struct AlignedDeleter {
-  void operator()(void* ptr) const noexcept { std::free(ptr); }
+  void operator()(void* ptr) const noexcept {
+#if defined(_WIN32) || defined(_WIN64)
+    _aligned_free(ptr);
+#else
+    std::free(ptr);
+#endif
+  }
 };
 
 /// @brief Allocate 64-byte aligned memory for SIMD operations
 /// @param size Size in bytes to allocate
 /// @return Unique pointer to aligned memory
 inline std::unique_ptr<float, AlignedDeleter> AllocateAligned(size_t size) {
-  void* ptr = std::aligned_alloc(64, ((size * sizeof(float) + 63) / 64) * 64);
+  size_t aligned_size = ((size * sizeof(float) + 63) / 64) * 64;
+  void* ptr = nullptr;
+
+#if defined(_WIN32) || defined(_WIN64)
+  ptr = _aligned_malloc(aligned_size, 64);
+#else
+  // C++17 std::aligned_alloc requires size to be a multiple of alignment
+  ptr = std::aligned_alloc(64, aligned_size);
+#endif
+
   if (!ptr) {
     throw std::bad_alloc();
   }

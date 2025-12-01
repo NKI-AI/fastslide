@@ -97,8 +97,20 @@ aifocore::Result<core::TileRequest> SlideReader::RegionToTileRequest(
   }
 
   // Get level info to validate level exists
-  [[maybe_unused]] LevelInfo level_info;
+  LevelInfo level_info;
   AIFOCORE_ASSIGN_OR_RETURN(level_info, GetLevelInfo(region.level));
+
+  // Check for complete out-of-bounds
+  if (region.top_left[0] >= level_info.dimensions[0] ||
+      region.top_left[1] >= level_info.dimensions[1]) {
+    return aifocore::Status(
+        aifocore::StatusCode::kOutOfRange,
+        aifocore::fmt::format(
+            "Requested region at ({}, {}) is completely outside image "
+            "bounds ({}, {}) at level {}",
+            region.top_left[0], region.top_left[1], level_info.dimensions[0],
+            level_info.dimensions[1], region.level));
+  }
 
   // Create tile request for the region
   // The PrepareRequest implementation will use region_bounds to determine

@@ -176,15 +176,19 @@ class TileWriter {
                                            uint32_t tile_channels,
                                            std::mutex& accumulator_mutex);
 
-  /// @brief Fill entire canvas with solid color (for empty plans)
+  /// @brief Fill entire canvas with background color (for empty plans)
   ///
   /// This method should ONLY be called by readers when handling empty plans
   /// (no tiles to read). It's not used during normal tile writing operations.
   ///
+  /// For 1, 3, or 4 channels, fills with the specified RGB color.
+  /// For > 4 channels (spectral), always fills with 0 (black/transparent).
+  ///
   /// @param r Red value (0-255)
   /// @param g Green value (0-255)
   /// @param b Blue value (0-255)
-  [[nodiscard]] aifocore::Status FillWithColor(uint8_t r, uint8_t g, uint8_t b);
+  [[nodiscard]] aifocore::Status FillBackground(uint8_t r, uint8_t g,
+                                                uint8_t b);
 
   [[nodiscard]] aifocore::Status Finalize();
 

@@ -289,16 +289,16 @@ class SlideReader {
   /// @brief Reset to show all channels
   virtual void ShowAllChannels() { visible_channels_.clear(); }
 
- protected:
-  /// @brief Protected constructor (only derived classes can instantiate)
-  SlideReader() = default;
-
   /// @brief Utility function to clamp region to image bounds
   /// @param region Input region specification
   /// @param image_dims Image dimensions to clamp against
   /// @return Clamped region specification
   static RegionSpec ClampRegion(const RegionSpec& region,
                                 const ImageDimensions& image_dims);
+
+ protected:
+  /// @brief Protected constructor (only derived classes can instantiate)
+  SlideReader() = default;
 
   // =========================================================================
   // Protected Helpers for Two-Stage Pipeline Migration
@@ -317,7 +317,8 @@ class SlideReader {
   ///
   /// **Example Usage:**
   /// ```cpp
-  /// aifocore::Result<Image> MyReader::ReadRegion(const RegionSpec& region) const
+  /// aifocore::Result<Image> MyReader::ReadRegion(const RegionSpec& region)
+  /// const
   /// {
   ///   // Route through two-stage pipeline
   ///   return ReadRegionViaPipeline(region);

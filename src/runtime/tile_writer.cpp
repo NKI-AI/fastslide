@@ -81,11 +81,24 @@ aifocore::Status TileWriter::WriteTile(const core::TileReadOp& op,
                               tile_channels);
 }
 
-aifocore::Status TileWriter::FillWithColor(uint8_t r, uint8_t g, uint8_t b) {
+aifocore::Status TileWriter::FillBackground(uint8_t r, uint8_t g, uint8_t b) {
   uint8_t* buffer = strategy_->GetOutputBuffer();
   if (!buffer) {
     return aifocore::Status(aifocore::StatusCode::kInternal,
                             "No output buffer available");
+  }
+
+  // For N > 4 channels (multiplex/spectral), always fill with 0
+  // (black/transparent)
+  if (config_.channels > 4) {
+    // Calculate total size in bytes
+    size_t total_pixels = config_.dimensions[0] * config_.dimensions[1];
+    size_t total_bytes =
+        total_pixels * config_.channels * GetDataTypeSize(config_.data_type);
+
+    // Zero out the buffer
+    std::memset(buffer, 0, total_bytes);
+    return aifocore::Status::OkStatus();
   }
 
   if (config_.channels == 3) {
@@ -97,9 +110,10 @@ aifocore::Status TileWriter::FillWithColor(uint8_t r, uint8_t g, uint8_t b) {
     FillRGBA8(buffer, config_.dimensions[0], config_.dimensions[1], r, g, b,
               255);
   } else {
+    // Should be unreachable given the > 4 check above, but safe fallback
     return aifocore::Status(
         aifocore::StatusCode::kUnimplemented,
-        aifocore::fmt::format("FillWithColor not implemented for {} channels",
+        aifocore::fmt::format("FillBackground not implemented for {} channels",
                               config_.channels));
   }
 

@@ -38,8 +38,7 @@ using fastslide::SlideReader;
 class AssociatedImages {
  private:
   std::weak_ptr<SlideReader> reader_;
-  mutable std::unordered_map<std::string, std::optional<py::array_t<uint8_t>>>
-      cache_;
+  mutable std::unordered_map<std::string, std::optional<py::array>> cache_;
   mutable std::vector<std::string> available_names_;
   mutable bool names_loaded_ = false;
 
@@ -50,7 +49,7 @@ class AssociatedImages {
   explicit AssociatedImages(std::shared_ptr<SlideReader> reader);
 
   /// @brief Get associated image by name (lazy loading)
-  [[nodiscard]] py::array_t<uint8_t> GetItem(const std::string& name) const;
+  [[nodiscard]] py::array GetItem(const std::string& name) const;
 
   /// @brief Check if associated image exists
   [[nodiscard]] bool Contains(const std::string& name) const;
@@ -68,7 +67,8 @@ class AssociatedImages {
   void ClearCache() const;
 };
 
-/// @brief Lazy-loading dictionary-like wrapper for associated data (XML, binary)
+/// @brief Lazy-loading dictionary-like wrapper for associated data (XML,
+/// binary)
 class AssociatedData {
  private:
   std::weak_ptr<SlideReader> reader_;
@@ -136,9 +136,8 @@ class FastSlide {
                 py::object traceback);
 
   /// @brief Read a region from the slide using level-native coordinates
-  [[nodiscard]] py::array_t<uint8_t> ReadRegion(uint32_t x, uint32_t y,
-                                                uint32_t width, uint32_t height,
-                                                int level = 0);
+  [[nodiscard]] py::array ReadRegion(uint32_t x, uint32_t y, uint32_t width,
+                                     uint32_t height, int level = 0);
 
   /// @brief Get associated images accessor
   [[nodiscard]] AssociatedImages& GetAssociatedImages();

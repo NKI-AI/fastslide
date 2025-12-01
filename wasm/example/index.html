@@ -130,13 +130,7 @@
             id="open-file"
             class="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Open File
-          </button>
-          <button
-            id="open-directory"
-            class="inline-flex items-center justify-center rounded-lg bg-gray-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-gray-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            Open Folder
+            Open Slide
           </button>
         </div>
       </div>
@@ -232,6 +226,9 @@
             </div>
           </div>
         </div>
+
+        <!-- Read Region Control (Dynamically loaded) -->
+        <div id="read-region-container"></div>
       </aside>
 
       <!-- Viewer Area -->
@@ -411,6 +408,60 @@
         document.getElementById("info-filesize").textContent =
           formatFileSize(fileSize);
 
+        // Add Read Region UI
+        const readRegionContainer = document.getElementById(
+          "read-region-container"
+        );
+        readRegionContainer.innerHTML = `
+                <div class="space-y-4 mt-8 border-t border-gray-700 pt-6 p-6">
+                    <h2 class="text-lg font-semibold text-primary-400 mb-4 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+                        </svg>
+                        Read Region
+                    </h2>
+                    
+                    <div>
+                        <label for="levelSelect" class="block text-sm font-medium text-gray-400 mb-1">Select Level</label>
+                        <select id="levelSelect" class="w-full rounded-lg bg-gray-900 border-gray-700 text-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm py-2 px-3 border"></select>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label for="regionX" class="block text-xs font-medium text-gray-500 mb-1">X Pos</label>
+                            <input type="number" id="regionX" value="0" min="0" class="w-full rounded-lg bg-gray-900 border-gray-700 text-gray-300 border px-3 py-2 text-sm focus:border-primary-500 focus:ring-primary-500" />
+                        </div>
+                        <div>
+                            <label for="regionY" class="block text-xs font-medium text-gray-500 mb-1">Y Pos</label>
+                            <input type="number" id="regionY" value="0" min="0" class="w-full rounded-lg bg-gray-900 border-gray-700 text-gray-300 border px-3 py-2 text-sm focus:border-primary-500 focus:ring-primary-500" />
+                        </div>
+                        <div>
+                            <label for="regionWidth" class="block text-xs font-medium text-gray-500 mb-1">Region W</label>
+                            <input type="number" id="regionWidth" value="512" min="1" class="w-full rounded-lg bg-gray-900 border-gray-700 text-gray-300 border px-3 py-2 text-sm focus:border-primary-500 focus:ring-primary-500" />
+                        </div>
+                        <div>
+                            <label for="regionHeight" class="block text-xs font-medium text-gray-500 mb-1">Region H</label>
+                            <input type="number" id="regionHeight" value="512" min="1" class="w-full rounded-lg bg-gray-900 border-gray-700 text-gray-300 border px-3 py-2 text-sm focus:border-primary-500 focus:ring-primary-500" />
+                        </div>
+                    </div>
+                    
+                    <button id="readRegionBtn" class="w-full justify-center rounded-lg bg-gray-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-gray-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 transition-colors mt-2 border border-gray-600">
+                        Read Region to Canvas
+                    </button>
+                </div>
+
+                <!-- Preview Canvas Container (Hidden by default) -->
+                <div id="previewContainer" class="mt-6 hidden border-t border-gray-700 pt-6 p-6">
+                     <h3 class="text-sm font-medium text-gray-400 mb-2">Region Preview</h3>
+                     <div class="bg-gray-900 border border-gray-700 rounded-lg p-2 overflow-auto max-h-64 flex justify-center">
+                         <canvas id="previewCanvas" class="max-w-full"></canvas>
+                     </div>
+                     <div class="flex justify-end mt-2">
+                        <button id="closePreviewBtn" class="text-xs text-red-400 hover:text-red-300">Close Preview</button>
+                     </div>
+                </div>
+            `;
+
         // Populate level list
         const levelList = document.getElementById("level-list");
         const levelSelect = document.getElementById("levelSelect");
@@ -444,6 +495,39 @@
             levelSelect.appendChild(option);
           }
         });
+
+        // Attach event listeners for read region
+        document
+          .getElementById("readRegionBtn")
+          .addEventListener("click", () => {
+            const level = parseInt(
+              document.getElementById("levelSelect").value,
+              10
+            );
+            const x = parseInt(document.getElementById("regionX").value, 10);
+            const y = parseInt(document.getElementById("regionY").value, 10);
+            const width = parseInt(
+              document.getElementById("regionWidth").value,
+              10
+            );
+            const height = parseInt(
+              document.getElementById("regionHeight").value,
+              10
+            );
+
+            showStatus("Reading region...", "loading");
+
+            worker.postMessage({
+              type: "readRegion", // Assuming worker supports this message type as per `simpletiff`
+              data: { level, x, y, width, height },
+            });
+          });
+
+        document
+          .getElementById("closePreviewBtn")
+          .addEventListener("click", () => {
+            document.getElementById("previewContainer").classList.add("hidden");
+          });
 
         // Handle region data response
         if (!worker.regionHandlerAttached) {
