@@ -103,10 +103,10 @@ Bindings also expose associated images, coordinate conversions, channel visibili
 # Use Cases
 
 FastSlide is used to:
-1.  Stream large training patches into PyTorch DataLoaders while sharing caches across workers
-2.  Drive interactive viewers that prefetch tiles and blend MRXS overlaps without seams
-3.  Run scheduled QC/thumbnail extraction through the CLI or C API
-4.  Analyze multiplex QPTIFF channels by selecting only the biomarkers needed for a given spectral pipeline
+1. Stream large training patches into PyTorch DataLoaders while sharing caches across workers
+2. Drive interactive viewers that prefetch tiles and blend MRXS overlaps without seams
+3. Run scheduled QC/thumbnail extraction through the CLI or C API
+4. Analyze multiplex QPTIFF channels by selecting only the biomarkers needed for a given spectral pipeline
 
 # Future Work
 
