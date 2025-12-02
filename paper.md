@@ -97,10 +97,10 @@ with fastslide.FastSlide.from_file_path(slide_path) as slide:
     region = slide.read_region(location=(15000, 15300), level=0, size=(2000, 2000))
 ```
 
-<figure>
-  <img src="example_codex_cd8_cd4_dapi.png" alt="QPTIFF composite of CD8/CD4/DAPI channels" />
-  <figcaption>Figure 2: Example of a region extracted from a QPTIFF image containing the CD8/CD4/DAPI biomarkers.</figcaption>
-</figure>
+![QPTIFF composite of CD8/CD4/DAPI channels](example_codex_cd8_cd4_dapi.png){ width=80% }
+
+*Figure 2: Example of a region extracted from a QPTIFF image containing the CD8/CD4/DAPI biomarkers.*
+
 
 Bindings also expose associated images, coordinate conversions, channel visibility controls, cache tuning hooks, and OpenSlide-compatible quick hashes where available, so notebook users rarely have to drop into C++.
 
