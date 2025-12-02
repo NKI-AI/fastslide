@@ -79,9 +79,7 @@ with fastslide.FastSlide.from_file_path(slide_path) as slide:
     image.save("example_cmu_slide.png")
 ```
 
-![Region extracted from the CMU-1 MRXS slide using FastSlide](example_cmu_slide.png)
-
-*Figure 1: Example of a region of an H&E slide extracted from the CMU-1 MRXS slide using FastSlide.*
+![Example of a region of an H&E slide extracted from the CMU-1 MRXS slide using FastSlide.](example_cmu_slide.png){ width=90% }
 
 
 For multiplex QPTIFF data, you can pick channels and build RGB composites (e.g., CD8/CD4/DAPI) in a few lines:
@@ -97,9 +95,7 @@ with fastslide.FastSlide.from_file_path(slide_path) as slide:
     region = slide.read_region(location=(15000, 15300), level=0, size=(2000, 2000))
 ```
 
-![QPTIFF composite of CD8/CD4/DAPI channels](example_codex_cd8_cd4_dapi.png){ width=80% }
-
-*Figure 2: Example of a region extracted from a QPTIFF image containing the CD8/CD4/DAPI biomarkers.*
+![Example of a region extracted from a QPTIFF image containing the CD8/CD4/DAPI biomarkers.](example_codex_cd8_cd4_dapi.png){ width=90% }
 
 
 Bindings also expose associated images, coordinate conversions, channel visibility controls, cache tuning hooks, and OpenSlide-compatible quick hashes where available, so notebook users rarely have to drop into C++.
