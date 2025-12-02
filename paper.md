@@ -79,10 +79,10 @@ with fastslide.FastSlide.from_file_path(slide_path) as slide:
     image.save("example_cmu_slide.png")
 ```
 
-<figure>
-  <img src="example_cmu_slide.png" alt="Region extracted from the CMU-1 MRXS slide using FastSlide" />
-  <figcaption>Figure 1: Example of a region of a H&E slide extracted from the CMU-1 MRXS slide using FastSlide.</figcaption>
-</figure>
+![Region extracted from the CMU-1 MRXS slide using FastSlide](example_cmu_slide.png)
+
+*Figure 1: Example of a region of an H&E slide extracted from the CMU-1 MRXS slide using FastSlide.*
+
 
 For multiplex QPTIFF data, you can pick channels and build RGB composites (e.g., CD8/CD4/DAPI) in a few lines:
 
