@@ -1,5 +1,4 @@
 # FastSlide Meson Build File
-# Modern Meson build system for FastSlide library with static linking
 
 project('fastslide', 'cpp', 'c',
   version: '0.2.0',
@@ -8,8 +7,6 @@ project('fastslide', 'cpp', 'c',
     'cpp_std=c++20',
     'warning_level=3',
     'werror=false',
-    'default_library=static',  # Build static libs with PIC
-    'b_staticpic=true'  # Enable PIC for later shared lib creation
   ]
 )
 
@@ -98,11 +95,9 @@ if use_jpgd
   jpeg_dep = jpgd_dep
 else
   libjpeg_turbo_proj = subproject('libjpeg-turbo', default_options: [
-    'default_library=static',
-    'prefer_static=true',
     'warning_level=0'  # Suppress all warnings from libjpeg-turbo
   ])
-  jpeg_dep = dependency('libjpeg', fallback: ['libjpeg-turbo'], static: true)
+  jpeg_dep = dependency('libjpeg')
 endif
 
 # Build dependencies for simpletiff and other libraries
@@ -210,7 +205,6 @@ pugixml_dep = dependency('pugixml', fallback: ['pugixml'], static: true, require
 
 # Highway SIMD library (header-only with optional compiled components)
 highway_proj = subproject('highway', default_options: [
-  'default_library=static',
   'cpp_std=c++17,c++14,c++11',
   'warning_level=0',
   'build_tests=false',
@@ -220,21 +214,17 @@ highway_proj = subproject('highway', default_options: [
 ])
 highway_dep = highway_proj.get_variable('hwy_dep')
 
-# fmt from wrap (statically linked) - required by aifocore
+# fmt from wrap - required by aifocore
 fmt_proj = subproject('fmt', default_options: [
-  'default_library=static',
-  'prefer_static=true',
   'warning_level=0'
 ])
-fmt_dep = dependency('fmt', fallback: ['fmt'], static: true)
+fmt_dep = dependency('fmt', fallback: ['fmt'])
 
-# cereal from wrap (statically linked) - required by aifocore
+# cereal from wrap - required by aifocore
 cereal_proj = subproject('cereal', default_options: [
-  'default_library=static',
-  'prefer_static=true',
   'warning_level=0'
 ])
-cereal_dep = dependency('cereal', fallback: ['cereal'], static: true)
+cereal_dep = dependency('cereal', fallback: ['cereal'])
 
 # ============================================================================
 # Third-party vendored dependencies

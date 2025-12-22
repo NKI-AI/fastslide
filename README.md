@@ -22,11 +22,7 @@ FastSlide is a modern C++20 library for reading whole slide images (WSI) with fi
 #### Option 1: Using uv
 
 ```bash
-# Install in development mode
-uv pip install -e .
-
-# Or install from source
-uv pip install .
+uv pip install fastslide
 ```
 
 #### Option 2: Using Meson directly
