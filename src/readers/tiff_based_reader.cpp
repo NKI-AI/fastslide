@@ -43,17 +43,6 @@ using TiffTileCoordinate = tiff::TileCoordinate;
 TiffBasedReader::TiffBasedReader(fs::path filename)
     : filename_(std::move(filename)) {}
 
-void TiffBasedReader::SetCache(std::shared_ptr<TileCache> cache) {
-  SlideReader::SetCache(cache);
-}
-
-void TiffBasedReader::SetCache(std::shared_ptr<ITileCache> cache) {
-  // For TIFF-based readers, we store in the old TileCache system
-  // TODO(fastslide): Update tiff_cache_service to use ITileCache directly
-  // For now, ITileCache is used primarily by MRXS readers
-  (void)cache;  // Suppress unused parameter warning
-}
-
 int TiffBasedReader::GetBestLevelForDownsampleImpl(
     double downsample, int level_count,
     std::function<double(int)> get_level_downsample) const {

@@ -2,7 +2,7 @@
 # Modern Meson build system for FastSlide library with static linking
 
 project('fastslide', 'cpp', 'c',
-  version: '0.1.0',
+  version: '0.2.0',
   license: 'Apache-2.0',
   default_options: [
     'cpp_std=c++20',
@@ -81,18 +81,20 @@ incdir = include_directories('include')
 # Use subproject() with default_options to force static linking
 # The wraps will override the dependency names automatically
 
-# libjpeg-turbo from wrap (statically linked) OR jpgd (jpeg-compressor)
-# The wrap provides 'libjpeg' as dependency_names
+# JPEG decoding dependencies
+# - iSyntax currently hard-depends on jpeg-compressor (jpgd)
+# - MRXS can be configured to use either jpgd or libjpeg-turbo
 use_jpgd = get_option('use_jpgd')
 
+# Always make jpgd available (required by iSyntax reader).
+# The wrap handles both monorepo and copybara-translated locations.
+jpgd_proj = subproject('jpeg-compressor', default_options: [
+  'default_library=static',
+  'warning_level=0'
+])
+jpgd_dep = jpgd_proj.get_variable('jpgd_dep')
+
 if use_jpgd
-  # Use jpeg-compressor (jpgd) - available via wrap file
-  # The wrap file handles both monorepo and copybara-translated locations
-  jpgd_proj = subproject('jpeg-compressor', default_options: [
-    'default_library=static',
-    'warning_level=0'
-  ])
-  jpgd_dep = jpgd_proj.get_variable('jpgd_dep')
   jpeg_dep = jpgd_dep
 else
   libjpeg_turbo_proj = subproject('libjpeg-turbo', default_options: [
@@ -291,11 +293,9 @@ fastslide_sources = [
   src_prefix + 'slide_reader.cpp',
   
   # Utilities
-  src_prefix + 'utilities/cache.cpp',
   src_prefix + 'utilities/colors.cpp',
   src_prefix + 'utilities/hash.cpp',
   src_prefix + 'utilities/sha-256.c',
-  src_prefix + 'utilities/tile_cache_manager.cpp',
     
   # Runtime
   src_prefix + 'runtime/global_cache_manager.cpp',
@@ -354,6 +354,51 @@ else
   fastslide_sources += src_prefix + 'readers/mrxs/mrxs_decoder.cpp'
 endif
 
+# iSyntax format (reader + vendored libisyntax)
+isyntax_sources = [
+  src_prefix + 'readers/isyntax/isyntax.cpp',
+  src_prefix + 'readers/isyntax/isyntax_plan_builder.cpp',
+  src_prefix + 'readers/isyntax/isyntax_tile_executor.cpp',
+]
+
+# Vendored libisyntax sources (mirror Bazel exclusions to avoid duplicate symbols).
+# We list sources explicitly instead of using globbing to keep this working on
+# older Meson versions.
+isyntax_third_party_sources = [
+  src_prefix + 'readers/isyntax/third_party/base64.cpp',
+  src_prefix + 'readers/isyntax/third_party/cache.cpp',
+  src_prefix + 'readers/isyntax/third_party/color.cpp',
+  src_prefix + 'readers/isyntax/third_party/decompress.cpp',
+  src_prefix + 'readers/isyntax/third_party/dwt.cpp',
+  src_prefix + 'readers/isyntax/third_party/file.cpp',
+  src_prefix + 'readers/isyntax/third_party/jpeg.cpp',
+  src_prefix + 'readers/isyntax/third_party/open.cpp',
+  src_prefix + 'readers/isyntax/third_party/open_helpers.cpp',
+  src_prefix + 'readers/isyntax/third_party/reader.cpp',
+  src_prefix + 'readers/isyntax/third_party/seektable.cpp',
+  src_prefix + 'readers/isyntax/third_party/tile.cpp',
+  src_prefix + 'readers/isyntax/third_party/xml_header_reader.cpp',
+  src_prefix + 'readers/isyntax/third_party/xml_parser.cpp',
+  src_prefix + 'readers/isyntax/third_party/xml_semantics.cpp',
+  src_prefix + 'readers/isyntax/third_party/platform/platform.cpp',
+  src_prefix + 'readers/isyntax/third_party/utils/arena_allocator.cpp',
+  src_prefix + 'readers/isyntax/third_party/utils/block_allocator.cpp',
+  src_prefix + 'readers/isyntax/third_party/utils/math_utils.cpp',
+  src_prefix + 'readers/isyntax/third_party/utils/mathutils.cpp',
+  src_prefix + 'readers/isyntax/third_party/third_party/yxml.c',
+]
+
+# Force `isyntax.c` to compile as C++ by copying it to a generated .cpp file.
+isyntax_core_cpp = configure_file(
+  input: src_prefix + 'readers/isyntax/third_party/isyntax.c',
+  output: 'isyntax_core.cpp',
+  copy: true
+)
+
+fastslide_sources += isyntax_sources
+fastslide_sources += isyntax_third_party_sources
+fastslide_sources += isyntax_core_cpp
+
 fastslide_sources_list = fastslide_sources
 
 # All header files
@@ -408,6 +453,9 @@ fastslide_headers = [
   'include/fastslide/readers/mrxs/mrxs_internal.h',
   'include/fastslide/readers/mrxs/mrxs_plan_builder.h',
   'include/fastslide/readers/mrxs/mrxs_tile_executor.h',
+  'include/fastslide/readers/isyntax/isyntax.h',
+  'include/fastslide/readers/isyntax/isyntax_plan_builder.h',
+  'include/fastslide/readers/isyntax/isyntax_tile_executor.h',
 ]
 
 # ============================================================================
@@ -424,6 +472,10 @@ fastslide_static = static_library('fastslide',
     incdir,
     lodepng_incdir,
     include_directories('../..'),  # Access aifo/fastslide/... paths for Highway
+    include_directories('src/readers/isyntax/third_party'),
+    include_directories('src/readers/isyntax/third_party/platform'),
+    include_directories('src/readers/isyntax/third_party/third_party'),
+    include_directories('src/readers/isyntax/third_party/utils'),
   ],
   dependencies: [
     # Internal dependencies
@@ -435,6 +487,7 @@ fastslide_static = static_library('fastslide',
     liblzma_dep,
     zlib_dep,
     jpeg_dep,
+    jpgd_dep,  # Required by iSyntax (jpeg-compressor/jpgd)
     pugixml_dep,
     fmt_dep,
     cereal_dep,
@@ -457,6 +510,10 @@ else
       incdir,
       lodepng_incdir,
       include_directories('../..'),  # Access aifo/fastslide/... paths for Highway
+      include_directories('src/readers/isyntax/third_party'),
+      include_directories('src/readers/isyntax/third_party/platform'),
+      include_directories('src/readers/isyntax/third_party/third_party'),
+      include_directories('src/readers/isyntax/third_party/utils'),
     ],
     dependencies: [
       # Internal dependencies
@@ -468,6 +525,7 @@ else
       liblzma_dep,
       zlib_dep,
       jpeg_dep,
+      jpgd_dep,  # Required by iSyntax (jpeg-compressor/jpgd)
       pugixml_dep,
       fmt_dep,
       cereal_dep,
@@ -755,15 +813,6 @@ if not is_wasm and gtest_dep.found() and gtest_main_dep.found()
     link_with: fastslide_lib
   )
   test('cache_types_test', cache_types_test)
-
-  # Utilities tests
-  cache_test = executable('cache_test',
-    src_prefix + 'utilities/cache_test.cpp',
-    include_directories: [incdir],
-    dependencies: test_deps,
-    link_with: fastslide_lib
-  )
-  test('cache_test', cache_test)
 
   # Format tests
   aperio_metadata_parser_test = executable('aperio_metadata_parser_test',

@@ -26,10 +26,12 @@ namespace simpletiff {
 /// These are the standard (and vendor-specific) compression codes used in TIFF
 /// files. See TIFF 6.0 specification and LibTIFF documentation for details.
 enum class Compression : uint16_t {
-  kNone = 1,      ///< No compression
-  kLzw = 5,       ///< LZW compression (Lempel-Ziv-Welch)
-  kJpeg = 7,      ///< JPEG compression
-  kZstd = 50000,  ///< ZSTD compression (vendor-specific code)
+  kNone = 1,          ///< No compression
+  kLzw = 5,           ///< LZW compression (Lempel-Ziv-Welch)
+  kJpeg = 7,          ///< JPEG compression
+  kAdobeDeflate = 8,  ///< Adobe Deflate (zlib/deflate), common in TIFF
+  kDeflate = 32946,   ///< Deflate (same codec as AdobeDeflate)
+  kZstd = 50000,      ///< ZSTD compression (vendor-specific code)
 };
 
 /// Convert Compression enum to underlying uint16_t value

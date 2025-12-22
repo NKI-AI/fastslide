@@ -74,48 +74,6 @@ class QptiffPlanBuilder {
   static aifocore::Status ValidateRequest(
       const core::TileRequest& request,
       const std::vector<QpTiffLevelInfo>& pyramid);
-
-  /// @brief Determine region bounds from request
-  /// @param request The tile request
-  /// @param level_info Level information
-  /// @param x Output X coordinate
-  /// @param y Output Y coordinate
-  /// @param width Output width
-  /// @param height Output height
-  static void DetermineRegionBounds(const core::TileRequest& request,
-                                    const QpTiffLevelInfo& level_info,
-                                    double& x, double& y, uint32_t& width,
-                                    uint32_t& height);
-
-  /// @brief Get tile dimensions from TIFF index
-  /// @param tiff_index SimpleTiff index
-  /// @param level_info Level information
-  /// @param tile_width Output tile width
-  /// @param tile_height Output tile height
-  /// @param is_tiled Output whether pages are tiled
-  /// @return Status indicating success or failure
-  static aifocore::Status GetTileDimensions(
-      const simpletiff::TiffIndex& tiff_index,
-      const QpTiffLevelInfo& level_info, uint32_t& tile_width,
-      uint32_t& tile_height, bool& is_tiled);
-
-  /// @brief Create tile operations for intersecting tiles
-  /// @param request The tile request
-  /// @param level_info Level information
-  /// @param region_x Region X coordinate
-  /// @param region_y Region Y coordinate
-  /// @param width Region width
-  /// @param height Region height
-  /// @param tile_width Tile width
-  /// @param tile_height Tile height
-  /// @param is_tiled Whether pages are tiled
-  /// @param bytes_per_sample Bytes per sample
-  /// @return Vector of tile operations
-  static std::vector<core::TileReadOp> CreateTileOperations(
-      const core::TileRequest& request, const QpTiffLevelInfo& level_info,
-      uint32_t region_x, uint32_t region_y, uint32_t width, uint32_t height,
-      uint32_t tile_width, uint32_t tile_height, bool is_tiled,
-      uint32_t bytes_per_sample);
 };
 
 }  // namespace fastslide

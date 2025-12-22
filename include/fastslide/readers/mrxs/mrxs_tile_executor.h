@@ -15,12 +15,14 @@
 #ifndef AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_TILE_EXECUTOR_H_
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_TILE_EXECUTOR_H_
 
+#include <span>
 #include <vector>
 
 #include <mutex>
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/image.h"
+#include "fastslide/readers/cached_tile_executor.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
 #include "fastslide/runtime/tile_writer.h"
 
@@ -30,7 +32,7 @@ namespace fastslide {
 class MrxsReader;
 
 /// @brief Helper class for executing MRXS tile read operations
-class MrxsTileExecutor {
+class MrxsTileExecutor : public CachedTileExecutor<MrxsTileExecutor> {
  public:
   /// @brief Execute a tile plan
   /// @param plan The tile plan to execute
@@ -40,6 +42,8 @@ class MrxsTileExecutor {
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
                                       const MrxsReader& reader,
                                       runtime::TileWriter& writer);
+
+  friend class CachedTileExecutor<MrxsTileExecutor>;
 
  private:
   /// @brief Execute a single tile operation
@@ -54,21 +58,29 @@ class MrxsTileExecutor {
       const mrxs::SlideZoomLevel& zoom_level, runtime::TileWriter& writer,
       std::mutex& accumulator_mutex);
 
-  /// @brief Read and decode a single tile
+  /// @brief Create cache key for a tile
+  static TileKey MakeCacheKey(const core::TileReadOp& op,
+                              const MrxsReader& reader,
+                              const mrxs::SlideZoomLevel& zoom_level);
+
+  /// @brief Read and decode a single tile (called on cache miss)
   /// @param op The tile operation
   /// @param reader MRXS reader instance
   /// @param zoom_level Zoom level metadata
   /// @return Decoded RGB image or error status
-  static aifocore::Result<RGBImage> ReadAndDecodeTile(
+  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
       const core::TileReadOp& op, const MrxsReader& reader,
       const mrxs::SlideZoomLevel& zoom_level);
 
   /// @brief Extract sub-region from decoded tile
-  /// @param image Decoded tile image
+  /// @param image_data Decoded tile image data
+  /// @param img_w Image width
+  /// @param img_h Image height
   /// @param op Tile operation with crop information
-  /// @return Extracted sub-region
-  static RGBImage ExtractSubRegion(const RGBImage& image,
-                                   const core::TileReadOp& op);
+  /// @return Extracted sub-region as span (thread-local)
+  static std::span<const uint8_t> ExtractSubRegion(
+      std::span<const uint8_t> image_data, uint32_t img_w, uint32_t img_h,
+      const core::TileReadOp& op);
 
   /// @brief Check if sub-region extraction is needed
   /// @param image_width Decoded image width

@@ -155,8 +155,8 @@ void ComposeJpegStream(std::span<const uint8_t> tables,
 // =============================================================================
 
 bool DecodeJpeg(DecodeContext& ctx, std::span<const uint8_t> jpeg_data,
-                int& out_width, int& out_height,
-                std::vector<uint8_t>& out_rgb) {
+                int& out_width, int& out_height, std::vector<uint8_t>& out_rgb,
+                const JpegDecodeOptions& options) {
   if (jpeg_data.empty()) {
     return false;
   }
@@ -166,9 +166,9 @@ bool DecodeJpeg(DecodeContext& ctx, std::span<const uint8_t> jpeg_data,
   int width = 0;
   int height = 0;
 
-  // For TIFF/SVS files, the JPEG data is RGB but marked as YCbCr
-  // Use cFlagNoYCbCrConversion to skip YCbCr->RGB conversion
-  constexpr uint32_t flags = jpgd::jpeg_decoder::cFlagNoYCbCrConversion;
+  const uint32_t flags = options.treat_ycbcr_as_rgb
+                             ? jpgd::jpeg_decoder::cFlagNoYCbCrConversion
+                             : 0u;
 
   // Request 3 components (RGB)
   unsigned char* decoded = jpgd::decompress_jpeg_image_from_memory(

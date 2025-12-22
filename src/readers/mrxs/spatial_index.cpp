@@ -83,8 +83,7 @@ namespace mrxs {
 //   test 16 tiles/iteration. Current compiler auto-vectorization is limited.
 // ===========================================================================
 
-// Small epsilon so max lies in the same cell when aligned to the step.
-static constexpr double kCellEps = 1e-9;
+// NOTE: shared epsilon lives in fastslide::spatial::kCellEps
 
 MrxsSpatialIndex::MrxsSpatialIndex(
     ankerl::unordered_dense::map<std::pair<int32_t, int32_t>,
@@ -173,6 +172,9 @@ aifocore::Result<std::unique_ptr<MrxsSpatialIndex>> MrxsSpatialIndex::Build(
       cell_index;
   cell_index.reserve(tiles.size());  // good heuristic starting point
 
+  const double inv_step_x = 1.0 / step_x;
+  const double inv_step_y = 1.0 / step_y;
+
   for (const auto& tinfo : tiles) {
     // Compute bbox in level coordinates (filters inactive cameras via negative
     // min)
@@ -202,23 +204,9 @@ aifocore::Result<std::unique_ptr<MrxsSpatialIndex>> MrxsSpatialIndex::Build(
     spatial_tiles.emplace_back(st);
 
     // --- New: index the tile into *all* grid cells it overlaps ---
-    // Use reciprocal multiply instead of division for better performance
-    const double inv_step_x = 1.0 / step_x;
-    const double inv_step_y = 1.0 / step_y;
-    const int32_t gx_min =
-        static_cast<int32_t>(std::floor(bbox.min[0] * inv_step_x));
-    const int32_t gx_max =
-        static_cast<int32_t>(std::floor((bbox.max[0] - kCellEps) * inv_step_x));
-    const int32_t gy_min =
-        static_cast<int32_t>(std::floor(bbox.min[1] * inv_step_y));
-    const int32_t gy_max =
-        static_cast<int32_t>(std::floor((bbox.max[1] - kCellEps) * inv_step_y));
-
-    for (int32_t gy = gy_min; gy <= gy_max; ++gy) {
-      for (int32_t gx = gx_min; gx <= gx_max; ++gx) {
-        cell_index[{gx, gy}].push_back(idx);
-      }
-    }
+    // Use reciprocal multiply instead of division for better performance.
+    spatial::IndexTileIntoCells(cell_index, bbox.min, bbox.max, inv_step_x,
+                                inv_step_y, idx);
   }
 
   // Construct index
@@ -241,33 +229,13 @@ std::vector<size_t> MrxsSpatialIndex::QueryRegion(double x, double y,
   const float fy0 = static_cast<float>(qy0);
   const float fy1 = static_cast<float>(qy1);
 
-  // Cells touched by the query box
-  // Use reciprocal multiply instead of division: ~2-3x faster on modern CPUs
-  // floor(x * inv) is cheaper than floor(x / step) due to lower latency of
-  // multiplication (3-5 cycles) vs division (10-40 cycles depending on CPU).
-  const int32_t gx_min = static_cast<int32_t>(std::floor(qx0 * inv_step_x_));
-  const int32_t gx_max =
-      static_cast<int32_t>(std::floor((qx1 - kCellEps) * inv_step_x_));
-  const int32_t gy_min = static_cast<int32_t>(std::floor(qy0 * inv_step_y_));
-  const int32_t gy_max =
-      static_cast<int32_t>(std::floor((qy1 - kCellEps) * inv_step_y_));
+  // Cells touched by the query box (shared helper, uses reciprocal multiply).
+  const spatial::CellRange r =
+      spatial::ComputeCellRange(qx0, qy0, qx1, qy1, inv_step_x_, inv_step_y_);
 
-  // Bump epoch and handle wrap (rare). If we wrap, zero the vector.
-  // Use double-checked locking to ensure only one thread handles the wrap.
-  uint32_t epoch = ++query_epoch_;
-  if (epoch == 0) {  // wrapped to 0
-    // Acquire lock to ensure atomic wrap handling
-    std::lock_guard<std::mutex> lock(epoch_wrap_mutex_);
-
-    // Double-check: another thread might have already handled the wrap
-    epoch = query_epoch_.load(std::memory_order_acquire);
-    if (epoch == 0) {
-      // We're the thread that needs to handle the wrap
-      std::fill(seen_epoch_.begin(), seen_epoch_.end(), 0);
-      epoch = ++query_epoch_;
-    }
-    // else: another thread already incremented query_epoch_, use that value
-  }
+  // Bump epoch and handle wrap (rare).
+  const uint32_t epoch =
+      spatial::NextEpoch(query_epoch_, seen_epoch_, epoch_wrap_mutex_);
 
   std::vector<size_t> hits;
   hits.reserve(64);
@@ -308,8 +276,8 @@ std::vector<size_t> MrxsSpatialIndex::QueryRegion(double x, double y,
   //    - This loop is vectorization-ready. With AVX2, you could test 8 tiles
   //      per iteration using _mm256_cmp_ps and _mm256_movemask_ps.
   //    - With AVX-512, test 16 tiles per iteration.
-  for (int32_t gy = gy_min; gy <= gy_max; ++gy) {
-    for (int32_t gx = gx_min; gx <= gx_max; ++gx) {
+  for (int32_t gy = r.gy_min; gy <= r.gy_max; ++gy) {
+    for (int32_t gx = r.gx_min; gx <= r.gx_max; ++gx) {
       auto it = cell_index_.find({gx, gy});
       if (it == cell_index_.end())
         continue;

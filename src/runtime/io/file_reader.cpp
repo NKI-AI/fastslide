@@ -74,7 +74,7 @@ aifocore::Result<int64_t> FileReader::GetSize() const {
 }
 
 aifocore::Status FileReader::Read(void* buffer, size_t size) const {
-  if (fread(buffer, 1, size, file_.get()) != size) {
+  if (aifocore::portable_fread(buffer, size, file_.get()) != size) {
     return aifocore::Status(
         aifocore::StatusCode::kInternal,
         aifocore::fmt::format("Failed to read {} bytes", size));

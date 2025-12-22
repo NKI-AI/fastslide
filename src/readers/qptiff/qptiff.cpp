@@ -261,7 +261,7 @@ aifocore::Result<core::TilePlan> QpTiffReader::PrepareRequest(
 aifocore::Status QpTiffReader::ExecutePlan(const core::TilePlan& plan,
                                            runtime::TileWriter& writer) const {
   // Use the tile executor helper to execute the plan with tiff_index_
-  return QptiffTileExecutor::ExecutePlan(plan, pyramid_, *tiff_index_, writer);
+  return QptiffTileExecutor::ExecutePlan(plan, *this, writer);
 }
 
 void QpTiffReader::PopulateSlideProperties() {

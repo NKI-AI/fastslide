@@ -14,66 +14,17 @@
 
 #include "fastslide/readers/mrxs/mrxs_decoder.h"
 
-#include <jpeglib.h>
-
 #include <algorithm>
-#include <array>
-#include <csetjmp>
 #include <cstring>
 #include <string>
 #include <vector>
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
+#include "fastslide/runtime/decoders/jpeg_decoder.h"
 #include "lodepng/lodepng.h"
 
 namespace fastslide::mrxs::internal {
-
-namespace {  // ---- JPEG: thread-local reusable decompressor ----
-
-struct ThreadLocalJpeg {
-  jpeg_decompress_struct cinfo{};
-  jpeg_error_mgr jerr{};
-  std::jmp_buf jump_buffer{};
-  char error_message[JMSG_LENGTH_MAX]{};
-  bool inited{false};
-
-  ~ThreadLocalJpeg() {
-    if (inited)
-      jpeg_destroy_decompress(&cinfo);
-  }
-
-  /// @brief Custom error exit handler that longjmps instead of calling exit()
-  ///
-  /// This replaces libjpeg's default error handler which terminates the
-  /// process. Instead, we capture the error message and jump back to the
-  /// setjmp point in the calling code.
-  static void ErrorExit(j_common_ptr cinfo) {
-    ThreadLocalJpeg* self =
-        reinterpret_cast<ThreadLocalJpeg*>(cinfo->client_data);
-    // Format the error message for later retrieval
-    (*cinfo->err->format_message)(cinfo, self->error_message);
-    // Jump back to setjmp in Get() or decode function
-    std::longjmp(self->jump_buffer, 1);
-  }
-
-  jpeg_decompress_struct* Get() {
-    if (!inited) {
-      cinfo.err = jpeg_std_error(&jerr);
-      jerr.error_exit = ErrorExit;
-      cinfo.client_data = this;
-      jpeg_create_decompress(&cinfo);
-      inited = true;
-    } else {
-      // Reset state in case a previous call aborted early.
-      jpeg_abort_decompress(&cinfo);
-    }
-    return &cinfo;
-  }
-};
-
-static thread_local ThreadLocalJpeg g_tls_jpeg;
-}  // namespace
 
 /// @brief Decode compressed image data based on the specified format
 ///
@@ -113,93 +64,13 @@ aifocore::Result<RGBImage> DecodeImage(const std::vector<uint8_t>& data,
 /// @retval InvalidArgument if data is empty
 /// @retval Internal if JPEG decompression fails
 aifocore::Result<RGBImage> DecodeJpeg(const std::vector<uint8_t>& data) {
-  if (data.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Empty JPEG data");
-  }
-
-  jpeg_decompress_struct* c = g_tls_jpeg.Get();
-
-  // Set up error handling - if any JPEG operation fails, we'll longjmp here
-  if (setjmp(g_tls_jpeg.jump_buffer)) {
-    // Error occurred during JPEG operations
-    jpeg_abort_decompress(c);
-    return aifocore::Status(
-        aifocore::StatusCode::kInternal,
-        fmt::format("JPEG decode error: {}", g_tls_jpeg.error_message));
-  }
-
-  // Feed memory buffer
-  jpeg_mem_src(c, data.data(), data.size());
-
-  // Read header
-  if (jpeg_read_header(c, TRUE) != JPEG_HEADER_OK) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Failed to read JPEG header");
-  }
-
-  // ---- Fast knobs (good quality, much faster) ----
-  c->dct_method = JDCT_IFAST;      // fast integer DCT
-  c->do_fancy_upsampling = FALSE;  // faster chroma upsampling
-  c->do_block_smoothing = FALSE;   // faster for progressive image
-  c->quantize_colors = FALSE;      // ensure no palette quantization
-  c->dither_mode = JDITHER_NONE;
-
-  // Prefer libjpeg-turbo's packed RGB SIMD path if available.
-#ifdef JCS_EXT_RGB
-  c->out_color_space = JCS_EXT_RGB;  // fastest packed RGB on turbo
-#else
-  c->out_color_space = JCS_RGB;
-#endif
-
-  // Optional native downscale (1/2, 1/4, 1/8). Uncomment if desired:
-  // c->scale_num = 1; c->scale_denom = 2;
-
-  // Start decompression
-  if (!jpeg_start_decompress(c)) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Failed to start JPEG decompression");
-  }
-
-  const uint32_t width = static_cast<uint32_t>(c->output_width);
-  const uint32_t height = static_cast<uint32_t>(c->output_height);
-  const int channels = c->output_components;  // expect 3 for RGB
-  if (channels != 3) {
-    jpeg_finish_decompress(c);
-    return aifocore::Status(
-        aifocore::StatusCode::kInternal,
-        fmt::format("Expected 3 channels (RGB), got {}", channels));
-  }
-
-  // Create RGB image
-  RGBImage result(ImageDimensions{width, height}, ImageFormat::kRGB,
-                  DataType::kUInt8);
-
-  // Read scanlines directly into destination buffer (no extra copy)
-  uint8_t* dst = result.GetData();
-  const JDIMENSION row_stride = static_cast<JDIMENSION>(width * channels);
-
-  // Batch a few scanlines to reduce call overhead
-  const JDIMENSION kBatch = 32;
-  std::array<JSAMPROW, kBatch> rows;
-
-  while (c->output_scanline < c->output_height) {
-    JDIMENSION n =
-        std::min<JDIMENSION>(kBatch, c->output_height - c->output_scanline);
-    for (JDIMENSION i = 0; i < n; ++i) {
-      rows[i] =
-          dst + (static_cast<size_t>(c->output_scanline) + i) * row_stride;
-    }
-    JDIMENSION got = jpeg_read_scanlines(c, rows.data(), n);
-    if (got == 0) {
-      jpeg_finish_decompress(c);
-      return aifocore::Status(aifocore::StatusCode::kInternal,
-                              "jpeg_read_scanlines returned 0");
-    }
-  }
-
-  // Finish (TLS decompressor remains for reuse)
-  jpeg_finish_decompress(c);
+  runtime::decoders::JpegDecodeOptions opts{};
+  opts.no_ycbcr_conversion = true;
+  AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
+                            runtime::decoders::DecodeJpegToRgb(data, opts));
+  RGBImage result(ImageDimensions{decoded.width, decoded.height},
+                  ImageFormat::kRGB, DataType::kUInt8);
+  std::memcpy(result.GetData(), decoded.rgb.data(), decoded.rgb.size());
   return result;
 }
 

@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <future>
+#include <memory>
 #include <type_traits>
 #include <utility>
 
@@ -35,6 +36,84 @@ namespace aifocore {
 class InlineThreadPool : public BS::light_thread_pool {
  public:
   using BS::light_thread_pool::light_thread_pool;
+
+  /// @brief Submit blocks with inline execution detection
+  ///
+  /// This is critical because BS::light_thread_pool::submit_blocks() internally
+  /// calls BS::light_thread_pool::submit_task() using non-virtual dispatch, so
+  /// overriding submit_task() alone is insufficient to affect submit_blocks().
+  template <typename T1, typename T2,
+            typename T = BS::common_index_type_t<T1, T2>, typename F,
+            typename R = std::invoke_result_t<std::decay_t<F>, T, T>>
+  [[nodiscard]] BS::multi_future<R> submit_blocks(
+      const T1 first_index, const T2 index_after_last, F&& block,
+      const std::size_t num_blocks = 0, const BS::priority_t priority = 0) {
+    if (BS::this_thread::get_pool() == static_cast<void*>(this)) {
+      if (static_cast<T>(index_after_last) <= static_cast<T>(first_index)) {
+        return {};
+      }
+      const std::shared_ptr<std::decay_t<F>> block_ptr =
+          std::make_shared<std::decay_t<F>>(std::forward<F>(block));
+      const BS::blocks blks(static_cast<T>(first_index),
+                            static_cast<T>(index_after_last),
+                            num_blocks ? num_blocks : this->get_thread_count());
+      BS::multi_future<R> future;
+      future.reserve(blks.get_num_blocks());
+      for (std::size_t blk = 0; blk < blks.get_num_blocks(); ++blk) {
+        std::promise<R> promise;
+        auto f = promise.get_future();
+        if constexpr (std::is_void_v<R>) {
+          (*block_ptr)(blks.start(blk), blks.end(blk));
+          promise.set_value();
+        } else {
+          promise.set_value((*block_ptr)(blks.start(blk), blks.end(blk)));
+        }
+        future.push_back(std::move(f));
+      }
+      return future;
+    }
+    return BS::light_thread_pool::submit_blocks(first_index, index_after_last,
+                                                std::forward<F>(block),
+                                                num_blocks, priority);
+  }
+
+  /// @brief Submit a sequence with inline execution detection
+  ///
+  /// Same rationale as submit_blocks():
+  /// BS::light_thread_pool::submit_sequence() uses non-virtual dispatch to
+  /// submit_task().
+  template <typename T1, typename T2,
+            typename T = BS::common_index_type_t<T1, T2>, typename F,
+            typename R = std::invoke_result_t<std::decay_t<F>, T>>
+  [[nodiscard]] BS::multi_future<R> submit_sequence(
+      const T1 first_index, const T2 index_after_last, F&& sequence,
+      const BS::priority_t priority = 0) {
+    if (BS::this_thread::get_pool() == static_cast<void*>(this)) {
+      if (static_cast<T>(index_after_last) <= static_cast<T>(first_index)) {
+        return {};
+      }
+      const std::shared_ptr<std::decay_t<F>> sequence_ptr =
+          std::make_shared<std::decay_t<F>>(std::forward<F>(sequence));
+      BS::multi_future<R> future;
+      future.reserve(static_cast<std::size_t>(static_cast<T>(index_after_last) -
+                                              static_cast<T>(first_index)));
+      for (T i = static_cast<T>(first_index);
+           i < static_cast<T>(index_after_last); ++i) {
+        std::promise<R> promise;
+        auto f = promise.get_future();
+        if constexpr (std::is_void_v<R>) {
+          (*sequence_ptr)(i);
+          promise.set_value();
+        } else {
+          promise.set_value((*sequence_ptr)(i));
+        }
+        future.push_back(std::move(f));
+      }
+      return future;
+    }
+    return BS::light_thread_pool::submit_sequence(
+        first_index, index_after_last, std::forward<F>(sequence), priority);
+  }
 
   /// @brief Submit task with inline execution detection
   /// @param task Function to execute

@@ -15,6 +15,7 @@
 #ifndef AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_CORE_SLIDE_DESCRIPTOR_H_
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_CORE_SLIDE_DESCRIPTOR_H_
 
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <map>
@@ -23,8 +24,6 @@
 #include <utility>
 #include <vector>
 
-#include "aifocore/concepts/numeric.h"  // For aifocore::Size
-#include "fastslide/image.h"
 #include "fastslide/utilities/colors.h"
 
 /**
@@ -38,7 +37,14 @@
  */
 
 namespace fastslide {
+
+// Forward-declare ImageFormat to keep this header lightweight and independent
+// of aifocore numeric utilities.
+enum class ImageFormat : int;
+
 namespace core {
+
+using ImageDimensions = std::array<uint32_t, 2>;  // [width, height]
 
 /// @brief Channel metadata structure for microscopy channels
 ///
@@ -111,7 +117,7 @@ struct LevelInfo {
 /// Contains physical calibration and scanner metadata for the slide,
 /// including microns per pixel, magnification, and scanner information.
 struct SlideProperties {
-  aifocore::Size<double, 2> mpp;   ///< Microns per pixel in X, Y direction
+  std::array<double, 2> mpp;       ///< Microns per pixel in X, Y direction
   double objective_magnification;  ///< Objective magnification (e.g., 20.0)
   std::string objective_name;      ///< Objective name (e.g., "Plan Apo 20x")
   std::string scanner_model;       ///< Scanner model/manufacturer
@@ -133,12 +139,12 @@ struct SlideDescriptor {
   std::vector<LevelInfo> levels;               ///< Pyramid level information
   std::vector<ChannelMetadata> channels;       ///< Channel metadata
   SlideProperties properties;                  ///< Physical properties
-  ImageFormat format;                          ///< Image format type
+  fastslide::ImageFormat format;               ///< Image format type
   ImageDimensions tile_size;                   ///< Native tile size
   std::vector<std::string> associated_images;  ///< Associated image names
 
   /// @brief Default constructor
-  SlideDescriptor() : format(ImageFormat::kRGB), tile_size{0, 0} {}
+  SlideDescriptor() : format{}, tile_size{0, 0} {}
 
   /// @brief Get number of pyramid levels
   [[nodiscard]] size_t GetLevelCount() const { return levels.size(); }

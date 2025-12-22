@@ -6,7 +6,19 @@
 #include <stdint.h>
 
 #undef HWY_TARGET_INCLUDE
+// See `jpgd_idct_highway.cpp` for rationale. We support monorepo, copybara, and
+// Meson subproject builds by picking the first include path that exists.
+#if defined(__has_include)
+#if __has_include("aifo/jpeg-compressor/jpgd_color_highway.cpp")
 #define HWY_TARGET_INCLUDE "aifo/jpeg-compressor/jpgd_color_highway.cpp"
+#elif __has_include("jpeg-compressor/jpgd_color_highway.cpp")
+#define HWY_TARGET_INCLUDE "jpeg-compressor/jpgd_color_highway.cpp"
+#else
+#define HWY_TARGET_INCLUDE "jpgd_color_highway.cpp"
+#endif
+#else
+#define HWY_TARGET_INCLUDE "jpgd_color_highway.cpp"
+#endif
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 

@@ -46,6 +46,18 @@ aifocore::Result<int32_t> ReadLeInt32(FILE* file);
 /// @note Does not change file pointer on error
 aifocore::Result<uint32_t> ReadLeUInt32(FILE* file);
 
+/// @brief Read a little-endian 64-bit integer from a file
+/// @param file File pointer (must be open for reading)
+/// @return 64-bit integer value or error
+/// @note Does not change file pointer on error
+aifocore::Result<int64_t> ReadLeInt64(FILE* file);
+
+/// @brief Read a little-endian 64-bit unsigned integer from a file
+/// @param file File pointer (must be open for reading)
+/// @return 64-bit unsigned integer value or error
+/// @note Does not change file pointer on error
+aifocore::Result<uint64_t> ReadLeUInt64(FILE* file);
+
 /// @brief Decompress zlib-compressed data
 /// @param data Pointer to compressed data
 /// @param compressed_size Size of compressed data in bytes
@@ -62,7 +74,9 @@ aifocore::Result<std::vector<uint8_t>> DecompressZlib(const uint8_t* data,
 // Import into fastslide namespace for convenience
 using runtime::io::DecompressZlib;
 using runtime::io::ReadLeInt32;
+using runtime::io::ReadLeInt64;
 using runtime::io::ReadLeUInt32;
+using runtime::io::ReadLeUInt64;
 
 }  // namespace fastslide
 

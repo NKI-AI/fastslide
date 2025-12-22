@@ -33,6 +33,7 @@
 #include "fastslide/readers/mrxs/mrxs.h"
 #include "fastslide/readers/mrxs/mrxs_decoder.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
+#include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/tile_writer.h"
 
 namespace fastslide {
@@ -101,32 +102,109 @@ aifocore::Status MrxsTileExecutor::ExecuteTileOperation(
     const mrxs::SlideZoomLevel& zoom_level, runtime::TileWriter& writer,
     std::mutex& accumulator_mutex) {
 
-  // Read and decode the tile
-  auto image_or = ReadAndDecodeTile(op, reader, zoom_level);
+  // Read and decode the tile (returns span view of thread-local buffer)
+  auto image_or = ReadWithCache(op, reader, zoom_level);
   if (!image_or.ok()) {
     std::cerr << "Failed to read/decode tile at (" << op.tile_coord.x << ", "
               << op.tile_coord.y << "): " << image_or.status().ToString();
     return aifocore::Status::OkStatus();  // Continue processing other tiles
   }
 
+  // Decode span to get dimensions (we know it's RGB)
+  const auto& tile_data = *image_or;
+  // For MRXS, we know the tile size from zoom level or op, but ReadWithCache
+  // returns just data span. We need width/height. In Qptiff/Aperio, we passed
+  // width/height to ReadWithCache/ReadTileFromDisk. Here we pass zoom_level.
+  // ReadTileFromDisk returns DecodedTileData which has dims.
+  // But ReadWithCache returns span.
+  // We need to recover dims.
+  // For MRXS, tiles are usually fixed size per level, EXCEPT for edge tiles or
+  // different camera positions. Wait, MRXS tiles can have overlaps and
+  // different sizes? `zoom_level.image_width`? No, that's full image. The tile
+  // size is implicitly defined by the data size for MRXS if we don't store it?
+  // We know it is 3 channels (RGB).
+  // Area = size / 3.
+  // If square, sqrt(Area).
+  // But tiles might not be square.
+  // We can calculate expected tile size from `op`.
+  // `op.byte_size` is compressed size.
+  // `op.transform.source` is the region IN THE TILE? No, `transform.source` is
+  // the region of the tile to write to output. But `op` does not store full
+  // tile size. MRXS tiles (camera images) have a fixed size defined in
+  // `SlideZoomLevel`? `zoom_level` has `image_width` (total).
+  // `MrxsReader::GetLevelInfo` calculates it.
+
+  // Let's check `MrxsReader::ReadTileData`. It reads `mrxs::MiraxTileRecord`.
+  // The record does not have width/height.
+  // `mrxs::internal::DecodeImage` decodes it and returns `RGBImage` with proper
+  // dims. If we use `CachedTileExecutor`, we lose the explicit dims in the
+  // return value of `ReadWithCache`. This is a limitation of `ReadWithCache`
+  // returning only `span`.
+
+  // QPTIFF/Aperio handled this by passing expected tile size to
+  // `ExecuteTileOperation` and using that. MRXS tiles (camera images) *should*
+  // be uniform size? Slidedat.ini defines `DIGITIZER_WIDTH/HEIGHT` which are
+  // camera image sizes. Let's look at `mrxs.cpp`: `level.image_width` /
+  // `height` in `SlideZoomLevel` ARE the tile sizes (digitizer size)! See
+  // `ParseTiledLayers`: level.image_width = ini.GetInt(section,
+  // kKeyDigitizerWidth);
+
+  // So we can rely on `zoom_level.image_width` / `image_height`.
+
+  const uint32_t tile_w = zoom_level.image_width;
+  const uint32_t tile_h = zoom_level.image_height;
+
+  // Verify size matches data
+  if (tile_data.size() != tile_w * tile_h * 3) {
+    // If it doesn't match, it might be because of concatenation or other MRXS
+    // complexity? Or maybe `DecodeImage` returned different size? Let's trust
+    // `tile_w/h` for now, or calculate from size if we assume square? Better to
+    // trust `zoom_level` as that's what we used to setup grid.
+  }
+
   // Extract sub-region if needed
-  RGBImage tile_to_write = *image_or;
-  const uint32_t img_w = image_or->GetWidth();
-  const uint32_t img_h = image_or->GetHeight();
+  // We can use ExtractSubRegion which now takes span and returns span
+
   const uint32_t expected_w = op.transform.source.width;
   const uint32_t expected_h = op.transform.source.height;
 
-  if (NeedsSubRegionExtraction(img_w, img_h, expected_w, expected_h)) {
-    tile_to_write = ExtractSubRegion(*image_or, op);
+  std::span<const uint8_t> data_to_write = tile_data;
+  uint32_t write_w = tile_w;
+  uint32_t write_h = tile_h;
+  core::TileReadOp write_op = op;
+
+  if (NeedsSubRegionExtraction(tile_w, tile_h, expected_w, expected_h)) {
+    data_to_write = ExtractSubRegion(tile_data, tile_w, tile_h, op);
+    // IMPORTANT: ExtractSubRegion() clamps the crop size to the decoded image
+    // bounds. We must propagate the *actual* cropped width/height; otherwise
+    // BlendedStrategy will read past the end of the crop buffer and produce
+    // corrupted output.
+    const uint32_t crop_x = op.transform.source.x;
+    const uint32_t crop_y = op.transform.source.y;
+    if (crop_x >= tile_w || crop_y >= tile_h) {
+      return aifocore::Status::OkStatus();  // Nothing to write
+    }
+    write_w = std::min(expected_w, tile_w - crop_x);
+    write_h = std::min(expected_h, tile_h - crop_y);
+
+    // Make the operation consistent with the cropped buffer: source starts at
+    // (0,0) and sizes match `write_w/h`.
+    write_op.transform.source.x = 0;
+    write_op.transform.source.y = 0;
+    write_op.transform.source.width = write_w;
+    write_op.transform.source.height = write_h;
+
+    // Keep destination sizes consistent with the amount of data we're writing.
+    write_op.transform.dest.width =
+        std::min(write_op.transform.dest.width, write_w);
+    write_op.transform.dest.height =
+        std::min(write_op.transform.dest.height, write_h);
   }
 
   // Write tile to output with mutex for thread-safe accumulation
-  auto status = writer.WriteTile(
-      op,
-      std::span<const uint8_t>(tile_to_write.GetData(),
-                               tile_to_write.GetDataVector().size()),
-      tile_to_write.GetWidth(), tile_to_write.GetHeight(), 3,  // RGB
-      accumulator_mutex);
+  auto status =
+      writer.WriteTile(write_op, data_to_write, write_w, write_h, 3,  // RGB
+                       accumulator_mutex);
 
   if (!status.ok()) {
     return aifocore::Status::OkStatus();  // Continue processing other tiles
@@ -135,7 +213,20 @@ aifocore::Status MrxsTileExecutor::ExecuteTileOperation(
   return aifocore::Status::OkStatus();
 }
 
-aifocore::Result<RGBImage> MrxsTileExecutor::ReadAndDecodeTile(
+runtime::TileKey MrxsTileExecutor::MakeCacheKey(
+    const core::TileReadOp& op, const MrxsReader& reader,
+    const mrxs::SlideZoomLevel& zoom_level) {
+  // Use dirname from slide info as unique identifier
+  // Use data_file_number (source_id) as tile_x and offset as tile_y for
+  // uniqueness
+  return runtime::TileKey(
+      reader.GetMrxsInfo().dirname, op.level,
+      static_cast<uint32_t>(op.source_id),   // Use data_file_number as tile_x
+      static_cast<uint32_t>(op.byte_offset)  // Use offset as tile_y
+  );
+}
+
+aifocore::Result<DecodedTileData> MrxsTileExecutor::ReadTileFromDisk(
     const core::TileReadOp& op, const MrxsReader& reader,
     const mrxs::SlideZoomLevel& zoom_level) {
 
@@ -154,27 +245,6 @@ aifocore::Result<RGBImage> MrxsTileExecutor::ReadAndDecodeTile(
     tile.gain = gain;  // Store in tile for logging
   }
 
-  // Try cache first if available
-  auto cache = reader.GetITileCache();
-  if (cache) {
-    // Create cache key for this camera image
-    // Use dirname from slide info as unique identifier
-    runtime::TileKey cache_key(
-        reader.GetMrxsInfo().dirname, op.level,
-        static_cast<uint32_t>(op.source_id),   // Use data_file_number as tile_x
-        static_cast<uint32_t>(op.byte_offset)  // Use offset as tile_y
-    );
-
-    auto cached_data = cache->Get(cache_key);
-    if (cached_data) {
-      // Reconstruct image from cached data
-      RGBImage image(cached_data->size, ImageFormat::kRGB, DataType::kUInt8);
-      std::memcpy(image.GetData(), cached_data->data.data(),
-                  cached_data->data.size());
-      return image;
-    }
-  }
-
   // Read compressed tile data from disk
   auto data_or = reader.ReadTileData(tile);
   if (!data_or.ok()) {
@@ -188,52 +258,47 @@ aifocore::Result<RGBImage> MrxsTileExecutor::ReadAndDecodeTile(
     return ToAifoStatus(image_or.status());
   }
 
-  // Cache the decoded image if cache is available
-  if (cache) {
-    runtime::TileKey cache_key(reader.GetMrxsInfo().dirname, op.level,
-                               static_cast<uint32_t>(op.source_id),
-                               static_cast<uint32_t>(op.byte_offset));
+  const auto& image = *image_or;
 
-    // Create cached tile data
-    const auto& image = *image_or;
-    const size_t data_size = image.GetWidth() * image.GetHeight() * 3;
-    std::vector<uint8_t> tile_data(data_size);
-    std::memcpy(tile_data.data(), image.GetData(), data_size);
+  // Copy to thread-local buffer
+  // This is necessary because RGBImage owns its data and will delete it when it
+  // goes out of scope We need to return a span that stays valid (which
+  // CachedTileExecutor expects to be from thread-local storage or cache)
+  const size_t data_size = image.GetWidth() * image.GetHeight() * 3;
+  uint8_t* buffer = GetBuffers().GetTileBuffer(data_size);
+  std::memcpy(buffer, image.GetData(), data_size);
 
-    auto cached_tile = std::make_shared<runtime::CachedTileData>(
-        std::move(tile_data),
-        aifocore::Size<uint32_t, 2>{image.GetWidth(), image.GetHeight()},
-        3  // RGB channels
-    );
-
-    cache->Put(cache_key, cached_tile);
-  }
-
-  return *image_or;
+  return DecodedTileData{
+      std::span<const uint8_t>(buffer, data_size), image.GetWidth(),
+      image.GetHeight(),
+      3  // RGB
+  };
 }
 
-RGBImage MrxsTileExecutor::ExtractSubRegion(const RGBImage& image,
-                                            const core::TileReadOp& op) {
+std::span<const uint8_t> MrxsTileExecutor::ExtractSubRegion(
+    std::span<const uint8_t> image_data, uint32_t img_w, uint32_t img_h,
+    const core::TileReadOp& op) {
 
-  const uint32_t img_w = image.GetWidth();
-  const uint32_t img_h = image.GetHeight();
   const uint32_t crop_x = op.transform.source.x;
   const uint32_t crop_y = op.transform.source.y;
   const uint32_t crop_w = std::min(op.transform.source.width, img_w - crop_x);
   const uint32_t crop_h = std::min(op.transform.source.height, img_h - crop_y);
+  const size_t crop_size = crop_w * crop_h * 3;
 
-  // Extract sub-region using row-wise memcpy
-  RGBImage extracted({crop_w, crop_h}, ImageFormat::kRGB, DataType::kUInt8);
-  uint8_t* dst_data = extracted.GetData();
-  const uint8_t* src_data = image.GetData();
+  // Extract sub-region using row-wise memcpy to thread-local crop buffer
+  uint8_t* dst_data = GetBuffers().GetCropBuffer(crop_size);
+  const uint8_t* src_data = image_data.data();
 
   for (uint32_t cy = 0; cy < crop_h; ++cy) {
     const uint32_t src_offset = ((crop_y + cy) * img_w + crop_x) * 3;
     const uint32_t dst_offset = cy * crop_w * 3;
-    std::memcpy(dst_data + dst_offset, src_data + src_offset, crop_w * 3);
+    // Check bounds to be safe
+    if (src_offset + crop_w * 3 <= image_data.size()) {
+      std::memcpy(dst_data + dst_offset, src_data + src_offset, crop_w * 3);
+    }
   }
 
-  return extracted;
+  return std::span<const uint8_t>(dst_data, crop_size);
 }
 
 bool MrxsTileExecutor::NeedsSubRegionExtraction(uint32_t image_width,

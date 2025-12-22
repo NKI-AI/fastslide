@@ -25,6 +25,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "fastslide/image.h"
 #include "fastslide/python/cache.h"
 #include "fastslide/slide_reader.h"
 
@@ -38,7 +39,8 @@ using fastslide::SlideReader;
 class AssociatedImages {
  private:
   std::weak_ptr<SlideReader> reader_;
-  mutable std::unordered_map<std::string, std::optional<py::array>> cache_;
+  mutable std::unordered_map<std::string, std::shared_ptr<fastslide::Image>>
+      cache_;
   mutable std::vector<std::string> available_names_;
   mutable bool names_loaded_ = false;
 
@@ -49,7 +51,8 @@ class AssociatedImages {
   explicit AssociatedImages(std::shared_ptr<SlideReader> reader);
 
   /// @brief Get associated image by name (lazy loading)
-  [[nodiscard]] py::array GetItem(const std::string& name) const;
+  [[nodiscard]] std::shared_ptr<fastslide::Image> GetItem(
+      const std::string& name) const;
 
   /// @brief Check if associated image exists
   [[nodiscard]] bool Contains(const std::string& name) const;
@@ -107,7 +110,7 @@ class FastSlide {
   std::shared_ptr<SlideReader> reader_;
   std::unique_ptr<AssociatedImages> associated_images_;
   std::unique_ptr<AssociatedData> associated_data_;
-  std::shared_ptr<CacheManager> cache_manager_;
+  std::shared_ptr<fastslide::runtime::ITileCache> cache_;
   bool is_closed_;
   std::string source_path_;
 
@@ -136,8 +139,8 @@ class FastSlide {
                 py::object traceback);
 
   /// @brief Read a region from the slide using level-native coordinates
-  [[nodiscard]] py::array ReadRegion(uint32_t x, uint32_t y, uint32_t width,
-                                     uint32_t height, int level = 0);
+  [[nodiscard]] std::shared_ptr<fastslide::Image> ReadRegion(
+      uint32_t x, uint32_t y, uint32_t width, uint32_t height, int level = 0);
 
   /// @brief Get associated images accessor
   [[nodiscard]] AssociatedImages& GetAssociatedImages();
@@ -159,9 +162,9 @@ class FastSlide {
   [[nodiscard]] int GetBestLevelForDownsample(double downsample) const;
 
   // Cache management
-  void SetCacheManager(std::shared_ptr<CacheManager> cache_manager);
-  [[nodiscard]] std::shared_ptr<CacheManager> GetCacheManager() const;
-  void UseGlobalCache();
+  void SetCache(std::shared_ptr<fastslide::runtime::ITileCache> cache);
+  [[nodiscard]] std::shared_ptr<fastslide::runtime::ITileCache> GetCache()
+      const;
   [[nodiscard]] bool IsCacheEnabled() const;
 
   // Utility methods

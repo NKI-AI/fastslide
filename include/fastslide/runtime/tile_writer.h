@@ -142,11 +142,10 @@ class TileWriter {
   ///
   /// Creates a writer optimized for RGB output with optional blending.
   ///
-  /// @param width Output width
-  /// @param height Output height
+  /// @param dimensions Output dimensions
   /// @param background RGB background color
   /// @param enable_blending Whether to enable advanced blending features
-  TileWriter(uint32_t width, uint32_t height,
+  TileWriter(ImageDimensions dimensions,
              BackgroundColor background = BackgroundColor(255, 255, 255),
              bool enable_blending = false);
 

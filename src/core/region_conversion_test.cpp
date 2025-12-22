@@ -28,8 +28,10 @@ namespace fastslide {
 /// @brief Mock reader for testing RegionToTileRequest conversion
 class MockReaderForConversion : public SlideReader {
  public:
-  explicit MockReaderForConversion(int num_levels = 3)
-      : num_levels_(num_levels) {}
+  explicit MockReaderForConversion(
+      int num_levels = 3, uint32_t width = std::numeric_limits<uint32_t>::max(),
+      uint32_t height = std::numeric_limits<uint32_t>::max())
+      : num_levels_(num_levels), width_(width), height_(height) {}
 
   [[nodiscard]] int GetLevelCount() const override { return num_levels_; }
 
@@ -41,9 +43,11 @@ class MockReaderForConversion : public SlideReader {
     }
 
     LevelInfo info;
-    info.dimensions = {static_cast<uint32_t>(4096 >> level),
-                       static_cast<uint32_t>(4096 >> level)};
-    info.downsample_factor = static_cast<double>(1 << level);
+    uint32_t w = (level >= 32) ? 0 : (width_ >> level);
+    uint32_t h = (level >= 32) ? 0 : (height_ >> level);
+
+    info.dimensions = {w, h};
+    info.downsample_factor = static_cast<double>(1ULL << level);
     return info;
   }
 
@@ -96,6 +100,8 @@ class MockReaderForConversion : public SlideReader {
 
  private:
   int num_levels_;
+  uint32_t width_;
+  uint32_t height_;
 };
 
 // ============================================================================
@@ -380,7 +386,8 @@ TEST(RegionConversionTest, PreservesUInt32Precision) {
 TEST(RegionConversionIntegrationTest, ConversionWithPriorValidation) {
   MockReaderForConversion reader;
 
-  // Test conversion of a valid region (clamping is tested separately in slide_reader_test.cpp)
+  // Test conversion of a valid region (clamping is tested separately in
+  // slide_reader_test.cpp)
   RegionSpec region;
   region.top_left = {100, 200};
   region.size = {512, 512};

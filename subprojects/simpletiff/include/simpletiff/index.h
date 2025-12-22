@@ -43,6 +43,12 @@ struct SpanU64 {
   uint32_t count = 0;  ///< Number of elements
 };
 
+/// Represents a span into an arena vector (offset and count) for uint32_t data
+struct SpanU32 {
+  uint32_t start = 0;  ///< Index into arena vector
+  uint32_t count = 0;  ///< Number of elements
+};
+
 /// Lazy load metadata for deferred tag array reading
 struct LazyArrayInfo {
   uint16_t tag_type = 0;      ///< TIFF type (3=SHORT, 4=LONG, 16=LONG8)
@@ -179,10 +185,12 @@ struct SingleJpegRec {
 
 /// Page header containing common metadata for a TIFF page/IFD
 struct PageHeader {
-  uint32_t ifd_index = 0;          ///< Index of this IFD
-  uint64_t ifd_offset = 0;         ///< Offset of IFD in file
-  uint32_t width = 0;              ///< Image width
-  uint32_t height = 0;             ///< Image height
+  uint32_t ifd_index = 0;                     ///< Index of this IFD
+  uint64_t ifd_offset = 0;                    ///< Offset of IFD in file
+  std::optional<uint32_t> parent_page_index;  ///< Parent page index (if SubIFD)
+  SpanU32 sub_pages;    ///< Child page indices (SubIFDs), stored in arena
+  uint32_t width = 0;   ///< Image width
+  uint32_t height = 0;  ///< Image height
   uint16_t samples_per_pixel = 0;  ///< Samples per pixel (e.g., 3 for RGB)
   uint16_t bits_per_sample = 8;    ///< Bits per sample (8, 16, 32, etc.)
   uint16_t photometric = 0;  ///< Photometric interpretation (2=RGB, 6=YCbCr)
@@ -276,6 +284,16 @@ class TiffIndex {
     return {bytecounts_arena_.data() + s.start, s.count};
   }
 
+  /// Get a view of child page indices for a given span
+  [[nodiscard]] std::span<const uint32_t> ChildPages(SpanU32 s) const {
+    return {child_pages_arena_.data() + s.start, s.count};
+  }
+
+  /// Get child pages (SubIFDs) for a given page index
+  [[nodiscard]] std::span<const uint32_t> ChildPagesForPage(size_t idx) const {
+    return ChildPages(Page(idx).sub_pages);
+  }
+
   // ========== Internal mutation (for TiffParser only) ==========
   // These should only be called during index construction
 
@@ -294,6 +312,9 @@ class TiffIndex {
 
   /// Add a page to the index
   void AddPage(PageHeader header) { pages_.push_back(std::move(header)); }
+
+  /// Mutable access to a page header (for parser-only use)
+  PageHeader& MutablePage(size_t idx) { return pages_[idx]; }
 
   /// Add a tiles record to the pool and return its index
   uint32_t AddTiles(TilesRec tiles) {
@@ -321,6 +342,15 @@ class TiffIndex {
     uint32_t start = static_cast<uint32_t>(offsets_arena_.size());
     uint32_t count = static_cast<uint32_t>(offsets.size());
     offsets_arena_.insert(offsets_arena_.end(), offsets.begin(), offsets.end());
+    return {start, count};
+  }
+
+  /// Append child page indices to arena and return span descriptor
+  SpanU32 AppendChildPages(std::span<const uint32_t> pages) {
+    uint32_t start = static_cast<uint32_t>(child_pages_arena_.size());
+    uint32_t count = static_cast<uint32_t>(pages.size());
+    child_pages_arena_.insert(child_pages_arena_.end(), pages.begin(),
+                              pages.end());
     return {start, count};
   }
 
@@ -373,6 +403,7 @@ class TiffIndex {
   /// Mutable to allow lazy loading during const access
   mutable std::vector<uint64_t> offsets_arena_;
   mutable std::vector<uint64_t> bytecounts_arena_;
+  std::vector<uint32_t> child_pages_arena_;
 
   /// Mutex for thread-safe lazy loading
   mutable std::mutex lazy_load_mutex_;

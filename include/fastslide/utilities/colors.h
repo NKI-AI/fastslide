@@ -74,13 +74,6 @@ ColorRGB HSBtoRGB(float hue, float saturation, float brightness);
 /// - Channels >= 360 wrap around using modulo operation
 ColorRGB GetDefaultChannelColor(int channel);
 
-/// @brief Pack RGB values into a 32-bit integer
-/// @param red Red component [0, 255]
-/// @param green Green component [0, 255]
-/// @param blue Blue component [0, 255]
-/// @return Packed RGB value as 32-bit integer
-uint32_t PackRGB(uint8_t red, uint8_t green, uint8_t blue);
-
 /// @brief Parse RGB color from a comma-separated string
 /// @param str String containing RGB values like "255,0,128"
 /// @return Array of RGB components [r, g, b] or error if parsing fails

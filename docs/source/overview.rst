@@ -135,7 +135,8 @@ With Deep Learning Frameworks
            slide, x, y, level, size = self.tile_positions[idx]
            
            # Read tile
-           tile = slide.read_region((x, y), level, (size, size))
+           image = slide.read_region((x, y), level, (size, size))
+           tile = image.numpy()
            
            # Convert to PyTorch tensor
            tensor = torch.from_numpy(tile).permute(2, 0, 1).float() / 255.0

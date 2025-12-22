@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "aifocore/concepts/numeric.h"
+#include "aifocore/math/ndarray.h"
 
 namespace fastslide {
 
@@ -630,6 +631,54 @@ class Image {
                                       uint32_t channel) const {
     ValidateCoordinates(y, x, channel);
     return GetPixelIndex(y, x, channel) * bytes_per_sample_;
+  }
+
+  /// @brief Get a view of the image data as an NDArrayView
+  /// @tparam T Data type (must match image data type)
+  /// @return NDArrayView<T, 3>
+  template <typename T>
+  [[nodiscard]] aifocore::math::NDArrayView<T, 3> ArrayView() {
+    if (sizeof(T) != bytes_per_sample_) {
+      throw std::runtime_error("Type size mismatch with image data type");
+    }
+
+    std::array<size_t, 3> shape;
+    if (planar_config_ == PlanarConfig::kContiguous) {
+      // H, W, C
+      shape = {static_cast<size_t>(dimensions_[1]),
+               static_cast<size_t>(dimensions_[0]),
+               static_cast<size_t>(channels_)};
+    } else {
+      // C, H, W
+      shape = {static_cast<size_t>(channels_),
+               static_cast<size_t>(dimensions_[1]),
+               static_cast<size_t>(dimensions_[0])};
+    }
+    return aifocore::math::NDArrayView<T, 3>(GetDataAs<T>(), shape);
+  }
+
+  /// @brief Get a const view of the image data as an NDArrayView
+  /// @tparam T Data type (must match image data type)
+  /// @return NDArrayView<const T, 3>
+  template <typename T>
+  [[nodiscard]] aifocore::math::NDArrayView<const T, 3> ArrayView() const {
+    if (sizeof(T) != bytes_per_sample_) {
+      throw std::runtime_error("Type size mismatch with image data type");
+    }
+
+    std::array<size_t, 3> shape;
+    if (planar_config_ == PlanarConfig::kContiguous) {
+      // H, W, C
+      shape = {static_cast<size_t>(dimensions_[1]),
+               static_cast<size_t>(dimensions_[0]),
+               static_cast<size_t>(channels_)};
+    } else {
+      // C, H, W
+      shape = {static_cast<size_t>(channels_),
+               static_cast<size_t>(dimensions_[1]),
+               static_cast<size_t>(dimensions_[0])};
+    }
+    return aifocore::math::NDArrayView<const T, 3>(GetDataAs<const T>(), shape);
   }
 
   // Conversion and utility methods

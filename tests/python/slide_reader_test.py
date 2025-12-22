@@ -209,7 +209,7 @@ class TestFastSlideRegionReading:
         y = min(height // 4, 1000)
         tile_width, tile_height = 256, 256
 
-        region = slide.read_region((x, y), 0, (tile_width, tile_height))
+        region = slide.read_region((x, y), 0, (tile_width, tile_height)).numpy()
 
         # Check return type and shape
         assert isinstance(region, np.ndarray)
@@ -231,7 +231,7 @@ class TestFastSlideRegionReading:
             y = min(level_height // 4, level_height - tile_size)
 
             if x >= 0 and y >= 0:  # Make sure coordinates are valid
-                region = slide.read_region((x, y), level, (tile_size, tile_size))
+                region = slide.read_region((x, y), level, (tile_size, tile_size)).numpy()
 
                 assert region.shape == (tile_size, tile_size, 3)
                 assert region.dtype == np.uint8
@@ -245,12 +245,12 @@ class TestFastSlideRegionReading:
 
         # Near right edge
         if level_width > edge_size:
-            region = slide.read_region((level_width - edge_size, 0), 0, (edge_size, edge_size))
+            region = slide.read_region((level_width - edge_size, 0), 0, (edge_size, edge_size)).numpy()
             assert region.shape == (edge_size, edge_size, 3)
 
         # Near bottom edge
         if level_height > edge_size:
-            region = slide.read_region((0, level_height - edge_size), 0, (edge_size, edge_size))
+            region = slide.read_region((0, level_height - edge_size), 0, (edge_size, edge_size)).numpy()
             assert region.shape == (edge_size, edge_size, 3)
 
     def test_read_region_invalid_coordinates(self, slide: fastslide.FastSlide) -> None:
@@ -552,11 +552,11 @@ class TestCacheIntegration:
         y = min(height // 4, 1000)
 
         # First read (cache miss)
-        region1 = slide.read_region((x, y), 0, (256, 256))
+        region1 = slide.read_region((x, y), 0, (256, 256)).numpy()
         stats1 = cache_manager.get_detailed_stats()
 
         # Second read (cache hit)
-        region2 = slide.read_region((x, y), 0, (256, 256))
+        region2 = slide.read_region((x, y), 0, (256, 256)).numpy()
         stats2 = cache_manager.get_detailed_stats()
 
         # Should have same result
@@ -630,7 +630,7 @@ class TestThreadSafety:
                 x = (thread_id * 200) % (width - 512) if width > 512 else 0
                 y = (thread_id * 150) % (height - 512) if height > 512 else 0
 
-                region = slide.read_region((x, y), 0, (256, 256))
+                region = slide.read_region((x, y), 0, (256, 256)).numpy()
                 results.append((thread_id, region.shape))
             except Exception as e:
                 errors.append((thread_id, str(e)))

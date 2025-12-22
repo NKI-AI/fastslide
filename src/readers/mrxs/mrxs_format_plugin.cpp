@@ -52,7 +52,7 @@ aifocore::Result<std::unique_ptr<SlideReader>> CreateMrxsReader(
 
   // Apply cache if provided
   if (cache) {
-    reader->SetITileCache(cache);
+    reader->SetCache(cache);
   }
 
   return std::unique_ptr<SlideReader>(std::move(reader));

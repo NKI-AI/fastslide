@@ -137,7 +137,7 @@ TEST(TileWriterTest, ConstructWithConfig) {
 }
 
 TEST(TileWriterTest, ConstructRGBConvenience) {
-  TileWriter writer(1024, 768);
+  TileWriter writer(ImageDimensions{1024, 768});
 
   EXPECT_EQ(writer.GetDimensions()[0], 1024);
   EXPECT_EQ(writer.GetDimensions()[1], 768);
@@ -146,7 +146,8 @@ TEST(TileWriterTest, ConstructRGBConvenience) {
 }
 
 TEST(TileWriterTest, ConstructRGBWithBlending) {
-  TileWriter writer(256, 256, TileWriter::BackgroundColor(255, 255, 255), true);
+  TileWriter writer(ImageDimensions{256, 256},
+                    TileWriter::BackgroundColor(255, 255, 255), true);
 
   EXPECT_EQ(writer.GetDimensions()[0], 256);
   EXPECT_EQ(writer.GetDimensions()[1], 256);

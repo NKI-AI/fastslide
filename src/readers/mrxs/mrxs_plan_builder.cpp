@@ -81,9 +81,6 @@ aifocore::Result<core::TilePlan> MrxsPlanBuilder::BuildPlan(
   // Set output specification
   plan.output = CreateOutputSpec(width, height, zoom_level);
 
-  // Calculate cost estimates
-  plan.cost = CalculateCosts(plan.operations);
-
   // Set actual region
   plan.actual_region = {
       .top_left = {static_cast<uint32_t>(x), static_cast<uint32_t>(y)},
@@ -253,22 +250,6 @@ core::OutputSpec MrxsPlanBuilder::CreateOutputSpec(
       static_cast<uint8_t>(zoom_level.background_color_rgb & 0xFF), 255};
 
   return spec;
-}
-
-core::TilePlan::Cost MrxsPlanBuilder::CalculateCosts(
-    const std::vector<core::TileReadOp>& operations) {
-
-  core::TilePlan::Cost cost;
-  cost.total_tiles = operations.size();
-  cost.total_bytes_to_read = 0;
-  for (const auto& op : operations) {
-    cost.total_bytes_to_read += op.byte_size;
-  }
-  cost.tiles_to_decode = cost.total_tiles;
-  cost.tiles_from_cache = 0;  // Assume no cache for now
-  cost.estimated_time_ms = cost.total_bytes_to_read / 1000.0;  // Rough estimate
-
-  return cost;
 }
 
 }  // namespace fastslide

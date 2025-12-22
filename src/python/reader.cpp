@@ -32,52 +32,6 @@ namespace fastslide::python {
 
 using fastslide::RegionSpec;
 
-namespace {
-
-template <typename T>
-py::array_t<T> CreatePyArray(const std::vector<ssize_t>& shape,
-                             const fastslide::Image& image) {
-  py::array_t<T> result(shape);
-  std::memcpy(result.mutable_data(), image.GetData(), image.SizeBytes());
-  return result;
-}
-
-py::array ImageToPyArray(const fastslide::Image& image) {
-  std::vector<ssize_t> shape;
-  if (image.GetPlanarConfig() == fastslide::PlanarConfig::kContiguous) {
-    // H, W, C for interleaved
-    shape = {static_cast<ssize_t>(image.GetHeight()),
-             static_cast<ssize_t>(image.GetWidth()),
-             static_cast<ssize_t>(image.GetChannels())};
-  } else {
-    // C, H, W for planar
-    shape = {static_cast<ssize_t>(image.GetChannels()),
-             static_cast<ssize_t>(image.GetHeight()),
-             static_cast<ssize_t>(image.GetWidth())};
-  }
-
-  switch (image.GetDataType()) {
-    case fastslide::DataType::kUInt8:
-      return CreatePyArray<uint8_t>(shape, image);
-    case fastslide::DataType::kUInt16:
-      return CreatePyArray<uint16_t>(shape, image);
-    case fastslide::DataType::kInt16:
-      return CreatePyArray<int16_t>(shape, image);
-    case fastslide::DataType::kUInt32:
-      return CreatePyArray<uint32_t>(shape, image);
-    case fastslide::DataType::kInt32:
-      return CreatePyArray<int32_t>(shape, image);
-    case fastslide::DataType::kFloat32:
-      return CreatePyArray<float>(shape, image);
-    case fastslide::DataType::kFloat64:
-      return CreatePyArray<double>(shape, image);
-    default:
-      throw std::runtime_error("Unsupported data type");
-  }
-}
-
-}  // namespace
-
 // AssociatedImages implementation
 AssociatedImages::AssociatedImages(std::shared_ptr<SlideReader> reader)
     : reader_(reader) {}
@@ -115,7 +69,8 @@ void AssociatedImages::EnsureNamesLoaded() const {
   }
 }
 
-py::array AssociatedImages::GetItem(const std::string& name) const {
+std::shared_ptr<fastslide::Image> AssociatedImages::GetItem(
+    const std::string& name) const {
   EnsureNamesLoaded();
 
   // Check if image exists
@@ -126,8 +81,8 @@ py::array AssociatedImages::GetItem(const std::string& name) const {
 
   // Check cache first
   auto cache_it = cache_.find(name);
-  if (cache_it != cache_.end() && cache_it->second.has_value()) {
-    return cache_it->second.value();
+  if (cache_it != cache_.end() && cache_it->second) {
+    return cache_it->second;
   }
 
   // Try to load from standard associated images first
@@ -139,14 +94,16 @@ py::array AssociatedImages::GetItem(const std::string& name) const {
     // Need to add back the prefix we stripped
     auto* mrxs_reader = dynamic_cast<MrxsReader*>(reader.get());
     if (mrxs_reader) {
-      std::string full_name = "ScanDataLayer_Slide" + name;
+      std::string full_name = "ScanDataLayer_" + name;
       auto data_or = mrxs_reader->LoadAssociatedData(full_name);
       if (data_or.ok() && data_or->IsImage()) {
         const auto* image = data_or->GetImage();
         if (image) {
-          auto result_array = ImageToPyArray(*image);
-          cache_[name] = result_array;
-          return result_array;
+          auto result_image = image->Clone();
+          std::shared_ptr<fastslide::Image> shared_result =
+              std::move(result_image);
+          cache_[name] = shared_result;
+          return shared_result;
         }
       }
     }
@@ -155,13 +112,13 @@ py::array AssociatedImages::GetItem(const std::string& name) const {
                              "': " + std::string(result.status().message()));
   }
 
-  const auto& image = result.value();
-  auto result_array = ImageToPyArray(image);
+  auto result_image =
+      std::make_shared<fastslide::Image>(std::move(result.value()));
 
   // Cache the result
-  cache_[name] = result_array;
+  cache_[name] = result_image;
 
-  return result_array;
+  return result_image;
 }
 
 bool AssociatedImages::Contains(const std::string& name) const {
@@ -209,9 +166,8 @@ py::tuple AssociatedImages::GetDimensions(const std::string& name) const {
 }
 
 size_t AssociatedImages::GetCacheSize() const {
-  return std::count_if(cache_.begin(), cache_.end(), [](const auto& pair) {
-    return pair.second.has_value();
-  });
+  return std::count_if(cache_.begin(), cache_.end(),
+                       [](const auto& pair) { return pair.second != nullptr; });
 }
 
 void AssociatedImages::ClearCache() const {
@@ -377,7 +333,8 @@ void FastSlide::Close() {
   if (!is_closed_) {
     reader_.reset();
     associated_images_.reset();
-    cache_manager_.reset();
+    associated_data_.reset();
+    cache_.reset();
     is_closed_ = true;
   }
 }
@@ -396,8 +353,10 @@ bool FastSlide::__exit__(py::object exc_type, py::object exc_value,
   return false;
 }
 
-py::array FastSlide::ReadRegion(uint32_t x, uint32_t y, uint32_t width,
-                                uint32_t height, int level) {
+std::shared_ptr<fastslide::Image> FastSlide::ReadRegion(uint32_t x, uint32_t y,
+                                                        uint32_t width,
+                                                        uint32_t height,
+                                                        int level) {
   if (is_closed_) {
     throw std::runtime_error("Cannot read region: slide reader is closed");
   }
@@ -411,7 +370,7 @@ py::array FastSlide::ReadRegion(uint32_t x, uint32_t y, uint32_t width,
                              std::string(result.status().message()));
   }
 
-  return ImageToPyArray(result.value());
+  return std::make_shared<fastslide::Image>(std::move(result.value()));
 }
 
 AssociatedImages& FastSlide::GetAssociatedImages() {
@@ -552,14 +511,11 @@ py::dict FastSlide::GetBounds() const {
   const auto& props = reader_->GetProperties();
   const auto& bounds = props.bounds;
 
-  py::dict result;
-  result["x"] = bounds.x;
-  result["y"] = bounds.y;
-  result["width"] = bounds.width;
-  result["height"] = bounds.height;
-  result["coordinates"] = py::make_tuple(bounds.x, bounds.y);
-  result["size"] = py::make_tuple(bounds.width, bounds.height);
+  py::tuple result;
+  auto coordinates = py::make_tuple(bounds.x, bounds.y);
+  auto size = py::make_tuple(bounds.width, bounds.height);
 
+  result = py::make_tuple(coordinates, size);
   return result;
 }
 
@@ -599,31 +555,17 @@ int FastSlide::GetBestLevelForDownsample(double downsample) const {
   return reader_->GetBestLevelForDownsample(downsample);
 }
 
-void FastSlide::SetCacheManager(std::shared_ptr<CacheManager> cache_manager) {
+void FastSlide::SetCache(
+    std::shared_ptr<fastslide::runtime::ITileCache> cache) {
   if (is_closed_) {
     throw std::runtime_error("Cannot set cache: slide reader is closed");
   }
-  cache_manager_ = cache_manager;
-  reader_->SetCache(cache_manager->GetCache());
+  cache_ = cache;
+  reader_->SetCache(cache);
 }
 
-std::shared_ptr<CacheManager> FastSlide::GetCacheManager() const {
-  return cache_manager_;
-}
-
-void FastSlide::UseGlobalCache() {
-  if (is_closed_) {
-    throw std::runtime_error("Cannot set cache: slide reader is closed");
-  }
-  // Use the runtime global cache manager with the modern ITileCache interface
-  auto* tiff_reader = dynamic_cast<TiffBasedReader*>(reader_.get());
-  if (tiff_reader) {
-    tiff_reader->SetCache(
-        fastslide::runtime::GlobalCacheManager::Instance().GetCache());
-  } else {
-    throw std::runtime_error(
-        "Global cache requires TiffBasedReader implementation");
-  }
+std::shared_ptr<fastslide::runtime::ITileCache> FastSlide::GetCache() const {
+  return cache_;
 }
 
 bool FastSlide::IsCacheEnabled() const {

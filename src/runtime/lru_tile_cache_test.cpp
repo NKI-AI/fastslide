@@ -32,6 +32,8 @@ namespace runtime {
 // Helper Functions
 // ============================================================================
 
+constexpr size_t kTileSize = 256 * 256 * 3;
+
 /// @brief Create test tile data
 std::shared_ptr<CachedTileData> CreateTestTile(uint32_t width, uint32_t height,
                                                uint32_t channels) {
@@ -49,7 +51,7 @@ TEST(LRUTileCacheTest, CreateWithDefaultCapacity) {
   ASSERT_TRUE(result.ok()) << result.status();
 
   auto cache = result.value();
-  EXPECT_EQ(cache->GetCapacity(), 1000);
+  EXPECT_EQ(cache->GetCapacity(), 1024 * 1024 * 1024);
   EXPECT_EQ(cache->GetSize(), 0);
 }
 
@@ -74,7 +76,7 @@ TEST(LRUTileCacheTest, DirectConstruction) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, PutAndGet) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 10);
 
   TileKey key{"test.mrxs", 0, 10, 20};
   auto tile = CreateTestTile(256, 256, 3);
@@ -89,7 +91,7 @@ TEST(LRUTileCacheTest, PutAndGet) {
 }
 
 TEST(LRUTileCacheTest, GetNonExistentKey) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 10);
 
   TileKey key{"test.mrxs", 0, 10, 20};
   auto result = cache.Get(key);
@@ -98,7 +100,7 @@ TEST(LRUTileCacheTest, GetNonExistentKey) {
 }
 
 TEST(LRUTileCacheTest, PutMultipleTiles) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 10);
 
   for (uint32_t i = 0; i < 10; ++i) {
     TileKey key{"test.mrxs", 0, i, 0};
@@ -117,7 +119,7 @@ TEST(LRUTileCacheTest, PutMultipleTiles) {
 }
 
 TEST(LRUTileCacheTest, OverwriteExistingKey) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 10);
 
   TileKey key{"test.mrxs", 0, 10, 20};
 
@@ -143,7 +145,7 @@ TEST(LRUTileCacheTest, OverwriteExistingKey) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, EvictLeastRecentlyUsed) {
-  LRUTileCache cache(3);  // Small capacity
+  LRUTileCache cache(kTileSize * 3);  // Small capacity
 
   TileKey key1{"test.mrxs", 0, 0, 0};
   TileKey key2{"test.mrxs", 0, 1, 0};
@@ -168,7 +170,7 @@ TEST(LRUTileCacheTest, EvictLeastRecentlyUsed) {
 }
 
 TEST(LRUTileCacheTest, AccessUpdatesLRU) {
-  LRUTileCache cache(3);
+  LRUTileCache cache(kTileSize * 3);
 
   TileKey key1{"test.mrxs", 0, 0, 0};
   TileKey key2{"test.mrxs", 0, 1, 0};
@@ -196,16 +198,16 @@ TEST(LRUTileCacheTest, AccessUpdatesLRU) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, ClearEmptyCache) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 100);
 
   cache.Clear();
 
   EXPECT_EQ(cache.GetSize(), 0);
-  EXPECT_EQ(cache.GetCapacity(), 100);  // Capacity unchanged
+  EXPECT_EQ(cache.GetCapacity(), kTileSize * 100);  // Capacity unchanged
 }
 
 TEST(LRUTileCacheTest, ClearPopulatedCache) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 10);
 
   for (uint32_t i = 0; i < 10; ++i) {
     TileKey key{"test.mrxs", 0, i, 0};
@@ -230,7 +232,7 @@ TEST(LRUTileCacheTest, ClearPopulatedCache) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, SetCapacityLarger) {
-  LRUTileCache cache(10);
+  LRUTileCache cache(kTileSize * 10);
 
   for (uint32_t i = 0; i < 10; ++i) {
     TileKey key{"test.mrxs", 0, i, 0};
@@ -239,15 +241,16 @@ TEST(LRUTileCacheTest, SetCapacityLarger) {
 
   EXPECT_EQ(cache.GetSize(), 10);
 
-  auto status = cache.SetCapacity(20);
+  auto status = cache.SetCapacity(kTileSize * 20);
   EXPECT_TRUE(status.ok());
 
-  EXPECT_EQ(cache.GetCapacity(), 20);
-  EXPECT_EQ(cache.GetSize(), 0);  // Cleared during resize
+  EXPECT_EQ(cache.GetCapacity(), kTileSize * 20);
+  // Expect size to remain 10 as capacity increased
+  EXPECT_EQ(cache.GetSize(), 10);
 }
 
 TEST(LRUTileCacheTest, SetCapacitySmaller) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 50);
 
   for (uint32_t i = 0; i < 50; ++i) {
     TileKey key{"test.mrxs", 0, i, 0};
@@ -256,37 +259,39 @@ TEST(LRUTileCacheTest, SetCapacitySmaller) {
 
   EXPECT_EQ(cache.GetSize(), 50);
 
-  auto status = cache.SetCapacity(10);
+  auto status = cache.SetCapacity(kTileSize * 10);
   EXPECT_TRUE(status.ok());
 
-  EXPECT_EQ(cache.GetCapacity(), 10);
-  EXPECT_EQ(cache.GetSize(), 0);  // Cleared during resize
+  EXPECT_EQ(cache.GetCapacity(), kTileSize * 10);
+  // Expect size to decrease to new capacity
+  EXPECT_EQ(cache.GetSize(), 10);
 }
 
 TEST(LRUTileCacheTest, SetCapacityZero) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 100);
 
   auto status = cache.SetCapacity(0);
   EXPECT_FALSE(status.ok());
   EXPECT_EQ(status.code(), aifocore::StatusCode::kInvalidArgument);
 
   // Capacity unchanged
-  EXPECT_EQ(cache.GetCapacity(), 100);
+  EXPECT_EQ(cache.GetCapacity(), kTileSize * 100);
 }
 
 TEST(LRUTileCacheTest, SetCapacitySameValue) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 10);
 
   for (uint32_t i = 0; i < 10; ++i) {
     TileKey key{"test.mrxs", 0, i, 0};
     cache.Put(key, CreateTestTile(256, 256, 3));
   }
 
-  auto status = cache.SetCapacity(100);
+  auto status = cache.SetCapacity(kTileSize * 10);
   EXPECT_TRUE(status.ok());
 
-  EXPECT_EQ(cache.GetCapacity(), 100);
-  EXPECT_EQ(cache.GetSize(), 0);  // Still cleared
+  EXPECT_EQ(cache.GetCapacity(), kTileSize * 10);
+  // Expect size to remain unchanged
+  EXPECT_EQ(cache.GetSize(), 10);
 }
 
 // ============================================================================
@@ -294,11 +299,11 @@ TEST(LRUTileCacheTest, SetCapacitySameValue) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, GetStatsEmpty) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 100);
 
   auto stats = cache.GetStats();
 
-  EXPECT_EQ(stats.capacity, 100);
+  EXPECT_EQ(stats.capacity, kTileSize * 100);
   EXPECT_EQ(stats.size, 0);
   EXPECT_EQ(stats.hits, 0);
   EXPECT_EQ(stats.misses, 0);
@@ -307,7 +312,7 @@ TEST(LRUTileCacheTest, GetStatsEmpty) {
 }
 
 TEST(LRUTileCacheTest, GetStatsWithTiles) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 100);
 
   TileKey key1{"test.mrxs", 0, 0, 0};
   TileKey key2{"test.mrxs", 0, 1, 0};
@@ -317,13 +322,13 @@ TEST(LRUTileCacheTest, GetStatsWithTiles) {
 
   auto stats = cache.GetStats();
 
-  EXPECT_EQ(stats.capacity, 100);
+  EXPECT_EQ(stats.capacity, kTileSize * 100);
   EXPECT_EQ(stats.size, 2);
   EXPECT_GT(stats.memory_usage_bytes, 0);
 }
 
 TEST(LRUTileCacheTest, HitRatioTracking) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 100);
 
   TileKey key{"test.mrxs", 0, 0, 0};
   cache.Put(key, CreateTestTile(256, 256, 3));
@@ -343,7 +348,7 @@ TEST(LRUTileCacheTest, HitRatioTracking) {
 }
 
 TEST(LRUTileCacheTest, MemoryUsageCalculation) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 100);
 
   TileKey key{"test.mrxs", 0, 0, 0};
   auto tile = CreateTestTile(256, 256, 3);
@@ -359,7 +364,7 @@ TEST(LRUTileCacheTest, MemoryUsageCalculation) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, ConcurrentPuts) {
-  LRUTileCache cache(1000);
+  LRUTileCache cache(kTileSize * 1000);
 
   std::vector<std::thread> threads;
   for (int t = 0; t < 10; ++t) {
@@ -380,7 +385,7 @@ TEST(LRUTileCacheTest, ConcurrentPuts) {
 }
 
 TEST(LRUTileCacheTest, ConcurrentGetsAndPuts) {
-  LRUTileCache cache(500);
+  LRUTileCache cache(kTileSize * 500);
 
   // Pre-populate
   for (uint32_t i = 0; i < 100; ++i) {
@@ -424,7 +429,7 @@ TEST(LRUTileCacheTest, ConcurrentGetsAndPuts) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, CapacityOne) {
-  LRUTileCache cache(1);
+  LRUTileCache cache(kTileSize);
 
   TileKey key1{"test.mrxs", 0, 0, 0};
   TileKey key2{"test.mrxs", 0, 1, 0};
@@ -441,14 +446,14 @@ TEST(LRUTileCacheTest, CapacityOne) {
 }
 
 TEST(LRUTileCacheTest, LargeCapacity) {
-  LRUTileCache cache(100000);
+  LRUTileCache cache(kTileSize * 100000);
 
-  EXPECT_EQ(cache.GetCapacity(), 100000);
+  EXPECT_EQ(cache.GetCapacity(), kTileSize * 100000);
   EXPECT_EQ(cache.GetSize(), 0);
 }
 
 TEST(LRUTileCacheTest, DifferentTileSizes) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 10);
 
   TileKey key1{"test.mrxs", 0, 0, 0};
   TileKey key2{"test.mrxs", 0, 1, 0};
@@ -464,7 +469,7 @@ TEST(LRUTileCacheTest, DifferentTileSizes) {
 }
 
 TEST(LRUTileCacheTest, SameKeyDifferentSlides) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 10);
 
   TileKey key1{"slide1.mrxs", 0, 10, 20};
   TileKey key2{"slide2.mrxs", 0, 10, 20};
@@ -479,7 +484,7 @@ TEST(LRUTileCacheTest, SameKeyDifferentSlides) {
 }
 
 TEST(LRUTileCacheTest, MultiLevel) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 10);
 
   for (uint16_t level = 0; level < 5; ++level) {
     TileKey key{"test.mrxs", level, 10, 20};
@@ -500,7 +505,7 @@ TEST(LRUTileCacheTest, MultiLevel) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, OversizedTiles) {
-  LRUTileCache cache(10);
+  LRUTileCache cache(20 * 1024 * 1024);
 
   // Create a very large tile (10MB)
   std::vector<uint8_t> large_data(10 * 1024 * 1024, 42);
@@ -519,7 +524,7 @@ TEST(LRUTileCacheTest, OversizedTiles) {
 }
 
 TEST(LRUTileCacheTest, MixedTileSizes) {
-  LRUTileCache cache(10);
+  LRUTileCache cache(50 * 1024 * 1024);
 
   // Small tile (256x256x3)
   TileKey small_key{"test.mrxs", 0, 0, 0};
@@ -549,7 +554,7 @@ TEST(LRUTileCacheTest, MixedTileSizes) {
 }
 
 TEST(LRUTileCacheTest, OversizedTileEviction) {
-  LRUTileCache cache(5);
+  LRUTileCache cache(5 * 1024 * 1024);
 
   // Fill with oversized tiles
   for (uint32_t i = 0; i < 5; ++i) {
@@ -583,7 +588,7 @@ TEST(LRUTileCacheTest, OversizedTileEviction) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, MixedHitMissPattern) {
-  LRUTileCache cache(10);
+  LRUTileCache cache(kTileSize * 10);
 
   // Populate cache with some tiles
   for (uint32_t i = 0; i < 5; ++i) {
@@ -611,7 +616,7 @@ TEST(LRUTileCacheTest, MixedHitMissPattern) {
 }
 
 TEST(LRUTileCacheTest, SequentialAccessPattern) {
-  LRUTileCache cache(50);
+  LRUTileCache cache(kTileSize * 50);
 
   // Simulate sequential tile reading (common for slide scanning)
   for (uint32_t y = 0; y < 10; ++y) {
@@ -638,7 +643,7 @@ TEST(LRUTileCacheTest, SequentialAccessPattern) {
 }
 
 TEST(LRUTileCacheTest, RandomAccessPattern) {
-  LRUTileCache cache(20);
+  LRUTileCache cache(kTileSize * 20);
 
   // Populate with tiles
   for (uint32_t i = 0; i < 50; ++i) {
@@ -665,7 +670,7 @@ TEST(LRUTileCacheTest, RandomAccessPattern) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, HashCollisionResistance) {
-  LRUTileCache cache(1000);
+  LRUTileCache cache(kTileSize * 1000);
 
   // Create many keys that might collide
   for (uint32_t i = 0; i < 100; ++i) {
@@ -688,7 +693,7 @@ TEST(LRUTileCacheTest, HashCollisionResistance) {
 }
 
 TEST(LRUTileCacheTest, SimilarKeysDifferentiate) {
-  LRUTileCache cache(10);
+  LRUTileCache cache(kTileSize * 10);
 
   // Keys that differ only in one field
   TileKey key_file1{"file1.mrxs", 0, 10, 20};
@@ -717,7 +722,7 @@ TEST(LRUTileCacheTest, SimilarKeysDifferentiate) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, StatisticsAccuracyWithEvictions) {
-  LRUTileCache cache(10);
+  LRUTileCache cache(kTileSize * 10);
 
   // Fill to capacity
   for (uint32_t i = 0; i < 10; ++i) {
@@ -763,7 +768,7 @@ TEST(LRUTileCacheTest, StatisticsAccuracyWithEvictions) {
 }
 
 TEST(LRUTileCacheTest, StatisticsAfterClearPreserveCapacity) {
-  LRUTileCache cache(50);
+  LRUTileCache cache(kTileSize * 50);
 
   // Build up stats
   for (uint32_t i = 0; i < 30; ++i) {
@@ -791,9 +796,9 @@ TEST(LRUTileCacheTest, StatisticsAfterClearPreserveCapacity) {
 
   stats = cache.GetStats();
   EXPECT_EQ(stats.size, 0);
-  EXPECT_EQ(stats.capacity, 50);  // Preserved
-  EXPECT_EQ(stats.hits, 0);       // Reset
-  EXPECT_EQ(stats.misses, 0);     // Reset
+  EXPECT_EQ(stats.capacity, kTileSize * 50);  // Preserved
+  EXPECT_EQ(stats.hits, 0);                   // Reset
+  EXPECT_EQ(stats.misses, 0);                 // Reset
   EXPECT_EQ(stats.hit_ratio, 0.0);
 }
 
@@ -802,7 +807,7 @@ TEST(LRUTileCacheTest, StatisticsAfterClearPreserveCapacity) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, ConcurrentEvictionPressure) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 100);
 
   // Multiple threads adding tiles, causing evictions
   std::vector<std::thread> threads;
@@ -827,12 +832,12 @@ TEST(LRUTileCacheTest, ConcurrentEvictionPressure) {
 
   // Cache should be stable
   auto stats = cache.GetStats();
-  EXPECT_EQ(stats.capacity, 100);
+  EXPECT_EQ(stats.capacity, kTileSize * 100);
   EXPECT_EQ(stats.size, 100);
 }
 
 TEST(LRUTileCacheTest, ConcurrentAccessDuringEviction) {
-  LRUTileCache cache(50);
+  LRUTileCache cache(kTileSize * 50);
 
   // Pre-populate cache
   for (uint32_t i = 0; i < 50; ++i) {
@@ -884,7 +889,7 @@ TEST(LRUTileCacheTest, ConcurrentAccessDuringEviction) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, CacheWarmingScenario) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 100);
 
   // Simulate cache warming - preload common tiles
   std::vector<TileKey> hot_tiles;
@@ -913,7 +918,7 @@ TEST(LRUTileCacheTest, CacheWarmingScenario) {
 }
 
 TEST(LRUTileCacheTest, RepeatedAccessKeepsInCache) {
-  LRUTileCache cache(10);
+  LRUTileCache cache(kTileSize * 10);
 
   TileKey frequent_key{"frequent.mrxs", 0, 5, 5};
   cache.Put(frequent_key, CreateTestTile(256, 256, 3));
@@ -937,7 +942,7 @@ TEST(LRUTileCacheTest, RepeatedAccessKeepsInCache) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, NullTileRejection) {
-  LRUTileCache cache(10);
+  LRUTileCache cache(kTileSize * 10);
 
   TileKey key{"test.mrxs", 0, 0, 0};
   cache.Put(key, nullptr);
@@ -948,7 +953,7 @@ TEST(LRUTileCacheTest, NullTileRejection) {
 }
 
 TEST(LRUTileCacheTest, MixedNullAndValidTiles) {
-  LRUTileCache cache(10);
+  LRUTileCache cache(kTileSize * 10);
 
   TileKey key1{"test.mrxs", 0, 0, 0};
   TileKey key2{"test.mrxs", 0, 1, 0};
@@ -969,7 +974,7 @@ TEST(LRUTileCacheTest, MixedNullAndValidTiles) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, HighMemoryPressure) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(100ULL * 512 * 512 * 16);
 
   // Fill with large tiles
   for (uint32_t i = 0; i < 100; ++i) {
@@ -989,7 +994,7 @@ TEST(LRUTileCacheTest, HighMemoryPressure) {
 }
 
 TEST(LRUTileCacheTest, MemoryTrackingAccuracy) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(100 * 1024 * 1024);
 
   size_t total_bytes = 0;
 
@@ -1020,9 +1025,9 @@ TEST(LRUTileCacheTest, MemoryTrackingAccuracy) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, VeryLargeCapacity) {
-  LRUTileCache cache(1000000);  // 1 million tiles
+  LRUTileCache cache(1000000ULL * kTileSize);  // 1 million tiles worth
 
-  EXPECT_EQ(cache.GetCapacity(), 1000000);
+  EXPECT_EQ(cache.GetCapacity(), 1000000ULL * kTileSize);
 
   // Add some tiles
   for (uint32_t i = 0; i < 100; ++i) {
@@ -1034,7 +1039,7 @@ TEST(LRUTileCacheTest, VeryLargeCapacity) {
 }
 
 TEST(LRUTileCacheTest, CapacityReductionWithOversizedCache) {
-  LRUTileCache cache(1000);
+  LRUTileCache cache(kTileSize * 1000);
 
   // Fill cache significantly
   for (uint32_t i = 0; i < 500; ++i) {
@@ -1045,11 +1050,12 @@ TEST(LRUTileCacheTest, CapacityReductionWithOversizedCache) {
   EXPECT_EQ(cache.GetSize(), 500);
 
   // Reduce capacity drastically
-  auto status = cache.SetCapacity(10);
+  auto status = cache.SetCapacity(kTileSize * 10);
   EXPECT_TRUE(status.ok());
 
-  EXPECT_EQ(cache.GetCapacity(), 10);
-  EXPECT_EQ(cache.GetSize(), 0);  // Cleared
+  EXPECT_EQ(cache.GetCapacity(), kTileSize * 10);
+  // Expect size to decrease to new capacity
+  EXPECT_EQ(cache.GetSize(), 10);
 
   // Verify can use new capacity
   for (uint32_t i = 0; i < 10; ++i) {
@@ -1065,7 +1071,7 @@ TEST(LRUTileCacheTest, CapacityReductionWithOversizedCache) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, SlideViewerZoomPattern) {
-  LRUTileCache cache(100);
+  LRUTileCache cache(kTileSize * 100);
 
   // Simulate user zooming in on a region
   // Level 2 (overview)
@@ -1103,7 +1109,7 @@ TEST(LRUTileCacheTest, SlideViewerZoomPattern) {
 }
 
 TEST(LRUTileCacheTest, MultiSlideWorkflow) {
-  LRUTileCache cache(200);
+  LRUTileCache cache(kTileSize * 200);
 
   // User working with multiple slides
   std::vector<std::string> slides = {"slide1.mrxs", "slide2.mrxs",
@@ -1136,7 +1142,7 @@ TEST(LRUTileCacheTest, MultiSlideWorkflow) {
 // ============================================================================
 
 TEST(LRUTileCacheTest, EmptyTileData) {
-  LRUTileCache cache(10);
+  LRUTileCache cache(kTileSize * 10);
 
   TileKey key{"empty.mrxs", 0, 0, 0};
   std::vector<uint8_t> empty_data;  // Empty vector

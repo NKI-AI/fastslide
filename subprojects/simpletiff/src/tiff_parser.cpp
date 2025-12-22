@@ -17,6 +17,7 @@
 #include <cstring>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -46,6 +47,7 @@ struct IfdContext {
   uint32_t rows_per_strip = 0;
   uint64_t jpeg_tables_offset = 0;
   uint32_t jpeg_tables_length = 0;
+  std::vector<uint64_t> sub_ifd_offsets;
 };
 
 // TIFF tag constants
@@ -69,6 +71,7 @@ constexpr uint16_t kTagJpegTables = 347;
 constexpr uint16_t kTagXResolution = 282;
 constexpr uint16_t kTagYResolution = 283;
 constexpr uint16_t kTagResolutionUnit = 296;
+constexpr uint16_t kTagSubIFDs = 330;
 
 // TIFF type sizes
 // Types: 0=invalid, 1=BYTE, 2=ASCII, 3=SHORT, 4=LONG, 5=RATIONAL,
@@ -167,10 +170,12 @@ bool ReadTagData(int fd, size_t file_size, const IfdEntry& entry, bool bigtiff,
       case 3:  // SHORT
         value = ReadInt<uint16_t>(ptr, little_endian);
         break;
-      case 4:  // LONG
+      case 4:   // LONG
+      case 13:  // IFD (pointer, ClassicTIFF)
         value = ReadInt<uint32_t>(ptr, little_endian);
         break;
       case 16:  // LONG8 (BigTIFF)
+      case 18:  // IFD8 (BigTIFF)
         value = ReadInt<uint64_t>(ptr, little_endian);
         break;
       default:
@@ -449,6 +454,14 @@ void ProcessTag(const IfdEntry& entry, int fd, size_t file_size, bool bigtiff,
         ctx.page_header.resolution_unit = static_cast<uint16_t>(values[0]);
       }
       break;
+    case kTagSubIFDs:
+      // SubIFDs: array of IFD offsets pointing to reduced-resolution images,
+      // overviews, etc. We treat them as additional pages.
+      if (ReadTagData(fd, file_size, entry, bigtiff, little_endian, values) &&
+          !values.empty()) {
+        ctx.sub_ifd_offsets = std::move(values);
+      }
+      break;
     default:
       // Ignore unknown tags
       break;
@@ -597,22 +610,50 @@ bool ParseTiff(int fd, size_t file_size, TiffIndex& index) {
   // Set format information in index
   index.SetFormat(tiff_header.bigtiff, tiff_header.little_endian, file_size);
 
-  // Iterate through IFD chain
-  uint64_t ifd_offset = tiff_header.first_ifd_offset;
   const bool bigtiff = tiff_header.bigtiff;
   const bool little_endian = tiff_header.little_endian;
 
   // Temporary buffer for reading IFD data
   std::vector<uint8_t> ifd_buffer;
 
-  // Parse all IFDs
+  // Parse all IFDs, including SubIFDs, in a stable order:
+  // - Each main-chain IFD
+  // - Its SubIFDs in the order listed
+  // - Then the next main-chain IFD
+  //
+  // We also guard against cycles / duplicated offsets.
+  struct VisitItem {
+    uint64_t ifd_offset = 0;
+    std::optional<uint32_t> parent_page_index;
+  };
+
+  std::unordered_set<uint64_t> visited_ifd_offsets;
+  std::vector<VisitItem> to_visit;
+  to_visit.push_back(VisitItem{tiff_header.first_ifd_offset, std::nullopt});
+
+  // Temporary adjacency lists while parsing. We'll compact these into the index
+  // arena at the end.
+  std::vector<std::vector<uint32_t>> child_lists;
+
   uint32_t ifd_index = 0;
-  while (ifd_offset != 0) {
+  while (!to_visit.empty()) {
+    const VisitItem item = to_visit.back();
+    to_visit.pop_back();
+    const uint64_t ifd_offset = item.ifd_offset;
+
+    if (ifd_offset == 0) {
+      continue;
+    }
+    if (visited_ifd_offsets.contains(ifd_offset)) {
+      continue;
+    }
+    visited_ifd_offsets.insert(ifd_offset);
+
     // Read number of entries
     const size_t count_size = bigtiff ? 8 : 2;
     std::vector<uint8_t> count_data;
     if (!ReadBytes(fd, file_size, ifd_offset, count_size, count_data)) {
-      break;
+      continue;
     }
 
     const uint64_t num_entries =
@@ -633,7 +674,7 @@ bool ParseTiff(int fd, size_t file_size, TiffIndex& index) {
     const size_t ifd_data_size = total_entries_size + offset_size;
     if (!ReadBytes(fd, file_size, entries_start_offset, ifd_data_size,
                    ifd_buffer)) {
-      break;
+      continue;
     }
 
     // Process each IFD entry
@@ -659,13 +700,47 @@ bool ParseTiff(int fd, size_t file_size, TiffIndex& index) {
 
     // Build page from accumulated context and add to index
     BuildPageFromContext(ctx, index);
+    const uint32_t page_index = static_cast<uint32_t>(index.NumPages() - 1);
+
+    if (child_lists.size() < index.NumPages()) {
+      child_lists.resize(index.NumPages());
+    }
+
+    if (item.parent_page_index.has_value()) {
+      const uint32_t parent = *item.parent_page_index;
+      index.MutablePage(page_index).parent_page_index = parent;
+      if (parent < child_lists.size()) {
+        child_lists[parent].push_back(page_index);
+      }
+    }
 
     // Parse next IFD offset from the buffer
     const uint8_t* next_offset_data = ifd_buffer.data() + total_entries_size;
-    ifd_offset = bigtiff ? ReadInt<uint64_t>(next_offset_data, little_endian)
-                         : ReadInt<uint32_t>(next_offset_data, little_endian);
+    const uint64_t next_ifd_offset =
+        bigtiff ? ReadInt<uint64_t>(next_offset_data, little_endian)
+                : ReadInt<uint32_t>(next_offset_data, little_endian);
 
     ++ifd_index;
+
+    // Traversal order for stack (LIFO):
+    // push next main IFD first (processed later),
+    // then push SubIFDs in reverse so the first SubIFD is processed next.
+    if (next_ifd_offset != 0) {
+      // Important: if this IFD is itself a SubIFD (has a parent), the next-IFD
+      // pointer continues the SubIFD chain and should inherit the same parent.
+      // If this IFD is a root (no parent), next-IFD continues the main IFD
+      // chain.
+      to_visit.push_back(VisitItem{next_ifd_offset, item.parent_page_index});
+    }
+    for (auto it = ctx.sub_ifd_offsets.rbegin();
+         it != ctx.sub_ifd_offsets.rend(); ++it) {
+      to_visit.push_back(VisitItem{*it, page_index});
+    }
+  }
+
+  // Compact child lists into the index arena.
+  for (size_t i = 0; i < index.NumPages(); ++i) {
+    index.MutablePage(i).sub_pages = index.AppendChildPages(child_lists[i]);
   }
 
   return index.NumPages() > 0;
@@ -767,10 +842,12 @@ static bool ReadSingleTagElement(int fd, size_t file_size,
     case 3:  // SHORT
       out_value = ReadInt<uint16_t>(ptr, little_endian);
       break;
-    case 4:  // LONG
+    case 4:   // LONG
+    case 13:  // IFD (pointer, ClassicTIFF)
       out_value = ReadInt<uint32_t>(ptr, little_endian);
       break;
     case 16:  // LONG8 (BigTIFF)
+    case 18:  // IFD8 (BigTIFF)
       out_value = ReadInt<uint64_t>(ptr, little_endian);
       break;
     default:

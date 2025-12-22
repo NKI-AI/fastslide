@@ -11,7 +11,7 @@ FastSlide is a modern C++20 library for reading whole slide images (WSI) with fi
 ## Features
 
 - 🚀 **High Performance** - Thread-safe design
-- 📁 **Multiple Formats** - SVS (Aperio), QPTIFF, MRXS (3DHISTECH), including multiplex (non-RGB) formats. Others coming soon
+- 📁 **Multiple Formats** - SVS (Aperio), QPTIFF, MRXS (3DHISTECH), iSyntax (Philips), CZI (Zeiss), including multiplex (non-RGB) formats. Others coming soon.
 - 🐍 **Python & C++** - Complete APIs for both languages
 - 🔧 **PyTorch Ready** - Works seamlessly with DataLoader multi-worker loading
 
@@ -59,7 +59,7 @@ with fastslide.FastSlide.from_file_path('slide.svs') as slide:
         location=(1000, 2000),  # (x, y) in level-native coordinates
         level=0,                 # pyramid level
         size=(512, 512)          # (width, height)
-    )
+    ).numpy()
     # region is a numpy array: shape (512, 512, 3), dtype uint8
 ```
 
@@ -73,7 +73,7 @@ slide = fastslide.FastSlide.from_file_path('slide.mrxs')
 
 try:
     # Work with the slide
-    region = slide.read_region(location=(0, 0), level=0, size=(1024, 1024))
+    region = slide.read_region(location=(0, 0), level=0, size=(1024, 1024)).numpy()
 
     # Get slide properties
     props = slide.properties
@@ -101,14 +101,14 @@ with fastslide.FastSlide.from_file_path('slide.tiff') as slide:
     size = (256, 256)
 
     # Full resolution (level 0)
-    region_l0 = slide.read_region(location=location, level=0, size=size)
+    region_l0 = slide.read_region(location=location, level=0, size=size).numpy()
 
     # 4× downsampled (level 2)
     # Convert coordinates to level 2 space
     x_l2, y_l2 = slide.convert_level0_to_level_native(
         location[0], location[1], level=2
     )
-    region_l2 = slide.read_region(location=(x_l2, y_l2), level=2, size=size)
+    region_l2 = slide.read_region(location=(x_l2, y_l2), level=2, size=size).numpy()
 
     # Find best level for a specific downsample factor
     best_level = slide.get_best_level_for_downsample(8.0)
@@ -185,7 +185,7 @@ FastSlide clearly deviates from OpenSlide, which always represents the coordinat
 # Level 2: 2500 × 2000 px (4× downsample)
 
 # Read 512×512 region from level 2 at position (100, 200)
-region = slide.read_region((100, 200), level=2, size=(512, 512))
+region = slide.read_region((100, 200), level=2, size=(512, 512)).numpy()
 
 # Convert coordinates between levels if needed
 x0, y0 = slide.convert_level_native_to_level0(100, 200, level=2)
@@ -231,13 +231,19 @@ FastSlide incorporates the following third-party software into its source:
 
 - **jpeg-compressor**: from [richgel999/jpeg-compressor](https://github.com/richgel999/jpeg-compressor) by richgel999
 
-- Licensed under: Public domain
-- Used for: Alternative JPEG decompression, required in WASM builds.
+  - Licensed under: Public domain
+  - Used for: Alternative JPEG decompression, required in WASM builds.
 
 - **thread-pool**: from [bshoshany/thread-pool](https://github.com/bshoshany/thread-pool) by Barak Shoshany
 
-- Licensed under: MIT License
-- Used for: Creating thread pool for decoding, etc.
+  - Licensed under: MIT License
+  - Used for: Creating thread pool for decoding, etc.
+
+- **libisyntax**: from [amspath/libisyntax](https://github.com/pvalkema/libisyntax) by Pieter Valkema
+
+  - Licensed under: BSD-2 License
+  - Used for: iSyntax decoding
+  - Modifications: Library has been stripped to the minimal requirements
 
 Several other libraries are used, but these are dynamically (or statically where appropriate) linked.
 

@@ -18,7 +18,10 @@
 #include <cstddef>
 #include <vector>
 
+#include "fastslide/readers/czi/czi_format_plugin.h"
+#include "fastslide/readers/isyntax/isyntax.h"
 #include "fastslide/readers/mrxs/mrxs_format_plugin.h"
+#include "fastslide/readers/ometiff/ometiff_format_plugin.h"
 #include "fastslide/readers/qptiff/qptiff_format_plugin.h"
 
 #include "fastslide/readers/aperio/aperio_format_plugin.h"  // SVS format not implemented yet
@@ -26,7 +29,7 @@
 /**
  * @file readers.h
  * @brief Convenience header for all format plugins
- * 
+ *
  * This header includes all built-in format plugins, providing a single
  * include point for applications that want to register all formats.
  */
@@ -47,11 +50,34 @@ namespace readers {
 /// }
 /// @endcode
 inline std::vector<FormatDescriptor> GetBuiltinFormats() {
-  return {
+  std::vector<FormatDescriptor> formats = {
+      formats::czi::CreateCziFormatDescriptor(),
       formats::mrxs::CreateMrxsFormatDescriptor(),
+      formats::ometiff::CreateOmetiffFormatDescriptor(),
       formats::qptiff::CreateQptiffFormatDescriptor(),
       formats::aperio::CreateAperioFormatDescriptor(),
   };
+
+  // iSyntax format
+  FormatDescriptor isyntax_desc;
+  isyntax_desc.format_name = "iSyntax";
+  isyntax_desc.primary_extension = ".isyntax";
+  isyntax_desc.version = "1.0.0";
+  isyntax_desc.capabilities = SetCapability(0, FormatCapability::kTiled);
+  isyntax_desc.factory = [](std::shared_ptr<ITileCache> cache,
+                            std::string_view filename)
+      -> aifocore::Result<std::unique_ptr<SlideReader>> {
+    auto result = IsyntaxReader::Create(filename);
+    if (!result.ok()) {
+      return result.status();
+    }
+    auto reader = std::unique_ptr<SlideReader>(std::move(result.value()));
+    reader->SetCache(cache);
+    return reader;
+  };
+  formats.push_back(std::move(isyntax_desc));
+
+  return formats;
 }
 
 }  // namespace readers

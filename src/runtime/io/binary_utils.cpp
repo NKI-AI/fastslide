@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <vector>
 
+#include "aifocore/platform/portability.h"
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 
@@ -29,7 +30,7 @@ namespace io {
 
 aifocore::Result<int32_t> ReadLeInt32(FILE* file) {
   uint8_t buf[4];
-  if (fread(buf, 1, 4, file) != 4) {
+  if (aifocore::portable_fread(buf, sizeof(buf), file) != sizeof(buf)) {
     return aifocore::Status(aifocore::StatusCode::kInternal,
                             "Failed to read 4 bytes for int32");
   }
@@ -40,13 +41,31 @@ aifocore::Result<int32_t> ReadLeInt32(FILE* file) {
 
 aifocore::Result<uint32_t> ReadLeUInt32(FILE* file) {
   uint8_t buf[4];
-  if (fread(buf, 1, 4, file) != 4) {
+  if (aifocore::portable_fread(buf, sizeof(buf), file) != sizeof(buf)) {
     return aifocore::Status(aifocore::StatusCode::kInternal,
                             "Failed to read 4 bytes for uint32");
   }
   // Little-endian byte order
   return static_cast<uint32_t>(buf[0] | (buf[1] << 8) | (buf[2] << 16) |
                                (buf[3] << 24));
+}
+
+aifocore::Result<uint64_t> ReadLeUInt64(FILE* file) {
+  uint8_t buf[8];
+  if (aifocore::portable_fread(buf, sizeof(buf), file) != sizeof(buf)) {
+    return aifocore::Status(aifocore::StatusCode::kInternal,
+                            "Failed to read 8 bytes for uint64");
+  }
+  uint64_t v = 0;
+  for (int i = 0; i < 8; ++i) {
+    v |= (static_cast<uint64_t>(buf[i]) << (8 * i));
+  }
+  return v;
+}
+
+aifocore::Result<int64_t> ReadLeInt64(FILE* file) {
+  AIFOCORE_ASSIGN_OR_RETURN(const uint64_t u, ReadLeUInt64(file));
+  return static_cast<int64_t>(u);
 }
 
 aifocore::Result<std::vector<uint8_t>> DecompressZlib(const uint8_t* data,

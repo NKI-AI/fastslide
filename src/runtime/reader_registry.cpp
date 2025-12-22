@@ -70,9 +70,28 @@ void ReaderRegistry::RegisterFormats(
 
 aifocore::Result<std::unique_ptr<SlideReader>> ReaderRegistry::CreateReader(
     std::string_view filename, std::shared_ptr<ITileCache> cache) const {
-  // Extract extension
+  // Extract extension.
+  //
+  // Note: some formats use a "double extension" like ".ome.tif"/".ome.tiff".
+  // std::filesystem::path::extension() only returns the last suffix (".tif"),
+  // so we special-case these here to allow dedicated registration.
   std::filesystem::path path(filename);
-  std::string extension = path.extension().string();
+  std::string extension;
+
+  const std::string filename_str = path.filename().string();
+  std::string filename_lower = filename_str;
+  std::transform(filename_lower.begin(), filename_lower.end(),
+                 filename_lower.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+
+  if (filename_lower.size() >= 8 && filename_lower.ends_with(".ome.tif")) {
+    extension = ".ome.tif";
+  } else if (filename_lower.size() >= 9 &&
+             filename_lower.ends_with(".ome.tiff")) {
+    extension = ".ome.tiff";
+  } else {
+    extension = path.extension().string();
+  }
 
   if (extension.empty()) {
     return aifocore::Status(

@@ -16,6 +16,7 @@
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_SPATIAL_INDEX_H_
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <memory>
 #include <utility>
@@ -24,6 +25,7 @@
 #include <mutex>
 #include "aifocore/status/result.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
+#include "fastslide/readers/spatial/grid_hash.h"
 #include "fastslide/utilities/unordered_dense.h"
 
 namespace fastslide {

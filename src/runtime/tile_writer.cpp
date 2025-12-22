@@ -44,9 +44,9 @@ TileWriter::TileWriter(const Config& config) : config_(config) {
   strategy_ = CreateStrategy(config_);
 }
 
-TileWriter::TileWriter(uint32_t width, uint32_t height,
-                       BackgroundColor background, bool enable_blending) {
-  config_.dimensions = {width, height};
+TileWriter::TileWriter(ImageDimensions dimensions, BackgroundColor background,
+                       bool enable_blending) {
+  config_.dimensions = dimensions;
   config_.channels = 3;
   config_.data_type = DataType::kUInt8;
   config_.planar_config = PlanarConfig::kContiguous;

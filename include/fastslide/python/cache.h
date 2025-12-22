@@ -21,12 +21,13 @@
 #include <vector>
 
 #include "aifocore/status/result.h"
-#include "fastslide/utilities/cache.h"
+#include "fastslide/runtime/cache_interface.h"
+#include "fastslide/runtime/lru_tile_cache.h"
 
 namespace fastslide::python {
 
-using fastslide::GlobalTileCache;
-using fastslide::TileCache;
+using fastslide::runtime::ITileCache;
+using fastslide::runtime::LRUTileCache;
 
 /// @brief Enhanced cache statistics for Python inspection
 struct CacheInspectionStats {
@@ -43,7 +44,7 @@ struct CacheInspectionStats {
 /// @brief Cache manager with inspection capabilities
 class CacheManager {
  private:
-  std::shared_ptr<TileCache> cache_;
+  std::shared_ptr<ITileCache> cache_;
 
  public:
   /// @brief Create a CacheManager with given capacity
@@ -52,34 +53,22 @@ class CacheManager {
   [[nodiscard]] static aifocore::Result<std::shared_ptr<CacheManager>> Create(
       size_t capacity = 1000);
 
-  [[nodiscard]] std::shared_ptr<TileCache> GetCache() const;
+  /// @brief Set the cache implementation directly (e.g. dependency injection)
+  /// @param cache The cache implementation
+  void SetCache(std::shared_ptr<ITileCache> cache);
+
+  [[nodiscard]] std::shared_ptr<ITileCache> GetCache() const;
 
   void Clear();
 
-  [[nodiscard]] TileCache::Stats GetBasicStats() const;
+  [[nodiscard]] ITileCache::Stats GetBasicStats() const;
 
   [[nodiscard]] CacheInspectionStats GetDetailedStats() const;
 
   [[nodiscard]] aifocore::Status Resize(size_t new_capacity);
 
  private:
-  explicit CacheManager(std::shared_ptr<TileCache> cache);
-};
-
-/// @brief Global cache manager singleton
-class GlobalCacheManager {
- public:
-  [[nodiscard]] static GlobalCacheManager& Instance();
-
-  [[nodiscard]] std::shared_ptr<TileCache> GetCache();
-
-  [[nodiscard]] aifocore::Status SetCapacity(size_t capacity);
-
-  [[nodiscard]] TileCache::Stats GetStats();
-
-  [[nodiscard]] CacheInspectionStats GetDetailedStats();
-
-  void Clear();
+  explicit CacheManager(std::shared_ptr<ITileCache> cache);
 };
 
 }  // namespace fastslide::python

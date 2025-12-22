@@ -36,7 +36,9 @@ FastSlide (Main Reader)
       
       # With context manager (auto-cleanup)
       with fastslide.FastSlide.from_file_path("slide.svs") as slide:
-          region = slide.read_region((0, 0), 0, (1024, 1024))
+          image = slide.read_region((0, 0), 0, (1024, 1024))
+          print(f"Image size: {image.width}x{image.height}")
+          region = image.numpy() # Get numpy array
           print(f"Slide format: {slide.format}")
           print(f"Dimensions: {slide.dimensions}")
 
@@ -145,7 +147,8 @@ Basic Slide Reading
    slide = fastslide.FastSlide.from_file_path("example.mrxs")
    
    # Read full resolution region
-   region = slide.read_region((0, 0), 0, (2048, 2048))
+   image = slide.read_region((0, 0), 0, (2048, 2048))
+   region = image.numpy()
    
    # Display with matplotlib
    plt.figure(figsize=(10, 10))
@@ -176,7 +179,7 @@ Multi-level Reading
        native_loc = slide.convert_level0_to_level_native(*location, level)
        
        # Read region
-       region = slide.read_region(native_loc, level, size)
+       region = slide.read_region(native_loc, level, size).numpy()
        print(f"Level {level}: {region.shape}")
 
 Cache Performance Optimization
@@ -194,7 +197,7 @@ Cache Performance Optimization
    regions = []
    for i in range(5):
        x_offset = i * 256  # 50% overlap
-       region = slide.read_region((x_offset, 0), 0, (512, 512))
+       region = slide.read_region((x_offset, 0), 0, (512, 512)).numpy()
        regions.append(region)
    
    # Check cache performance
@@ -212,11 +215,11 @@ Channel Selection
    
    # Show only specific channels
    slide.set_visible_channels([0, 2])  # Red and Blue channels
-   region = slide.read_region((0, 0), 0, (1024, 1024))
+   region = slide.read_region((0, 0), 0, (1024, 1024)).numpy()
    
    # Reset to show all channels
    slide.show_all_channels()
-   full_region = slide.read_region((0, 0), 0, (1024, 1024))
+   full_region = slide.read_region((0, 0), 0, (1024, 1024)).numpy()
 
 Error Handling
 ~~~~~~~~~~~~~~

@@ -87,15 +87,9 @@ class TiffBasedReader : public SlideReader {
   /// @brief Virtual destructor
   virtual ~TiffBasedReader() = default;
 
-  /// @brief Set tile cache for caching decoded internal tiles (old API)
-  /// @param cache Shared pointer to tile cache (nullptr to disable caching)
-  /// @note Deprecated: Use SetCache(std::shared_ptr<ITileCache>) instead
-  void SetCache(std::shared_ptr<TileCache> cache) override;
-
-  /// @brief Set tile cache for caching decoded internal tiles (new API)
-  /// @param cache Shared pointer to tile cache interface (nullptr to disable
-  /// caching)
-  void SetCache(std::shared_ptr<ITileCache> cache);
+  /// @brief Get the filename of the slide
+  /// @return Path to the slide file as string
+  [[nodiscard]] std::string GetFilename() const { return filename_.string(); }
 
  protected:
   /// @brief Constructor for derived classes

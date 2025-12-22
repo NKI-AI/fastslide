@@ -157,6 +157,12 @@ size_t BlendedStrategy::GetOutputBufferSize() const {
 aifocore::Status BlendedStrategy::WriteRGBTileBlended(
     const core::TileReadOp& operation, std::span<const uint8_t> pixel_data,
     uint32_t tile_width, uint32_t tile_height, std::mutex& accumulator_mutex) {
+  const size_t expected_bytes =
+      static_cast<size_t>(tile_width) * tile_height * 3;
+  if (pixel_data.size() < expected_bytes) {
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "Tile buffer smaller than declared dimensions");
+  }
   const bool has_blend_meta = operation.blend_metadata.has_value();
   const double frac_x =
       has_blend_meta ? operation.blend_metadata->fractional_x : 0.0;

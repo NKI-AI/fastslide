@@ -33,8 +33,8 @@
 #include "fastslide/core/tile_request.h"
 #include "fastslide/image.h"
 #include "fastslide/metadata.h"
+#include "fastslide/runtime/cache_interface.h"
 #include "fastslide/slide_options.h"
-#include "fastslide/utilities/cache.h"
 #include "fastslide/utilities/colors.h"
 
 // Forward declarations to avoid circular dependencies
@@ -254,13 +254,13 @@ class SlideReader {
 
   /// @brief Set tile cache for caching decoded internal tiles
   /// @param cache Shared pointer to tile cache (nullptr to disable caching)
-  virtual void SetCache(std::shared_ptr<TileCache> cache) {
+  virtual void SetCache(std::shared_ptr<ITileCache> cache) {
     cache_ = std::move(cache);
   }
 
   /// @brief Get current tile cache
   /// @return Shared pointer to current cache (nullptr if disabled)
-  [[nodiscard]] virtual std::shared_ptr<TileCache> GetCache() const {
+  [[nodiscard]] virtual std::shared_ptr<ITileCache> GetCache() const {
     return cache_;
   }
 
@@ -348,7 +348,7 @@ class SlideReader {
 
  private:
   /// @brief Optional tile cache for decoded internal tiles
-  std::shared_ptr<TileCache> cache_;
+  std::shared_ptr<ITileCache> cache_;
 };
 
 // Format plugins and ReaderRegistry are defined in fastslide/runtime/ and

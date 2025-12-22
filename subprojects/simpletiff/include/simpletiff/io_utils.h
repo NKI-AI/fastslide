@@ -26,6 +26,20 @@ namespace simpletiff {
 // Forward declaration
 struct DecodeContext;
 
+/// Options controlling JPEG decode behavior.
+///
+/// TIFF-in-JPEG usage in the wild varies:
+/// - Some TIFFs correctly store JPEG-compressed tiles with Photometric=YCbCr
+/// and
+///   need YCbCr->RGB conversion.
+/// - Some legacy/quirky TIFFs are effectively "RGB data" but end up being
+///   interpreted as YCbCr by some decoders; those need conversion disabled.
+struct JpegDecodeOptions {
+  /// If true, treat YCbCr data as already RGB (skip YCbCr->RGB conversion).
+  /// If false, allow the decoder to perform YCbCr->RGB conversion.
+  bool treat_ycbcr_as_rgb = true;
+};
+
 /// Read bytes from file into vector using pread
 ///
 /// @param fd File descriptor
@@ -70,21 +84,18 @@ void ComposeJpegStream(std::span<const uint8_t> tables,
                        std::span<const uint8_t> payload,
                        std::vector<uint8_t>& out);
 
-/// Decode JPEG data to native format
-///
-/// Preserves the native color space:
-/// - Grayscale JPEG → 1-channel output
-/// - RGB JPEG → 3-channel RGB output
-/// - YCbCr JPEG → 3-channel RGB output (treated as RGB for OJPEG compatibility)
-///
-/// @param ctx Decode context (owns JPEG decompressor state)
-/// @param jpeg_data JPEG compressed data
-/// @param out_width Output width (will be set)
-/// @param out_height Output height (will be set)
-/// @param out_rgb Output buffer (will be resized to width*height*channels)
-/// @return true on success, false on failure
+/// Decode JPEG with explicit options.
 bool DecodeJpeg(DecodeContext& ctx, std::span<const uint8_t> jpeg_data,
-                int& out_width, int& out_height, std::vector<uint8_t>& out_rgb);
+                int& out_width, int& out_height, std::vector<uint8_t>& out_rgb,
+                const JpegDecodeOptions& options);
+
+/// Decode JPEG using default options (legacy behavior).
+inline bool DecodeJpeg(DecodeContext& ctx, std::span<const uint8_t> jpeg_data,
+                       int& out_width, int& out_height,
+                       std::vector<uint8_t>& out_rgb) {
+  return DecodeJpeg(ctx, jpeg_data, out_width, out_height, out_rgb,
+                    JpegDecodeOptions{});
+}
 
 /// Copy a tile into destination buffer with clipping
 ///

@@ -18,17 +18,17 @@
 /**
  * @file fastslide.h
  * @brief Main header for the FastSlide library
- * 
+ *
  * This header includes all the core FastSlide functionality for reading
  * digital pathology slides in various formats (MRXS, QPTIFF, SVS).
- * 
+ *
  * ## Architecture (v2.0)
- * 
+ *
  * FastSlide has a clean 3-layer architecture:
  * - **Core**: Pure domain models (metadata, requests, descriptors, plans)
  * - **Runtime**: Services and infrastructure (caching, registry, I/O, decoders)
  * - **Formats**: Format-specific plugins (MRXS, QPTIFF, SVS)
- * 
+ *
  * @see fastslide/core/ for domain models
  * @see fastslide/runtime/ for runtime services
  * @see fastslide/readers/ for format readers and plugins
@@ -68,7 +68,6 @@
 #include "fastslide/runtime/plugin_loader.h"
 #include "fastslide/slide_options.h"
 #include "fastslide/slide_reader.h"
-#include "fastslide/utilities/cache.h"
 #include "fastslide/utilities/colors.h"
 
 #endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_FASTSLIDE_H_

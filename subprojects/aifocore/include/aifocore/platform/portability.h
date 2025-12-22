@@ -17,6 +17,7 @@
 
 #include <sys/stat.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <filesystem>
 
@@ -99,6 +100,10 @@ inline ssize_t portable_pread(int fd, void* buf, size_t count,
   return static_cast<ssize_t>(bytes_read);
 }
 
+inline int portable_fileno(FILE* stream) {
+  return ::_fileno(stream);
+}
+
 }  // namespace aifocore
 
 #ifndef O_BINARY
@@ -156,6 +161,10 @@ inline ssize_t portable_pread(int fd, void* buf, size_t count,
   return ::pread(fd, buf, count, static_cast<off_t>(offset));
 }
 
+inline int portable_fileno(FILE* stream) {
+  return ::fileno(stream);
+}
+
 }  // namespace aifocore
 
 #ifndef O_BINARY
@@ -163,5 +172,37 @@ inline ssize_t portable_pread(int fd, void* buf, size_t count,
 #endif
 
 #endif  // AIFOCORE_WINDOWS
+
+namespace aifocore {
+
+inline size_t portable_fread(void* dest, size_t bytes_to_read, FILE* stream) {
+  return std::fread(dest, 1, bytes_to_read, stream);
+}
+
+inline size_t portable_fwrite(const void* source, size_t bytes_to_write,
+                              FILE* stream) {
+  return std::fwrite(source, 1, bytes_to_write, stream);
+}
+
+inline int portable_fclose(FILE* stream) {
+  return std::fclose(stream);
+}
+
+inline int64_t portable_filesize(FILE* stream) {
+  if (stream == nullptr) {
+    return -1;
+  }
+  const int fd = portable_fileno(stream);
+  if (fd < 0) {
+    return -1;
+  }
+  portable_stat_struct st{};
+  if (portable_fstat(fd, &st) != 0) {
+    return -1;
+  }
+  return static_cast<int64_t>(st.st_size);
+}
+
+}  // namespace aifocore
 
 #endif  // AIFO_AIFOCORE_INCLUDE_AIFOCORE_PLATFORM_PORTABILITY_H_

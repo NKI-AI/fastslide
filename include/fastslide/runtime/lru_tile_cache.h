@@ -67,14 +67,14 @@ struct TileKeyHash {
 class LRUTileCache : public ITileCache {
  public:
   /// @brief Create a new LRU tile cache
-  /// @param capacity Maximum number of tiles to cache
+  /// @param capacity_bytes Maximum cache size in bytes
   /// @return StatusOr containing the cache instance or error
   static aifocore::Result<std::shared_ptr<LRUTileCache>> Create(
-      size_t capacity = 1000);
+      size_t capacity_bytes = 1024 * 1024 * 1024);  // Default 1GB
 
   /// @brief Constructor
-  /// @param capacity Maximum number of tiles to cache
-  explicit LRUTileCache(size_t capacity);
+  /// @param capacity_bytes Maximum cache size in bytes
+  explicit LRUTileCache(size_t capacity_bytes);
 
   /// @brief Destructor
   ~LRUTileCache() override = default;
@@ -88,10 +88,10 @@ class LRUTileCache : public ITileCache {
   size_t GetMemoryUsage() const override;
   Stats GetStats() const override;
 
-  /// @brief Set cache capacity
-  /// @param capacity New capacity
+  /// @brief Set cache capacity in bytes
+  /// @param capacity_bytes New capacity in bytes
   /// @return Status indicating success or failure
-  aifocore::Status SetCapacity(size_t capacity);
+  aifocore::Status SetCapacity(size_t capacity_bytes);
 
  private:
   /// @brief Internal cache entry
@@ -104,7 +104,8 @@ class LRUTileCache : public ITileCache {
   /// @brief Evict least recently used tile
   void EvictLru();
 
-  size_t capacity_;
+  size_t capacity_bytes_;
+  size_t current_size_bytes_;
   mutable std::mutex mutex_;
   std::unordered_map<TileKey, CacheEntry, TileKeyHash> cache_;
   std::list<TileKey> lru_list_;

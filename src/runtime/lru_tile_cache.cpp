@@ -26,16 +26,21 @@ namespace fastslide {
 namespace runtime {
 
 aifocore::Result<std::shared_ptr<LRUTileCache>> LRUTileCache::Create(
-    size_t capacity) {
-  if (capacity == 0) {
+    size_t capacity_bytes) {
+  if (capacity_bytes == 0) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
                             "Cache capacity must be greater than 0");
   }
-  return std::make_shared<LRUTileCache>(capacity);
+  return std::make_shared<LRUTileCache>(capacity_bytes);
 }
 
-LRUTileCache::LRUTileCache(size_t capacity)
-    : capacity_(capacity), cache_{}, lru_list_{}, hits_(0), misses_(0) {}
+LRUTileCache::LRUTileCache(size_t capacity_bytes)
+    : capacity_bytes_(capacity_bytes),
+      current_size_bytes_(0),
+      cache_{},
+      lru_list_{},
+      hits_(0),
+      misses_(0) {}
 
 std::shared_ptr<CachedTileData> LRUTileCache::Get(const TileKey& key) {
   std::lock_guard<std::mutex> lock(mutex_);
@@ -68,17 +73,34 @@ void LRUTileCache::Put(const TileKey& key,
   auto iter = cache_.find(key);
   if (iter != cache_.end()) {
     // Update existing entry
+    size_t old_size = iter->second.tile->GetMemoryUsage();
+    size_t new_size = tile->GetMemoryUsage();
+
     iter->second.tile = tile;
+    current_size_bytes_ = current_size_bytes_ - old_size + new_size;
 
     // Move to front of LRU list
     lru_list_.erase(iter->second.lru_it);
     lru_list_.push_front(key);
     iter->second.lru_it = lru_list_.begin();
+
+    // Evict if needed after update
+    while (current_size_bytes_ > capacity_bytes_ && !lru_list_.empty()) {
+      EvictLru();
+    }
     return;
   }
 
-  // Evict if at capacity
-  if (cache_.size() >= capacity_) {
+  size_t tile_size = tile->GetMemoryUsage();
+
+  // Don't cache if single tile is larger than capacity
+  if (tile_size > capacity_bytes_) {
+    return;
+  }
+
+  // Evict if needed before adding
+  while (current_size_bytes_ + tile_size > capacity_bytes_ &&
+         !lru_list_.empty()) {
     EvictLru();
   }
 
@@ -86,12 +108,14 @@ void LRUTileCache::Put(const TileKey& key,
   lru_list_.push_front(key);
   cache_[key] =
       CacheEntry{.key = key, .tile = tile, .lru_it = lru_list_.begin()};
+  current_size_bytes_ += tile_size;
 }
 
 void LRUTileCache::Clear() {
   std::lock_guard<std::mutex> lock(mutex_);
   cache_.clear();
   lru_list_.clear();
+  current_size_bytes_ = 0;
   hits_ = 0;
   misses_ = 0;
 }
@@ -102,8 +126,12 @@ void LRUTileCache::EvictLru() {
   }
 
   TileKey oldest_key = lru_list_.back();
+  auto it = cache_.find(oldest_key);
+  if (it != cache_.end()) {
+    current_size_bytes_ -= it->second.tile->GetMemoryUsage();
+    cache_.erase(it);
+  }
   lru_list_.pop_back();
-  cache_.erase(oldest_key);
 }
 
 size_t LRUTileCache::GetSize() const {
@@ -113,20 +141,12 @@ size_t LRUTileCache::GetSize() const {
 
 size_t LRUTileCache::GetCapacity() const {
   std::lock_guard<std::mutex> lock(mutex_);
-  return capacity_;
+  return capacity_bytes_;
 }
 
 size_t LRUTileCache::GetMemoryUsage() const {
   std::lock_guard<std::mutex> lock(mutex_);
-
-  size_t memory_usage_bytes = 0;
-  for (const auto& [key, entry] : cache_) {
-    if (entry.tile) {
-      memory_usage_bytes += entry.tile->GetMemoryUsage();
-    }
-  }
-
-  return memory_usage_bytes;
+  return current_size_bytes_;
 }
 
 ITileCache::Stats LRUTileCache::GetStats() const {
@@ -138,35 +158,28 @@ ITileCache::Stats LRUTileCache::GetStats() const {
     hit_ratio = static_cast<double>(hits_) / total_accesses;
   }
 
-  size_t memory_usage_bytes = 0;
-  for (const auto& [key, entry] : cache_) {
-    if (entry.tile) {
-      memory_usage_bytes += entry.tile->GetMemoryUsage();
-    }
-  }
-
-  return Stats{.capacity = capacity_,
+  return Stats{.capacity = capacity_bytes_,
                .size = cache_.size(),
                .hits = hits_,
                .misses = misses_,
                .hit_ratio = hit_ratio,
-               .memory_usage_bytes = memory_usage_bytes};
+               .memory_usage_bytes = current_size_bytes_};
 }
 
-aifocore::Status LRUTileCache::SetCapacity(size_t capacity) {
-  if (capacity == 0) {
+aifocore::Status LRUTileCache::SetCapacity(size_t capacity_bytes) {
+  if (capacity_bytes == 0) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
                             "Cache capacity must be greater than 0");
   }
 
   std::lock_guard<std::mutex> lock(mutex_);
 
-  // Clear existing cache and update capacity
-  cache_.clear();
-  lru_list_.clear();
-  capacity_ = capacity;
-  hits_ = 0;
-  misses_ = 0;
+  capacity_bytes_ = capacity_bytes;
+
+  // Evict if new capacity is smaller
+  while (current_size_bytes_ > capacity_bytes_ && !lru_list_.empty()) {
+    EvictLru();
+  }
 
   return aifocore::Status::OkStatus();
 }

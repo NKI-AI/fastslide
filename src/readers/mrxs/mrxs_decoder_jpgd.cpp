@@ -14,8 +14,6 @@
 
 #include "fastslide/readers/mrxs/mrxs_decoder.h"
 
-#include <jpeg-compressor/jpgd.h>
-
 #include <algorithm>
 #include <cstring>
 #include <string>
@@ -23,6 +21,7 @@
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
+#include "fastslide/runtime/decoders/jpeg_decoder.h"
 #include "lodepng/lodepng.h"
 
 namespace fastslide::mrxs::internal {
@@ -63,45 +62,13 @@ aifocore::Result<RGBImage> DecodeImage(const std::vector<uint8_t>& data,
 /// @retval aifocore::Status::InvalidArgumentError if data is empty
 /// @retval aifocore::Status::InternalError if JPEG decompression fails
 aifocore::Result<RGBImage> DecodeJpeg(const std::vector<uint8_t>& data) {
-  if (data.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Empty JPEG data");
-  }
-
-  // jpgd will allocate and decompress the image
-  int actual_comps = 0;
-  int width = 0;
-  int height = 0;
-
-  // For MRXS files, the JPEG data is RGB but marked as YCbCr
-  // Use cFlagNoYCbCrConversion to skip YCbCr->RGB conversion
-  constexpr uint32_t flags = jpgd::jpeg_decoder::cFlagNoYCbCrConversion;
-
-  // Request 3 components (RGB)
-  unsigned char* decoded = jpgd::decompress_jpeg_image_from_memory(
-      data.data(), static_cast<int>(data.size()), &width, &height,
-      &actual_comps, 3, flags);
-
-  if (!decoded) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "jpgd JPEG decompression failed");
-  }
-
-  const uint32_t u_width = static_cast<uint32_t>(width);
-  const uint32_t u_height = static_cast<uint32_t>(height);
-
-  // Create RGB image
-  RGBImage result(ImageDimensions{u_width, u_height}, ImageFormat::kRGB,
-                  DataType::kUInt8);
-
-  // Copy data from jpgd's buffer to our image
-  const size_t num_pixels =
-      static_cast<size_t>(width) * static_cast<size_t>(height);
-  std::memcpy(result.GetData(), decoded, num_pixels * 3);
-
-  // Free jpgd's allocated memory (using standard free since jpgd uses malloc)
-  free(decoded);
-
+  runtime::decoders::JpegDecodeOptions opts{};
+  opts.no_ycbcr_conversion = true;
+  AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
+                            runtime::decoders::DecodeJpegToRgb(data, opts));
+  RGBImage result(ImageDimensions{decoded.width, decoded.height},
+                  ImageFormat::kRGB, DataType::kUInt8);
+  std::memcpy(result.GetData(), decoded.rgb.data(), decoded.rgb.size());
   return result;
 }
 

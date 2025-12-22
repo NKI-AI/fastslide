@@ -36,7 +36,8 @@ TiffIndex::TiffIndex(TiffIndex&& other) noexcept
       strips_pool_(std::move(other.strips_pool_)),
       single_pool_(std::move(other.single_pool_)),
       offsets_arena_(std::move(other.offsets_arena_)),
-      bytecounts_arena_(std::move(other.bytecounts_arena_)) {
+      bytecounts_arena_(std::move(other.bytecounts_arena_)),
+      child_pages_arena_(std::move(other.child_pages_arena_)) {
   // Transfer ownership of fd
   other.fd_ = -1;
 }
@@ -59,6 +60,7 @@ TiffIndex& TiffIndex::operator=(TiffIndex&& other) noexcept {
     single_pool_ = std::move(other.single_pool_);
     offsets_arena_ = std::move(other.offsets_arena_);
     bytecounts_arena_ = std::move(other.bytecounts_arena_);
+    child_pages_arena_ = std::move(other.child_pages_arena_);
 
     // Transfer ownership of fd
     other.fd_ = -1;

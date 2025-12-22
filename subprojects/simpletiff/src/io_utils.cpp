@@ -13,6 +13,8 @@
 // limitations under the License.
 #include "simpletiff/io_utils.h"
 
+#include <cstdio>
+
 #include <jpeglib.h>
 
 #include <algorithm>
@@ -209,8 +211,8 @@ void ComposeJpegStream(std::span<const uint8_t> tables,
 }
 
 bool DecodeJpeg(DecodeContext& ctx, std::span<const uint8_t> jpeg_data,
-                int& out_width, int& out_height,
-                std::vector<uint8_t>& out_rgb) {
+                int& out_width, int& out_height, std::vector<uint8_t>& out_rgb,
+                const JpegDecodeOptions& options) {
   if (jpeg_data.empty()) {
     return false;
   }
@@ -227,22 +229,25 @@ bool DecodeJpeg(DecodeContext& ctx, std::span<const uint8_t> jpeg_data,
     return false;
   }
 
-  // Handle color space conversion
-  // OJPEG in TIFF files is typically YCbCr encoded but often mislabeled
-  // The common issue: JPEG claims YCbCr but uses RGB color model or wrong
-  // coefficients Solution: For OJPEG, treat YCbCr channels as RGB directly (no
-  // conversion)
+  // Handle color space conversion.
+  //
+  // If treat_ycbcr_as_rgb=true, we disable YCbCr->RGB conversion by telling
+  // libjpeg the input is RGB (legacy compatibility with some TIFF JPEG
+  // variants).
+  //
+  // If treat_ycbcr_as_rgb=false, we allow libjpeg to convert YCbCr->RGB.
   if (cinfo.jpeg_color_space == JCS_YCbCr) {
-    // Don't let libjpeg convert - treat the 3 components as RGB directly
-    cinfo.jpeg_color_space = JCS_RGB;
-    cinfo.out_color_space = JCS_RGB;
+    if (options.treat_ycbcr_as_rgb) {
+      cinfo.jpeg_color_space = JCS_RGB;
+      cinfo.out_color_space = JCS_RGB;
+    } else {
+      cinfo.out_color_space = JCS_RGB;
+    }
   } else if (cinfo.jpeg_color_space == JCS_RGB) {
     cinfo.out_color_space = JCS_RGB;
   } else if (cinfo.jpeg_color_space == JCS_GRAYSCALE) {
-    // Preserve grayscale - don't force conversion to RGB
     cinfo.out_color_space = JCS_GRAYSCALE;
   } else {
-    // Unknown color space - let libjpeg handle it (will likely convert to RGB)
     cinfo.out_color_space = JCS_RGB;
   }
 

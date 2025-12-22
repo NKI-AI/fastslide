@@ -6,7 +6,22 @@
 #include <stdint.h>
 
 #undef HWY_TARGET_INCLUDE
+// Highway's foreach_target.h includes HWY_TARGET_INCLUDE multiple times with
+// different target defines. The include path differs between:
+// - monorepo builds (path usually available as "aifo/jpeg-compressor/...")
+// - copybara/public layouts (may be "jpeg-compressor/...")
+// - Meson subproject builds (best-effort fallback to the filename)
+#if defined(__has_include)
+#if __has_include("aifo/jpeg-compressor/jpgd_idct_highway.cpp")
 #define HWY_TARGET_INCLUDE "aifo/jpeg-compressor/jpgd_idct_highway.cpp"
+#elif __has_include("jpeg-compressor/jpgd_idct_highway.cpp")
+#define HWY_TARGET_INCLUDE "jpeg-compressor/jpgd_idct_highway.cpp"
+#else
+#define HWY_TARGET_INCLUDE "jpgd_idct_highway.cpp"
+#endif
+#else
+#define HWY_TARGET_INCLUDE "jpgd_idct_highway.cpp"
+#endif
 #include <hwy/foreach_target.h>
 #include <hwy/highway.h>
 

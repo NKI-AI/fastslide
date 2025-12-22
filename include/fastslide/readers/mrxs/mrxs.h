@@ -193,19 +193,6 @@ class MrxsReader : public SlideReader, public ReaderFactory<MrxsReader> {
   [[nodiscard]] aifocore::Result<std::shared_ptr<mrxs::MrxsSpatialIndex>>
   GetSpatialIndex(int level) const;
 
-  /// @brief Set tile cache for this reader (ITileCache interface)
-  ///
-  /// Injects a tile cache that will be used to cache decoded camera images.
-  /// This significantly improves performance for repeated access to the same
-  /// regions.
-  ///
-  /// @param cache Shared pointer to cache implementation
-  void SetITileCache(std::shared_ptr<ITileCache> cache);
-
-  /// @brief Get the current tile cache (ITileCache interface)
-  /// @return Shared pointer to cache (may be nullptr)
-  [[nodiscard]] std::shared_ptr<ITileCache> GetITileCache() const;
-
  private:
   /// @brief Allow factory access to private constructor and methods
   friend class ReaderFactory<MrxsReader>;
@@ -296,10 +283,6 @@ class MrxsReader : public SlideReader, public ReaderFactory<MrxsReader> {
   // Spatial indices (lazy-initialized, one per level)
   mutable std::vector<std::shared_ptr<mrxs::MrxsSpatialIndex>> spatial_indices_;
   mutable std::mutex spatial_index_mutex_;
-
-  // Cache for decoded camera images
-  std::shared_ptr<ITileCache> cache_;
-  mutable std::mutex cache_mutex_;
 };
 
 }  // namespace fastslide

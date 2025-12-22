@@ -19,13 +19,12 @@
 #include <algorithm>
 #include <cmath>
 #include <concepts>
+#include <cstdlib>
 #include <ostream>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 #include <vector>
-
-#include <cereal/cereal.hpp>
 
 namespace aifocore {
 
@@ -54,7 +53,9 @@ class Size {
 
   constexpr Size(std::initializer_list<T> init) {
     if (init.size() != N) {
-      throw std::invalid_argument("Initializer list must have size N.");
+      // Exceptions are disabled in aifocore. Treat this as a hard contract
+      // violation.
+      std::abort();
     }
     std::copy(init.begin(), init.end(), data_.begin());
   }
@@ -259,14 +260,6 @@ class Size {
     }
     os << "}";
     return os;
-  }
-
-  // Add cereal serialization for Size<T, N>
-  template <class Archive>
-  void serialize(Archive& archive) {
-    for (std::size_t i = 0; i < N; ++i) {
-      archive(data_[i]);
-    }
   }
 
   // Add structured binding support

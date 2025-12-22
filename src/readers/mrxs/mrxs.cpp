@@ -181,9 +181,7 @@ aifocore::Result<mrxs::MrxsImageFormat> ParseImageFormat(
 /// extension)
 /// @param slide_info Parsed slide information from Slidedat.ini
 MrxsReader::MrxsReader(fs::path dirname, mrxs::SlideDataInfo slide_info)
-    : dirname_(std::move(dirname)),
-      slide_info_(slide_info),
-      cache_(nullptr) {  // Initialize cache to nullptr
+    : dirname_(std::move(dirname)), slide_info_(slide_info) {
   level_params_ = CalculateLevelParams();
   spatial_indices_.resize(slide_info_.zoom_levels.size());
 }
@@ -968,9 +966,9 @@ aifocore::Result<RGBImage> MrxsReader::ReadRegionFractional(
       static_cast<uint8_t>((zoom_level.background_color_rgb >> 8) & 0xFF),
       static_cast<uint8_t>(zoom_level.background_color_rgb & 0xFF)};
 
-  runtime::TileWriter writer(plan.output.dimensions[0],
-                             plan.output.dimensions[1], bg,
-                             true);  // Enable blending for MRXS
+  runtime::TileWriter writer(
+      ImageDimensions{plan.output.dimensions[0], plan.output.dimensions[1]}, bg,
+      true);  // Enable blending for MRXS
 
   // Execute the plan
   AIFOCORE_RETURN_IF_ERROR(ExecutePlan(plan, writer));
@@ -1795,16 +1793,6 @@ aifocore::Status MrxsReader::ExecutePlan(const core::TilePlan& plan,
                                          runtime::TileWriter& writer) const {
   // Use the tile executor helper to execute the plan
   return MrxsTileExecutor::ExecutePlan(plan, *this, writer);
-}
-
-void MrxsReader::SetITileCache(std::shared_ptr<ITileCache> cache) {
-  std::lock_guard<std::mutex> lock(cache_mutex_);
-  cache_ = std::move(cache);
-}
-
-std::shared_ptr<ITileCache> MrxsReader::GetITileCache() const {
-  std::lock_guard<std::mutex> lock(cache_mutex_);
-  return cache_;
 }
 
 }  // namespace fastslide

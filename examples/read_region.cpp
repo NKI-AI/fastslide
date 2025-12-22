@@ -12,12 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <fastslide/fastslide.h>
-#include <fastslide/runtime/reader_registry.h>
-#include <CLI11/CLI11.hpp>
 #include <cstdlib>
 #include <iostream>
 #include <string>
+#include <utility>
+
+#include <CLI11/CLI11.hpp>
+
+#include "fastslide/fastslide.h"
+#include "fastslide/runtime/reader_registry.h"
 
 int main(int argc, char** argv) {
   CLI::App app{"FastSlide Read Region Example"};
@@ -57,7 +60,8 @@ int main(int argc, char** argv) {
     std::cerr << level0_info.status() << "\n";
     return 1;
   }
-  const auto dims = level0_info->dimensions;
+  const auto dims_array = level0_info->dimensions;
+  const fastslide::ImageDimensions dims = {dims_array[0], dims_array[1]};
   const auto& props = reader->GetProperties();
   const auto& bounds = props.bounds;
 

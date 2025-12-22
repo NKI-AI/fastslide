@@ -102,7 +102,8 @@ aifocore::Status QuickHashBuilder::HashFilePart(const fs::path& file_path,
   while (remaining > 0) {
     const size_t to_read =
         std::min(remaining, static_cast<int64_t>(buffer.size()));
-    const size_t bytes_read = fread(buffer.data(), 1, to_read, file);
+    const size_t bytes_read =
+        aifocore::portable_fread(buffer.data(), to_read, file);
 
     if (bytes_read > 0) {
       sha_256_write(static_cast<Sha_256*>(ctx_), buffer.data(), bytes_read);
@@ -111,7 +112,7 @@ aifocore::Status QuickHashBuilder::HashFilePart(const fs::path& file_path,
 
     if (bytes_read < to_read) {
       if (ferror(file)) {
-        fclose(file);
+        aifocore::portable_fclose(file);
         return aifocore::Status(aifocore::StatusCode::kInternal,
                                 "Error reading file");
       }
@@ -119,7 +120,7 @@ aifocore::Status QuickHashBuilder::HashFilePart(const fs::path& file_path,
     }
   }
 
-  fclose(file);
+  aifocore::portable_fclose(file);
   return aifocore::Status::OkStatus();
 }
 

@@ -17,20 +17,47 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
+#include "aifocore/platform/portability.h"
 #include "simpletiff/errors.h"
 #include "simpletiff/index.h"
 #include "simpletiff/io_utils.h"
 #include "simpletiff/tiff_constants.h"
+#include "simpletiff/tiff_parser.h"
 
 namespace simpletiff {
 namespace {
+
+void AppendLe16(std::vector<uint8_t>& out, uint16_t v) {
+  out.push_back(static_cast<uint8_t>(v & 0xFF));
+  out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+}
+
+void AppendLe32(std::vector<uint8_t>& out, uint32_t v) {
+  out.push_back(static_cast<uint8_t>(v & 0xFF));
+  out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+  out.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+  out.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+}
+
+void AppendIfdEntryClassic(std::vector<uint8_t>& out, uint16_t tag,
+                           uint16_t type, uint32_t count,
+                           uint32_t value_or_offset) {
+  AppendLe16(out, tag);
+  AppendLe16(out, type);
+  AppendLe32(out, count);
+  AppendLe32(out, value_or_offset);
+}
 
 // =============================================================================
 // DecodeContext Tests
@@ -833,6 +860,142 @@ TEST(EdgeCaseTest, MultipleContextsInSequence) {
     EXPECT_EQ(ctx.jpeg_stream_buffer[0], static_cast<uint8_t>(i & 0xFF));
   }
   // All contexts should be cleaned up by RAII
+}
+
+TEST(TiffParserTest, SubIfdsAreEnumeratedAsPages) {
+  // Create a minimal ClassicTIFF with one main IFD and a SubIFD chain.
+  //
+  // This matches how OME-TIFF pyramids often store reduced-resolution images:
+  // as SubIFDs of the main image, sometimes chaining additional SubIFDs via
+  // the "next IFD" pointer.
+  //
+  // We only validate index enumeration (num pages + ordering), not pixel data.
+  constexpr uint16_t kTypeShort = 3;
+  constexpr uint16_t kTypeLong = 4;
+
+  // Offsets in the file (ClassicTIFF, little-endian).
+  constexpr uint32_t kHeaderSize = 8;
+  constexpr uint32_t kMainIfdOffset = kHeaderSize;
+
+  constexpr uint16_t kMainIfdNumEntries = 7;
+  constexpr uint32_t kMainIfdSize =
+      2 + static_cast<uint32_t>(kMainIfdNumEntries) * 12 + 4;
+
+  // With SubIFDs count==1, the offset is stored inline in the IFD entry
+  // (ClassicTIFF inline limit is 4 bytes). So we do NOT write a separate
+  // SubIFDs offset array; the value field stores the IFD offset directly.
+  constexpr uint32_t kSubIfd0Offset = kMainIfdOffset + kMainIfdSize;
+
+  constexpr uint16_t kSubIfdNumEntries = 6;
+  constexpr uint32_t kSubIfdSize =
+      2 + static_cast<uint32_t>(kSubIfdNumEntries) * 12 + 4;
+  constexpr uint32_t kSubIfd1Offset = kSubIfd0Offset + kSubIfdSize;
+
+  std::vector<uint8_t> tiff;
+  tiff.reserve(kSubIfd1Offset + kSubIfdSize);
+
+  // TIFF header: "II" + 42 + first IFD offset.
+  tiff.push_back(0x49);
+  tiff.push_back(0x49);
+  AppendLe16(tiff, 42);
+  AppendLe32(tiff, kMainIfdOffset);
+
+  // Main IFD.
+  AppendLe16(tiff, kMainIfdNumEntries);
+  AppendIfdEntryClassic(tiff, /*tag=*/256, kTypeLong, /*count=*/1,
+                        /*value=*/100);  // ImageWidth
+  AppendIfdEntryClassic(tiff, /*tag=*/257, kTypeLong, /*count=*/1,
+                        /*value=*/50);  // ImageLength
+  AppendIfdEntryClassic(tiff, /*tag=*/258, kTypeShort, /*count=*/1,
+                        /*value=*/8);  // BitsPerSample
+  AppendIfdEntryClassic(tiff, /*tag=*/259, kTypeShort, /*count=*/1,
+                        /*value=*/1);  // Compression (none)
+  AppendIfdEntryClassic(tiff, /*tag=*/262, kTypeShort, /*count=*/1,
+                        /*value=*/2);  // Photometric (RGB)
+  AppendIfdEntryClassic(tiff, /*tag=*/277, kTypeShort, /*count=*/1,
+                        /*value=*/3);  // SamplesPerPixel
+  AppendIfdEntryClassic(
+      tiff, /*tag=*/330, kTypeLong, /*count=*/1,
+      /*value_or_offset=*/kSubIfd0Offset);  // SubIFDs (inline)
+  AppendLe32(tiff, /*next_ifd=*/0);
+
+  // SubIFD 0.
+  ASSERT_EQ(tiff.size(), kSubIfd0Offset);
+  AppendLe16(tiff, kSubIfdNumEntries);
+  AppendIfdEntryClassic(tiff, /*tag=*/256, kTypeLong, /*count=*/1,
+                        /*value=*/50);
+  AppendIfdEntryClassic(tiff, /*tag=*/257, kTypeLong, /*count=*/1,
+                        /*value=*/25);
+  AppendIfdEntryClassic(tiff, /*tag=*/258, kTypeShort, /*count=*/1,
+                        /*value=*/8);
+  AppendIfdEntryClassic(tiff, /*tag=*/259, kTypeShort, /*count=*/1,
+                        /*value=*/1);
+  AppendIfdEntryClassic(tiff, /*tag=*/262, kTypeShort, /*count=*/1,
+                        /*value=*/2);
+  AppendIfdEntryClassic(tiff, /*tag=*/277, kTypeShort, /*count=*/1,
+                        /*value=*/3);
+  // Chain to SubIFD 1 via the next-IFD pointer.
+  AppendLe32(tiff, /*next_ifd=*/kSubIfd1Offset);
+
+  // SubIFD 1.
+  ASSERT_EQ(tiff.size(), kSubIfd1Offset);
+  AppendLe16(tiff, kSubIfdNumEntries);
+  AppendIfdEntryClassic(tiff, /*tag=*/256, kTypeLong, /*count=*/1,
+                        /*value=*/25);
+  AppendIfdEntryClassic(tiff, /*tag=*/257, kTypeLong, /*count=*/1,
+                        /*value=*/13);
+  AppendIfdEntryClassic(tiff, /*tag=*/258, kTypeShort, /*count=*/1,
+                        /*value=*/8);
+  AppendIfdEntryClassic(tiff, /*tag=*/259, kTypeShort, /*count=*/1,
+                        /*value=*/1);
+  AppendIfdEntryClassic(tiff, /*tag=*/262, kTypeShort, /*count=*/1,
+                        /*value=*/2);
+  AppendIfdEntryClassic(tiff, /*tag=*/277, kTypeShort, /*count=*/1,
+                        /*value=*/3);
+  AppendLe32(tiff, /*next_ifd=*/0);
+
+  // Write to a temp file (Bazel provides TEST_TMPDIR).
+  const char* test_tmpdir = std::getenv("TEST_TMPDIR");
+  std::filesystem::path tmp_dir = test_tmpdir
+                                      ? std::filesystem::path(test_tmpdir)
+                                      : std::filesystem::temp_directory_path();
+  const auto unique = std::to_string(
+      std::chrono::steady_clock::now().time_since_epoch().count());
+  const std::filesystem::path tiff_path =
+      tmp_dir / ("simpletiff_subifd_" + unique + ".tif");
+
+  std::ofstream ofs(tiff_path, std::ios::binary);
+  ASSERT_TRUE(ofs.good());
+  ofs.write(reinterpret_cast<const char*>(tiff.data()),
+            static_cast<std::streamsize>(tiff.size()));
+  ofs.close();
+
+  TiffIndex index;
+  int fd = -1;
+  ASSERT_TRUE(OpenTiff(tiff_path.string(), index, fd));
+  EXPECT_EQ(index.NumPages(), 3u);
+  EXPECT_EQ(index.Page(0).width, 100u);
+  EXPECT_EQ(index.Page(0).height, 50u);
+  EXPECT_EQ(index.Page(1).width, 50u);
+  EXPECT_EQ(index.Page(1).height, 25u);
+  EXPECT_EQ(index.Page(2).width, 25u);
+  EXPECT_EQ(index.Page(2).height, 13u);
+
+  // Parent/child links.
+  EXPECT_FALSE(index.Page(0).parent_page_index.has_value());
+  EXPECT_TRUE(index.Page(1).parent_page_index.has_value());
+  EXPECT_TRUE(index.Page(2).parent_page_index.has_value());
+  EXPECT_EQ(*index.Page(1).parent_page_index, 0u);
+  EXPECT_EQ(*index.Page(2).parent_page_index, 0u);
+
+  const auto children0 = index.ChildPagesForPage(0);
+  ASSERT_EQ(children0.size(), 2u);
+  EXPECT_EQ(children0[0], 1u);
+  EXPECT_EQ(children0[1], 2u);
+
+  if (fd >= 0) {
+    aifocore::portable_close(fd);
+  }
 }
 
 }  // namespace

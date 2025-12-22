@@ -97,11 +97,6 @@ class MrxsPlanBuilder {
   static core::OutputSpec CreateOutputSpec(
       uint32_t width, uint32_t height, const mrxs::SlideZoomLevel& zoom_level);
 
-  /// @brief Calculate cost estimates for the plan
-  /// @param operations Vector of tile operations
-  /// @return Cost estimate
-  static core::TilePlan::Cost CalculateCosts(
-      const std::vector<core::TileReadOp>& operations);
 };
 
 }  // namespace fastslide

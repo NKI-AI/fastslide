@@ -19,8 +19,48 @@ class SimpleTiffPage:
         ...
 
     @property
+    def ifd_index(self) -> int:
+        """IFD index (parser enumeration order)."""
+        ...
+
+    @property
+    def ifd_offset(self) -> int:
+        """IFD offset in the TIFF file."""
+        ...
+
+    @property
+    def parent_page_index(self) -> int | None:
+        """Parent page index if this page is a SubIFD, else None."""
+        ...
+
+    @property
+    def sub_page_indices(self) -> list[int]:
+        """Indices of SubIFD child pages of this page."""
+        ...
+
+    @property
+    def num_sub_pages(self) -> int:
+        """Number of SubIFD child pages of this page."""
+        ...
+
+    @property
+    def sub_pages(self) -> list["SimpleTiffPage"]:
+        """SubIFD child pages of this page."""
+        ...
+
+    @property
     def height(self) -> int:
         """Page height in pixels."""
+        ...
+
+    @property
+    def new_subfile_type(self) -> int:
+        """NewSubfileType TIFF tag (254) as an integer bitmask."""
+        ...
+
+    @property
+    def is_reduced_resolution(self) -> bool:
+        """True if page is marked reduced-resolution (NewSubfileType bit 0)."""
         ...
 
     @property
@@ -174,6 +214,16 @@ class SimpleTiffReader:
         ...
 
     @property
+    def num_ifds(self) -> int:
+        """Number of IFDs (directories) parsed, including SubIFDs."""
+        ...
+
+    @property
+    def num_root_pages(self) -> int:
+        """Number of root pages (not SubIFDs)."""
+        ...
+
+    @property
     def is_bigtiff(self) -> bool:
         """True if this is a BigTIFF file."""
         ...
@@ -181,6 +231,16 @@ class SimpleTiffReader:
     @property
     def file_size(self) -> int:
         """Size of the TIFF file in bytes."""
+        ...
+
+    @property
+    def root_page_indices(self) -> list[int]:
+        """Indices of root pages (not SubIFDs)."""
+        ...
+
+    @property
+    def root_pages(self) -> list[SimpleTiffPage]:
+        """Root pages (not SubIFDs)."""
         ...
 
     def get_page(self, index: int) -> SimpleTiffPage:

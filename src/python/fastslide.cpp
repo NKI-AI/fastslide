@@ -28,18 +28,55 @@
 #include <vector>
 
 #include "aifocore/status/result.h"
+#include "fastslide/image.h"
 #include "fastslide/python/cache.h"
 #include "fastslide/python/reader.h"
 #include "fastslide/runtime/global_cache_manager.h"
 #include "fastslide/runtime/reader_registry.h"
 #include "fastslide/slide_reader.h"
-#include "fastslide/utilities/cache.h"
 
 namespace py = pybind11;
-using fastslide::GlobalTileCache;
+
+namespace pybind11::detail {
+/// @brief Type caster for NDArrayView to numpy array (view)
+/// @tparam T Data type
+/// @tparam N Rank
+template <typename T, size_t N>
+struct type_caster<aifocore::math::NDArrayView<T, N>> {
+public:
+  using Type = aifocore::math::NDArrayView<T, N>;
+  PYBIND11_TYPE_CASTER(Type, const_name("NDArrayView[") + type_caster<T>::name +
+                                 const_name("]"));
+
+  /// @brief Convert Python object to C++ (not implemented for view)
+  bool load(handle, bool) { return false; }
+
+  /// @brief Convert C++ object to Python (view to numpy array)
+  static handle cast(const aifocore::math::NDArrayView<T, N> &src,
+                     return_value_policy /* policy */, handle parent) {
+    std::vector<ssize_t> shape(N);
+    std::vector<ssize_t> strides(N);
+    const auto &src_shape = src.Shape();
+    const auto &src_strides = src.Strides();
+
+    for (size_t i = 0; i < N; ++i) {
+      shape[i] = static_cast<ssize_t>(src_shape[i]);
+      strides[i] = static_cast<ssize_t>(src_strides[i] * sizeof(T));
+    }
+
+    // Treat parent as base if it exists (e.g., Image object)
+    object base;
+    if (parent) {
+      base = reinterpret_borrow<object>(parent);
+    }
+
+    return py::array_t<T>(shape, strides, src.Data(), base).release();
+  }
+};
+} // namespace pybind11::detail
+
 using fastslide::RegionSpec;
 using fastslide::SlideReader;
-using fastslide::TileCache;
 using fastslide::python::AssociatedData;
 using fastslide::python::AssociatedImages;
 using fastslide::python::FastSlide;
@@ -47,7 +84,7 @@ using fastslide::python::FastSlide;
 namespace {
 
 /// @brief Convert aifocore::Status to Python exception
-void ThrowPyErrorFromStatus(const aifocore::Status& status) {
+void ThrowPyErrorFromStatus(const aifocore::Status &status) {
   if (status.code() == aifocore::StatusCode::kInvalidArgument) {
     throw py::value_error(status.ToString());
   }
@@ -55,7 +92,7 @@ void ThrowPyErrorFromStatus(const aifocore::Status& status) {
   throw std::runtime_error(status.ToString());
 }
 
-}  // namespace
+} // namespace
 
 PYBIND11_MODULE(_fastslide, m) {
   m.doc() =
@@ -63,8 +100,53 @@ PYBIND11_MODULE(_fastslide, m) {
 
   using fastslide::python::CacheInspectionStats;
   using fastslide::python::CacheManager;
-  using fastslide::python::TileCache;
-  using RuntimeGlobalCacheManager = fastslide::runtime::GlobalCacheManager;
+  using fastslide::runtime::ITileCache;
+
+  // Enums
+  py::enum_<fastslide::ImageFormat>(m, "ImageFormat")
+      .value("GRAY", fastslide::ImageFormat::kGray)
+      .value("RGB", fastslide::ImageFormat::kRGB)
+      .value("RGBA", fastslide::ImageFormat::kRGBA)
+      .value("SPECTRAL", fastslide::ImageFormat::kSpectral)
+      .export_values();
+
+  py::enum_<fastslide::PlanarConfig>(m, "PlanarConfig")
+      .value("CONTIGUOUS", fastslide::PlanarConfig::kContiguous)
+      .value("SEPARATE", fastslide::PlanarConfig::kSeparate)
+      .export_values();
+
+  // Image class binding
+  py::class_<fastslide::Image, std::shared_ptr<fastslide::Image>>(m, "Image")
+      .def_property_readonly("width", &fastslide::Image::GetWidth)
+      .def_property_readonly("height", &fastslide::Image::GetHeight)
+      .def_property_readonly("channels", &fastslide::Image::GetChannels)
+      .def_property_readonly("format", &fastslide::Image::GetFormat)
+      .def_property_readonly("dtype",
+                             [](const fastslide::Image &self) {
+                               return fastslide::GetDataTypeName(
+                                   self.GetDataType());
+                             })
+      .def_property_readonly("planar_config",
+                             &fastslide::Image::GetPlanarConfig)
+      .def(
+          "numpy",
+          [](py::object self_py) -> py::object {
+            const auto &self = self_py.cast<const fastslide::Image &>();
+            py::object result;
+            // Dispatch to the correct type for ArrayView
+            fastslide::DispatchByDataType(
+                self.GetDataType(), [&]<typename T>() {
+                  // Get NDArrayView<T, 3>
+                  auto view = self.ArrayView<T>();
+                  // Cast to numpy array using the type caster we defined
+                  // Pass self_py as parent to keep Image alive
+                  result = py::cast(view,
+                                    py::return_value_policy::reference_internal,
+                                    self_py);
+                });
+            return result;
+          },
+          "Get a numpy array view of the image data (zero-copy)");
 
   // Cache-related classes
   py::class_<CacheInspectionStats>(m, "CacheInspectionStats")
@@ -77,11 +159,15 @@ PYBIND11_MODULE(_fastslide, m) {
       .def_readwrite("recent_keys", &CacheInspectionStats::recent_keys)
       .def_readwrite("key_frequencies", &CacheInspectionStats::key_frequencies);
 
-  py::class_<TileCache, std::shared_ptr<TileCache>>(m, "TileCache")
-      .def("get_stats", &TileCache::GetStats, "Get cache statistics")
-      .def("get_capacity", &TileCache::GetCapacity, "Get cache capacity")
-      .def("get_size", &TileCache::GetSize, "Get cache size")
-      .def("clear", &TileCache::Clear, "Clear cache");
+  py::class_<fastslide::runtime::ITileCache,
+             std::shared_ptr<fastslide::runtime::ITileCache>>(m, "TileCache")
+      .def("get_stats", &fastslide::runtime::ITileCache::GetStats,
+           "Get cache statistics")
+      .def("get_capacity", &fastslide::runtime::ITileCache::GetCapacity,
+           "Get cache capacity")
+      .def("get_size", &fastslide::runtime::ITileCache::GetSize,
+           "Get cache size")
+      .def("clear", &fastslide::runtime::ITileCache::Clear, "Clear cache");
 
   py::class_<CacheManager, std::shared_ptr<CacheManager>>(m, "CacheManager")
       .def_static(
@@ -101,37 +187,13 @@ PYBIND11_MODULE(_fastslide, m) {
            "Get detailed cache statistics")
       .def(
           "resize",
-          [](CacheManager& self, size_t new_capacity) {
+          [](CacheManager &self, size_t new_capacity) {
             auto status = self.Resize(new_capacity);
             if (!status.ok()) {
               ThrowPyErrorFromStatus(status);
             }
           },
           "Resize cache capacity", py::arg("new_capacity"));
-
-  // Runtime global cache manager (for dependency injection)
-  // Use std::unique_ptr with custom deleter since it's a singleton with private
-  // destructor
-  py::class_<RuntimeGlobalCacheManager,
-             std::unique_ptr<RuntimeGlobalCacheManager, py::nodelete>>(
-      m, "RuntimeGlobalCacheManager")
-      .def_static("instance", &RuntimeGlobalCacheManager::Instance,
-                  "Get runtime global cache manager instance",
-                  py::return_value_policy::reference)
-      .def(
-          "set_capacity",
-          [](RuntimeGlobalCacheManager& self, size_t capacity) {
-            auto status = self.SetCapacity(capacity);
-            if (!status.ok()) {
-              ThrowPyErrorFromStatus(status);
-            }
-          },
-          "Set global cache capacity", py::arg("capacity"))
-      .def("get_capacity", &RuntimeGlobalCacheManager::GetCapacity,
-           "Get global cache capacity")
-      .def("get_size", &RuntimeGlobalCacheManager::GetSize,
-           "Get current cache size")
-      .def("clear", &RuntimeGlobalCacheManager::Clear, "Clear global cache");
 
   // Expose ITileCache::Stats
   py::class_<fastslide::runtime::ITileCache::Stats>(m, "RuntimeCacheStats")
@@ -147,14 +209,7 @@ PYBIND11_MODULE(_fastslide, m) {
           &fastslide::runtime::ITileCache::Stats::memory_usage_bytes);
 
   // Basic cache statistics (for compatibility)
-  py::class_<TileCache::Stats>(m, "CacheStats")
-      .def_readwrite("capacity", &TileCache::Stats::capacity)
-      .def_readwrite("size", &TileCache::Stats::size)
-      .def_readwrite("hits", &TileCache::Stats::hits)
-      .def_readwrite("misses", &TileCache::Stats::misses)
-      .def_readwrite("hit_ratio", &TileCache::Stats::hit_ratio)
-      .def_readwrite("memory_usage_bytes",
-                     &TileCache::Stats::memory_usage_bytes);
+  m.attr("CacheStats") = m.attr("RuntimeCacheStats");
 
   // Associated images accessor
   py::class_<AssociatedImages>(m, "AssociatedImages")
@@ -194,7 +249,7 @@ PYBIND11_MODULE(_fastslide, m) {
   py::class_<FastSlide>(m, "FastSlide")
       .def_static(
           "from_file_path",
-          [](const py::object& file_path) {
+          [](const py::object &file_path) {
             std::string path_str;
             if (py::isinstance<py::str>(file_path)) {
               path_str = py::cast<std::string>(file_path);
@@ -215,8 +270,8 @@ PYBIND11_MODULE(_fastslide, m) {
       // Main reading method (level-native coordinates)
       .def(
           "read_region",
-          [](FastSlide& self, const std::tuple<uint32_t, uint32_t>& location,
-             int level, const std::tuple<uint32_t, uint32_t>& size) {
+          [](FastSlide &self, const std::tuple<uint32_t, uint32_t> &location,
+             int level, const std::tuple<uint32_t, uint32_t> &size) {
             auto [x, y] = location;
             auto [width, height] = size;
             return self.ReadRegion(x, y, width, height, level);
@@ -227,7 +282,8 @@ PYBIND11_MODULE(_fastslide, m) {
           "    level: Pyramid level (0=highest resolution)\n"
           "    size: Tuple (width, height) of region\n\n"
           "Returns:\n"
-          "    numpy.ndarray: RGB image (height, width, 3), dtype=uint8\n\n"
+          "    fastslide.Image: Image object. Call .numpy() to get array "
+          "view.\n\n"
           "Note: Coordinates are in level-native space. To convert from "
           "level-0\n"
           "coordinates, use convert_level0_to_level_native().",
@@ -272,11 +328,9 @@ PYBIND11_MODULE(_fastslide, m) {
                              "Microns per pixel as (mpp_x, mpp_y) tuple")
       .def_property_readonly("bounds", &FastSlide::GetBounds,
                              "Bounding box of non-empty region\n\n"
-                             "Returns dict with keys:\n"
-                             "  'x', 'y': Top-left coordinates (level 0)\n"
-                             "  'width', 'height': Bounding box size\n"
-                             "  'coordinates': (x, y) tuple\n"
-                             "  'size': (width, height) tuple")
+                             "Returns tuple with coordinates and size:\n"
+                             "  (x, y) tuple: Top-left coordinates (level 0)\n"
+                             "  (width, height) tuple: Bounding box size")
       .def_property_readonly("format", &FastSlide::GetFormat,
                              "File format name")
       .def_property_readonly(
@@ -304,12 +358,23 @@ PYBIND11_MODULE(_fastslide, m) {
            py::arg("downsample"))
 
       // Cache management
-      .def("set_cache_manager", &FastSlide::SetCacheManager,
-           "Set custom cache manager", py::arg("cache_manager"))
-      .def("get_cache_manager", &FastSlide::GetCacheManager,
-           "Get current cache manager")
-      .def("use_global_cache", &FastSlide::UseGlobalCache,
-           "Use the global cache for this slide")
+      .def("set_cache", &FastSlide::SetCache, "Set cache (accepts TileCache)",
+           py::arg("cache"))
+      // Overload for CacheManager for backward compatibility or convenience
+      .def(
+          "set_cache",
+          [](FastSlide &self, std::shared_ptr<CacheManager> cm) {
+            self.SetCache(cm->GetCache());
+          },
+          "Set cache using CacheManager", py::arg("cache_manager"))
+      .def(
+          "set_cache_manager",
+          [](FastSlide &self, std::shared_ptr<CacheManager> cm) {
+            self.SetCache(cm->GetCache());
+          },
+          "Set custom cache manager (deprecated, use set_cache)",
+          py::arg("cache_manager"))
+      .def("get_cache", &FastSlide::GetCache, "Get current cache")
       .def_property_readonly("cache_enabled", &FastSlide::IsCacheEnabled,
                              "True if caching is enabled")
 
@@ -320,7 +385,7 @@ PYBIND11_MODULE(_fastslide, m) {
       // Channel visibility controls
       .def(
           "set_visible_channels",
-          [](FastSlide& self, const py::object& channels) {
+          [](FastSlide &self, const py::object &channels) {
             std::vector<size_t> channel_indices;
 
             // Handle None - show all channels
@@ -403,7 +468,7 @@ PYBIND11_MODULE(_fastslide, m) {
 
   m.def(
       "is_supported",
-      [](const std::string& filename) {
+      [](const std::string &filename) {
         auto reader_or =
             fastslide::runtime::GetGlobalRegistry().CreateReader(filename);
         return reader_or.ok();
@@ -411,6 +476,5 @@ PYBIND11_MODULE(_fastslide, m) {
       "Check if file format is supported", py::arg("filename"));
 
   // Version and constants
-  m.attr("__version__") = "1.0.0";
-  m.attr("RGB_CHANNELS") = 3;
+  m.attr("__version__") = "0.2.0";
 }

@@ -61,8 +61,56 @@ class SimpleTiffPage {
   /// Get page width
   uint32_t width() const { return state_->index.Page(page_index_).width; }
 
+  /// Get IFD index (order in which the parser enumerated pages)
+  uint32_t ifd_index() const {
+    return state_->index.Page(page_index_).ifd_index;
+  }
+
+  /// Get IFD offset in the TIFF file
+  uint64_t ifd_offset() const {
+    return state_->index.Page(page_index_).ifd_offset;
+  }
+
+  /// Get parent page index, if this page was referenced as a SubIFD
+  std::optional<uint32_t> parent_page_index() const {
+    return state_->index.Page(page_index_).parent_page_index;
+  }
+
+  /// Get indices of sub pages (SubIFDs) of this page
+  std::vector<uint32_t> sub_page_indices() const {
+    const auto children = state_->index.ChildPagesForPage(page_index_);
+    return std::vector<uint32_t>(children.begin(), children.end());
+  }
+
+  /// Get number of sub pages (SubIFDs) of this page
+  size_t num_sub_pages() const {
+    return state_->index.ChildPagesForPage(page_index_).size();
+  }
+
+  /// Get sub pages (SubIFDs) of this page
+  std::vector<SimpleTiffPage> sub_pages() const {
+    const auto children = state_->index.ChildPagesForPage(page_index_);
+    std::vector<SimpleTiffPage> pages;
+    pages.reserve(children.size());
+    for (const uint32_t idx : children) {
+      pages.emplace_back(state_, idx);
+    }
+    return pages;
+  }
+
   /// Get page height
   uint32_t height() const { return state_->index.Page(page_index_).height; }
+
+  /// Get the raw NewSubfileType tag value (TIFF tag 254)
+  uint32_t new_subfile_type() const {
+    return state_->index.Page(page_index_).new_subfile_type;
+  }
+
+  /// True if this page is marked as reduced-resolution (pyramid/overview)
+  bool is_reduced_resolution() const {
+    // TIFF NewSubfileType bit 0: reduced-resolution image.
+    return (new_subfile_type() & 0x1u) != 0;
+  }
 
   /// Get samples per pixel (channels)
   uint16_t samples_per_pixel() const {
@@ -288,6 +336,12 @@ class SimpleTiffReader {
   /// Get number of pages
   size_t num_pages() const { return state_->index.NumPages(); }
 
+  /// Alias: number of IFDs (directories) parsed (includes SubIFDs)
+  size_t num_ifds() const { return state_->index.NumPages(); }
+
+  /// Number of root pages (i.e., pages without a parent SubIFD link)
+  size_t num_root_pages() const { return root_page_indices().size(); }
+
   /// Check if this is a BigTIFF
   bool is_bigtiff() const { return state_->index.IsBigTiff(); }
 
@@ -316,6 +370,29 @@ class SimpleTiffReader {
 
   /// Get length (for __len__)
   size_t len() const { return num_pages(); }
+
+  /// Return indices of "root" pages (i.e., pages without a parent SubIFD link)
+  std::vector<uint32_t> root_page_indices() const {
+    std::vector<uint32_t> roots;
+    roots.reserve(state_->index.NumPages());
+    for (uint32_t i = 0; i < state_->index.NumPages(); ++i) {
+      if (!state_->index.Page(i).parent_page_index.has_value()) {
+        roots.push_back(i);
+      }
+    }
+    return roots;
+  }
+
+  /// Return root pages (pages without a parent SubIFD link)
+  std::vector<SimpleTiffPage> root_pages() const {
+    auto roots = root_page_indices();
+    std::vector<SimpleTiffPage> pages;
+    pages.reserve(roots.size());
+    for (const uint32_t idx : roots) {
+      pages.emplace_back(state_, idx);
+    }
+    return pages;
+  }
 
   /// Context manager enter
   SimpleTiffReader& enter() { return *this; }
@@ -373,10 +450,21 @@ PYBIND11_MODULE(_simpletiff, m) {
       // Properties
       .def_property_readonly("num_pages", &SimpleTiffReader::num_pages,
                              "Number of pages in the TIFF file")
+      .def_property_readonly(
+          "num_ifds", &SimpleTiffReader::num_ifds,
+          "Number of IFDs (directories) parsed, including SubIFDs")
+      .def_property_readonly("num_root_pages",
+                             &SimpleTiffReader::num_root_pages,
+                             "Number of root pages (not SubIFDs)")
       .def_property_readonly("is_bigtiff", &SimpleTiffReader::is_bigtiff,
                              "True if this is a BigTIFF file")
       .def_property_readonly("file_size", &SimpleTiffReader::file_size,
                              "Size of the TIFF file in bytes")
+      .def_property_readonly("root_page_indices",
+                             &SimpleTiffReader::root_page_indices,
+                             "Indices of root pages (not SubIFDs)")
+      .def_property_readonly("root_pages", &SimpleTiffReader::root_pages,
+                             "Root pages (not SubIFDs)")
 
       // Methods
       .def("get_page", &SimpleTiffReader::get_page,
@@ -399,10 +487,30 @@ PYBIND11_MODULE(_simpletiff, m) {
   // SimpleTiffPage class
   py::class_<SimpleTiffPage>(m, "SimpleTiffPage")
       // Properties
+      .def_property_readonly("ifd_index", &SimpleTiffPage::ifd_index,
+                             "IFD index (parser enumeration order)")
+      .def_property_readonly("ifd_offset", &SimpleTiffPage::ifd_offset,
+                             "IFD offset in the TIFF file")
+      .def_property_readonly(
+          "parent_page_index", &SimpleTiffPage::parent_page_index,
+          "Parent page index if this page is a SubIFD, else None")
+      .def_property_readonly("sub_page_indices",
+                             &SimpleTiffPage::sub_page_indices,
+                             "Indices of SubIFD child pages of this page")
+      .def_property_readonly("num_sub_pages", &SimpleTiffPage::num_sub_pages,
+                             "Number of SubIFD child pages of this page")
+      .def_property_readonly("sub_pages", &SimpleTiffPage::sub_pages,
+                             "SubIFD child pages of this page")
       .def_property_readonly("width", &SimpleTiffPage::width,
                              "Page width in pixels")
       .def_property_readonly("height", &SimpleTiffPage::height,
                              "Page height in pixels")
+      .def_property_readonly(
+          "new_subfile_type", &SimpleTiffPage::new_subfile_type,
+          "NewSubfileType TIFF tag (254) as an integer bitmask")
+      .def_property_readonly(
+          "is_reduced_resolution", &SimpleTiffPage::is_reduced_resolution,
+          "True if page is marked reduced-resolution (NewSubfileType bit 0)")
       .def_property_readonly("samples_per_pixel",
                              &SimpleTiffPage::samples_per_pixel,
                              "Number of samples per pixel (channels)")

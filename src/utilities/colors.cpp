@@ -125,11 +125,6 @@ ColorRGB GetDefaultChannelColor(int channel) {
   }
 }
 
-uint32_t PackRGB(uint8_t red, uint8_t green, uint8_t blue) {
-  return (static_cast<uint32_t>(red) << 16) |
-         (static_cast<uint32_t>(green) << 8) | static_cast<uint32_t>(blue);
-}
-
 aifocore::Result<std::array<uint8_t, 3>> ParseRgb(const std::string& str) {
   std::array<uint8_t, 3> rgb{};
   std::istringstream ss(str);

@@ -28,6 +28,10 @@
 
 namespace {
 
+// Forward declaration (used by DumpAssociatedImages, defined later).
+aifocore::Status SaveImagePNG(const fastslide::Image& image,
+                              const std::string& filename);
+
 void PrintSeparator(char c = '=') {
   std::cout << std::string(80, c) << '\n';
 }
@@ -207,6 +211,36 @@ void PrintAssociatedImages(const fastslide::SlideReader& reader) {
   }
 }
 
+void DumpAssociatedImages(const fastslide::SlideReader& reader,
+                          const std::string& out_dir) {
+  auto assoc_names = reader.GetAssociatedImageNames();
+  if (assoc_names.empty()) {
+    return;
+  }
+
+  PrintHeader("Dumping Associated Images");
+  PrintKeyValue("Output Directory", out_dir);
+
+  for (const auto& name : assoc_names) {
+    auto img_or = reader.ReadAssociatedImage(name);
+    if (!img_or.ok()) {
+      std::cerr << "Failed to read associated image '" << name
+                << "': " << img_or.status().ToString() << "\n";
+      continue;
+    }
+
+    const auto& img = *img_or;
+    std::string filename = out_dir + "/" + std::string(name) + ".png";
+    auto st = SaveImagePNG(img, filename);
+    if (!st.ok()) {
+      std::cerr << "Failed to write '" << filename << "': " << st.ToString()
+                << "\n";
+      continue;
+    }
+    std::cout << "Wrote: " << filename << "\n";
+  }
+}
+
 void PrintAssociatedData(const fastslide::SlideReader& reader) {
   // Check if this is an MRXS reader (only format that supports associated data
   // currently)
@@ -264,9 +298,10 @@ void PrintMetadata(const fastslide::SlideReader& reader) {
 // PNG image writer using lodepng
 aifocore::Status SaveImagePNG(const fastslide::Image& image,
                               const std::string& filename) {
-  if (image.GetFormat() != fastslide::ImageFormat::kRGB) {
+  if (image.GetFormat() != fastslide::ImageFormat::kRGB &&
+      image.GetFormat() != fastslide::ImageFormat::kRGBA) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Only RGB images can be saved");
+                            "Only RGB/RGBA images can be saved");
   }
 
   if (image.GetDataType() != fastslide::DataType::kUInt8) {
@@ -274,11 +309,21 @@ aifocore::Status SaveImagePNG(const fastslide::Image& image,
                             "Only uint8 images can be saved");
   }
 
-  // Use lodepng to encode RGB image as PNG
-  unsigned int error =
-      lodepng_encode24_file(filename.c_str(), image.GetData(),
-                            static_cast<unsigned int>(image.GetWidth()),
-                            static_cast<unsigned int>(image.GetHeight()));
+  if (image.GetPlanarConfig() != fastslide::PlanarConfig::kContiguous) {
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "Only contiguous images can be saved");
+  }
+
+  unsigned int error = 0;
+  if (image.GetFormat() == fastslide::ImageFormat::kRGB) {
+    error = lodepng_encode24_file(filename.c_str(), image.GetData(),
+                                  static_cast<unsigned int>(image.GetWidth()),
+                                  static_cast<unsigned int>(image.GetHeight()));
+  } else {
+    error = lodepng_encode32_file(filename.c_str(), image.GetData(),
+                                  static_cast<unsigned int>(image.GetWidth()),
+                                  static_cast<unsigned int>(image.GetHeight()));
+  }
 
   if (error != 0) {
     return aifocore::Status(
@@ -404,6 +449,8 @@ int main(int argc, char* argv[]) {
   // Common flags
   std::string input_file;
   bool verbose = false;
+  bool dump_associated_images = false;
+  std::string associated_images_dir = ".";
 
   // Region flags
   double x = 0.0;
@@ -423,6 +470,12 @@ int main(int argc, char* argv[]) {
       ->required();
   info_cmd->add_flag("--verbose,-v", verbose,
                      "Show verbose information including metadata");
+  info_cmd->add_flag(
+      "--dump-associated-images", dump_associated_images,
+      "Write associated images (e.g. label, macro) to PNG files");
+  info_cmd->add_option(
+      "--associated-images-dir", associated_images_dir,
+      "Output directory for --dump-associated-images (default: current dir)");
 
   // Region command
   auto* region_cmd =
@@ -448,7 +501,21 @@ int main(int argc, char* argv[]) {
   CLI11_PARSE(app, argc, argv);
 
   if (info_cmd->parsed()) {
-    return InfoCommand(input_file, verbose);
+    int rc = InfoCommand(input_file, verbose);
+    if (rc != 0) {
+      return rc;
+    }
+
+    if (dump_associated_images) {
+      auto reader_or = fastslide::GetGlobalRegistry().CreateReader(input_file);
+      if (!reader_or.ok()) {
+        std::cerr << "\nError: Failed to open slide for dumping images\n";
+        std::cerr << "Status: " << reader_or.status().ToString() << '\n';
+        return 1;
+      }
+      DumpAssociatedImages(*(*reader_or), associated_images_dir);
+    }
+    return 0;
   }
 
   if (region_cmd->parsed()) {

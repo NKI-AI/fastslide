@@ -124,12 +124,6 @@ class AperioPlanBuilder {
   /// @return Output specification
   static core::OutputSpec CreateOutputSpec(uint32_t width, uint32_t height,
                                            uint16_t samples_per_pixel);
-
-  /// @brief Calculate cost estimates for the plan
-  /// @param operations Vector of tile operations
-  /// @return Cost estimate
-  static core::TilePlan::Cost CalculateCosts(
-      const std::vector<core::TileReadOp>& operations);
 };
 
 }  // namespace fastslide

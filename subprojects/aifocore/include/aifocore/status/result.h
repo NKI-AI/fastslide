@@ -363,6 +363,14 @@ inline Status AddTrace(const Result<T>& res, char const* function,
 }
 
 // Macros
+#define AIFOCORE_MAKE_STATUS(code, message_expr)                        \
+  ([&]() -> ::aifocore::Status {                                        \
+    auto _aifocore_status_message = (message_expr);                     \
+    return ::aifocore::AddTrace(                                        \
+        ::aifocore::Status((code), _aifocore_status_message), __func__, \
+        __FILE__, __LINE__, _aifocore_status_message);                  \
+  }())
+
 #define AIFOCORE_RETURN_IF_ERROR(expr)                                    \
   do {                                                                    \
     const auto& _status = (expr);                                         \
