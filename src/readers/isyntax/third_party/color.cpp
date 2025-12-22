@@ -24,14 +24,14 @@
 //  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
 //  LIABLE
 
-#include "readers/isyntax/third_party/color.h"
+#include "fastslide/readers/isyntax/third_party/color.h"
 
 #include <algorithm>
 #include <cstring>
 
-#include "readers/isyntax/third_party/decompress.h"
-#include "readers/isyntax/third_party/platform/intrinsics.h"
-#include "readers/isyntax/third_party/utils/mathutils.h"
+#include "fastslide/readers/isyntax/third_party/decompress.h"
+#include "fastslide/readers/isyntax/third_party/platform/intrinsics.h"
+#include "fastslide/readers/isyntax/third_party/utils/mathutils.h"
 
 // Toolchains differ on whether they define `__ARM_NEON` or `__ARM_NEON__`.
 // Zig/Clang typically defines `__ARM_NEON` (no trailing underscores).

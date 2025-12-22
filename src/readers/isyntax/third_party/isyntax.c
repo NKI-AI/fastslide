@@ -44,18 +44,18 @@
   However, you have to contact Philips directly to get access there.
 
 */
-#include "readers/isyntax/third_party/isyntax.h"
+#include "fastslide/readers/isyntax/third_party/isyntax.h"
 #include <cstdio>
 
-#include "readers/isyntax/third_party/platform/common.h"
-#include "readers/isyntax/third_party/platform/intrinsics.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
+#include "fastslide/readers/isyntax/third_party/platform/intrinsics.h"
 
-#include "readers/isyntax/third_party/tile.h"
-#include "readers/isyntax/third_party/utils/mathutils.h"
+#include "fastslide/readers/isyntax/third_party/tile.h"
+#include "fastslide/readers/isyntax/third_party/utils/mathutils.h"
 
 // JPEG decoding library for macro/label images
 #ifdef ISYNTAX_JPEG_DECODER_USE_LIBJPEG
-#include "readers/isyntax/third_party/jpeg_decoder.h"
+#include "fastslide/readers/isyntax/third_party/jpeg_decoder.h"
 #else
 // #include "stb_image.h"
 #endif

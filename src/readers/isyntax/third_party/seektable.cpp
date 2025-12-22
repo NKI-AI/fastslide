@@ -22,8 +22,8 @@
 
 #include "aifocore/platform/portability.h"
 #include "aifocore/status/result.h"
-#include "readers/isyntax/third_party/isyntax.h"
-#include "readers/isyntax/third_party/seektable.h"
+#include "fastslide/readers/isyntax/third_party/isyntax.h"
+#include "fastslide/readers/isyntax/third_party/seektable.h"
 
 namespace isyntax {
 

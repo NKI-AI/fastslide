@@ -23,9 +23,9 @@
 #include <span>
 
 #include "aifocore/platform/portability.h"
-#include "readers/isyntax/third_party/isyntax.h"
-#include "readers/isyntax/third_party/platform/common.h"
-#include "readers/isyntax/third_party/xml_parser.h"
+#include "fastslide/readers/isyntax/third_party/isyntax.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
+#include "fastslide/readers/isyntax/third_party/xml_parser.h"
 
 bool read_xml_header(std::FILE* file_stream, isyntax_t* isyntax,
                      int64_t* out_header_length, int64_t* out_data_offset) {

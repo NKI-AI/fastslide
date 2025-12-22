@@ -16,7 +16,7 @@
 //   BSD 2-Clause License
 //   Copyright (c) 2019-2025, Pieter Valkema
 
-#include "readers/isyntax/third_party/xml_parser.h"
+#include "fastslide/readers/isyntax/third_party/xml_parser.h"
 
 #include <array>
 #include <cstddef>
@@ -29,9 +29,9 @@
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
-#include "readers/isyntax/third_party/platform/intrinsics.h"
-#include "readers/isyntax/third_party/third_party/yxml.h"
-#include "readers/isyntax/third_party/xml_semantics.h"
+#include "fastslide/readers/isyntax/third_party/platform/intrinsics.h"
+#include "fastslide/readers/isyntax/third_party/third_party/yxml.h"
+#include "fastslide/readers/isyntax/third_party/xml_semantics.h"
 
 constexpr size_t kYxmlStackBytes = KILOBYTES(32);
 constexpr size_t kInitialAttrBytes = KILOBYTES(32);

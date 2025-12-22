@@ -16,7 +16,7 @@
 //   BSD 2-Clause License
 //   Copyright (c) 2019-2025, Pieter Valkema
 
-#include "readers/isyntax/third_party/xml_semantics.h"
+#include "fastslide/readers/isyntax/third_party/xml_semantics.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -26,9 +26,9 @@
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
-#include "readers/isyntax/third_party/base64.h"
-#include "readers/isyntax/third_party/chunk_layout.h"
-#include "readers/isyntax/third_party/utils/math_utils.h"
+#include "fastslide/readers/isyntax/third_party/base64.h"
+#include "fastslide/readers/isyntax/third_party/chunk_layout.h"
+#include "fastslide/readers/isyntax/third_party/utils/math_utils.h"
 
 namespace {
 

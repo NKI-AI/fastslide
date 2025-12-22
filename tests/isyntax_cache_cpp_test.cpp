@@ -14,8 +14,8 @@
 
 #include <gtest/gtest.h>
 
-#include "readers/isyntax/third_party/cache.h"
-#include "readers/isyntax/third_party/isyntax.h"
+#include "fastslide/readers/isyntax/third_party/cache.h"
+#include "fastslide/readers/isyntax/third_party/isyntax.h"
 
 namespace {
 

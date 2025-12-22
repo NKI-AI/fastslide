@@ -28,7 +28,7 @@
 #pragma once
 
 #include <mutex>
-#include "readers/isyntax/third_party/platform/common.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
 
 #ifdef __cplusplus
 #include "aifocore/status/result.h"

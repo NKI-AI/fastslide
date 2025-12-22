@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "readers/isyntax/third_party/jpeg.h"
+#include "fastslide/readers/isyntax/third_party/jpeg.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -26,9 +26,9 @@
 #undef defer
 #endif
 #include "fastslide/runtime/decoders/jpeg_decoder.h"
-#include "readers/isyntax/third_party/base64.h"
-#include "readers/isyntax/third_party/platform/intrinsics.h"
-#include "readers/isyntax/third_party/platform/platform.h"
+#include "fastslide/readers/isyntax/third_party/base64.h"
+#include "fastslide/readers/isyntax/third_party/platform/intrinsics.h"
+#include "fastslide/readers/isyntax/third_party/platform/platform.h"
 
 // Toolchains differ on whether they define `__ARM_NEON` or `__ARM_NEON__`, and
 // `platform/intrinsics.h` only includes `<arm_neon.h>` for some compiler/macro

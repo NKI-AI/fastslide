@@ -20,8 +20,8 @@
 #include <vector>
 
 #include "aifocore/status/result.h"
-#include "readers/isyntax/third_party/isyntax.h"
-#include "readers/isyntax/third_party/isyntax_types.h"
+#include "fastslide/readers/isyntax/third_party/isyntax.h"
+#include "fastslide/readers/isyntax/third_party/isyntax_types.h"
 
 namespace isyntax {
 namespace jpeg {

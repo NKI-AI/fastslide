@@ -15,7 +15,7 @@
 #pragma once
 
 #include "aifocore/status/result.h"
-#include "readers/isyntax/third_party/isyntax.h"
+#include "fastslide/readers/isyntax/third_party/isyntax.h"
 
 namespace isyntax {
 namespace open {

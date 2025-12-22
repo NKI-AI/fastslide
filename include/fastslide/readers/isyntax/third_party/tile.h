@@ -27,10 +27,10 @@
 
 #pragma once
 
-#include "readers/isyntax/third_party/isyntax.h"
-#include "readers/isyntax/third_party/isyntax_types.h"
-#include "readers/isyntax/third_party/platform/common.h"
-#include "readers/isyntax/third_party/utils/block_allocator.h"
+#include "fastslide/readers/isyntax/third_party/isyntax.h"
+#include "fastslide/readers/isyntax/third_party/isyntax_types.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
+#include "fastslide/readers/isyntax/third_party/utils/block_allocator.h"
 
 namespace aifocore {
 class Status;

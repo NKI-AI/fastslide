@@ -27,7 +27,7 @@
 
 #pragma once
 
-#include "readers/isyntax/third_party/platform/common.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
 
 // `std::uintptr_t` lives in <cstdint> (C++), not <stdint.h> (C).
 #include <cstdint>

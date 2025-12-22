@@ -22,7 +22,7 @@
 //  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
 //  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
 
-#include "readers/isyntax/third_party/open.h"
+#include "fastslide/readers/isyntax/third_party/open.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -34,10 +34,10 @@
 
 #include "aifocore/platform/portability.h"
 #include "aifocore/status/result.h"
-#include "readers/isyntax/third_party/open_helpers.h"
-#include "readers/isyntax/third_party/platform/common.h"
-#include "readers/isyntax/third_party/seektable.h"
-#include "readers/isyntax/third_party/xml_parser.h"
+#include "fastslide/readers/isyntax/third_party/open_helpers.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
+#include "fastslide/readers/isyntax/third_party/seektable.h"
+#include "fastslide/readers/isyntax/third_party/xml_parser.h"
 
 void populate_tile_debug_info(isyntax_image_t* wsi_image);
 

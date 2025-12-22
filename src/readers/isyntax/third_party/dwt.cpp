@@ -25,12 +25,12 @@
 #include <cstddef>
 #include <span>
 
-#include "readers/isyntax/third_party/platform/common.h"
-#include "readers/isyntax/third_party/platform/intrinsics.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
+#include "fastslide/readers/isyntax/third_party/platform/intrinsics.h"
 
-#include "readers/isyntax/third_party/isyntax.h"
+#include "fastslide/readers/isyntax/third_party/isyntax.h"
 
-#include "readers/isyntax/third_party/dwt.h"
+#include "fastslide/readers/isyntax/third_party/dwt.h"
 
 namespace isyntax {
 namespace dwt {

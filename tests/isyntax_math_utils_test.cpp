@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/readers/isyntax/third_party/utils/math_utils.h"
+#include "fastslide/readers/isyntax/third_party/utils/math_utils.h"
 
 #include <cstdint>
 #include <array>

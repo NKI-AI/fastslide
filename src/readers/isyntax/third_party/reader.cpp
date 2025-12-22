@@ -28,7 +28,7 @@
 // This file ports `isyntax_reader.c` to C++20 while keeping the existing C ABI
 // from `reader.h`.
 
-#include "readers/isyntax/third_party/reader.h"
+#include "fastslide/readers/isyntax/third_party/reader.h"
 
 #include <cstddef>
 #include <cstdlib>
@@ -38,11 +38,11 @@
 
 #include "aifocore/platform/portability.h"
 #include "aifocore/utilities/fmt.h"
-#include "readers/isyntax/third_party/decompress.h"
-#include "readers/isyntax/third_party/platform/common.h"
-#include "readers/isyntax/third_party/platform/platform.h"
-#include "readers/isyntax/third_party/tile.h"
-#include "readers/isyntax/third_party/utils/block_allocator.h"
+#include "fastslide/readers/isyntax/third_party/decompress.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
+#include "fastslide/readers/isyntax/third_party/platform/platform.h"
+#include "fastslide/readers/isyntax/third_party/tile.h"
+#include "fastslide/readers/isyntax/third_party/utils/block_allocator.h"
 
 namespace {
 

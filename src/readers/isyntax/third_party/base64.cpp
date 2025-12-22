@@ -30,7 +30,7 @@
 #include <vector>
 
 #include "aifocore/status/result.h"
-#include "readers/isyntax/third_party/base64.h"
+#include "fastslide/readers/isyntax/third_party/base64.h"
 
 namespace isyntax {
 namespace base64 {

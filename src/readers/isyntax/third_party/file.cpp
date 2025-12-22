@@ -22,7 +22,7 @@
 //  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
 //  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
 
-#include "readers/isyntax/third_party/file.h"
+#include "fastslide/readers/isyntax/third_party/file.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -32,11 +32,11 @@
 #include <utility>
 
 #include "aifocore/utilities/fmt.h"
-#include "readers/isyntax/third_party/cache.h"
-#include "readers/isyntax/third_party/isyntax.h"
-#include "readers/isyntax/third_party/jpeg.h"
-#include "readers/isyntax/third_party/open.h"
-#include "readers/isyntax/third_party/reader.h"
+#include "fastslide/readers/isyntax/third_party/cache.h"
+#include "fastslide/readers/isyntax/third_party/isyntax.h"
+#include "fastslide/readers/isyntax/third_party/jpeg.h"
+#include "fastslide/readers/isyntax/third_party/open.h"
+#include "fastslide/readers/isyntax/third_party/reader.h"
 
 namespace isyntax {
 namespace {

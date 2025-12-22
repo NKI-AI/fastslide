@@ -18,23 +18,21 @@
 
 #pragma once
 
-#include <cstdint>
-#include <span>
+#include <cstdio>
 
 #include "aifocore/status/result.h"
+#include "fastslide/readers/isyntax/third_party/isyntax.h"
 
-#include "readers/isyntax/third_party/isyntax.h"
+namespace isyntax::xml {
 
-namespace isyntax {
+// Semantic handler for top-level UFSImport elements (node_stack_index == 2).
+aifocore::Status ParseUfsimportChildNode(isyntax_t* isyntax, uint32_t group,
+                                         uint32_t element, char* value,
+                                         uint64_t value_len);
 
-/// Parses a chunk of the iSyntax XML header using the C++ implementation.
-///
-/// C++ XML header parsing entrypoint.
-aifocore::Status ParseXmlHeaderChunk(isyntax_t* isyntax,
-                                     std::span<const char> chunk,
-                                     int64_t chunk_offset, bool is_last_chunk);
+// Semantic handler for scanned-image elements (node_stack_index != 2).
+aifocore::Status ParseScannedimageChildNode(isyntax_t* isyntax, uint32_t group,
+                                            uint32_t element, char* value,
+                                            uint64_t value_len);
 
-/// Destroys the internal C++ XML parser state stored on `isyntax_t`.
-void DestroyXmlCppState(isyntax_t* isyntax);
-
-}  // namespace isyntax
+}  // namespace isyntax::xml

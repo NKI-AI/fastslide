@@ -48,7 +48,7 @@
  */
 // End of OpenJPEG copyright notice.
 
-#include "readers/isyntax/third_party/isyntax.h"
+#include "fastslide/readers/isyntax/third_party/isyntax.h"
 
 // The OpenJPEG DWT implementation below uses SSE2/AVX2 intrinsics when
 // available. GCC/Clang only define types like `__m128i`/`__m256i` after

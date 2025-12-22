@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "readers/isyntax/third_party/open_helpers.h"
+#include "fastslide/readers/isyntax/third_party/open_helpers.h"
 
 #include <algorithm>
 #include <cstdlib>
@@ -22,10 +22,10 @@
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
-#include "readers/isyntax/third_party/chunk_layout.h"
-#include "readers/isyntax/third_party/isyntax.h"
-#include "readers/isyntax/third_party/platform/common.h"
-#include "readers/isyntax/third_party/utils/block_allocator.h"
+#include "fastslide/readers/isyntax/third_party/chunk_layout.h"
+#include "fastslide/readers/isyntax/third_party/isyntax.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
+#include "fastslide/readers/isyntax/third_party/utils/block_allocator.h"
 
 namespace {
 

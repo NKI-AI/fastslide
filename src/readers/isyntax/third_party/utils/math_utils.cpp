@@ -16,7 +16,7 @@
 //   BSD 2-Clause License
 //   Copyright (c) 2019-2025, Pieter Valkema
 
-#include "readers/isyntax/third_party/utils/math_utils.h"
+#include "fastslide/readers/isyntax/third_party/utils/math_utils.h"
 
 #include <cctype>
 #include <cstdint>

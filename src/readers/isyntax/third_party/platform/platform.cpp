@@ -25,11 +25,11 @@
   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#include "readers/isyntax/third_party/platform/common.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
 
 #define PLATFORM_IMPL
-#include "readers/isyntax/third_party/platform/intrinsics.h"
-#include "readers/isyntax/third_party/platform/platform.h"
+#include "fastslide/readers/isyntax/third_party/platform/intrinsics.h"
+#include "fastslide/readers/isyntax/third_party/platform/platform.h"
 
 #include "aifocore/platform/portability.h"
 

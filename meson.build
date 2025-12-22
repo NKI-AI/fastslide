@@ -212,7 +212,11 @@ pugixml_dep = dependency('pugixml', fallback: ['pugixml'], static: true, require
 highway_proj = subproject('highway', default_options: [
   'default_library=static',
   'cpp_std=c++17,c++14,c++11',
-  'warning_level=0'
+  'warning_level=0',
+  'build_tests=false',
+  'build_benchmarks=false',
+  'build_examples=false',
+  'build_python_bindings=false'
 ])
 highway_dep = highway_proj.get_variable('hwy_dep')
 
@@ -281,6 +285,12 @@ cli11_dep = declare_dependency(
   include_directories: cli11_incdir
 )
 
+# jxrlib (JPEG-XR) - Meson subproject wrapper. The sources remain in third_party/jxrlib.
+# This keeps FastSlide's build file clean and makes the dependency reusable.
+jxrlib_proj = subproject('jxrlib')
+jxrlib_dep = dependency('jxrlib', fallback: ['jxrlib', 'jxrlib_dep'])
+jxrlib_incdir = jxrlib_proj.get_variable('jxrlib_incdir')
+
 # ============================================================================
 # All Source Files (Monolithic Build)
 # ============================================================================
@@ -306,6 +316,8 @@ fastslide_sources = [
   src_prefix + 'runtime/reader_registry.cpp',
   src_prefix + 'runtime/register_builtin_formats.cpp',
   src_prefix + 'runtime/tile_writer.cpp',
+  src_prefix + 'runtime/decoders/jpeg_decoder_common.cpp',
+  src_prefix + 'runtime/decoders/jpeg_xr_decoder.cpp',
   
   # Runtime tile writer strategies
   src_prefix + 'runtime/tile_writer/direct/direct_strategy.cpp',
@@ -320,6 +332,7 @@ fastslide_sources = [
   
   # Readers
   src_prefix + 'readers/tiff_based_reader.cpp',
+  src_prefix + 'readers/simpletiff_plan_builder_utils.cpp',
   
   # Aperio format
   src_prefix + 'readers/aperio/aperio_format_plugin.cpp',
@@ -345,13 +358,57 @@ fastslide_sources = [
   src_prefix + 'readers/mrxs/mrxs_tile_executor.cpp',
   src_prefix + 'readers/mrxs/mrxs_data_reader.cpp',
   src_prefix + 'readers/mrxs/mrxs_index_reader.cpp',
+
+  # CZI format
+  src_prefix + 'readers/czi/czi_format_plugin.cpp',
+  src_prefix + 'readers/czi/czi.cpp',
+  src_prefix + 'readers/czi/czi_plan_builder.cpp',
+  src_prefix + 'readers/czi/czi_tile_executor.cpp',
+  src_prefix + 'readers/czi/czi_spatial_index.cpp',
+
+  # Isyntax format
+  src_prefix + 'readers/isyntax/isyntax.cpp',
+  src_prefix + 'readers/isyntax/isyntax_plan_builder.cpp',
+  src_prefix + 'readers/isyntax/isyntax_tile_executor.cpp',
+  src_prefix + 'readers/isyntax/third_party/base64.cpp',
+  src_prefix + 'readers/isyntax/third_party/cache.cpp',
+  src_prefix + 'readers/isyntax/third_party/color.cpp',
+  src_prefix + 'readers/isyntax/third_party/decompress.cpp',
+  src_prefix + 'readers/isyntax/third_party/dwt.cpp',
+  src_prefix + 'readers/isyntax/third_party/file.cpp',
+  src_prefix + 'readers/isyntax/third_party/jpeg.cpp',
+  src_prefix + 'readers/isyntax/third_party/open.cpp',
+  src_prefix + 'readers/isyntax/third_party/open_helpers.cpp',
+  src_prefix + 'readers/isyntax/third_party/reader.cpp',
+  src_prefix + 'readers/isyntax/third_party/seektable.cpp',
+  src_prefix + 'readers/isyntax/third_party/tile.cpp',
+  src_prefix + 'readers/isyntax/third_party/xml_header_reader.cpp',
+  src_prefix + 'readers/isyntax/third_party/xml_parser.cpp',
+  src_prefix + 'readers/isyntax/third_party/xml_semantics.cpp',
+  src_prefix + 'readers/isyntax/third_party/platform/platform.cpp',
+  src_prefix + 'readers/isyntax/third_party/utils/arena_allocator.cpp',
+  src_prefix + 'readers/isyntax/third_party/utils/block_allocator.cpp',
+  src_prefix + 'readers/isyntax/third_party/utils/math_utils.cpp',
+  src_prefix + 'readers/isyntax/third_party/utils/mathutils.cpp',
+  src_prefix + 'readers/isyntax/third_party/third_party/yxml.c',
+
+
+  # OMETIFF format
+  src_prefix + 'readers/ometiff/ometiff_format_plugin.cpp',
+  src_prefix + 'readers/ometiff/metadata_parser.cpp',
+  src_prefix + 'readers/ometiff/ometiff.cpp',
+  src_prefix + 'readers/ometiff/ometiff_plan_builder.cpp',
+  src_prefix + 'readers/ometiff/ometiff_tile_executor.cpp',
+  src_prefix + 'readers/ometiff/ometiff_metadata_loader.cpp',
 ]
 
 # Add conditional JPEG decoder implementation
 if use_jpgd
   fastslide_sources += src_prefix + 'readers/mrxs/mrxs_decoder_jpgd.cpp'
+  fastslide_sources += src_prefix + 'runtime/decoders/jpeg_decoder_jpgd.cpp'
 else
   fastslide_sources += src_prefix + 'readers/mrxs/mrxs_decoder.cpp'
+  fastslide_sources += src_prefix + 'runtime/decoders/jpeg_decoder_libjpeg.cpp'
 endif
 
 # iSyntax format (reader + vendored libisyntax)
@@ -456,6 +513,38 @@ fastslide_headers = [
   'include/fastslide/readers/isyntax/isyntax.h',
   'include/fastslide/readers/isyntax/isyntax_plan_builder.h',
   'include/fastslide/readers/isyntax/isyntax_tile_executor.h',
+  'include/fastslide/readers/isyntax/third_party/base64.h',
+  'include/fastslide/readers/isyntax/third_party/cache.h',
+  'include/fastslide/readers/isyntax/third_party/chunk_layout.h',
+  'include/fastslide/readers/isyntax/third_party/color.h',
+  'include/fastslide/readers/isyntax/third_party/decompress.h',
+  'include/fastslide/readers/isyntax/third_party/dwt.h',
+  'include/fastslide/readers/isyntax/third_party/file.h',
+  'include/fastslide/readers/isyntax/third_party/isyntax.h',
+  'include/fastslide/readers/isyntax/third_party/isyntax_types.h',
+  'include/fastslide/readers/isyntax/third_party/jpeg.h',
+  'include/fastslide/readers/isyntax/third_party/open.h',
+  'include/fastslide/readers/isyntax/third_party/open_helpers.h',
+  'include/fastslide/readers/isyntax/third_party/reader.h',
+  'include/fastslide/readers/isyntax/third_party/seektable.h',
+  'include/fastslide/readers/isyntax/third_party/tile.h',
+  'include/fastslide/readers/isyntax/third_party/xml_parser.h',
+  'include/fastslide/readers/isyntax/third_party/xml_semantics.h',
+  'include/fastslide/readers/isyntax/third_party/platform/arena.h',
+  'include/fastslide/readers/isyntax/third_party/platform/common.h',
+  'include/fastslide/readers/isyntax/third_party/platform/intrinsics.h',
+  'include/fastslide/readers/isyntax/third_party/platform/platform.h',
+  'include/fastslide/readers/isyntax/third_party/third_party/yxml.h',
+  'include/fastslide/readers/isyntax/third_party/utils/arena_allocator.h',
+  'include/fastslide/readers/isyntax/third_party/utils/block_allocator.h',
+  'include/fastslide/readers/isyntax/third_party/utils/math_utils.h',
+  'include/fastslide/readers/isyntax/third_party/utils/mathutils.h',
+  'include/fastslide/readers/ometiff/ometiff.h',
+  'include/fastslide/readers/ometiff/ometiff_format_plugin.h',
+  'include/fastslide/readers/ometiff/ometiff_metadata_loader.h',
+  'include/fastslide/readers/ometiff/ometiff_plan_builder.h',
+  'include/fastslide/readers/ometiff/ometiff_tile_executor.h',
+
 ]
 
 # ============================================================================
@@ -471,17 +560,16 @@ fastslide_static = static_library('fastslide',
   include_directories: [
     incdir,
     lodepng_incdir,
+    include_directories('src'),  # Needed for includes like "readers/..."
+    jxrlib_incdir,  # Needed for <JXRGlue.h> (JPEG-XR) when CZI is enabled.
     include_directories('../..'),  # Access aifo/fastslide/... paths for Highway
-    include_directories('src/readers/isyntax/third_party'),
-    include_directories('src/readers/isyntax/third_party/platform'),
-    include_directories('src/readers/isyntax/third_party/third_party'),
-    include_directories('src/readers/isyntax/third_party/utils'),
   ],
   dependencies: [
     # Internal dependencies
     aifocore_dep,
     # External dependencies
     simpletiff_dep,  # Using simpletiff instead of libtiff
+    jxrlib_dep,  # JPEG-XR decoder used by CZI
     zstd_dep,
     libwebp_dep,
     liblzma_dep,
@@ -509,17 +597,16 @@ else
     include_directories: [
       incdir,
       lodepng_incdir,
+      include_directories('src'),  # Needed for includes like "readers/..."
+      jxrlib_incdir,  # Needed for <JXRGlue.h> (JPEG-XR) when CZI is enabled.
       include_directories('../..'),  # Access aifo/fastslide/... paths for Highway
-      include_directories('src/readers/isyntax/third_party'),
-      include_directories('src/readers/isyntax/third_party/platform'),
-      include_directories('src/readers/isyntax/third_party/third_party'),
-      include_directories('src/readers/isyntax/third_party/utils'),
     ],
     dependencies: [
       # Internal dependencies
       aifocore_dep,
       # External dependencies
       simpletiff_dep,
+      jxrlib_dep,  # JPEG-XR decoder used by CZI
       zstd_dep,
       libwebp_dep,
       liblzma_dep,

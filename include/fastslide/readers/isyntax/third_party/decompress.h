@@ -29,7 +29,7 @@
 #include <span>
 
 #include "aifocore/status/result.h"
-#include "readers/isyntax/third_party/platform/common.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
 
 namespace isyntax {
 

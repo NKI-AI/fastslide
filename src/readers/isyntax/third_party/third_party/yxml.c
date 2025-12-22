@@ -26,7 +26,7 @@
   SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 */
 
-#include "yxml.h"
+#include "fastslide/readers/isyntax/third_party/third_party/yxml.h"
 #include <string.h>
 
 typedef enum {

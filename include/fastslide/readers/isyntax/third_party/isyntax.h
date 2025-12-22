@@ -29,12 +29,12 @@ typedef struct isyntax_xml_cpp_state_t isyntax_xml_cpp_state_t;
 #include <cstdint>
 #include <cstdio>
 
-#include "readers/isyntax/third_party/isyntax_types.h"
-#include "readers/isyntax/third_party/platform/common.h"
-#include "readers/isyntax/third_party/platform/platform.h"
-#include "readers/isyntax/third_party/utils/block_allocator.h"
+#include "fastslide/readers/isyntax/third_party/isyntax_types.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
+#include "fastslide/readers/isyntax/third_party/platform/platform.h"
+#include "fastslide/readers/isyntax/third_party/utils/block_allocator.h"
 
-#include "readers/isyntax/third_party/third_party/yxml.h"
+#include "fastslide/readers/isyntax/third_party/third_party/yxml.h"
 
 #define DWT_COEFF_BITS 16
 #if (DWT_COEFF_BITS == 16)

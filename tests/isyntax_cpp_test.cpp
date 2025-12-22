@@ -14,7 +14,7 @@
 
 #include <gtest/gtest.h>
 
-#include "readers/isyntax/third_party/file.h"
+#include "fastslide/readers/isyntax/third_party/file.h"
 
 namespace isyntax {
 namespace {

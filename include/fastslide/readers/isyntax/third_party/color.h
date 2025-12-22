@@ -27,8 +27,8 @@
 #include <cstdint>
 #include <span>
 
-#include "readers/isyntax/third_party/platform/common.h"
-#include "readers/isyntax/third_party/utils/mathutils.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
+#include "fastslide/readers/isyntax/third_party/utils/mathutils.h"
 
 namespace isyntax {
 namespace color {

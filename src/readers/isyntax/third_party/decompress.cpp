@@ -22,7 +22,7 @@
 //  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
 //  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
 
-#include "readers/isyntax/third_party/decompress.h"
+#include "fastslide/readers/isyntax/third_party/decompress.h"
 
 #include <algorithm>
 #include <array>
@@ -32,8 +32,8 @@
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
-#include "readers/isyntax/third_party/platform/intrinsics.h"
-#include "readers/isyntax/third_party/utils/arena_allocator.h"
+#include "fastslide/readers/isyntax/third_party/platform/intrinsics.h"
+#include "fastslide/readers/isyntax/third_party/utils/arena_allocator.h"
 
 #if defined(__ARM_NEON)
 #include <arm_neon.h>

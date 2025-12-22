@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "readers/isyntax/third_party/utils/arena_allocator.h"
+#include "fastslide/readers/isyntax/third_party/utils/arena_allocator.h"
 
 #include <cstdlib>
 #include <new>

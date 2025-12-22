@@ -17,6 +17,16 @@
 #include <cstdint>
 #include <vector>
 
+// `jxrlib`'s `guiddef.h` uses `__ANSI__` to decide whether `FAR` is empty or
+// expands to `_far`. On non-Windows platforms, `_far` is invalid and breaks
+// parsing of `DEFINE_GUID(...)` declarations in `JXRGlue.h`.
+//
+// Bazel builds already pass `-D__ANSI__` for this compilation unit; define it
+// here as well so Meson (and other build systems) behave consistently.
+#ifndef __ANSI__
+#define __ANSI__ 1
+#endif
+
 extern "C" {
 #include <JXRGlue.h>
 }

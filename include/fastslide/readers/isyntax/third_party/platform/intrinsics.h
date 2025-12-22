@@ -27,7 +27,7 @@
 
 #pragma once
 
-#include "readers/isyntax/third_party/platform/common.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
 
 // https://stackoverflow.com/questions/11228855/header-files-for-x86-simd-intrinsics
 #if defined(_MSC_VER)

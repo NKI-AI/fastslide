@@ -26,9 +26,9 @@
 */
 
 #include <cfloat>
-#include "readers/isyntax/third_party/platform/common.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
 #define MATHUTILS_IMPL
-#include "readers/isyntax/third_party/utils/mathutils.h"
+#include "fastslide/readers/isyntax/third_party/utils/mathutils.h"
 
 rect2i clip_rect(rect2i* first, rect2i* second) {
   int32_t x0 = MAX(first->x, second->x);

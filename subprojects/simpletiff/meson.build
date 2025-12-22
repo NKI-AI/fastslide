@@ -6,6 +6,7 @@ project('simpletiff', 'cpp',
 threads_dep = dependency('threads')
 aifocore_dep = dependency('aifocore', fallback : ['aifocore', 'aifocore_dep'])
 zstd_dep = dependency('libzstd', fallback : ['zstd', 'libzstd_dep'])
+zlib_dep = dependency('zlib-ng', fallback : ['zlib-ng', 'zlib-ng_dep'])
 png_dep = dependency('libpng',
   fallback : ['libpng', 'libpng_dep'],
   required : false)
@@ -32,6 +33,7 @@ inc = include_directories('include')
 simpletiff_sources = [
   'src/tiff_parser.cpp',
   'src/reader.cpp',
+  'src/deflate.cpp',
   'src/lzw.cpp',
   'src/predictor.cpp',
   'src/zstd.cpp',
@@ -46,7 +48,7 @@ else
 endif
 
 # Optional PNG writer
-simpletiff_deps = [threads_dep, jpeg_dep, zstd_dep, aifocore_dep]
+simpletiff_deps = [threads_dep, jpeg_dep, zstd_dep, zlib_dep, aifocore_dep]
 if png_dep.found()
   simpletiff_sources += 'src/image_writer.cpp'
   simpletiff_deps += png_dep
@@ -67,6 +69,7 @@ headers_to_install = [
   'include/simpletiff/reader.h',
   'include/simpletiff/io_utils.h',
   'include/simpletiff/decompression.h',
+  'include/simpletiff/deflate.h',
   'include/simpletiff/lzw.h',
   'include/simpletiff/predictor.h',
   'include/simpletiff/zstd.h',

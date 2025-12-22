@@ -27,9 +27,9 @@
 
 #pragma once
 #include <cstdio>
-#include "readers/isyntax/third_party/platform/arena.h"
-#include "readers/isyntax/third_party/platform/common.h"
-#include "readers/isyntax/third_party/utils/mathutils.h"
+#include "fastslide/readers/isyntax/third_party/platform/arena.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
+#include "fastslide/readers/isyntax/third_party/utils/mathutils.h"
 
 #if WINDOWS
 #include <windows.h>
