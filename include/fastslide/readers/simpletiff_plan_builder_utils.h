@@ -36,9 +36,9 @@ struct Dimensions2D {
   uint32_t height = 0;
 };
 
-Dimensions2D ToDimensions2D(const ImageDimensions &dims);
+Dimensions2D ToDimensions2D(const ImageDimensions& dims);
 
-Dimensions2D ToDimensions2D(const core::ImageDimensions &dims);
+Dimensions2D ToDimensions2D(const core::ImageDimensions& dims);
 
 struct RegionBounds {
   double x = 0.0;
@@ -63,17 +63,17 @@ struct TileGeometry {
 
 // ---- Shared request/geometry helpers ----
 
-RegionBounds DetermineRegionBounds(const core::TileRequest &request,
+RegionBounds DetermineRegionBounds(const core::TileRequest& request,
                                    Dimensions2D level_dimensions);
 
-ClampedRegion ClampRegionToLevel(const RegionBounds &bounds,
+ClampedRegion ClampRegionToLevel(const RegionBounds& bounds,
                                  Dimensions2D level_dimensions);
 
-TileGeometry QueryTileGeometry(const simpletiff::TiffIndex &tiff_index,
+TileGeometry QueryTileGeometry(const simpletiff::TiffIndex& tiff_index,
                                uint32_t page, Dimensions2D level_dimensions);
 
-core::OutputSpec::PixelFormat
-PixelFormatFromBitsPerSample(uint16_t bits_per_sample);
+core::OutputSpec::PixelFormat PixelFormatFromBitsPerSample(
+    uint16_t bits_per_sample);
 
 uint32_t BytesPerSample(uint16_t bits_per_sample);
 
@@ -92,26 +92,28 @@ struct IntersectingTile {
   uint32_t inter_top = 0;
   uint32_t inter_width = 0;
   uint32_t inter_height = 0;
-  uint64_t tile_index = 0; // linear tile index (tiles) or strip index
+  uint64_t tile_index = 0;  // linear tile index (tiles) or strip index
 };
 
 void ForEachIntersectingTile(
-    Dimensions2D level_dimensions, const ClampedRegion &region,
-    const TileGeometry &geometry,
-    const std::function<void(const IntersectingTile &)> &callback);
+    Dimensions2D level_dimensions, const ClampedRegion& region,
+    const TileGeometry& geometry,
+    const std::function<void(const IntersectingTile&)>& callback);
 
-// Builds TileReadOps for the common "one page per channel" layout.
+// Builds TileReadOps for generic iterated layouts (e.g. channels, or just
+// generic spatial tiles).
 //
-// `page_for_channel(ch)` returns the TIFF page index (IFD index) that stores
-// the channel for this level.
-std::vector<core::TileReadOp> BuildChannelPageTileReadOps(
-    const core::TileRequest &request, Dimensions2D level_dimensions,
-    const ClampedRegion &region, const TileGeometry &geometry,
-    uint32_t bytes_per_pixel, size_t num_channels,
-    const std::function<uint32_t(size_t)> &page_for_channel);
+// `info_callback(iteration, tile)` returns {source_id, tile_coord} for the
+// ReadOp.
+std::vector<core::TileReadOp> BuildTileReadOps(
+    const core::TileRequest& request, Dimensions2D level_dimensions,
+    const ClampedRegion& region, const TileGeometry& geometry,
+    uint32_t bytes_per_pixel, size_t num_iterations,
+    const std::function<std::pair<uint32_t, TileCoordinate>(
+        size_t, const IntersectingTile&)>& info_callback);
 
-} // namespace simpletiff_plan
-} // namespace readers
-} // namespace fastslide
+}  // namespace simpletiff_plan
+}  // namespace readers
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_SIMPLETIFF_PLAN_BUILDER_UTILS_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_SIMPLETIFF_PLAN_BUILDER_UTILS_H_

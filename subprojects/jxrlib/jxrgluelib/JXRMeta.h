@@ -53,10 +53,8 @@
 #endif
 
 #ifndef UNREFERENCED_PARAMETER
-#define UNREFERENCED_PARAMETER(P)                                              \
-  {                                                                            \
-    (P) = (P);                                                                 \
-  }
+#define UNREFERENCED_PARAMETER(P) \
+  { (P) = (P); }
 #endif
 
 //================================================================
@@ -67,31 +65,31 @@
 // in ascending order
 #define WMP_tagNull 0
 
-#define WMP_tagDocumentName 0x010d     // Descriptive metadata tag
-#define WMP_tagImageDescription 0x010e // Descriptive metadata tag
-#define WMP_tagCameraMake 0x010f       // Descriptive metadata tag
-#define WMP_tagCameraModel 0x0110      // Descriptive metadata tag
-#define WMP_tagPageName 0x011d         // Descriptive metadata tag
-#define WMP_tagPageNumber 0x0129       // Descriptive metadata tag
-#define WMP_tagSoftware 0x0131         // Descriptive metadata tag
-#define WMP_tagDateTime 0x0132         // Descriptive metadata tag
-#define WMP_tagArtist 0x013b           // Descriptive metadata tag
-#define WMP_tagHostComputer 0x013c     // Descriptive metadata tag
+#define WMP_tagDocumentName 0x010d      // Descriptive metadata tag
+#define WMP_tagImageDescription 0x010e  // Descriptive metadata tag
+#define WMP_tagCameraMake 0x010f        // Descriptive metadata tag
+#define WMP_tagCameraModel 0x0110       // Descriptive metadata tag
+#define WMP_tagPageName 0x011d          // Descriptive metadata tag
+#define WMP_tagPageNumber 0x0129        // Descriptive metadata tag
+#define WMP_tagSoftware 0x0131          // Descriptive metadata tag
+#define WMP_tagDateTime 0x0132          // Descriptive metadata tag
+#define WMP_tagArtist 0x013b            // Descriptive metadata tag
+#define WMP_tagHostComputer 0x013c      // Descriptive metadata tag
 
 #define WMP_tagXMPMetadata 0x02bc
 
-#define WMP_tagRatingStars 0x4746 // Descriptive metadata tag
-#define WMP_tagRatingValue 0x4749 // Descriptive metadata tag
-#define WMP_tagCopyright 0x8298   // Descriptive metadata tag
+#define WMP_tagRatingStars 0x4746  // Descriptive metadata tag
+#define WMP_tagRatingValue 0x4749  // Descriptive metadata tag
+#define WMP_tagCopyright 0x8298    // Descriptive metadata tag
 
 #define WMP_tagEXIFMetadata 0x8769
 #define WMP_tagGPSInfoMetadata 0x8825
 #define WMP_tagIPTCNAAMetadata 0x83bb
 #define WMP_tagPhotoshopMetadata 0x8649
 #define WMP_tagInteroperabilityIFD 0xa005
-#define WMP_tagIccProfile 0x8773 // Need to use same tag as TIFF!!
+#define WMP_tagIccProfile 0x8773  // Need to use same tag as TIFF!!
 
-#define WMP_tagCaption 0x9c9b // Descriptive metadata tag
+#define WMP_tagCaption 0x9c9b  // Descriptive metadata tag
 
 #define WMP_tagPixelFormat 0xbc01
 #define WMP_tagTransformation 0xbc02
@@ -148,30 +146,30 @@ typedef struct DPKPROPVARIANT {
   DPKVARTYPE vt;
 
   union {
-    U8 bVal;      // DPKVT_UI1
-    U16 uiVal;    // DPKVT_UI2
-    U32 ulVal;    // DPKVT_UI4
-    char *pszVal; // DPKVT_LPSTR
-    U16 *pwszVal; // DPKVT_LPWSTR
-    U8 *pbVal;    // DPKVT_BYREF | DPKVT_UI1
+    U8 bVal;       // DPKVT_UI1
+    U16 uiVal;     // DPKVT_UI2
+    U32 ulVal;     // DPKVT_UI4
+    char* pszVal;  // DPKVT_LPSTR
+    U16* pwszVal;  // DPKVT_LPWSTR
+    U8* pbVal;     // DPKVT_BYREF | DPKVT_UI1
   } VT;
 } DPKPROPVARIANT;
 
 typedef struct DESCRIPTIVEMETADATA {
-  DPKPROPVARIANT pvarImageDescription; // WMP_tagImageDescription
-  DPKPROPVARIANT pvarCameraMake;       // WMP_tagCameraMake
-  DPKPROPVARIANT pvarCameraModel;      // WMP_tagCameraModel
-  DPKPROPVARIANT pvarSoftware;         // WMP_tagSoftware
-  DPKPROPVARIANT pvarDateTime;         // WMP_tagDateTime
-  DPKPROPVARIANT pvarArtist;           // WMP_tagArtist
-  DPKPROPVARIANT pvarCopyright;        // WMP_tagCopyright
-  DPKPROPVARIANT pvarRatingStars;      // WMP_tagRatingStars
-  DPKPROPVARIANT pvarRatingValue;      // WMP_tagRatingValue
-  DPKPROPVARIANT pvarCaption;          // WMP_tagCaption
-  DPKPROPVARIANT pvarDocumentName;     // WMP_tagDocumentName
-  DPKPROPVARIANT pvarPageName;         // WMP_tagPageName
-  DPKPROPVARIANT pvarPageNumber;       // WMP_tagPageNumber
-  DPKPROPVARIANT pvarHostComputer;     // WMP_tagHostComputer
+  DPKPROPVARIANT pvarImageDescription;  // WMP_tagImageDescription
+  DPKPROPVARIANT pvarCameraMake;        // WMP_tagCameraMake
+  DPKPROPVARIANT pvarCameraModel;       // WMP_tagCameraModel
+  DPKPROPVARIANT pvarSoftware;          // WMP_tagSoftware
+  DPKPROPVARIANT pvarDateTime;          // WMP_tagDateTime
+  DPKPROPVARIANT pvarArtist;            // WMP_tagArtist
+  DPKPROPVARIANT pvarCopyright;         // WMP_tagCopyright
+  DPKPROPVARIANT pvarRatingStars;       // WMP_tagRatingStars
+  DPKPROPVARIANT pvarRatingValue;       // WMP_tagRatingValue
+  DPKPROPVARIANT pvarCaption;           // WMP_tagCaption
+  DPKPROPVARIANT pvarDocumentName;      // WMP_tagDocumentName
+  DPKPROPVARIANT pvarPageName;          // WMP_tagPageName
+  DPKPROPVARIANT pvarPageNumber;        // WMP_tagPageNumber
+  DPKPROPVARIANT pvarHostComputer;      // WMP_tagHostComputer
 } DESCRIPTIVEMETADATA;
 
 typedef struct tagWmpDE {
@@ -208,49 +206,49 @@ typedef struct tagWmpDEMisc {
 } WmpDEMisc;
 
 //================================================================
-EXTERN_C ERR GetUShort(__in_ecount(1) struct WMPStream *pWS, size_t offPos,
-                       __out_ecount(1) U16 *puValue);
+EXTERN_C ERR GetUShort(__in_ecount(1) struct WMPStream* pWS, size_t offPos,
+                       __out_ecount(1) U16* puValue);
 
-EXTERN_C ERR PutUShort(__in_ecount(1) struct WMPStream *pWS, size_t offPos,
+EXTERN_C ERR PutUShort(__in_ecount(1) struct WMPStream* pWS, size_t offPos,
                        U16 uValue);
 
-EXTERN_C ERR GetULong(__in_ecount(1) struct WMPStream *pWS, size_t offPos,
-                      __out_ecount(1) U32 *puValue);
+EXTERN_C ERR GetULong(__in_ecount(1) struct WMPStream* pWS, size_t offPos,
+                      __out_ecount(1) U32* puValue);
 
-EXTERN_C ERR PutULong(__in_ecount(1) struct WMPStream *pWS, size_t offPos,
+EXTERN_C ERR PutULong(__in_ecount(1) struct WMPStream* pWS, size_t offPos,
                       U32 uValue);
 
-EXTERN_C ERR WriteWmpDE(__in_ecount(1) struct WMPStream *pWS, size_t *pOffPos,
-                        const __in_ecount(1) WmpDE *pDE, const U8 *pbData,
-                        U32 *pcbDataWrittenToOffset);
+EXTERN_C ERR WriteWmpDE(__in_ecount(1) struct WMPStream* pWS, size_t* pOffPos,
+                        const __in_ecount(1) WmpDE* pDE, const U8* pbData,
+                        U32* pcbDataWrittenToOffset);
 
-EXTERN_C ERR ReadPropvar(__in_ecount(1) struct WMPStream *pWS,
+EXTERN_C ERR ReadPropvar(__in_ecount(1) struct WMPStream* pWS,
                          const __in_win U16 uType, const __in_win U32 uCount,
                          const __in_win U32 uValue,
-                         __out_win DPKPROPVARIANT *pvar);
+                         __out_win DPKPROPVARIANT* pvar);
 
 // read and write little endian words/dwords from a buffer on both big and
 // little endian cpu's with full buffer overflow checking
 
 #define WMP_INTEL_ENDIAN ('I')
 
-EXTERN_C ERR getbfcpy(U8 *pbdest, const U8 *pb, size_t cb, size_t ofs, U32 n);
-EXTERN_C ERR getbfw(const U8 *pb, size_t cb, size_t ofs, U16 *pw);
-EXTERN_C ERR getbfdw(const U8 *pb, size_t cb, size_t ofs, U32 *pdw);
-EXTERN_C ERR getbfwbig(const U8 *pb, size_t cb, size_t ofs, U16 *pw);
-EXTERN_C ERR getbfdwbig(const U8 *pb, size_t cb, size_t ofs, U32 *pdw);
-EXTERN_C ERR getbfwe(const U8 *pb, size_t cb, size_t ofs, U16 *pw, U8 endian);
-EXTERN_C ERR getbfdwe(const U8 *pb, size_t cb, size_t ofs, U32 *pdw, U8 endian);
-EXTERN_C ERR setbfcpy(U8 *pb, size_t cb, size_t ofs, const U8 *pbset,
+EXTERN_C ERR getbfcpy(U8* pbdest, const U8* pb, size_t cb, size_t ofs, U32 n);
+EXTERN_C ERR getbfw(const U8* pb, size_t cb, size_t ofs, U16* pw);
+EXTERN_C ERR getbfdw(const U8* pb, size_t cb, size_t ofs, U32* pdw);
+EXTERN_C ERR getbfwbig(const U8* pb, size_t cb, size_t ofs, U16* pw);
+EXTERN_C ERR getbfdwbig(const U8* pb, size_t cb, size_t ofs, U32* pdw);
+EXTERN_C ERR getbfwe(const U8* pb, size_t cb, size_t ofs, U16* pw, U8 endian);
+EXTERN_C ERR getbfdwe(const U8* pb, size_t cb, size_t ofs, U32* pdw, U8 endian);
+EXTERN_C ERR setbfcpy(U8* pb, size_t cb, size_t ofs, const U8* pbset,
                       size_t cbset);
-EXTERN_C ERR setbfw(U8 *pb, size_t cb, size_t ofs, U16 dw);
-EXTERN_C ERR setbfdw(U8 *pb, size_t cb, size_t ofs, U32 dw);
-EXTERN_C ERR setbfwbig(U8 *pb, size_t cb, size_t ofs, U16 dw);
-EXTERN_C ERR setbfdwbig(U8 *pb, size_t cb, size_t ofs, U32 dw);
-EXTERN_C ERR BufferCalcIFDSize(const U8 *pb, size_t cb, U32 uIFDOfs, U8 endian,
-                               U32 *pcbifd);
-EXTERN_C ERR StreamCalcIFDSize(struct WMPStream *pWS, U32 uIFDOfs, U32 *pcbifd);
-EXTERN_C ERR BufferCopyIFD(const U8 *pbsrc, U32 cbsrc, U32 ofssrc, U8 endian,
-                           U8 *pbdest, U32 cbdest, U32 *pofsdest);
-EXTERN_C ERR StreamCopyIFD(struct WMPStream *pWS, U32 ofssrc, U8 *pbdest,
-                           U32 cbdest, U32 *pofsdest);
+EXTERN_C ERR setbfw(U8* pb, size_t cb, size_t ofs, U16 dw);
+EXTERN_C ERR setbfdw(U8* pb, size_t cb, size_t ofs, U32 dw);
+EXTERN_C ERR setbfwbig(U8* pb, size_t cb, size_t ofs, U16 dw);
+EXTERN_C ERR setbfdwbig(U8* pb, size_t cb, size_t ofs, U32 dw);
+EXTERN_C ERR BufferCalcIFDSize(const U8* pb, size_t cb, U32 uIFDOfs, U8 endian,
+                               U32* pcbifd);
+EXTERN_C ERR StreamCalcIFDSize(struct WMPStream* pWS, U32 uIFDOfs, U32* pcbifd);
+EXTERN_C ERR BufferCopyIFD(const U8* pbsrc, U32 cbsrc, U32 ofssrc, U8 endian,
+                           U8* pbdest, U32 cbdest, U32* pofsdest);
+EXTERN_C ERR StreamCopyIFD(struct WMPStream* pWS, U32 ofssrc, U8* pbdest,
+                           U32 cbdest, U32* pofsdest);

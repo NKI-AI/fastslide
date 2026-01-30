@@ -38,6 +38,12 @@ class Compression(IntEnum):
     JPEG = 7
     """JPEG compression"""
 
+    JPEG2000 = 33003
+    """JPEG 2000 compression (legacy code 33003)"""
+
+    JPEG2000_33005 = 33005
+    """JPEG 2000 compression (alternate code 33005, common in SVS)"""
+
     DEFLATE = 8
     """Deflate/ZIP compression"""
 

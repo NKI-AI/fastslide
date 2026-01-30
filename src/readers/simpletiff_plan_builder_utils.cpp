@@ -36,7 +36,7 @@ Dimensions2D ToDimensions2D(const core::ImageDimensions& dims) {
 }
 
 RegionBounds DetermineRegionBounds(const core::TileRequest& request,
-                                  Dimensions2D level_dimensions) {
+                                   Dimensions2D level_dimensions) {
   RegionBounds out;
   if (request.IsRegionRequest() && request.region_bounds->IsValid()) {
     out.x = request.region_bounds->x;
@@ -54,14 +54,15 @@ RegionBounds DetermineRegionBounds(const core::TileRequest& request,
 }
 
 ClampedRegion ClampRegionToLevel(const RegionBounds& bounds,
-                                Dimensions2D level_dimensions) {
+                                 Dimensions2D level_dimensions) {
   ClampedRegion out;
   out.x = static_cast<uint32_t>(bounds.x);
   out.y = static_cast<uint32_t>(bounds.y);
   out.width = bounds.width;
   out.height = bounds.height;
 
-  if (bounds.x >= level_dimensions.width || bounds.y >= level_dimensions.height) {
+  if (bounds.x >= level_dimensions.width ||
+      bounds.y >= level_dimensions.height) {
     out.outside = true;
     return out;
   }
@@ -176,34 +177,37 @@ void ForEachIntersectingTile(
       it.inter_width = inter_right - inter_left;
       it.inter_height = inter_bottom - inter_top;
       it.tile_index =
-          geometry.is_tiled ? (static_cast<uint64_t>(tile_y) * tiles_across + tile_x)
-                            : static_cast<uint64_t>(tile_y);
+          geometry.is_tiled
+              ? (static_cast<uint64_t>(tile_y) * tiles_across + tile_x)
+              : static_cast<uint64_t>(tile_y);
       callback(it);
     }
   }
 }
 
-std::vector<core::TileReadOp> BuildChannelPageTileReadOps(
+std::vector<core::TileReadOp> BuildTileReadOps(
     const core::TileRequest& request, Dimensions2D level_dimensions,
     const ClampedRegion& region, const TileGeometry& geometry,
-    uint32_t bytes_per_pixel, size_t num_channels,
-    const std::function<uint32_t(size_t)>& page_for_channel) {
+    uint32_t bytes_per_pixel, size_t num_iterations,
+    const std::function<std::pair<uint32_t, TileCoordinate>(
+        size_t, const IntersectingTile&)>& info_callback) {
   std::vector<core::TileReadOp> ops;
   if (region.outside) {
     return ops;
   }
 
-  for (size_t ch = 0; ch < num_channels; ++ch) {
-    const uint32_t page = page_for_channel(ch);
+  for (size_t i = 0; i < num_iterations; ++i) {
     ForEachIntersectingTile(
-        level_dimensions, region, geometry,
-        [&](const IntersectingTile& it) {
+        level_dimensions, region, geometry, [&](const IntersectingTile& it) {
+          auto [source_id, tile_coord] = info_callback(i, it);
+
           core::TileReadOp op;
           op.level = request.level;
-          op.tile_coord = {static_cast<uint32_t>(ch), 0};
-          op.source_id = page;
+          op.tile_coord = tile_coord;
+          op.source_id = source_id;
           op.byte_offset = it.tile_index;
-          op.byte_size = geometry.tile_width * geometry.tile_height * bytes_per_pixel;
+          op.byte_size =
+              geometry.tile_width * geometry.tile_height * bytes_per_pixel;
 
           const uint32_t src_x = it.inter_left - it.tile_left;
           const uint32_t src_y = it.inter_top - it.tile_top;
@@ -221,5 +225,3 @@ std::vector<core::TileReadOp> BuildChannelPageTileReadOps(
 }  // namespace simpletiff_plan
 }  // namespace readers
 }  // namespace fastslide
-
-

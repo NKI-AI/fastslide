@@ -203,18 +203,32 @@ bool DecodeJpeg(DecodeContext& ctx, std::span<const uint8_t> jpeg_data,
 void CopyTileInto(uint8_t* dst, int dst_stride, const uint8_t* tile_data,
                   int tile_width, int tile_height, int dst_x, int dst_y,
                   int roi_width, int roi_height, int samples_per_pixel) {
-  const int w_copy = std::min(tile_width, roi_width - dst_x);
-  const int h_copy = std::min(tile_height, roi_height - dst_y);
+  // Clip tile placement against ROI bounds, including negative offsets.
+  const int src_start_x = std::max(0, -dst_x);
+  const int src_start_y = std::max(0, -dst_y);
+  const int dst_start_x = std::max(0, dst_x);
+  const int dst_start_y = std::max(0, dst_y);
+
+  const int max_copy_w = tile_width - src_start_x;
+  const int max_copy_h = tile_height - src_start_y;
+  const int roi_copy_w = roi_width - dst_start_x;
+  const int roi_copy_h = roi_height - dst_start_y;
+
+  const int w_copy = std::min(max_copy_w, roi_copy_w);
+  const int h_copy = std::min(max_copy_h, roi_copy_h);
 
   if (w_copy <= 0 || h_copy <= 0) {
     return;
   }
 
+  const int bytes_per_pixel = samples_per_pixel;  // 8-bit/sample assumption
   for (int r = 0; r < h_copy; ++r) {
-    const uint8_t* src_row = tile_data + r * tile_width * samples_per_pixel;
+    const uint8_t* src_row = tile_data +
+                             (src_start_y + r) * tile_width * bytes_per_pixel +
+                             src_start_x * bytes_per_pixel;
     uint8_t* dst_row =
-        dst + (dst_y + r) * dst_stride + (dst_x * samples_per_pixel);
-    std::memcpy(dst_row, src_row, w_copy * samples_per_pixel);
+        dst + (dst_start_y + r) * dst_stride + dst_start_x * bytes_per_pixel;
+    std::memcpy(dst_row, src_row, w_copy * bytes_per_pixel);
   }
 }
 

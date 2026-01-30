@@ -46,10 +46,13 @@ struct JpegDecodeOptions {
 /// @param file_size Size of the file
 /// @param offset Offset in file
 /// @param length Number of bytes to read
+/// @param length Number of bytes to read
 /// @param out Output buffer (will be resized)
-/// @return true on success, false on failure
+/// @param strict If true, fail if exact number of bytes cannot be read. If
+///        false, allow partial reads (resized to actual bytes read).
+/// @return true on success, false on failure (or if strict and partial read)
 bool ReadBytes(int fd, size_t file_size, uint64_t offset, uint64_t length,
-               std::vector<uint8_t>& out);
+               std::vector<uint8_t>& out, bool strict = true);
 
 /// Read bytes from file into vector using pread (returns span to data)
 ///
@@ -61,10 +64,13 @@ bool ReadBytes(int fd, size_t file_size, uint64_t offset, uint64_t length,
 /// @param offset Offset in file
 /// @param length Number of bytes to read
 /// @param buffer Thread-local buffer for reading (reused to avoid allocations)
+/// @param strict If true, fail if exact number of bytes cannot be read. If
+///        false, allow partial reads (resized to actual bytes read).
 /// @return Span view into buffer, empty span on failure
 std::span<const uint8_t> ReadBytesSpan(int fd, size_t file_size,
                                        uint64_t offset, uint64_t length,
-                                       std::vector<uint8_t>& buffer);
+                                       std::vector<uint8_t>& buffer,
+                                       bool strict = true);
 
 /// Compose a complete JPEG bitstream from tables and payload
 ///

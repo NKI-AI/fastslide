@@ -73,8 +73,9 @@ aifocore::Status AperioMetadataParser::ParseFromDescription(
     const std::string& description, AperioMetadata& metadata) {
 
   if (!IsAperioFormat(description)) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Not an Aperio SVS file: missing Aperio signature");
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        "Not an Aperio SVS file: missing Aperio signature");
   }
 
   bool found_any_metadata = false;
@@ -104,8 +105,9 @@ aifocore::Status AperioMetadataParser::ParseFromDescription(
   }
 
   if (!found_any_metadata) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "No valid Aperio metadata found in description");
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kNotFound,
+        "No valid Aperio metadata found in description");
   }
 
   return aifocore::Status::OkStatus();

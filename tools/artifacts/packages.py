@@ -138,5 +138,3 @@ def build_packages_keep_going(bazel_cmd: str, platforms: list[str], *, keep_goin
         print(f"\n⚠ Completed with failures in: {', '.join(failures)}")
         return 1
     return 0
-
-

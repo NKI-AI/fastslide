@@ -22,29 +22,30 @@
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/qptiff/qptiff.h"
+#include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/readers/simpletiff_tile_executor_utils.h"
 #include "simpletiff/index.h"
 #include "simpletiff/reader.h"
 
 namespace fastslide {
 
-aifocore::Status QptiffTileExecutor::ExecutePlan(const core::TilePlan &plan,
-                                                 const QpTiffReader &reader,
-                                                 runtime::TileWriter &writer) {
+aifocore::Status QptiffTileExecutor::ExecutePlan(const core::TilePlan& plan,
+                                                 const QpTiffReader& reader,
+                                                 runtime::TileWriter& writer) {
   const int level = plan.request.level;
   if (level < 0 || level >= reader.GetLevelCount()) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
                             aifocore::fmt::format("Invalid level: {}", level));
   }
 
-  const auto &pyramid = reader.GetPyramid();
-  const auto &tiff_index = reader.GetTiffIndex();
-  const QpTiffLevelInfo &level_info = pyramid[level];
+  const auto& pyramid = reader.GetPyramid();
+  const auto& tiff_index = reader.GetTiffIndex();
+  const QpTiffLevelInfo& level_info = pyramid[level];
 
   return readers::simpletiff_exec::ExecuteOpsWithThreadPoolStopOnError(
       plan, writer,
-      [&](const core::TileReadOp &operation, runtime::TileWriter &writer_ref,
-          std::mutex &writer_mutex) -> aifocore::Status {
+      [&](const core::TileReadOp& operation, runtime::TileWriter& writer_ref,
+          std::mutex& writer_mutex) -> aifocore::Status {
         static thread_local PageState page_state;
         if (page_state.index_identity != &tiff_index) {
           page_state = PageState{};
@@ -56,10 +57,10 @@ aifocore::Status QptiffTileExecutor::ExecutePlan(const core::TilePlan &plan,
 }
 
 aifocore::Status QptiffTileExecutor::ExecuteTileOperation(
-    const core::TileReadOp &operation, const QpTiffReader &reader,
-    const QpTiffLevelInfo &level_info, const simpletiff::TiffIndex &tiff_index,
-    runtime::TileWriter &writer, std::mutex &writer_mutex,
-    PageState &page_state) {
+    const core::TileReadOp& operation, const QpTiffReader& reader,
+    const QpTiffLevelInfo& level_info, const simpletiff::TiffIndex& tiff_index,
+    runtime::TileWriter& writer, std::mutex& writer_mutex,
+    PageState& page_state) {
   const uint16_t page = operation.source_id;
 
   // Update page state if needed
@@ -67,16 +68,19 @@ aifocore::Status QptiffTileExecutor::ExecuteTileOperation(
       UpdatePageState(page, level_info, tiff_index, page_state));
 
   // Read tile data with caching
-  auto tile_data_or = ReadWithCache(operation, reader, tiff_index, page_state);
-  if (!tile_data_or.ok()) {
-    return tile_data_or.status();
+  auto decoded_tile_or =
+      ReadWithCacheDecoded(operation, reader, tiff_index, page_state);
+  if (!decoded_tile_or.ok()) {
+    return decoded_tile_or.status();
   }
 
   // Extract region (returns span view of thread-local crop buffer)
+  const auto& decoded_tile = *decoded_tile_or;
   const size_t bytes_per_pixel =
-      page_state.bytes_per_sample * page_state.samples_per_pixel;
-  auto cropped_data_or = ExtractRegionFromTile(
-      *tile_data_or, operation, page_state.tile_width, bytes_per_pixel);
+      static_cast<size_t>(page_state.bytes_per_sample) *
+      static_cast<size_t>(decoded_tile.channels);
+  auto cropped_data_or =
+      ExtractRegionFromTile(decoded_tile, operation, bytes_per_pixel);
   if (!cropped_data_or.ok()) {
     return cropped_data_or.status();
   }
@@ -94,7 +98,7 @@ aifocore::Status QptiffTileExecutor::ExecuteTileOperation(
 
   auto write_status = readers::simpletiff_exec::WriteTileMaybeLocked(
       writer, modified_op, *cropped_data_or, src_width, src_height,
-      page_state.samples_per_pixel, writer_mutex);
+      decoded_tile.channels, writer_mutex);
 
   if (!write_status.ok()) {
     return write_status;
@@ -104,8 +108,8 @@ aifocore::Status QptiffTileExecutor::ExecuteTileOperation(
 }
 
 aifocore::Status QptiffTileExecutor::UpdatePageState(
-    uint16_t page, const QpTiffLevelInfo &level_info,
-    const simpletiff::TiffIndex &tiff_index, PageState &page_state) {
+    uint16_t page, const QpTiffLevelInfo& level_info,
+    const simpletiff::TiffIndex& tiff_index, PageState& page_state) {
   if (page != page_state.current_page) {
     if (page >= tiff_index.NumPages()) {
       return aifocore::Status(
@@ -113,7 +117,7 @@ aifocore::Status QptiffTileExecutor::UpdatePageState(
           aifocore::fmt::format("Page {} out of range", page));
     }
 
-    const auto &page_header = tiff_index.Page(page);
+    const auto& page_header = tiff_index.Page(page);
 
     page_state.current_page = page;
     page_state.is_tiled = (page_header.storage == simpletiff::Storage::kTiles);
@@ -127,7 +131,7 @@ aifocore::Status QptiffTileExecutor::UpdatePageState(
 
     // Get tile dimensions
     if (page_state.is_tiled) {
-      const auto &tiles = tiff_index.Tiles(page_header.payload_id);
+      const auto& tiles = tiff_index.Tiles(page_header.payload_id);
       page_state.tile_width = tiles.tile_w;
       page_state.tile_height = tiles.tile_h;
     } else {
@@ -140,8 +144,8 @@ aifocore::Status QptiffTileExecutor::UpdatePageState(
 }
 
 runtime::TileKey QptiffTileExecutor::MakeCacheKey(
-    const core::TileReadOp &operation, const QpTiffReader &reader,
-    const simpletiff::TiffIndex &tiff_index, const PageState &page_state) {
+    const core::TileReadOp& operation, const QpTiffReader& reader,
+    const simpletiff::TiffIndex& tiff_index, const PageState& page_state) {
   (void)tiff_index;
   (void)page_state;
   // Use page as level (since pages are unique per level/channel)
@@ -151,52 +155,30 @@ runtime::TileKey QptiffTileExecutor::MakeCacheKey(
 }
 
 aifocore::Result<DecodedTileData> QptiffTileExecutor::ReadTileFromDisk(
-    const core::TileReadOp &operation, const QpTiffReader &reader,
-    const simpletiff::TiffIndex &tiff_index, const PageState &page_state) {
+    const core::TileReadOp& operation, const QpTiffReader& reader,
+    const simpletiff::TiffIndex& tiff_index, const PageState& page_state) {
   (void)reader;
   // Reuse thread-local buffer from TiffBasedTileExecutor
-  auto &tile_buffer = GetBuffers().tile_buffer;
+  auto& tile_buffer = GetBuffers().tile_buffer;
   static thread_local simpletiff::DecodeContext decode_ctx;
 
   const uint16_t page = page_state.current_page;
   const uint32_t tile_index = static_cast<uint32_t>(operation.byte_offset);
 
-  // Use appropriate simpletiff function based on storage type
-  simpletiff::Result<void> result;
-  int out_width = 0;
-  int out_height = 0;
+  const uint32_t page_index = static_cast<uint32_t>(page);
+  const uint32_t tile_or_strip_index = tile_index;
+  AIFOCORE_ASSIGN_OR_RETURN(
+      auto decoded, readers::simpletiff_decode::ReadTileOrStrip(
+                        tiff_index, page_index, tile_or_strip_index, decode_ctx,
+                        tile_buffer));
 
-  if (page_state.is_tiled) {
-    // Read tile for tiled pages
-    result = simpletiff::ReadTile(tiff_index, page, tile_index, decode_ctx,
-                                  tile_buffer, out_width, out_height);
-  } else {
-    // Read strip for striped pages
-    result = simpletiff::ReadStripe(tiff_index, page, tile_index, decode_ctx,
-                                    tile_buffer);
-    // For strips, we need to set dimensions manually
-    out_width = static_cast<int>(page_state.tile_width);
-    out_height = static_cast<int>(page_state.tile_height);  // Or strip height?
-  }
-
-  if (!result) {
-    return aifocore::Status(
-        aifocore::StatusCode::kInternal,
-        aifocore::fmt::format("Failed to read {} index {}: {}",
-                              page_state.is_tiled ? "tile" : "strip",
-                              tile_index, result.error().message()));
-  }
-
-  return DecodedTileData{
-      std::span<const uint8_t>(tile_buffer.data(), tile_buffer.size()),
-      static_cast<uint32_t>(out_width), static_cast<uint32_t>(out_height),
-      static_cast<uint32_t>(page_state.samples_per_pixel)};
+  return DecodedTileData{decoded.data, decoded.width, decoded.height,
+                         decoded.channels};
 }
 
 aifocore::Result<std::span<const uint8_t>>
-QptiffTileExecutor::ExtractRegionFromTile(std::span<const uint8_t> tile_data,
-                                          const core::TileReadOp &operation,
-                                          uint32_t tile_width,
+QptiffTileExecutor::ExtractRegionFromTile(const DecodedTileData& decoded_tile,
+                                          const core::TileReadOp& operation,
                                           size_t bytes_per_pixel) {
   const uint32_t src_x = operation.transform.source.x;
   const uint32_t src_y = operation.transform.source.y;
@@ -205,32 +187,14 @@ QptiffTileExecutor::ExtractRegionFromTile(std::span<const uint8_t> tile_data,
   const size_t crop_size = src_width * src_height * bytes_per_pixel;
 
   // Use thread-local buffer from CRTP base class
-  uint8_t *cropped_data = GetBuffers().GetCropBuffer(crop_size);
-  std::memset(cropped_data, 0, crop_size);  // Zero initialize
+  uint8_t* cropped_data = GetBuffers().GetCropBuffer(crop_size);
 
-  // Extract the region from the tile buffer
-  for (uint32_t row = 0; row < src_height; ++row) {
-    const size_t tile_offset =
-        ((src_y + row) * tile_width + src_x) * bytes_per_pixel;
-    const size_t dst_offset = row * src_width * bytes_per_pixel;
-    const size_t bytes_to_copy = src_width * bytes_per_pixel;
-
-    if (tile_offset + bytes_to_copy <= tile_data.size()) {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-      std::memcpy(cropped_data + dst_offset, tile_data.data() + tile_offset,
-                  bytes_to_copy);
-    } else {
-      return aifocore::Status(
-          aifocore::StatusCode::kInternal,
-          aifocore::fmt::format("Tile bounds check failed at row {} for "
-                                "channel {}: tile_offset={} "
-                                "+ bytes_to_copy={} > tile_data.size()={}",
-                                row, operation.tile_coord.x, tile_offset,
-                                bytes_to_copy, tile_data.size()));
-    }
-  }
-
-  return std::span<const uint8_t>(cropped_data, crop_size);
+  const auto cropped_span = std::span<uint8_t>(cropped_data, crop_size);
+  return readers::simpletiff_decode::CropInterleavedRoi(
+      decoded_tile.data, decoded_tile.width, decoded_tile.height,
+      readers::simpletiff_decode::RectU32{
+          .x = src_x, .y = src_y, .width = src_width, .height = src_height},
+      bytes_per_pixel, cropped_span);
 }
 
 }  // namespace fastslide

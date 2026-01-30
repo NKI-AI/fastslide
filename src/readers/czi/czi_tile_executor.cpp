@@ -23,9 +23,9 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
-#include <string>
 #include <mutex>
 #include <span>
+#include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -126,10 +126,10 @@ struct Zstd1ParseResult {
 
 aifocore::Result<Zstd1ParseResult> ParseZstd1Payload(
     std::span<const uint8_t> in) {
-  // zstd1 payloads begin with a short header; byte 0 is the header length.
-  // Known lengths:
-  // - 1: only the header length byte
-  // - 3: header length + (chunk_type, flags)
+  // ZSTD1 payloads start with a small container header:
+  // - byte[0] == header_size_in_bytes (including byte[0])
+  // - if header_size == 3: byte[1] is chunk type (expected 1), byte[2] are
+  // flags
   if (in.empty()) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
                             "zstd1 payload truncated");

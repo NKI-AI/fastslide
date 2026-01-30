@@ -43,7 +43,7 @@ namespace pybind11::detail {
 /// @tparam N Rank
 template <typename T, size_t N>
 struct type_caster<aifocore::math::NDArrayView<T, N>> {
-public:
+ public:
   using Type = aifocore::math::NDArrayView<T, N>;
   PYBIND11_TYPE_CASTER(Type, const_name("NDArrayView[") + type_caster<T>::name +
                                  const_name("]"));
@@ -52,12 +52,12 @@ public:
   bool load(handle, bool) { return false; }
 
   /// @brief Convert C++ object to Python (view to numpy array)
-  static handle cast(const aifocore::math::NDArrayView<T, N> &src,
+  static handle cast(const aifocore::math::NDArrayView<T, N>& src,
                      return_value_policy /* policy */, handle parent) {
     std::vector<ssize_t> shape(N);
     std::vector<ssize_t> strides(N);
-    const auto &src_shape = src.Shape();
-    const auto &src_strides = src.Strides();
+    const auto& src_shape = src.Shape();
+    const auto& src_strides = src.Strides();
 
     for (size_t i = 0; i < N; ++i) {
       shape[i] = static_cast<ssize_t>(src_shape[i]);
@@ -73,7 +73,7 @@ public:
     return py::array_t<T>(shape, strides, src.Data(), base).release();
   }
 };
-} // namespace pybind11::detail
+}  // namespace pybind11::detail
 
 using fastslide::RegionSpec;
 using fastslide::SlideReader;
@@ -84,7 +84,7 @@ using fastslide::python::FastSlide;
 namespace {
 
 /// @brief Convert aifocore::Status to Python exception
-void ThrowPyErrorFromStatus(const aifocore::Status &status) {
+void ThrowPyErrorFromStatus(const aifocore::Status& status) {
   if (status.code() == aifocore::StatusCode::kInvalidArgument) {
     throw py::value_error(status.ToString());
   }
@@ -92,7 +92,7 @@ void ThrowPyErrorFromStatus(const aifocore::Status &status) {
   throw std::runtime_error(status.ToString());
 }
 
-} // namespace
+}  // namespace
 
 PYBIND11_MODULE(_fastslide, m) {
   m.doc() =
@@ -121,17 +121,17 @@ PYBIND11_MODULE(_fastslide, m) {
       .def_property_readonly("height", &fastslide::Image::GetHeight)
       .def_property_readonly("channels", &fastslide::Image::GetChannels)
       .def_property_readonly("format", &fastslide::Image::GetFormat)
-      .def_property_readonly("dtype",
-                             [](const fastslide::Image &self) {
-                               return fastslide::GetDataTypeName(
-                                   self.GetDataType());
-                             })
+      .def_property_readonly(
+          "dtype",
+          [](const fastslide::Image& self) {
+            return fastslide::GetDataTypeName(self.GetDataType());
+          })
       .def_property_readonly("planar_config",
                              &fastslide::Image::GetPlanarConfig)
       .def(
           "numpy",
           [](py::object self_py) -> py::object {
-            const auto &self = self_py.cast<const fastslide::Image &>();
+            const auto& self = self_py.cast<const fastslide::Image&>();
             py::object result;
             // Dispatch to the correct type for ArrayView
             fastslide::DispatchByDataType(
@@ -187,7 +187,7 @@ PYBIND11_MODULE(_fastslide, m) {
            "Get detailed cache statistics")
       .def(
           "resize",
-          [](CacheManager &self, size_t new_capacity) {
+          [](CacheManager& self, size_t new_capacity) {
             auto status = self.Resize(new_capacity);
             if (!status.ok()) {
               ThrowPyErrorFromStatus(status);
@@ -249,7 +249,7 @@ PYBIND11_MODULE(_fastslide, m) {
   py::class_<FastSlide>(m, "FastSlide")
       .def_static(
           "from_file_path",
-          [](const py::object &file_path) {
+          [](const py::object& file_path) {
             std::string path_str;
             if (py::isinstance<py::str>(file_path)) {
               path_str = py::cast<std::string>(file_path);
@@ -270,8 +270,8 @@ PYBIND11_MODULE(_fastslide, m) {
       // Main reading method (level-native coordinates)
       .def(
           "read_region",
-          [](FastSlide &self, const std::tuple<uint32_t, uint32_t> &location,
-             int level, const std::tuple<uint32_t, uint32_t> &size) {
+          [](FastSlide& self, const std::tuple<uint32_t, uint32_t>& location,
+             int level, const std::tuple<uint32_t, uint32_t>& size) {
             auto [x, y] = location;
             auto [width, height] = size;
             return self.ReadRegion(x, y, width, height, level);
@@ -363,13 +363,13 @@ PYBIND11_MODULE(_fastslide, m) {
       // Overload for CacheManager for backward compatibility or convenience
       .def(
           "set_cache",
-          [](FastSlide &self, std::shared_ptr<CacheManager> cm) {
+          [](FastSlide& self, std::shared_ptr<CacheManager> cm) {
             self.SetCache(cm->GetCache());
           },
           "Set cache using CacheManager", py::arg("cache_manager"))
       .def(
           "set_cache_manager",
-          [](FastSlide &self, std::shared_ptr<CacheManager> cm) {
+          [](FastSlide& self, std::shared_ptr<CacheManager> cm) {
             self.SetCache(cm->GetCache());
           },
           "Set custom cache manager (deprecated, use set_cache)",
@@ -385,7 +385,7 @@ PYBIND11_MODULE(_fastslide, m) {
       // Channel visibility controls
       .def(
           "set_visible_channels",
-          [](FastSlide &self, const py::object &channels) {
+          [](FastSlide& self, const py::object& channels) {
             std::vector<size_t> channel_indices;
 
             // Handle None - show all channels
@@ -468,7 +468,7 @@ PYBIND11_MODULE(_fastslide, m) {
 
   m.def(
       "is_supported",
-      [](const std::string &filename) {
+      [](const std::string& filename) {
         auto reader_or =
             fastslide::runtime::GetGlobalRegistry().CreateReader(filename);
         return reader_or.ok();

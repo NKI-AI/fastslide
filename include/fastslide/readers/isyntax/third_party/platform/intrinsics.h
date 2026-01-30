@@ -42,7 +42,7 @@
 #elif defined(__GNUC__) && defined(__IWMMXT__)
 /* GCC-compatible compiler, targeting ARM with WMMX */
 #include <mmintrin.h>
-#elif (defined(__GNUC__) || defined(__xlC__)) &&                               \
+#elif (defined(__GNUC__) || defined(__xlC__)) && \
     (defined(__VEC__) || defined(__ALTIVEC__))
 /* XLC or GCC-compatible compiler, targeting PowerPC with VMX/VSX */
 #include <altivec.h>
@@ -53,38 +53,38 @@
 
 #if WINDOWS
 #include <windows.h>
-#define write_barrier                                                          \
-  do {                                                                         \
-    _WriteBarrier();                                                           \
-    _mm_sfence();                                                              \
+#define write_barrier \
+  do {                \
+    _WriteBarrier();  \
+    _mm_sfence();     \
   } while (0)
 #define read_barrier _ReadBarrier()
 
-static inline int32_t atomic_increment(volatile int32_t *x) {
+static inline int32_t atomic_increment(volatile int32_t* x) {
   return static_cast<int32_t>(
-      InterlockedIncrement(reinterpret_cast<volatile LONG *>(x)));
+      InterlockedIncrement(reinterpret_cast<volatile LONG*>(x)));
 }
 
-static inline int32_t atomic_decrement(volatile int32_t *x) {
+static inline int32_t atomic_decrement(volatile int32_t* x) {
   return static_cast<int32_t>(
-      InterlockedDecrement(reinterpret_cast<volatile LONG *>(x)));
+      InterlockedDecrement(reinterpret_cast<volatile LONG*>(x)));
 }
 
-static inline int32_t atomic_add(volatile int32_t *x, int32_t amount) {
+static inline int32_t atomic_add(volatile int32_t* x, int32_t amount) {
   return static_cast<int32_t>(InterlockedAdd(
-      reinterpret_cast<volatile LONG *>(x), static_cast<LONG>(amount)));
+      reinterpret_cast<volatile LONG*>(x), static_cast<LONG>(amount)));
 }
 
-static inline int32_t atomic_subtract(volatile int32_t *x, int32_t amount) {
+static inline int32_t atomic_subtract(volatile int32_t* x, int32_t amount) {
   return static_cast<int32_t>(InterlockedAdd(
-      reinterpret_cast<volatile LONG *>(x), static_cast<LONG>(-amount)));
+      reinterpret_cast<volatile LONG*>(x), static_cast<LONG>(-amount)));
 }
 
-static inline bool atomic_compare_exchange(volatile int32_t *destination,
+static inline bool atomic_compare_exchange(volatile int32_t* destination,
                                            int32_t exchange,
                                            int32_t comparand) {
   const LONG read_value = InterlockedCompareExchange(
-      reinterpret_cast<volatile LONG *>(destination),
+      reinterpret_cast<volatile LONG*>(destination),
       static_cast<LONG>(exchange), static_cast<LONG>(comparand));
   return (read_value == comparand);
 }
@@ -102,53 +102,55 @@ static inline uint32_t bit_scan_forward(uint32_t x) {
 #define write_barrier
 #define read_barrier
 
-static inline int32_t atomic_increment(volatile int32_t *x) {
+static inline int32_t atomic_increment(volatile int32_t* x) {
   return OSAtomicIncrement32(x);
 }
 
-static inline int32_t atomic_decrement(volatile int32_t *x) {
+static inline int32_t atomic_decrement(volatile int32_t* x) {
   return OSAtomicDecrement32(x);
 }
 
-static inline int32_t atomic_add(volatile int32_t *x, int32_t amount) {
+static inline int32_t atomic_add(volatile int32_t* x, int32_t amount) {
   return OSAtomicAdd32(amount, x);
 }
 
-static inline int32_t atomic_subtract(volatile int32_t *x, int32_t amount) {
+static inline int32_t atomic_subtract(volatile int32_t* x, int32_t amount) {
   return OSAtomicAdd32(-amount, x);
 }
 
-static inline bool atomic_compare_exchange(volatile int32_t *destination,
+static inline bool atomic_compare_exchange(volatile int32_t* destination,
                                            int32_t exchange,
                                            int32_t comparand) {
   bool result = OSAtomicCompareAndSwap32(comparand, exchange, destination);
   return result;
 }
 
-static inline uint32_t bit_scan_forward(uint32_t x) { return __builtin_ctz(x); }
+static inline uint32_t bit_scan_forward(uint32_t x) {
+  return __builtin_ctz(x);
+}
 
 #else
 // TODO(jonasteuwen): Check if needed
 #define write_barrier
 #define read_barrier
 
-static inline int32_t atomic_increment(volatile int32_t *x) {
+static inline int32_t atomic_increment(volatile int32_t* x) {
   return __sync_add_and_fetch(x, 1);
 }
 
-static inline int32_t atomic_decrement(volatile int32_t *x) {
+static inline int32_t atomic_decrement(volatile int32_t* x) {
   return __sync_sub_and_fetch(x, 1);
 }
 
-static inline int32_t atomic_add(volatile int32_t *x, int32_t amount) {
+static inline int32_t atomic_add(volatile int32_t* x, int32_t amount) {
   return __sync_add_and_fetch(x, amount);
 }
 
-static inline int32_t atomic_subtract(volatile int32_t *x, int32_t amount) {
+static inline int32_t atomic_subtract(volatile int32_t* x, int32_t amount) {
   return __sync_sub_and_fetch(x, amount);
 }
 
-static inline bool atomic_compare_exchange(volatile int32_t *destination,
+static inline bool atomic_compare_exchange(volatile int32_t* destination,
                                            int32_t exchange,
                                            int32_t comparand) {
   int32_t read_value =
@@ -156,11 +158,13 @@ static inline bool atomic_compare_exchange(volatile int32_t *destination,
   return (read_value == comparand);
 }
 
-static inline uint32_t atomic_or(volatile uint32_t *x, uint32_t mask) {
+static inline uint32_t atomic_or(volatile uint32_t* x, uint32_t mask) {
   return __sync_or_and_fetch(x, mask);
 }
 
-static inline uint32_t bit_scan_forward(uint32_t x) { return __builtin_ctz(x); }
+static inline uint32_t bit_scan_forward(uint32_t x) {
+  return __builtin_ctz(x);
+}
 
 #endif
 
@@ -263,9 +267,15 @@ static inline uint64_t maybe_swap_64(uint64_t x, bool is_big_endian) {
 }
 
 #if APPLE_ARM
-static inline int32_t popcount(uint32_t x) { return __builtin_popcount(x); }
+static inline int32_t popcount(uint32_t x) {
+  return __builtin_popcount(x);
+}
 #elif COMPILER_MSVC
-static inline int32_t popcount(uint32_t x) { return __popcnt(x); }
+static inline int32_t popcount(uint32_t x) {
+  return __popcnt(x);
+}
 #else
-static inline int32_t popcount(uint32_t x) { return __builtin_popcount(x); }
+static inline int32_t popcount(uint32_t x) {
+  return __builtin_popcount(x);
+}
 #endif

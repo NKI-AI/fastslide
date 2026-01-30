@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fastslide/readers/isyntax/third_party/jpeg.h"
 #include <cstdint>
+#include "fastslide/readers/isyntax/third_party/jpeg.h"
 
 #include <gtest/gtest.h>
 

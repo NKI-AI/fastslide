@@ -14,12 +14,10 @@
 
 #include "fastslide/readers/isyntax/third_party/utils/math_utils.h"
 
-#include <cstdint>
 #include <array>
+#include <cstdint>
 
 #include <gtest/gtest.h>
-
-
 
 namespace isyntax {
 namespace math {

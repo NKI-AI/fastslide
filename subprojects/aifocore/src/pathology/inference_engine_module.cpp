@@ -22,7 +22,7 @@
 #include <string>
 #include <utility>
 
-#include "absl/status/status.h"
+#include "aifocore/status/result.h"
 
 #include "ahcore/pathology/config/inference_config.h"
 #include "ahcore/pathology/inference_engine.h"
@@ -34,8 +34,8 @@ using aifo::pathology::inference::InferenceEngine;
 
 namespace {
 
-void ThrowPyErrorFromStatus(const absl::Status& status) {
-  if (status.code() == absl::StatusCode::kInvalidArgument) {
+void ThrowPyErrorFromStatus(const aifocore::Status& status) {
+  if (status.code() == aifocore::StatusCode::kInvalidArgument) {
     throw py::value_error(status.ToString());
   }
   // Raise generic runtime error for all other cases
@@ -99,7 +99,7 @@ PYBIND11_MODULE(inference_engine, m) {
       .def(
           "process_image",
           [](InferenceEngine& self, const std::filesystem::path& image_path) {
-            absl::Status status = self.ProcessImage(image_path);
+            aifocore::Status status = self.ProcessImage(image_path);
             if (!status.ok()) {
               ThrowPyErrorFromStatus(status);
             }
@@ -111,7 +111,7 @@ PYBIND11_MODULE(inference_engine, m) {
           "process_image",
           [](InferenceEngine& self, const std::filesystem::path& image_path,
              const std::filesystem::path& mask_path) {
-            absl::Status status = self.ProcessImage(image_path, mask_path);
+            aifocore::Status status = self.ProcessImage(image_path, mask_path);
             if (!status.ok()) {
               ThrowPyErrorFromStatus(status);
             }

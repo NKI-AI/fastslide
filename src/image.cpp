@@ -91,6 +91,10 @@ void InterleavedToPlanarRGB_U8(const uint8_t* src_interleaved,
 // Highway-optimized RGB to grayscale conversion for uint8 (interleaved input)
 // Uses simplified approximation: (R>>2) + (G>>1) + (B>>3) ≈ 0.25*R + 0.5*G +
 // 0.125*B This is close to the standard 0.299*R + 0.587*G + 0.114*B formula
+// Highway-optimized RGB to grayscale conversion for uint8 (interleaved input)
+// Uses improved approximation: 0.25*R + 0.625*G + 0.125*B
+// This sums to 1.0 (unlike the previous 0.875), preserving brightness better.
+// Implementation: (R >> 2) + (G >> 1) + (G >> 3) + (B >> 3)
 void RGBToGrayscale_U8_Interleaved(const uint8_t* src_rgb, uint8_t* dst_gray,
                                    size_t pixel_count) {
   const hn::ScalableTag<uint8_t> d_u8;
@@ -102,13 +106,15 @@ void RGBToGrayscale_U8_Interleaved(const uint8_t* src_rgb, uint8_t* dst_gray,
     hn::Vec<decltype(d_u8)> r8, g8, b8;
     hn::LoadInterleaved3(d_u8, src_rgb + i * 3, r8, g8, b8);
 
-    // Approximate luminance with shifts: R/4 + G/2 + B/8
+    // Approximate luminance with shifts
     const auto r_contrib = hn::ShiftRight<2>(r8);  // R >> 2
-    const auto g_contrib = hn::ShiftRight<1>(g8);  // G >> 1
+    const auto g_half = hn::ShiftRight<1>(g8);     // G >> 1
+    const auto g_eighth = hn::ShiftRight<3>(g8);   // G >> 3
     const auto b_contrib = hn::ShiftRight<3>(b8);  // B >> 3
 
     // Add contributions (saturating add)
-    auto gray = hn::SaturatedAdd(r_contrib, g_contrib);
+    auto gray = hn::SaturatedAdd(r_contrib, g_half);
+    gray = hn::SaturatedAdd(gray, g_eighth);
     gray = hn::SaturatedAdd(gray, b_contrib);
 
     hn::StoreU(gray, d_u8, dst_gray + i);
@@ -119,7 +125,7 @@ void RGBToGrayscale_U8_Interleaved(const uint8_t* src_rgb, uint8_t* dst_gray,
     const uint32_t r = src_rgb[i * 3 + 0];
     const uint32_t g = src_rgb[i * 3 + 1];
     const uint32_t b = src_rgb[i * 3 + 2];
-    dst_gray[i] = static_cast<uint8_t>((299 * r + 587 * g + 114 * b) / 1000);
+    dst_gray[i] = static_cast<uint8_t>((250 * r + 625 * g + 125 * b) / 1000);
   }
 }
 
@@ -138,22 +144,20 @@ HWY_EXPORT(RGBToGrayscale_U8_Interleaved);
 namespace {
 
 /// @brief Convert single pixel to RGB using weighted average for grayscale
+/// @tparam SrcConfig Source planar configuration
+/// @tparam DstConfig Destination planar configuration
 /// @tparam T Data type
 /// @param src_data Source pixel data
 /// @param dst_data Destination pixel data
 /// @param src_channels Number of source channels
 /// @param pixel_index Pixel index
-/// @param src_config Source planar configuration
-/// @param dst_config Destination planar configuration
 /// @param image_dims Image dimensions [width, height]
-template <typename T>
+template <PlanarConfig SrcConfig, PlanarConfig DstConfig, typename T>
 void ConvertPixelToRGB(const T* src_data, T* dst_data, uint32_t src_channels,
-                       size_t pixel_index, PlanarConfig src_config,
-                       PlanarConfig dst_config,
-                       const ImageDimensions& image_dims) {
+                       size_t pixel_index, const ImageDimensions& image_dims) {
   // Helper function to get pixel value based on planar config
   auto get_pixel = [&](size_t channel) -> T {
-    if (src_config == PlanarConfig::kContiguous) {
+    if constexpr (SrcConfig == PlanarConfig::kContiguous) {
       return src_data[pixel_index * src_channels + channel];
     } else {
       size_t pixels_per_channel =
@@ -164,7 +168,7 @@ void ConvertPixelToRGB(const T* src_data, T* dst_data, uint32_t src_channels,
 
   // Helper function to set pixel value based on planar config
   auto set_pixel = [&](size_t channel, T value) {
-    if (dst_config == PlanarConfig::kContiguous) {
+    if constexpr (DstConfig == PlanarConfig::kContiguous) {
       dst_data[pixel_index * 3 + channel] = value;
     } else {
       size_t pixels_per_channel =
@@ -206,22 +210,21 @@ void ConvertPixelToRGB(const T* src_data, T* dst_data, uint32_t src_channels,
 }
 
 /// @brief Convert single pixel to grayscale using luminance formula
+/// @tparam SrcConfig Source planar configuration
+/// @tparam DstConfig Destination planar configuration
 /// @tparam T Data type
 /// @param src_data Source pixel data
 /// @param dst_data Destination pixel data
 /// @param src_channels Number of source channels
 /// @param pixel_index Pixel index
-/// @param src_config Source planar configuration
-/// @param dst_config Destination planar configuration
 /// @param image_dims Image dimensions [width, height]
-template <typename T>
+template <PlanarConfig SrcConfig, PlanarConfig DstConfig, typename T>
 void ConvertPixelToGrayscale(const T* src_data, T* dst_data,
                              uint32_t src_channels, size_t pixel_index,
-                             PlanarConfig src_config, PlanarConfig dst_config,
                              const ImageDimensions& image_dims) {
   // Helper function to get pixel value based on planar config
   auto get_pixel = [&](size_t channel) -> T {
-    if (src_config == PlanarConfig::kContiguous) {
+    if constexpr (SrcConfig == PlanarConfig::kContiguous) {
       return src_data[pixel_index * src_channels + channel];
     } else {
       size_t pixels_per_channel =
@@ -232,7 +235,7 @@ void ConvertPixelToGrayscale(const T* src_data, T* dst_data,
 
   // Helper function to set pixel value based on planar config
   auto set_pixel = [&](size_t channel, T value) {
-    if (dst_config == PlanarConfig::kContiguous) {
+    if constexpr (DstConfig == PlanarConfig::kContiguous) {
       dst_data[pixel_index] = value;
     } else {
       size_t pixels_per_channel =
@@ -292,6 +295,29 @@ void DispatchDataType(const Image& src_image, Image& dst_image,
   });
 }
 
+// Helper to dispatch based on planar config pairs
+template <typename T, typename Func>
+void DispatchPlanarConfig(PlanarConfig src_conf, PlanarConfig dst_conf,
+                          Func&& func) {
+  if (src_conf == PlanarConfig::kContiguous) {
+    if (dst_conf == PlanarConfig::kContiguous) {
+      func.template
+      operator()<PlanarConfig::kContiguous, PlanarConfig::kContiguous, T>();
+    } else {
+      func.template
+      operator()<PlanarConfig::kContiguous, PlanarConfig::kSeparate, T>();
+    }
+  } else {
+    if (dst_conf == PlanarConfig::kContiguous) {
+      func.template
+      operator()<PlanarConfig::kSeparate, PlanarConfig::kContiguous, T>();
+    } else {
+      func.template
+      operator()<PlanarConfig::kSeparate, PlanarConfig::kSeparate, T>();
+    }
+  }
+}
+
 }  // namespace
 
 std::unique_ptr<Image> Image::ToRGB() const {
@@ -309,13 +335,23 @@ std::unique_ptr<Image> Image::ToRGB() const {
       std::make_unique<Image>(dimensions_, ImageFormat::kRGB, dtype_);
 
   size_t pixel_count = GetPixelCount();
+  uint32_t channels = channels_;
+  PlanarConfig src_config = planar_config_;
+  PlanarConfig dst_config = rgb_image->planar_config_;
+  const auto& dims = dimensions_;
 
   DispatchDataType(
       *this, *rgb_image, [&](const auto* src_data, auto* dst_data) {
-        for (size_t i = 0; i < pixel_count; ++i) {
-          ConvertPixelToRGB(src_data, dst_data, channels_, i, planar_config_,
-                            rgb_image->planar_config_, dimensions_);
-        }
+        using T =
+            std::remove_const_t<std::remove_pointer_t<decltype(src_data)>>;
+        DispatchPlanarConfig<T>(
+            src_config, dst_config,
+            [&]<PlanarConfig S, PlanarConfig D, typename U>() {
+              for (size_t i = 0; i < pixel_count; ++i) {
+                ConvertPixelToRGB<S, D, U>(src_data, dst_data, channels, i,
+                                           dims);
+              }
+            });
       });
 
   return rgb_image;
@@ -348,13 +384,23 @@ std::unique_ptr<Image> Image::ToGrayscale() const {
   }
 
   // Generic path for other formats
+  uint32_t channels = channels_;
+  PlanarConfig src_config = planar_config_;
+  PlanarConfig dst_config = gray_image->planar_config_;
+  const auto& dims = dimensions_;
+
   DispatchDataType(
       *this, *gray_image, [&](const auto* src_data, auto* dst_data) {
-        for (size_t i = 0; i < pixel_count; ++i) {
-          ConvertPixelToGrayscale(src_data, dst_data, channels_, i,
-                                  planar_config_, gray_image->planar_config_,
-                                  dimensions_);
-        }
+        using T =
+            std::remove_const_t<std::remove_pointer_t<decltype(src_data)>>;
+        DispatchPlanarConfig<T>(
+            src_config, dst_config,
+            [&]<PlanarConfig S, PlanarConfig D, typename U>() {
+              for (size_t i = 0; i < pixel_count; ++i) {
+                ConvertPixelToGrayscale<S, D, U>(src_data, dst_data, channels,
+                                                 i, dims);
+              }
+            });
       });
 
   return gray_image;

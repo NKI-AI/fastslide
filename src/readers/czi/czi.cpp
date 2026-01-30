@@ -131,12 +131,13 @@ aifocore::Result<std::vector<uint8_t>> DecompressZstd(
   const size_t res =
       ZSTD_decompress(out.data(), out.size(), in.data(), in.size());
   if (ZSTD_isError(res)) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            aifocore::fmt::format("ZSTD_decompress failed: {}",
-                                                  ZSTD_getErrorName(res)));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInternal,
+        aifocore::fmt::format("ZSTD_decompress failed: {}",
+                              ZSTD_getErrorName(res)));
   }
   if (res != expected_size) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("ZSTD size mismatch: got {}, expected {}", res,
                               expected_size));
@@ -147,8 +148,8 @@ aifocore::Result<std::vector<uint8_t>> DecompressZstd(
 aifocore::Result<std::vector<uint8_t>> UnpackHiLo16(
     std::span<const uint8_t> in) {
   if ((in.size() % 2) != 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "HiLo unpacking requires even byte count");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "HiLo unpacking requires even byte count");
   }
   const size_t half = in.size() / 2;
   std::vector<uint8_t> out(in.size());
@@ -171,8 +172,8 @@ aifocore::Result<Zstd1ParseResult> ParseZstd1Payload(
   // - 1: header is just the length byte, no options.
   // - 3: includes (chunk_type, is_hi_low_pack).
   if (in.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "zstd1 payload truncated");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "zstd1 payload truncated");
   }
   const uint8_t header_len = in[0];
   if (header_len == 1) {
@@ -180,20 +181,20 @@ aifocore::Result<Zstd1ParseResult> ParseZstd1Payload(
   }
   if (header_len == 3) {
     if (in.size() < 3) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "zstd1 payload truncated (header)");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "zstd1 payload truncated (header)");
     }
     const uint8_t chunk_type = in[1];
     const uint8_t flags = in[2];
     if (chunk_type != 1) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "zstd1 payload has unsupported chunk type");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "zstd1 payload has unsupported chunk type");
     }
     return Zstd1ParseResult{.payload = in.subspan(3),
                             .do_hilo = (flags & 1u) != 0u};
   }
-  return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                          "zstd1 payload has unsupported header length");
+  return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                              "zstd1 payload has unsupported header length");
 }
 
 aifocore::Result<EmbeddedSubblock> ParseEmbeddedSingleSubblock(
@@ -206,8 +207,8 @@ aifocore::Result<EmbeddedSubblock> ParseEmbeddedSingleSubblock(
   AIFOCORE_RETURN_IF_ERROR(file.Read(sid_raw, sizeof(sid_raw)));
   const std::string sid = ReadFixedAscii(sid_raw, sizeof(sid_raw));
   if (!StartsWithMagic(sid, kSidZisRawFile)) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Embedded CZI: bad file magic");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Embedded CZI: bad file magic");
   }
 
   (void)ReadLeInt64(file.Get());  // allocated_size
@@ -232,18 +233,22 @@ aifocore::Result<EmbeddedSubblock> ParseEmbeddedSingleSubblock(
   (void)ReadLeInt64(file.Get());
 
   if (subblk_dir_pos == 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Embedded CZI: missing subblock directory");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Embedded CZI: missing subblock directory");
   }
 
-  // Read subblock directory header (<16sqqi124s).
+  // Read subblock directory segment header (embedded CZI):
+  // - sid[16] ("ZISRAWDIRECTORY")
+  // - allocated_size (int64), used_size (int64)
+  // - entry_count (int32)
+  // - reserved[124]
   AIFOCORE_RETURN_IF_ERROR(file.Seek(base_offset + subblk_dir_pos));
   std::memset(sid_raw, 0, sizeof(sid_raw));
   AIFOCORE_RETURN_IF_ERROR(file.Read(sid_raw, sizeof(sid_raw)));
   const std::string dir_sid = ReadFixedAscii(sid_raw, sizeof(sid_raw));
   if (!StartsWithMagic(dir_sid, kSidZisRawDirectory)) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Embedded CZI: bad directory magic");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Embedded CZI: bad directory magic");
   }
 
   int64_t allocated_size = 0;
@@ -257,7 +262,7 @@ aifocore::Result<EmbeddedSubblock> ParseEmbeddedSingleSubblock(
   AIFOCORE_RETURN_IF_ERROR(file.Read(reserved_dir, sizeof(reserved_dir)));
 
   if (entry_count != 1) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Embedded CZI: expected 1 subblock, got {}",
                               entry_count));
@@ -268,26 +273,26 @@ aifocore::Result<EmbeddedSubblock> ParseEmbeddedSingleSubblock(
   const int64_t seg_hdr_size = 16 + 8 + 8;
   const int64_t seg_size = used_size - header_size + seg_hdr_size;
   if (seg_size <= 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Embedded CZI: invalid directory seg_size");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Embedded CZI: invalid directory seg_size");
   }
 
   AIFOCORE_ASSIGN_OR_RETURN(auto buf,
                             file.ReadBytes(static_cast<size_t>(seg_size)));
   size_t p = 0;
   if (buf.size() < 2) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Embedded CZI: directory truncated");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Embedded CZI: directory truncated");
   }
   const std::string schema(reinterpret_cast<const char*>(buf.data()), 2);
   p += 2;
   if (schema != kSchemaDv) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Embedded CZI: unexpected schema");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Embedded CZI: unexpected schema");
   }
   if (p + 4 + 8 + 4 + 4 + 1 + 1 + 4 + 4 > buf.size()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Embedded CZI: directory entry truncated");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Embedded CZI: directory entry truncated");
   }
 
   int32_t pixel_type = 0;
@@ -316,8 +321,8 @@ aifocore::Result<EmbeddedSubblock> ParseEmbeddedSingleSubblock(
 
   for (int d = 0; d < ndimensions; ++d) {
     if (p + 4 + 4 + 4 + 4 + 4 > buf.size()) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "Embedded CZI: dimension entry truncated");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "Embedded CZI: dimension entry truncated");
     }
     char dim_raw[4];
     std::memcpy(dim_raw, buf.data() + p, sizeof(dim_raw));
@@ -347,8 +352,8 @@ aifocore::Result<EmbeddedSubblock> ParseEmbeddedSingleSubblock(
   }
 
   if (w == 0 || h == 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Embedded CZI: missing X/Y dims");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Embedded CZI: missing X/Y dims");
   }
 
   EmbeddedSubblock sb{};
@@ -365,14 +370,17 @@ aifocore::Result<EmbeddedSubblock> ParseEmbeddedSingleSubblock(
 // Decode embedded-CZI subblock pixels into RGB8 (for tool-friendly exports).
 aifocore::Result<std::vector<uint8_t>> ReadEmbeddedSubblockRgb8(
     FileReader& file, int64_t base_offset, const EmbeddedSubblock& sb) {
-  // Subblock header: <16sqqiiq (we only need meta_size and data_size).
+  // Subblock segment header (embedded CZI, little-endian):
+  // - sid[16] ("ZISRAWSUBBLOCK")
+  // - allocated_size (int64), used_size (int64)
+  // - meta_size (int32), attach_size (int32), data_size (int64)
   AIFOCORE_RETURN_IF_ERROR(file.Seek(base_offset + sb.file_pos));
   char sid_raw[16] = {};
   AIFOCORE_RETURN_IF_ERROR(file.Read(sid_raw, sizeof(sid_raw)));
   const std::string sid = ReadFixedAscii(sid_raw, sizeof(sid_raw));
   if (!StartsWithMagic(sid, "ZISRAWSUBBLOCK")) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Embedded CZI: bad subblock magic");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Embedded CZI: bad subblock magic");
   }
   (void)ReadLeInt64(file.Get());  // allocated_size
   (void)ReadLeInt64(file.Get());  // used_size
@@ -410,8 +418,8 @@ aifocore::Result<std::vector<uint8_t>> ReadEmbeddedSubblockRgb8(
       AIFOCORE_ASSIGN_OR_RETURN(raw, UnpackHiLo16(raw));
     }
   } else if (sb.compression != 0) {
-    return aifocore::Status(aifocore::StatusCode::kUnimplemented,
-                            "Embedded CZI: unsupported compression");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,
+                                "Embedded CZI: unsupported compression");
   }
 
   // Convert BGR24/BGR48 -> RGB8. For BGR48, use max-based scaling to avoid dark
@@ -419,8 +427,8 @@ aifocore::Result<std::vector<uint8_t>> ReadEmbeddedSubblockRgb8(
   const size_t npx = static_cast<size_t>(sb.w) * sb.h;
   if (sb.pixel_type == 3) {
     if (raw.size() != npx * 3) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "Embedded CZI: BGR24 size mismatch");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "Embedded CZI: BGR24 size mismatch");
     }
     std::vector<uint8_t> rgb(npx * 3);
     for (size_t i = 0; i < npx; ++i) {
@@ -435,8 +443,8 @@ aifocore::Result<std::vector<uint8_t>> ReadEmbeddedSubblockRgb8(
   }
   if (sb.pixel_type == 4) {
     if (raw.size() != npx * 6) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "Embedded CZI: BGR48 size mismatch");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "Embedded CZI: BGR48 size mismatch");
     }
     const uint16_t* u16 = reinterpret_cast<const uint16_t*>(raw.data());
     uint16_t max_v = 0;
@@ -456,8 +464,8 @@ aifocore::Result<std::vector<uint8_t>> ReadEmbeddedSubblockRgb8(
     return rgb;
   }
 
-  return aifocore::Status(aifocore::StatusCode::kUnimplemented,
-                          "Embedded CZI: unsupported pixel type");
+  return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,
+                              "Embedded CZI: unsupported pixel type");
 }
 
 }  // namespace
@@ -466,12 +474,12 @@ CziReader::CziReader(std::string filename) : filename_(std::move(filename)) {}
 
 aifocore::Status CziReader::ValidateInput(const fs::path& filename) {
   if (filename.extension() != kCziExt) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("File does not have {} extension", kCziExt));
   }
   if (!fs::exists(filename)) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kNotFound,
         aifocore::fmt::format("File does not exist: {}", filename.string()));
   }
@@ -501,12 +509,20 @@ aifocore::Status CziReader::Initialize() {
 aifocore::Status CziReader::ParseFileHeader(FileReader& file) {
   AIFOCORE_RETURN_IF_ERROR(file.Seek(0));
 
-  // Struct layout matches Python reader: <16sqqiiii16s16siqqiq
+  // CZI file header segment (ZISRAWFILE).
+  // On-disk layout (little-endian):
+  // - sid[16]
+  // - allocated_size (int64), used_size (int64)
+  // - major (int32), minor (int32), reserved1 (int32), reserved2 (int32)
+  // - primary_file_guid[16], file_guid[16]
+  // - file_part (int32)
+  // - subblk_dir_pos (int64), meta_pos (int64), update_pending (int32),
+  // att_dir_pos (int64)
   char sid_raw[16] = {};
   AIFOCORE_RETURN_IF_ERROR(file.Read(sid_raw, sizeof(sid_raw)));
   const std::string sid = ReadFixedAscii(sid_raw, sizeof(sid_raw));
   if (!StartsWithMagic(sid, kSidZisRawFile)) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Bad magic: expected {}, got {}", kSidZisRawFile,
                               sid));
@@ -537,8 +553,8 @@ aifocore::Status CziReader::ParseFileHeader(FileReader& file) {
 
 aifocore::Status CziReader::ParseSubblockDirectory(FileReader& file) {
   if (subblk_dir_pos_ == 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Missing CZI subblock directory");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Missing CZI subblock directory");
   }
   AIFOCORE_RETURN_IF_ERROR(file.Seek(subblk_dir_pos_));
 
@@ -546,7 +562,7 @@ aifocore::Status CziReader::ParseSubblockDirectory(FileReader& file) {
   AIFOCORE_RETURN_IF_ERROR(file.Read(sid_raw, sizeof(sid_raw)));
   const std::string sid = ReadFixedAscii(sid_raw, sizeof(sid_raw));
   if (!StartsWithMagic(sid, kSidZisRawDirectory)) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Bad magic: expected {}, got {}",
                               kSidZisRawDirectory, sid));
@@ -567,7 +583,7 @@ aifocore::Status CziReader::ParseSubblockDirectory(FileReader& file) {
   const int64_t seg_hdr_size = 16 + 8 + 8;
   const int64_t seg_size = used_size - header_size + seg_hdr_size;
   if (seg_size < 0) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid directory used_size={}", used_size));
   }
@@ -580,8 +596,8 @@ aifocore::Status CziReader::ParseSubblockDirectory(FileReader& file) {
   size_t p = 0;
   auto require = [&](size_t n) -> aifocore::Status {
     if (p + n > buf.size()) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "Premature end of directory buffer");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "Premature end of directory buffer");
     }
     return aifocore::Status::OkStatus();
   };
@@ -590,13 +606,24 @@ aifocore::Status CziReader::ParseSubblockDirectory(FileReader& file) {
   subblocks_.reserve(static_cast<size_t>(std::max(0, entry_count)));
 
   for (int i = 0; i < entry_count; ++i) {
-    // DirEntryDV: <2siqiibc4si
+    // Directory entry (schema "DV").
+    // Fixed fields:
+    // - schema[2]
+    // - pixel_type (int32)
+    // - file_pos (int64)
+    // - file_part (int32)
+    // - compression (int32)
+    // - pyramid_type (int8)
+    // - reserved1 (int8)
+    // - reserved2[4]
+    // - ndimensions (int32)
+    // Followed by ndimensions DimensionEntryDV records.
     AIFOCORE_RETURN_IF_ERROR(require(2));
     const std::string schema(reinterpret_cast<const char*>(buf.data() + p), 2);
     p += 2;
     if (schema != "DV") {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "Unexpected CZI directory entry schema");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "Unexpected CZI directory entry schema");
     }
     AIFOCORE_RETURN_IF_ERROR(require(4 + 8 + 4 + 4 + 1 + 1 + 4 + 4));
 
@@ -638,7 +665,10 @@ aifocore::Status CziReader::ParseSubblockDirectory(FileReader& file) {
     int32_t downsample = 1;
 
     for (int d = 0; d < ndimensions; ++d) {
-      // DimEntryDV: <4siifi
+      // Dimension entry (little-endian):
+      // - dimension[4] (ASCII, e.g. "X", "Y", "S", "C", "M")
+      // - start (int32), size (int32), start_coordinate (float32), stored_size
+      // (int32)
       AIFOCORE_RETURN_IF_ERROR(require(4 + 4 + 4 + 4 + 4));
       char dim_raw[4];
       std::memcpy(dim_raw, buf.data() + p, sizeof(dim_raw));
@@ -673,7 +703,7 @@ aifocore::Status CziReader::ParseSubblockDirectory(FileReader& file) {
       } else if (dim_name == "M") {
         z_index = start;
       } else {
-        return aifocore::Status(
+        return AIFOCORE_MAKE_STATUS(
             aifocore::StatusCode::kInvalidArgument,
             aifocore::fmt::format("Unrecognized subblock dimension: {}",
                                   dim_name));
@@ -681,8 +711,9 @@ aifocore::Status CziReader::ParseSubblockDirectory(FileReader& file) {
     }
 
     if (w == 0 || h == 0) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "Missing X/Y dimension in CZI subblock entry");
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kInvalidArgument,
+          "Missing X/Y dimension in CZI subblock entry");
     }
 
     Subblock sb{};
@@ -774,8 +805,8 @@ aifocore::Status CziReader::ParseSubblockDirectory(FileReader& file) {
 
 aifocore::Status CziReader::ParseMetadataXml(FileReader& file) {
   if (meta_pos_ == 0) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "No metadata segment");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "No metadata segment");
   }
   AIFOCORE_RETURN_IF_ERROR(file.Seek(meta_pos_));
 
@@ -783,7 +814,7 @@ aifocore::Status CziReader::ParseMetadataXml(FileReader& file) {
   AIFOCORE_RETURN_IF_ERROR(file.Read(sid_raw, sizeof(sid_raw)));
   const std::string sid = ReadFixedAscii(sid_raw, sizeof(sid_raw));
   if (!StartsWithMagic(sid, kSidZisRawMetadata)) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Bad magic: expected {}, got {}",
                               kSidZisRawMetadata, sid));
@@ -798,8 +829,8 @@ aifocore::Status CziReader::ParseMetadataXml(FileReader& file) {
   AIFOCORE_RETURN_IF_ERROR(file.Read(reserved, sizeof(reserved)));
 
   if (xml_size <= 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Invalid metadata XML size");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Invalid metadata XML size");
   }
 
   std::vector<char> xml_buf(static_cast<size_t>(xml_size));
@@ -901,7 +932,15 @@ aifocore::Status CziReader::ParseAttachmentDirectory(FileReader& file) {
   attachments_.reserve(static_cast<size_t>(std::max(0, entry_count)));
 
   for (int i = 0; i < entry_count; ++i) {
-    // AttEntryA1: <2s10sqi16s8s80s
+    // Attachment directory entry (schema "A1").
+    // Layout (little-endian):
+    // - schema[2]
+    // - reserved[10]
+    // - file_pos (int64)
+    // - file_part (int32)
+    // - guid[16]
+    // - file_type[8]  (ASCII, e.g. "JPG", "CZI")
+    // - name[80]      (ASCII, e.g. "Label", "SlidePreview", "Thumbnail")
     char schema_raw[2];
     AIFOCORE_RETURN_IF_ERROR(file.Read(schema_raw, sizeof(schema_raw)));
     const std::string schema(schema_raw, schema_raw + 2);
@@ -980,8 +1019,9 @@ int CziReader::GetLevelCount() const {
 
 aifocore::Result<LevelInfo> CziReader::GetLevelInfo(int level) const {
   if (level < 0 || level >= GetLevelCount()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            aifocore::fmt::format("Invalid level: {}", level));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Invalid level: {}", level));
   }
 
   const uint32_t base_w = base_size_l0_[0];
@@ -1039,8 +1079,8 @@ aifocore::Result<ImageDimensions> CziReader::GetAssociatedImageDimensions(
   } else if (name == "thumbnail") {
     attachment_name = kAttachmentThumbnail;
   } else {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "Associated image not found");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "Associated image not found");
   }
 
   const AttachmentInfo* found = nullptr;
@@ -1052,8 +1092,8 @@ aifocore::Result<ImageDimensions> CziReader::GetAssociatedImageDimensions(
     }
   }
   if (found == nullptr) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "Associated image not found");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "Associated image not found");
   }
 
   if (found->file_type == "JPG") {
@@ -1065,8 +1105,8 @@ aifocore::Result<ImageDimensions> CziReader::GetAssociatedImageDimensions(
     AIFOCORE_RETURN_IF_ERROR(file.Read(sid_raw, sizeof(sid_raw)));
     const std::string sid = ReadFixedAscii(sid_raw, sizeof(sid_raw));
     if (!StartsWithMagic(sid, kSidZisRawAttach)) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "Bad attachment segment magic");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "Bad attachment segment magic");
     }
 
     (void)ReadLeInt64(file.Get());  // alloc
@@ -1074,8 +1114,8 @@ aifocore::Result<ImageDimensions> CziReader::GetAssociatedImageDimensions(
     int32_t data_size = 0;
     AIFOCORE_ASSIGN_OR_RETURN(data_size, ReadLeInt32(file.Get()));
     if (data_size <= 0) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "Invalid attachment data size");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "Invalid attachment data size");
     }
 
     AIFOCORE_RETURN_IF_ERROR(file.Seek(
@@ -1108,8 +1148,8 @@ aifocore::Result<Image> CziReader::ReadAssociatedImage(
   } else if (name == "thumbnail") {
     attachment_name = kAttachmentThumbnail;
   } else {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "Associated image not found");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "Associated image not found");
   }
 
   const AttachmentInfo* found = nullptr;
@@ -1121,8 +1161,8 @@ aifocore::Result<Image> CziReader::ReadAssociatedImage(
     }
   }
   if (found == nullptr) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "Associated image not found");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "Associated image not found");
   }
 
   if (found->file_type == "JPG") {
@@ -1134,8 +1174,8 @@ aifocore::Result<Image> CziReader::ReadAssociatedImage(
     AIFOCORE_RETURN_IF_ERROR(file.Read(sid_raw, sizeof(sid_raw)));
     const std::string sid = ReadFixedAscii(sid_raw, sizeof(sid_raw));
     if (!StartsWithMagic(sid, kSidZisRawAttach)) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "Bad attachment segment magic");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "Bad attachment segment magic");
     }
 
     (void)ReadLeInt64(file.Get());  // alloc
@@ -1143,8 +1183,8 @@ aifocore::Result<Image> CziReader::ReadAssociatedImage(
     int32_t data_size = 0;
     AIFOCORE_ASSIGN_OR_RETURN(data_size, ReadLeInt32(file.Get()));
     if (data_size <= 0) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "Invalid attachment data size");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "Invalid attachment data size");
     }
 
     AIFOCORE_RETURN_IF_ERROR(file.Seek(
@@ -1155,8 +1195,8 @@ aifocore::Result<Image> CziReader::ReadAssociatedImage(
     AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
                               runtime::decoders::DecodeJpegToRgb(jpg_bytes));
     if (decoded.rgb.empty() || decoded.width == 0 || decoded.height == 0) {
-      return aifocore::Status(aifocore::StatusCode::kInternal,
-                              "Failed to decode JPEG associated image");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                  "Failed to decode JPEG associated image");
     }
 
     Image img(ImageDimensions{decoded.width, decoded.height}, ImageFormat::kRGB,
@@ -1219,8 +1259,8 @@ aifocore::Result<std::shared_ptr<czi::CziSpatialIndex>>
 CziReader::GetSpatialIndex(int level) const {
   std::lock_guard<std::mutex> lock(spatial_index_mutex_);
   if (level < 0 || level >= GetLevelCount()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Invalid level for spatial index");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Invalid level for spatial index");
   }
   if (spatial_indices_[static_cast<size_t>(level)]) {
     return spatial_indices_[static_cast<size_t>(level)];
@@ -1229,8 +1269,8 @@ CziReader::GetSpatialIndex(int level) const {
   const int32_t ds = downsamples_[static_cast<size_t>(level)];
   const auto& sb_indices = level_subblocks_[static_cast<size_t>(level)];
   if (sb_indices.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "No tiles at this level");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "No tiles at this level");
   }
 
   // Derive cell step from max tile dimension in level coordinates.

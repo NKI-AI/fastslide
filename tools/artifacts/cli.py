@@ -49,10 +49,7 @@ def main() -> None:
         action="append",
         default=[],
         dest="bazel_args",
-        help=(
-            "Extra arg to pass through to Bazel for wheel builds (repeatable), "
-            "e.g. --bazel-arg=--verbose_failures"
-        ),
+        help=("Extra arg to pass through to Bazel for wheel builds (repeatable), e.g. --bazel-arg=--verbose_failures"),
     )
     args = parser.parse_args()
 
@@ -84,5 +81,3 @@ def main() -> None:
             exit_code = 1
 
     raise SystemExit(exit_code)
-
-

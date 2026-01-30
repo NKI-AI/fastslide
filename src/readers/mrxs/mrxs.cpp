@@ -1251,7 +1251,6 @@ aifocore::Status MrxsReader::ReadCameraPositions(
         mrxs::MrxsDataReader::ReadData(datafile2_path, offset2, size2));
 
     // Decompress if needed (zlib header)
-    std::vector<uint8_t> metadata_per_position;
     if (compressed_metadata.size() >= 2 && compressed_metadata[0] == 0x78 &&
         compressed_metadata[1] == 0x9C) {
       const int positions_x = slide_info.images_x / slide_info.image_divisions;
@@ -1260,30 +1259,68 @@ aifocore::Status MrxsReader::ReadCameraPositions(
       const int expected_size = 4 * npositions;
 
       AIFOCORE_ASSIGN_OR_RETURN(
-          metadata_per_position,
-          DecompressZlib(compressed_metadata.data(), compressed_metadata.size(),
-                         expected_size));
-    } else {
-      metadata_per_position = std::move(compressed_metadata);
-    }
+          runtime::io::ZlibDecompressionResult decompressed,
+          DecompressZlibWithActualSize(compressed_metadata.data(),
+                                       compressed_metadata.size(),
+                                       /*expected_size_hint=*/expected_size));
+      if (decompressed.actual_size_bytes !=
+          static_cast<size_t>(expected_size)) {
+        std::cerr << "MRXS: gain metadata size mismatch (expected "
+                  << expected_size << " bytes, got "
+                  << decompressed.actual_size_bytes
+                  << "); ignoring gain metadata and using gain=1.0\n";
+        slide_info.camera_position_gains.clear();
+      } else {
+        slide_info.camera_position_gains.clear();
+        slide_info.camera_position_gains.reserve(
+            static_cast<size_t>(npositions));
 
-    // Store the gain values for use during tile reading
-    if (metadata_per_position.size() >= 4) {
-      const size_t num_values = metadata_per_position.size() / 4;
-      slide_info.camera_position_gains.clear();
-      slide_info.camera_position_gains.reserve(num_values);
-
-      for (size_t i = 0; i < num_values; ++i) {
-        const uint8_t* ptr = metadata_per_position.data() + (i * 4);
-        float gain;
-        std::memcpy(&gain, ptr, sizeof(float));
+        const uint8_t* data = decompressed.data.data();
+        for (int i = 0; i < npositions; ++i) {
+          float gain;
+          std::memcpy(&gain, data + (static_cast<size_t>(i) * sizeof(float)),
+                      sizeof(float));
 #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-        uint32_t temp;
-        std::memcpy(&temp, ptr, sizeof(uint32_t));
-        temp = __builtin_bswap32(temp);
-        std::memcpy(&gain, &temp, sizeof(float));
+          uint32_t temp;
+          std::memcpy(&temp, data + (static_cast<size_t>(i) * sizeof(uint32_t)),
+                      sizeof(uint32_t));
+          temp = __builtin_bswap32(temp);
+          std::memcpy(&gain, &temp, sizeof(float));
 #endif
-        slide_info.camera_position_gains.push_back(gain);
+          slide_info.camera_position_gains.push_back(gain);
+        }
+      }
+    } else {
+      const int positions_x = slide_info.images_x / slide_info.image_divisions;
+      const int positions_y = slide_info.images_y / slide_info.image_divisions;
+      const int npositions = positions_x * positions_y;
+      const int expected_size = 4 * npositions;
+
+      if (compressed_metadata.size() != static_cast<size_t>(expected_size)) {
+        std::cerr << "MRXS: gain metadata size mismatch (expected "
+                  << expected_size << " bytes, got "
+                  << compressed_metadata.size()
+                  << "); ignoring gain metadata and using gain=1.0\n";
+        slide_info.camera_position_gains.clear();
+      } else {
+        slide_info.camera_position_gains.clear();
+        slide_info.camera_position_gains.reserve(
+            static_cast<size_t>(npositions));
+
+        const uint8_t* data = compressed_metadata.data();
+        for (int i = 0; i < npositions; ++i) {
+          float gain;
+          std::memcpy(&gain, data + (static_cast<size_t>(i) * sizeof(float)),
+                      sizeof(float));
+#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+          uint32_t temp;
+          std::memcpy(&temp, data + (static_cast<size_t>(i) * sizeof(uint32_t)),
+                      sizeof(uint32_t));
+          temp = __builtin_bswap32(temp);
+          std::memcpy(&gain, &temp, sizeof(float));
+#endif
+          slide_info.camera_position_gains.push_back(gain);
+        }
       }
     }
   }
@@ -1307,8 +1344,21 @@ aifocore::Status MrxsReader::ReadCameraPositions(
 
       // Decompress
       AIFOCORE_ASSIGN_OR_RETURN(
-          position_data, DecompressZlib(compressed_data.data(),
-                                        compressed_data.size(), expected_size));
+          runtime::io::ZlibDecompressionResult decompressed,
+          DecompressZlibWithActualSize(compressed_data.data(),
+                                       compressed_data.size(),
+                                       /*expected_size_hint=*/expected_size));
+      if (decompressed.actual_size_bytes > static_cast<size_t>(expected_size)) {
+        return AIFOCORE_MAKE_STATUS(
+            aifocore::StatusCode::kResourceExhausted,
+            aifocore::fmt::format(
+                "Position buffer decompressed to {} bytes, expected at most {} "
+                "bytes",
+                decompressed.actual_size_bytes, expected_size));
+      }
+      position_data = std::move(decompressed.data);
+      // Preserve old behavior: caller expects exactly `expected_size` bytes.
+      position_data.resize(static_cast<size_t>(expected_size), 0);
     } else {
       position_data = std::move(compressed_data);
     }
@@ -1323,7 +1373,7 @@ aifocore::Status MrxsReader::ReadCameraPositions(
   const int expected_size = 9 * npositions;
 
   if (position_data.size() != static_cast<size_t>(expected_size)) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format(
             "Position buffer size mismatch. Expected {}, got {}", expected_size,

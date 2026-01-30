@@ -22,6 +22,7 @@
 
 #include "ahcore/pathology/config/inference_config.h"
 #include "ahcore/pathology/inference_engine.h"
+#include "aifocore/status/result.h"
 #include "aifocore/utilities/spinners.h"
 
 #include "CLI11/CLI11.hpp"
@@ -77,8 +78,9 @@ int main(int argc, char** argv) {
                          std::to_string(tile_index) + ")");
       });
 
-  absl::Status status = mask_path ? engine.ProcessImage(image_path, *mask_path)
-                                  : engine.ProcessImage(image_path);
+  aifocore::Status status = mask_path
+                                ? engine.ProcessImage(image_path, *mask_path)
+                                : engine.ProcessImage(image_path);
   spinner->Stop();
   if (!status.ok()) {
     spdlog::error("Error running inference: {}", status.message());

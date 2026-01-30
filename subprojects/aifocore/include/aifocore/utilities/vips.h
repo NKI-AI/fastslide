@@ -21,8 +21,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "absl/status/status.h"
-#include "aifocore/status/status_macros.h"
+#include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 
 namespace fs = std::filesystem;
@@ -60,11 +59,12 @@ class VipsInitializer {
  * @param image The Vips image to save.
  * @param filename The path to the file to save the image to.
  * @param options The options to use when saving the image.
- * @return An absl::Status indicating the success or failure of the operation.
+ * @return An aifocore::Status indicating the success or failure of the
+ * operation.
  */
-absl::Status SaveVipsImageToFile(const vips::VImage& image,
-                                 const fs::path& filename,
-                                 vips::VOption* options = nullptr) {
+aifocore::Status SaveVipsImageToFile(const vips::VImage& image,
+                                     const fs::path& filename,
+                                     vips::VOption* options = nullptr) {
   // Disable VIPS threading completely
   vips_concurrency_set(0);
   try {
@@ -73,15 +73,18 @@ absl::Status SaveVipsImageToFile(const vips::VImage& image,
     } else {
       image.write_to_file(filename.string().c_str());
     }
-    return absl::OkStatus();
+    return aifocore::Status::OkStatus();
   } catch (const vips::VError& e) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
-                       aifocore::fmt::format("VIPS error: {}", e.what()));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInternal,
+        aifocore::fmt::format("VIPS error: {}", e.what()));
   } catch (const std::exception& e) {
-    return MAKE_STATUS(absl::StatusCode::kInternal,
-                       aifocore::fmt::format("Unexpected error: {}", e.what()));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInternal,
+        aifocore::fmt::format("Unexpected error: {}", e.what()));
   } catch (...) {
-    return MAKE_STATUS(absl::StatusCode::kInternal, "Unknown exception");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Unknown exception");
   }
 }
 

@@ -31,7 +31,15 @@ enum class Compression : uint16_t {
   kJpeg = 7,          ///< JPEG compression
   kAdobeDeflate = 8,  ///< Adobe Deflate (zlib/deflate), common in TIFF
   kDeflate = 32946,   ///< Deflate (same codec as AdobeDeflate)
-  kZstd = 50000,      ///< ZSTD compression (vendor-specific code)
+  // JPEG 2000:
+  // - 33003 is used by some writers (notably older/legacy ClassicTIFFs).
+  // - 33005 is also commonly used in the wild (e.g. SVS variants).
+  //
+  // SimpleTIFF treats both codes as JPEG2000 and routes them to the same
+  // decoder. We keep the enum value at 33003 for historical reasons and rely
+  // on IsCompression() to accept both.
+  kJpeg2000 = 33003,
+  kZstd = 50000,  ///< ZSTD compression (vendor-specific code)
 };
 
 /// Convert Compression enum to underlying uint16_t value
@@ -48,6 +56,9 @@ constexpr uint16_t ToCompressionCode(Compression compression_value) {
 /// @param expected Expected Compression enum value
 /// @return True if codes match
 constexpr bool IsCompression(uint16_t code, Compression expected) {
+  if (expected == Compression::kJpeg2000) {
+    return code == 33003u || code == 33005u;
+  }
   return code == static_cast<uint16_t>(expected);
 }
 

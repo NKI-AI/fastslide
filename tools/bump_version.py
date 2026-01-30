@@ -99,7 +99,9 @@ def _plan_versions_json_update(*, new_version: str) -> PlannedEdit:
         raise ValueError(f"{path}: no entry with id='fastslide' found")
     # Preserve a stable, readable formatting.
     new_text = json.dumps(data, indent=4, sort_keys=False) + "\n"
-    return PlannedEdit(path=path, description="Update fastslide version in versions.json", old=_read_text(path), new=new_text)
+    return PlannedEdit(
+        path=path, description="Update fastslide version in versions.json", old=_read_text(path), new=new_text
+    )
 
 
 def _collect_plans(*, current_version: str, new_version: str) -> list[PlannedEdit]:
@@ -269,5 +271,3 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("\nAborted.")
         sys.exit(1)
-
-

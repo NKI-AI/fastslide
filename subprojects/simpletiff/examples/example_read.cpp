@@ -201,6 +201,9 @@ int main(int argc, char* argv[]) {
                                          simpletiff::Compression::kJpeg)) {
       std::cout << "JPEG";
     } else if (simpletiff::IsCompression(page.compression,
+                                         simpletiff::Compression::kJpeg2000)) {
+      std::cout << "JPEG2000";
+    } else if (simpletiff::IsCompression(page.compression,
                                          simpletiff::Compression::kZstd)) {
       std::cout << "ZSTD";
     } else {
@@ -238,6 +241,7 @@ int main(int argc, char* argv[]) {
           std::cout << "    JPEG Tables: (" << strips.jpeg_tables_len
                     << " bytes)\n";
         }
+
       } break;
       case simpletiff::Storage::kSingleJpeg:
         std::cout << "Single JPEG\n";

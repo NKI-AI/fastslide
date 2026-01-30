@@ -504,19 +504,17 @@ py::tuple FastSlide::GetMpp() const {
   return py::make_tuple(props.mpp[0], props.mpp[1]);
 }
 
-py::dict FastSlide::GetBounds() const {
+py::tuple FastSlide::GetBounds() const {
   if (is_closed_) {
     throw std::runtime_error("Cannot get bounds: slide reader is closed");
   }
   const auto& props = reader_->GetProperties();
   const auto& bounds = props.bounds;
 
-  py::tuple result;
   auto coordinates = py::make_tuple(bounds.x, bounds.y);
   auto size = py::make_tuple(bounds.width, bounds.height);
 
-  result = py::make_tuple(coordinates, size);
-  return result;
+  return py::make_tuple(coordinates, size);
 }
 
 py::list FastSlide::GetChannelMetadata() const {

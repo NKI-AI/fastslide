@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "fastslide/runtime/decoders/jpeg_decoder.h"
 #include <jpeg-compressor/jpgd.h>
 #include <cstdlib>
 #include <cstring>
-
+#include "fastslide/runtime/decoders/jpeg_decoder.h"
 
 #include "aifocore/status/result.h"
 

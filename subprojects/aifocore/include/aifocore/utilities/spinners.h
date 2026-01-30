@@ -35,16 +35,18 @@
 // limitations under the License.
 
 // The original spinners.h has been modified by Jonas Teuwen to
-// use modern C++20 features
+// use modern C++20 features and make it thread-safe.
 
 #ifndef AIFO_AIFOCORE_INCLUDE_AIFOCORE_UTILITIES_SPINNERS_H_
 #define AIFO_AIFOCORE_INCLUDE_AIFOCORE_UTILITIES_SPINNERS_H_
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -235,9 +237,9 @@ class Spinner {
    * @brief Default constructor. Uses kDots spinner, 80ms interval, no text.
    */
   Spinner() noexcept
-      : interval_{80},
-        text_{},
+      : interval_ms_{80},
         is_running_{false},
+        text_{},
         symbols_{GetSpinnerSymbolsByType(SpinnerType::kDots)} {}
 
   /**
@@ -247,9 +249,9 @@ class Spinner {
    * @param type The type of spinner animation to use.
    */
   Spinner(int interval, std::string_view text, SpinnerType type) noexcept
-      : interval_{interval},
-        text_{text},
+      : interval_ms_{interval},
         is_running_{false},
+        text_{text},
         symbols_{GetSpinnerSymbolsByType(type)} {}
 
   /**
@@ -259,16 +261,16 @@ class Spinner {
    * @param name The name of the spinner animation (e.g., "dots2", "arc").
    */
   Spinner(int interval, std::string_view text, std::string_view name) noexcept
-      : interval_{interval},
-        text_{text},
+      : interval_ms_{interval},
         is_running_{false},
+        text_{text},
         symbols_{LookupSpinnerSymbolsByName(name)} {}
 
   // Rule of five: Prevent copying, allow moving.
   Spinner(const Spinner&) = delete;
   Spinner& operator=(const Spinner&) = delete;
-  Spinner(Spinner&&) noexcept = default;
-  Spinner& operator=(Spinner&&) noexcept = default;
+  Spinner(Spinner&&) = delete;
+  Spinner& operator=(Spinner&&) = delete;
 
   /**
    * @brief Destructor. Stops the spinner thread if running.
@@ -279,19 +281,25 @@ class Spinner {
    * @brief Sets the update interval for the spinner animation.
    * @param interval Interval in milliseconds.
    */
-  void SetInterval(int interval) noexcept { interval_ = interval; }
+  void SetInterval(int interval) noexcept {
+    interval_ms_.store(interval, std::memory_order_relaxed);
+  }
 
   /**
    * @brief Sets the text displayed next to the spinner.
    * @param text The text to display.
    */
-  void SetText(std::string_view text) noexcept { text_ = text; }
+  void SetText(std::string_view text) noexcept {
+    std::lock_guard<std::mutex> lock(mu_);
+    text_ = std::string(text);
+  }
 
   /**
    * @brief Sets the spinner animation type using the enum.
    * @param type The SpinnerType enum value.
    */
   void SetSymbols(SpinnerType type) noexcept {
+    std::lock_guard<std::mutex> lock(mu_);
     symbols_ = GetSpinnerSymbolsByType(type);
   }
 
@@ -300,6 +308,7 @@ class Spinner {
    * @param name The name of the spinner animation.
    */
   void SetSymbols(std::string_view name) noexcept {
+    std::lock_guard<std::mutex> lock(mu_);
     symbols_ = LookupSpinnerSymbolsByName(name);
   }
 
@@ -307,9 +316,9 @@ class Spinner {
    * @brief Starts the spinner animation in a separate thread.
    */
   void Start() {
-    if (is_running_)
+    if (is_running_.load(std::memory_order_acquire))
       return;  // Avoid starting multiple threads
-    is_running_ = true;
+    is_running_.store(true, std::memory_order_release);
     t_ = std::thread([this]() { RunSpinner(); });
   }
 
@@ -317,8 +326,8 @@ class Spinner {
    * @brief Stops the spinner animation thread and cleans up the console line.
    */
   void Stop() noexcept {
-    if (is_running_) {
-      is_running_ = false;
+    if (is_running_.load(std::memory_order_acquire)) {
+      is_running_.store(false, std::memory_order_release);
       if (t_.joinable()) {
         t_.join();  // Wait for RunSpinner thread to finish
       }
@@ -330,9 +339,10 @@ class Spinner {
   }
 
  private:
-  int interval_;
-  std::string text_;  // Store the text view provided by the user
-  bool is_running_;
+  std::atomic<int> interval_ms_;
+  std::atomic<bool> is_running_;
+  mutable std::mutex mu_;
+  std::string text_;
   std::string_view symbols_;
   std::thread t_;
 
@@ -359,14 +369,22 @@ class Spinner {
    * state. Uses CursorGuard for cursor management.
    */
   void RunSpinner() {
+    // Snapshot symbols once at start; changing symbols mid-flight is safe but
+    // we keep this run stable. Call Stop/Start to change animation.
+    std::string_view symbols_snapshot;
+    {
+      std::lock_guard<std::mutex> lock(mu_);
+      symbols_snapshot = symbols_;
+    }
+
     // Pre-calculate UTF-8 character views for efficient iteration.
     std::vector<std::string_view> chars;
     size_t current_pos = 0;
-    while (current_pos < symbols_.length()) {
+    while (current_pos < symbols_snapshot.length()) {
       size_t char_len = 1;
       // Basic UTF-8 leading byte check to determine character length.
       unsigned char first_byte =
-          static_cast<unsigned char>(symbols_[current_pos]);
+          static_cast<unsigned char>(symbols_snapshot[current_pos]);
       if ((first_byte & 0b11100000) == 0b11000000)
         char_len = 2;
       else if ((first_byte & 0b11110000) == 0b11100000)
@@ -375,30 +393,38 @@ class Spinner {
         char_len = 4;
 
       // Ensure we don't read past the end of the string_view.
-      if (current_pos + char_len > symbols_.length()) {
+      if (current_pos + char_len > symbols_snapshot.length()) {
         // Invalid sequence or end of string reached
         // unexpectedly. Stop processing.
         break;
       }
-      chars.push_back(symbols_.substr(current_pos, char_len));
+      chars.push_back(symbols_snapshot.substr(current_pos, char_len));
       current_pos += char_len;
     }
 
     if (chars.empty()) {
       // No valid symbols to display. Log error? For now, just stop.
-      is_running_ = false;
+      is_running_.store(false, std::memory_order_release);
       return;
     }
 
     size_t idx = 0;
     CursorGuard guard;  // Manages cursor visibility via RAII.
 
-    while (is_running_) {
+    while (is_running_.load(std::memory_order_acquire)) {
+      std::string text_snapshot;
+      {
+        std::lock_guard<std::mutex> lock(mu_);
+        text_snapshot = text_;
+      }
+
       // Use \r to return cursor to beginning, \033[K to clear line to end.
-      std::cout << "\r\033[K" << chars[idx] << " " << text_ << std::flush;
+      std::cout << "\r\033[K" << chars[idx] << " " << text_snapshot
+                << std::flush;
 
       idx = (idx + 1) % chars.size();  // Cycle through characters.
-      std::this_thread::sleep_for(std::chrono::milliseconds(interval_));
+      std::this_thread::sleep_for(std::chrono::milliseconds(
+          interval_ms_.load(std::memory_order_relaxed)));
     }
     // Destructor of CursorGuard will run
     // when this function exits, showing cursor.

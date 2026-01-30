@@ -171,9 +171,9 @@ TEST_F(ImageTest, ImageConversions) {
   EXPECT_EQ(gray_image->GetDimensions(), dims);
 
   // Test the conversion result (luminance formula: 0.299*R + 0.587*G + 0.114*B)
-  // We use the approximation 0.25*R + 0.5*G + 0.125*B
-  uint8_t expected_gray =
-      static_cast<uint8_t>((250 * 100 + 500 * 150 + 125 * 200) / 1000);
+  // We use the improved approximation 0.25*R + 0.625*G + 0.125*B (R>>2 + G>>1 +
+  // G>>3 + B>>3) 100>>2 = 25; 150>>1 = 75; 150>>3 = 18; 200>>3 = 25; Sum = 143
+  uint8_t expected_gray = 143;
   EXPECT_EQ(gray_image->At<uint8_t>(5, 5, 0), expected_gray);
 }
 

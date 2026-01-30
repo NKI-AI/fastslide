@@ -21,6 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -48,6 +49,17 @@ void AppendLe32(std::vector<uint8_t>& out, uint32_t v) {
   out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
   out.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
   out.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+}
+
+void AppendLe64(std::vector<uint8_t>& out, uint64_t v) {
+  out.push_back(static_cast<uint8_t>(v & 0xFF));
+  out.push_back(static_cast<uint8_t>((v >> 8) & 0xFF));
+  out.push_back(static_cast<uint8_t>((v >> 16) & 0xFF));
+  out.push_back(static_cast<uint8_t>((v >> 24) & 0xFF));
+  out.push_back(static_cast<uint8_t>((v >> 32) & 0xFF));
+  out.push_back(static_cast<uint8_t>((v >> 40) & 0xFF));
+  out.push_back(static_cast<uint8_t>((v >> 48) & 0xFF));
+  out.push_back(static_cast<uint8_t>((v >> 56) & 0xFF));
 }
 
 void AppendIfdEntryClassic(std::vector<uint8_t>& out, uint16_t tag,
@@ -494,6 +506,7 @@ TEST(CompressionTest, SupportedCompressionsAreRecognized) {
   EXPECT_EQ(static_cast<uint16_t>(Compression::kNone), 1u);
   EXPECT_EQ(static_cast<uint16_t>(Compression::kLzw), 5u);
   EXPECT_EQ(static_cast<uint16_t>(Compression::kJpeg), 7u);
+  EXPECT_EQ(static_cast<uint16_t>(Compression::kJpeg2000), 33003u);
   EXPECT_EQ(static_cast<uint16_t>(Compression::kZstd), 50000u);
 }
 
@@ -506,6 +519,188 @@ TEST(CompressionTest, IsCompressionHelperWorks) {
   uint16_t none_code = 1;
   EXPECT_TRUE(IsCompression(none_code, Compression::kNone));
   EXPECT_FALSE(IsCompression(none_code, Compression::kJpeg));
+}
+
+TEST(Jpeg2000Test, CanReadSingleStripJpeg2000ClassicTiff) {
+  // Construct a minimal ClassicTIFF with a single strip whose payload is a
+  // JPEG2000 codestream (Compression=33003).
+  //
+  // Note: We intentionally use a truncated codestream payload. The goal of this
+  // test is to validate that Compression=33003 is recognized and routed through
+  // the JPEG2000 decoding path (i.e. returns a JPEG2000 codec error, not an
+  // "unsupported compression" error).
+  constexpr int kWidth = 2;
+  constexpr int kHeight = 2;
+  const std::vector<uint8_t> j2k = {0xFF, 0x4F};  // SOC marker only (invalid)
+  ASSERT_FALSE(j2k.empty());
+
+  constexpr uint16_t kTypeShort = 3;
+  constexpr uint16_t kTypeLong = 4;
+
+  constexpr uint32_t kHeaderSize = 8;
+  constexpr uint32_t kIfdOffset = kHeaderSize;
+  constexpr uint16_t kNumEntries = 9;
+  constexpr uint32_t kIfdSize = 2 + static_cast<uint32_t>(kNumEntries) * 12 + 4;
+  const uint32_t strip_offset = kIfdOffset + kIfdSize;
+
+  std::vector<uint8_t> tiff;
+  tiff.reserve(strip_offset + static_cast<uint32_t>(j2k.size()));
+
+  // TIFF header: "II" + 42 + first IFD offset.
+  tiff.push_back(0x49);
+  tiff.push_back(0x49);
+  AppendLe16(tiff, 42);
+  AppendLe32(tiff, kIfdOffset);
+
+  // IFD0.
+  AppendLe16(tiff, kNumEntries);
+  AppendIfdEntryClassic(tiff, /*tag=*/256, kTypeLong, /*count=*/1,
+                        /*value=*/kWidth);  // ImageWidth
+  AppendIfdEntryClassic(tiff, /*tag=*/257, kTypeLong, /*count=*/1,
+                        /*value=*/kHeight);  // ImageLength
+  AppendIfdEntryClassic(tiff, /*tag=*/258, kTypeShort, /*count=*/1,
+                        /*value=*/8);  // BitsPerSample
+  AppendIfdEntryClassic(tiff, /*tag=*/259, kTypeShort, /*count=*/1,
+                        /*value=*/33003);  // Compression (JPEG2000)
+  AppendIfdEntryClassic(tiff, /*tag=*/262, kTypeShort, /*count=*/1,
+                        /*value=*/1);  // Photometric (min-is-black)
+  AppendIfdEntryClassic(tiff, /*tag=*/277, kTypeShort, /*count=*/1,
+                        /*value=*/1);  // SamplesPerPixel
+  AppendIfdEntryClassic(tiff, /*tag=*/278, kTypeLong, /*count=*/1,
+                        /*value=*/kHeight);  // RowsPerStrip
+  AppendIfdEntryClassic(tiff, /*tag=*/273, kTypeLong, /*count=*/1,
+                        /*value=*/strip_offset);  // StripOffsets
+  AppendIfdEntryClassic(
+      tiff, /*tag=*/279, kTypeLong, /*count=*/1,
+      /*value=*/static_cast<uint32_t>(j2k.size()));  // StripByteCounts
+  AppendLe32(tiff, /*next_ifd=*/0);
+
+  ASSERT_EQ(tiff.size(), strip_offset);
+  tiff.insert(tiff.end(), j2k.begin(), j2k.end());
+
+  // Write to a temp file (Bazel provides TEST_TMPDIR).
+  const char* test_tmpdir = std::getenv("TEST_TMPDIR");
+  std::filesystem::path tmp_dir = test_tmpdir
+                                      ? std::filesystem::path(test_tmpdir)
+                                      : std::filesystem::temp_directory_path();
+  const auto unique = std::to_string(
+      std::chrono::steady_clock::now().time_since_epoch().count());
+  const std::filesystem::path tiff_path =
+      tmp_dir / ("simpletiff_jpeg2000_" + unique + ".tif");
+
+  std::ofstream ofs(tiff_path, std::ios::binary);
+  ASSERT_TRUE(ofs.good());
+  ofs.write(reinterpret_cast<const char*>(tiff.data()),
+            static_cast<std::streamsize>(tiff.size()));
+  ofs.close();
+
+  TiffIndex index;
+  int fd = -1;
+  ASSERT_TRUE(OpenTiff(tiff_path.string(), index, fd));
+  ASSERT_EQ(index.NumPages(), 1u);
+  EXPECT_EQ(index.Page(0).compression,
+            static_cast<uint16_t>(Compression::kJpeg2000));
+
+  DecodeContext ctx;
+  std::vector<uint8_t> decoded;
+  auto r = ReadStripe(index, /*page_index=*/0, /*strip_index=*/0, ctx, decoded);
+  ASSERT_FALSE(r);
+  EXPECT_NE(r.error().ToString().find("JPEG2000 decompression failed"),
+            std::string::npos);
+
+  if (fd >= 0) {
+    aifocore::portable_close(fd);
+  }
+}
+
+TEST(Jpeg2000Test, CanReadSingleStripJpeg2000ClassicTiffCompression33005) {
+  // Same as CanReadSingleStripJpeg2000ClassicTiff, but using Compression=33005.
+  // This matches some SVS/JPEG2000 writers in the wild. The key assertion is
+  // that we route 33005 through the JPEG2000 decoder path (and thus get a
+  // JPEG2000 codec error on truncated data, not an "unsupported compression"
+  // error).
+  constexpr int kWidth = 2;
+  constexpr int kHeight = 2;
+  const std::vector<uint8_t> j2k = {0xFF, 0x4F};  // SOC marker only (invalid)
+  ASSERT_FALSE(j2k.empty());
+
+  constexpr uint16_t kTypeShort = 3;
+  constexpr uint16_t kTypeLong = 4;
+
+  constexpr uint32_t kHeaderSize = 8;
+  constexpr uint32_t kIfdOffset = kHeaderSize;
+  constexpr uint16_t kNumEntries = 9;
+  constexpr uint32_t kIfdSize = 2 + static_cast<uint32_t>(kNumEntries) * 12 + 4;
+  const uint32_t strip_offset = kIfdOffset + kIfdSize;
+
+  std::vector<uint8_t> tiff;
+  tiff.reserve(strip_offset + static_cast<uint32_t>(j2k.size()));
+
+  // TIFF header: "II" + 42 + first IFD offset.
+  tiff.push_back(0x49);
+  tiff.push_back(0x49);
+  AppendLe16(tiff, 42);
+  AppendLe32(tiff, kIfdOffset);
+
+  // IFD0.
+  AppendLe16(tiff, kNumEntries);
+  AppendIfdEntryClassic(tiff, /*tag=*/256, kTypeLong, /*count=*/1,
+                        /*value=*/kWidth);  // ImageWidth
+  AppendIfdEntryClassic(tiff, /*tag=*/257, kTypeLong, /*count=*/1,
+                        /*value=*/kHeight);  // ImageLength
+  AppendIfdEntryClassic(tiff, /*tag=*/258, kTypeShort, /*count=*/1,
+                        /*value=*/8);  // BitsPerSample
+  AppendIfdEntryClassic(tiff, /*tag=*/259, kTypeShort, /*count=*/1,
+                        /*value=*/33005);  // Compression (JPEG2000)
+  AppendIfdEntryClassic(tiff, /*tag=*/262, kTypeShort, /*count=*/1,
+                        /*value=*/1);  // Photometric (min-is-black)
+  AppendIfdEntryClassic(tiff, /*tag=*/277, kTypeShort, /*count=*/1,
+                        /*value=*/1);  // SamplesPerPixel
+  AppendIfdEntryClassic(tiff, /*tag=*/278, kTypeLong, /*count=*/1,
+                        /*value=*/kHeight);  // RowsPerStrip
+  AppendIfdEntryClassic(tiff, /*tag=*/273, kTypeLong, /*count=*/1,
+                        /*value=*/strip_offset);  // StripOffsets
+  AppendIfdEntryClassic(
+      tiff, /*tag=*/279, kTypeLong, /*count=*/1,
+      /*value=*/static_cast<uint32_t>(j2k.size()));  // StripByteCounts
+  AppendLe32(tiff, /*next_ifd=*/0);
+
+  ASSERT_EQ(tiff.size(), strip_offset);
+  tiff.insert(tiff.end(), j2k.begin(), j2k.end());
+
+  // Write to a temp file (Bazel provides TEST_TMPDIR).
+  const char* test_tmpdir = std::getenv("TEST_TMPDIR");
+  std::filesystem::path tmp_dir = test_tmpdir
+                                      ? std::filesystem::path(test_tmpdir)
+                                      : std::filesystem::temp_directory_path();
+  const auto unique = std::to_string(
+      std::chrono::steady_clock::now().time_since_epoch().count());
+  const std::filesystem::path tiff_path =
+      tmp_dir / ("simpletiff_jpeg2000_33005_" + unique + ".tif");
+
+  std::ofstream ofs(tiff_path, std::ios::binary);
+  ASSERT_TRUE(ofs.good());
+  ofs.write(reinterpret_cast<const char*>(tiff.data()),
+            static_cast<std::streamsize>(tiff.size()));
+  ofs.close();
+
+  TiffIndex index;
+  int fd = -1;
+  ASSERT_TRUE(OpenTiff(tiff_path.string(), index, fd));
+  ASSERT_EQ(index.NumPages(), 1u);
+  EXPECT_EQ(index.Page(0).compression, 33005u);
+  EXPECT_TRUE(IsCompression(index.Page(0).compression, Compression::kJpeg2000));
+
+  DecodeContext ctx;
+  std::vector<uint8_t> decoded;
+  auto r = ReadStripe(index, /*page_index=*/0, /*strip_index=*/0, ctx, decoded);
+  ASSERT_FALSE(r);
+  EXPECT_NE(r.error().ToString().find("JPEG2000 decompression failed"),
+            std::string::npos);
+
+  if (fd >= 0) {
+    aifocore::portable_close(fd);
+  }
 }
 
 // =============================================================================
@@ -606,6 +801,45 @@ TEST(CopyTileTest, TileCompletelyOutsideRoi) {
   for (const auto& byte : dst) {
     EXPECT_EQ(byte, 0);
   }
+}
+
+TEST(CopyTileTest, NegativeOffsetClipping) {
+  // Matches the common ROI-not-tile-aligned case:
+  // dst_x/dst_y negative for the first tile intersecting the ROI.
+  constexpr int kTileWidth = 4;
+  constexpr int kTileHeight = 4;
+  constexpr int kChannels = 1;  // Grayscale for simplicity
+
+  // Tile contains increasing values row-major:
+  //  1  2  3  4
+  //  5  6  7  8
+  //  9 10 11 12
+  // 13 14 15 16
+  std::vector<uint8_t> tile_data(kTileWidth * kTileHeight);
+  for (int i = 0; i < kTileWidth * kTileHeight; ++i) {
+    tile_data[i] = static_cast<uint8_t>(i + 1);
+  }
+
+  // ROI is 2x2, destination buffer is tightly sized for ROI.
+  constexpr int kRoiWidth = 2;
+  constexpr int kRoiHeight = 2;
+  constexpr int kDstStride = kRoiWidth * kChannels;
+  std::vector<uint8_t> dst(kRoiHeight * kDstStride, 0);
+
+  // Place tile with negative offset so that only the bottom-right 2x2 of the
+  // tile lands inside the ROI.
+  // dst_x = -2, dst_y = -2 means tile[2:4, 2:4] should be copied.
+  CopyTileInto(dst.data(), kDstStride, tile_data.data(), kTileWidth,
+               kTileHeight,
+               /*dst_x=*/-2, /*dst_y=*/-2, kRoiWidth, kRoiHeight, kChannels);
+
+  // Expect:
+  // tile[2,2]=11, tile[2,3]=12
+  // tile[3,2]=15, tile[3,3]=16
+  EXPECT_EQ(dst[0], 11);
+  EXPECT_EQ(dst[1], 12);
+  EXPECT_EQ(dst[2], 15);
+  EXPECT_EQ(dst[3], 16);
 }
 
 // =============================================================================
@@ -992,6 +1226,78 @@ TEST(TiffParserTest, SubIfdsAreEnumeratedAsPages) {
   ASSERT_EQ(children0.size(), 2u);
   EXPECT_EQ(children0[0], 1u);
   EXPECT_EQ(children0[1], 2u);
+
+  if (fd >= 0) {
+    aifocore::portable_close(fd);
+  }
+}
+
+TEST(TiffParserTest, NdpiClassic64EnumeratesIfds) {
+  // NDPI is ClassicTIFF with 64-bit IFD pointers encoded as:
+  // - header: standard 32-bit first-IFD offset (low word) + an extra 32-bit
+  // high
+  //   word at bytes 8..11.
+  // - each IFD's next-IFD pointer: 64-bit (low+high) even though ClassicTIFF.
+  //
+  // This test constructs a sparse file >4GB with two empty IFDs.
+  constexpr uint64_t kIfd0Offset = (1ULL << 32) | 0x00000020ULL;
+  constexpr uint64_t kIfd1Offset = (1ULL << 32) | 0x00000100ULL;
+
+  // Write to a temp file (Bazel provides TEST_TMPDIR).
+  const char* test_tmpdir = std::getenv("TEST_TMPDIR");
+  std::filesystem::path tmp_dir = test_tmpdir
+                                      ? std::filesystem::path(test_tmpdir)
+                                      : std::filesystem::temp_directory_path();
+  const auto unique = std::to_string(
+      std::chrono::steady_clock::now().time_since_epoch().count());
+  const std::filesystem::path tiff_path =
+      tmp_dir / ("simpletiff_ndpi64_" + unique + ".ndpi");
+
+  // Build 16-byte header. For ClassicTIFF, bytes 4..7 hold the low word.
+  // NDPI stores the high word for the first-IFD offset at bytes 8..11.
+  std::vector<uint8_t> hdr;
+  hdr.reserve(16);
+  hdr.push_back(0x49);
+  hdr.push_back(0x49);
+  AppendLe16(hdr, 42);
+  AppendLe32(hdr, static_cast<uint32_t>(kIfd0Offset & 0xFFFFFFFFULL));  // low
+  AppendLe32(hdr, static_cast<uint32_t>(kIfd0Offset >> 32));            // high
+  AppendLe32(hdr, 0);  // padding / unused
+
+  // Create file with header.
+  {
+    std::ofstream ofs(tiff_path, std::ios::binary);
+    ASSERT_TRUE(ofs.good());
+    ofs.write(reinterpret_cast<const char*>(hdr.data()),
+              static_cast<std::streamsize>(hdr.size()));
+  }
+
+  // Make it sparse and large enough to hold both IFDs.
+  const uint64_t desired_size = kIfd1Offset + 4096;
+  std::filesystem::resize_file(tiff_path, desired_size);
+
+  // Write the two empty IFDs (num_entries=0, next_ifd as 64-bit).
+  auto write_ifd = [&](uint64_t ifd_offset, uint64_t next_offset) {
+    std::fstream fs(tiff_path, std::ios::in | std::ios::out | std::ios::binary);
+    ASSERT_TRUE(fs.good());
+    fs.seekp(static_cast<std::streamoff>(ifd_offset), std::ios::beg);
+    std::vector<uint8_t> ifd;
+    AppendLe16(ifd, 0);  // num entries
+    AppendLe64(ifd, next_offset);
+    fs.write(reinterpret_cast<const char*>(ifd.data()),
+             static_cast<std::streamsize>(ifd.size()));
+    fs.flush();
+    ASSERT_TRUE(fs.good());
+  };
+  write_ifd(kIfd0Offset, kIfd1Offset);
+  write_ifd(kIfd1Offset, 0);
+
+  TiffIndex index;
+  int fd = -1;
+  ASSERT_TRUE(OpenTiff(tiff_path.string(), index, fd));
+  EXPECT_EQ(index.NumPages(), 2u);
+  EXPECT_EQ(index.Page(0).ifd_offset, kIfd0Offset);
+  EXPECT_EQ(index.Page(1).ifd_offset, kIfd1Offset);
 
   if (fd >= 0) {
     aifocore::portable_close(fd);

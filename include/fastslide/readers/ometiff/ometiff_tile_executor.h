@@ -18,7 +18,6 @@
 #include <limits>
 #include <mutex>
 #include <span>
-#include <vector>
 
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
@@ -50,7 +49,7 @@ class OmetiffTileExecutor : public CachedTileExecutor<OmetiffTileExecutor> {
   };
 
   static aifocore::Status ExecuteTileOperation(
-      const core::TileReadOp& op, const OmeTiffReader& reader,
+      const core::TileReadOp& operation, const OmeTiffReader& reader,
       const OmeTiffLevelInfo& level_info,
       const simpletiff::TiffIndex& tiff_index, runtime::TileWriter& writer,
       std::mutex& writer_mutex, PageState& page_state);
@@ -59,18 +58,18 @@ class OmetiffTileExecutor : public CachedTileExecutor<OmetiffTileExecutor> {
       uint32_t page, const OmeTiffLevelInfo& level_info,
       const simpletiff::TiffIndex& tiff_index, PageState& page_state);
 
-  static TileKey MakeCacheKey(const core::TileReadOp& op,
+  static TileKey MakeCacheKey(const core::TileReadOp& operation,
                               const OmeTiffReader& reader,
                               const simpletiff::TiffIndex& tiff_index,
                               const PageState& page_state);
 
   static aifocore::Result<DecodedTileData> ReadTileFromDisk(
-      const core::TileReadOp& op, const OmeTiffReader& reader,
+      const core::TileReadOp& operation, const OmeTiffReader& reader,
       const simpletiff::TiffIndex& tiff_index, const PageState& page_state);
 
-  static std::span<const uint8_t> ExtractRegionFromTile(
-      std::span<const uint8_t> tile_data, const core::TileReadOp& op,
-      uint32_t tile_width, size_t bytes_per_pixel);
+  static aifocore::Result<std::span<const uint8_t>> ExtractRegionFromTile(
+      const DecodedTileData& decoded_tile, const core::TileReadOp& operation,
+      size_t bytes_per_pixel);
 };
 
 }  // namespace fastslide

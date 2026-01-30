@@ -19,6 +19,7 @@
 #include <cstring>
 #include <exception>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "aifocore/platform/portability.h"
@@ -32,8 +33,9 @@
 
 namespace simpletiff {
 
-using aifocore::Error;
+// using aifocore::Error;
 using aifocore::Result;
+using aifocore::StatusCode;
 
 // =============================================================================
 // Internal JPEG helpers
@@ -41,9 +43,9 @@ using aifocore::Result;
 
 namespace {
 
-Result<void> NormalizeDecodedPixels(const TiffIndex &index,
-                                    const PageHeader &page, int width,
-                                    int height, std::vector<uint8_t> &data) {
+Result<void> NormalizeDecodedPixels(const TiffIndex& index,
+                                    const PageHeader& page, int width,
+                                    int height, std::vector<uint8_t>& data) {
   const bool file_big_endian = !index.IsLittleEndian();
 
   // Convert multi-byte samples to host endianness for consumers (Python creates
@@ -52,14 +54,18 @@ Result<void> NormalizeDecodedPixels(const TiffIndex &index,
       (page.bits_per_sample == 16 || page.bits_per_sample == 32)) {
     if (page.bits_per_sample == 16) {
       if ((data.size() % 2) != 0) {
-        return Error("Decoded buffer size is not a multiple of 2 bytes");
+        return AIFOCORE_MAKE_STATUS(
+            aifocore::StatusCode::kInternal,
+            "Decoded buffer size is not a multiple of 2 bytes");
       }
       for (size_t i = 0; i < data.size(); i += 2) {
         std::swap(data[i], data[i + 1]);
       }
-    } else { // 32-bit
+    } else {  // 32-bit
       if ((data.size() % 4) != 0) {
-        return Error("Decoded buffer size is not a multiple of 4 bytes");
+        return AIFOCORE_MAKE_STATUS(
+            aifocore::StatusCode::kInternal,
+            "Decoded buffer size is not a multiple of 4 bytes");
       }
       for (size_t i = 0; i < data.size(); i += 4) {
         std::swap(data[i + 0], data[i + 3]);
@@ -71,13 +77,15 @@ Result<void> NormalizeDecodedPixels(const TiffIndex &index,
   // Apply TIFF horizontal predictor (Predictor=2) after decompression.
   // We operate on host-endian values, so file_big_endian=false here.
   if (page.predictor == 2) {
-    constexpr int planar_configuration = 1; // CONTIG
+    constexpr int planar_configuration = 1;  // CONTIG
     try {
       ApplyHorizontalPredictor(data, width, height, page.samples_per_pixel,
                                page.bits_per_sample,
                                /*file_big_endian=*/false, planar_configuration);
-    } catch (const std::exception &e) {
-      return Error(std::string("Predictor application failed: ") + e.what());
+    } catch (const std::exception& e) {
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kInternal,
+          std::string("Predictor application failed: ") + e.what());
     }
   }
 
@@ -102,11 +110,11 @@ Result<void> NormalizeDecodedPixels(const TiffIndex &index,
 /// @return Result indicating success or error
 Result<void> DecompressJpegWithTables(std::span<const uint8_t> compressed_data,
                                       std::span<const uint8_t> jpeg_tables_span,
-                                      std::vector<uint8_t> &jpeg_stream_buffer,
-                                      DecodeContext &ctx, int &out_width,
-                                      int &out_height,
-                                      std::vector<uint8_t> &dst,
-                                      const JpegDecodeOptions &jpeg_options) {
+                                      std::vector<uint8_t>& jpeg_stream_buffer,
+                                      DecodeContext& ctx, int& out_width,
+                                      int& out_height,
+                                      std::vector<uint8_t>& dst,
+                                      const JpegDecodeOptions& jpeg_options) {
   std::span<const uint8_t> jpeg_data_span;
 
   // Compose JPEG stream if tables are present
@@ -121,7 +129,8 @@ Result<void> DecompressJpegWithTables(std::span<const uint8_t> compressed_data,
   // 3-channel)
   if (!DecodeJpeg(ctx, jpeg_data_span, out_width, out_height, dst,
                   jpeg_options)) {
-    return Error("JPEG decompression failed");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "JPEG decompression failed");
   }
   return Result<void>();
 }
@@ -136,8 +145,8 @@ Result<void> DecompressJpegWithTables(std::span<const uint8_t> compressed_data,
 /// @param cache_rec Tiles or strips record containing table cache
 /// @return Result containing span to cached JPEG tables
 template <typename CacheRec>
-Result<std::span<const uint8_t>>
-LoadJpegTablesFromCache(const TiffIndex &index, const CacheRec &cache_rec) {
+Result<std::span<const uint8_t>> LoadJpegTablesFromCache(
+    const TiffIndex& index, const CacheRec& cache_rec) {
   auto state = cache_rec.jpeg_tables_state.load(std::memory_order_acquire);
 
   if (state == JpegTablesState::kLoaded) {
@@ -157,7 +166,8 @@ LoadJpegTablesFromCache(const TiffIndex &index, const CacheRec &cache_rec) {
                    cache_rec.jpeg_tables_len, cache_rec.jpeg_tables_cache)) {
       cache_rec.jpeg_tables_state.store(JpegTablesState::kFailed,
                                         std::memory_order_release);
-      return Error("Failed to load JPEG tables from file");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                  "Failed to load JPEG tables from file");
     }
     cache_rec.jpeg_tables_state.store(JpegTablesState::kLoaded,
                                       std::memory_order_release);
@@ -175,58 +185,70 @@ LoadJpegTablesFromCache(const TiffIndex &index, const CacheRec &cache_rec) {
   }
 
   if (state == JpegTablesState::kFailed) {
-    return Error("Failed to load JPEG tables from file");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to load JPEG tables from file");
   }
 
   return std::span<const uint8_t>();
 }
 
-} // namespace
+}  // namespace
 
 // =============================================================================
 // Public API
 // =============================================================================
 
-Result<void> ReadTile(const TiffIndex &index, uint32_t page_index,
-                      uint32_t tile_index, DecodeContext &ctx,
-                      std::vector<uint8_t> &dst, int &out_width,
-                      int &out_height) {
+Result<void> ReadTile(const TiffIndex& index, uint32_t page_index,
+                      uint32_t tile_index, DecodeContext& ctx,
+                      std::vector<uint8_t>& dst, int& out_width,
+                      int& out_height) {
   if (page_index >= index.NumPages()) {
-    return Error("Page index " + std::to_string(page_index) +
-                 " out of range (file has " + std::to_string(index.NumPages()) +
-                 " pages)");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kOutOfRange,
+                                "Page index " + std::to_string(page_index) +
+                                    " out of range (file has " +
+                                    std::to_string(index.NumPages()) +
+                                    " pages)");
   }
 
-  const auto &page = index.Page(page_index);
+  const auto& page = index.Page(page_index);
   if (page.storage != Storage::kTiles) {
-    return Error("Page " + std::to_string(page_index) +
-                 " is not tiled (cannot use ReadTile)");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Page " + std::to_string(page_index) +
+                                    " is not tiled (cannot use ReadTile)");
   }
 
-  const auto &tiles = index.Tiles(page.payload_id);
+  const auto& tiles = index.Tiles(page.payload_id);
 
   // Use optimized single-tile loader (avoids loading entire offset/bytecount
   // arrays)
   uint64_t offset = 0;
   uint64_t bytecount = 0;
   if (!EnsureTileLoaded(index, page_index, tile_index, offset, bytecount)) {
-    return Error("Failed to load tile " + std::to_string(tile_index) +
-                 " on page " + std::to_string(page_index));
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to load tile " +
+                                    std::to_string(tile_index) + " on page " +
+                                    std::to_string(page_index));
   }
 
   // Read tile data using pread
   auto tile_data_span = ReadBytesSpan(index.Fd(), index.FileSize(), offset,
-                                      bytecount, ctx.temp_buffer);
+                                      bytecount, ctx.temp_buffer,
+                                      /*strict=*/false);
   if (tile_data_span.empty()) {
-    return Error("Failed to read tile data from file");
+    // If bytecount was 0 (sparse tile) or we couldn't read any data (truncated
+    // file / offset >= EOF) in lenient mode, we return a specific error
+    // so the caller can decide whether to treat it as a blank tile.
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kDataLoss,
+                                "Tile data empty or missing");
   }
 
   if (IsCompression(page.compression, Compression::kZstd)) {
     // ZSTD compression
     if (!DecompressZstd(tile_data_span, dst)) {
-      return Error("ZSTD decompression failed for tile " +
-                   std::to_string(tile_index) + " on page " +
-                   std::to_string(page_index));
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                  "ZSTD decompression failed for tile " +
+                                      std::to_string(tile_index) + " on page " +
+                                      std::to_string(page_index));
     }
 
     // Set dimensions from tile metadata
@@ -239,9 +261,10 @@ Result<void> ReadTile(const TiffIndex &index, uint32_t page_index,
   } else if (IsCompression(page.compression, Compression::kLzw)) {
     // LZW compression
     if (!DecompressLzw(tile_data_span, dst)) {
-      return Error("LZW decompression failed for tile " +
-                   std::to_string(tile_index) + " on page " +
-                   std::to_string(page_index));
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                  "LZW decompression failed for tile " +
+                                      std::to_string(tile_index) + " on page " +
+                                      std::to_string(page_index));
     }
 
     // Set dimensions from tile metadata
@@ -254,9 +277,10 @@ Result<void> ReadTile(const TiffIndex &index, uint32_t page_index,
   } else if (IsCompression(page.compression, Compression::kAdobeDeflate) ||
              IsCompression(page.compression, Compression::kDeflate)) {
     if (!DecompressDeflate(tile_data_span, dst)) {
-      return Error("Deflate decompression failed for tile " +
-                   std::to_string(tile_index) + " on page " +
-                   std::to_string(page_index));
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                  "Deflate decompression failed for tile " +
+                                      std::to_string(tile_index) + " on page " +
+                                      std::to_string(page_index));
     }
 
     out_width = static_cast<int>(tiles.tile_w);
@@ -279,29 +303,42 @@ Result<void> ReadTile(const TiffIndex &index, uint32_t page_index,
         tile_data_span, jpeg_tables_span, ctx.jpeg_stream_buffer, ctx,
         out_width, out_height, dst, jpeg_options);
     if (!decompress_result) {
-      return Error("JPEG decompression failed for tile " +
-                   std::to_string(tile_index) + " on page " +
-                   std::to_string(page_index) + ": " +
-                   decompress_result.error().message());
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                  "JPEG decompression failed for tile " +
+                                      std::to_string(tile_index) + " on page " +
+                                      std::to_string(page_index) + ": " +
+                                      decompress_result.error().message());
     }
 
     return Result<void>();
+  } else if (IsCompression(page.compression, Compression::kJpeg2000)) {
+    const bool file_big_endian = !index.IsLittleEndian();
+    const bool convert_ycbcr_to_rgb =
+        IsPhotometric(page.photometric, Photometric::kYCbCr);
+    AIFOCORE_RETURN_IF_ERROR(
+        DecodeJpeg2000(tile_data_span, file_big_endian, page.bits_per_sample,
+                       page.samples_per_pixel, convert_ycbcr_to_rgb, out_width,
+                       out_height, dst));
+    return Result<void>();
   } else {
-    return Error(
-        UnsupportedFormatError::Compression(page.compression, page_index)
-            .what());
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,
+                                std::string(UnsupportedFormatError::Compression(
+                                                page.compression, page_index)
+                                                .what()));
   }
 }
 
-Result<void> ReadRawTile(const TiffIndex &index, uint32_t page_index,
-                         uint32_t tile_index, std::vector<uint8_t> &dst) {
+Result<void> ReadRawTile(const TiffIndex& index, uint32_t page_index,
+                         uint32_t tile_index, std::vector<uint8_t>& dst) {
   if (page_index >= index.NumPages()) {
-    return Error("Page index " + std::to_string(page_index) +
-                 " out of range (file has " + std::to_string(index.NumPages()) +
-                 " pages)");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kOutOfRange,
+                                "Page index " + std::to_string(page_index) +
+                                    " out of range (file has " +
+                                    std::to_string(index.NumPages()) +
+                                    " pages)");
   }
 
-  const auto &page = index.Page(page_index);
+  const auto& page = index.Page(page_index);
 
   // Support both tiled and strip storage for raw reading
   uint64_t offset = 0;
@@ -310,18 +347,24 @@ Result<void> ReadRawTile(const TiffIndex &index, uint32_t page_index,
   if (page.storage == Storage::kTiles) {
     // Use optimized single-tile loader
     if (!EnsureTileLoaded(index, page_index, tile_index, offset, bytecount)) {
-      return Error("Failed to load tile " + std::to_string(tile_index) +
-                   " on page " + std::to_string(page_index));
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                  "Failed to load tile " +
+                                      std::to_string(tile_index) + " on page " +
+                                      std::to_string(page_index));
     }
   } else if (page.storage == Storage::kStrips) {
     // Use optimized single-strip loader
     if (!EnsureTileLoaded(index, page_index, tile_index, offset, bytecount)) {
-      return Error("Failed to load strip " + std::to_string(tile_index) +
-                   " on page " + std::to_string(page_index));
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                  "Failed to load strip " +
+                                      std::to_string(tile_index) + " on page " +
+                                      std::to_string(page_index));
     }
   } else {
-    return Error("Page " + std::to_string(page_index) +
-                 " uses unsupported storage type for raw reading");
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        "Page " + std::to_string(page_index) +
+            " uses unsupported storage type for raw reading");
   }
 
   // Skip zero-length tiles (can happen with malformed files)
@@ -337,43 +380,51 @@ Result<void> ReadRawTile(const TiffIndex &index, uint32_t page_index,
       aifocore::portable_pread(index.Fd(), dst.data(), bytecount, offset);
 
   if (bytes_read < 0 || static_cast<uint64_t>(bytes_read) != bytecount) {
-    return Error("Failed to read raw tile/strip data from file at offset " +
-                 std::to_string(offset));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInternal,
+        "Failed to read raw tile/strip data from file at offset " +
+            std::to_string(offset));
   }
 
   return Result<void>();
 }
 
-Result<void> ReadTiledPage(const TiffIndex &index, uint32_t page_index,
-                           const Roi &roi, DecodeContext &ctx, uint8_t *dst,
+Result<void> ReadTiledPage(const TiffIndex& index, uint32_t page_index,
+                           const Roi& roi, DecodeContext& ctx, uint8_t* dst,
                            int dst_stride) {
   if (page_index >= index.NumPages()) {
-    return Error("Page index " + std::to_string(page_index) +
-                 " out of range (file has " + std::to_string(index.NumPages()) +
-                 " pages)");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kOutOfRange,
+                                "Page index " + std::to_string(page_index) +
+                                    " out of range (file has " +
+                                    std::to_string(index.NumPages()) +
+                                    " pages)");
   }
 
   // Ensure page data is loaded (lazy load if needed)
   if (!EnsurePageLoaded(index, page_index)) {
-    return Error("Failed to load page " + std::to_string(page_index) +
-                 " metadata");
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInternal,
+        "Failed to load page " + std::to_string(page_index) + " metadata");
   }
 
-  const auto &page = index.Page(page_index);
+  const auto& page = index.Page(page_index);
   if (page.storage != Storage::kTiles) {
-    return Error("Page " + std::to_string(page_index) +
-                 " is not tiled (cannot use ReadTiledPage)");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Page " + std::to_string(page_index) +
+                                    " is not tiled (cannot use ReadTiledPage)");
   }
 
   // Check if compression is supported
   if (!IsCompression(page.compression, Compression::kJpeg) &&
+      !IsCompression(page.compression, Compression::kJpeg2000) &&
       !IsCompression(page.compression, Compression::kZstd)) {
-    return Error(
-        UnsupportedFormatError::Compression(page.compression, page_index)
-            .what());
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,
+                                std::string(UnsupportedFormatError::Compression(
+                                                page.compression, page_index)
+                                                .what()));
   }
 
-  const auto &tiles = index.Tiles(page.payload_id);
+  const auto& tiles = index.Tiles(page.payload_id);
 
   // Compute tile range intersecting ROI
   const uint32_t tx0 = roi.x / tiles.tile_w;
@@ -407,43 +458,51 @@ Result<void> ReadTiledPage(const TiffIndex &index, uint32_t page_index,
   return Result<void>();
 }
 
-Result<void> ReadStripe(const TiffIndex &index, uint32_t page_index,
-                        uint32_t strip_index, DecodeContext &ctx,
-                        std::vector<uint8_t> &decompressed) {
+Result<void> ReadStripe(const TiffIndex& index, uint32_t page_index,
+                        uint32_t strip_index, DecodeContext& ctx,
+                        std::vector<uint8_t>& decompressed) {
   if (page_index >= index.NumPages()) {
-    return Error("Page index " + std::to_string(page_index) +
-                 " out of range (file has " + std::to_string(index.NumPages()) +
-                 " pages)");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kOutOfRange,
+                                "Page index " + std::to_string(page_index) +
+                                    " out of range (file has " +
+                                    std::to_string(index.NumPages()) +
+                                    " pages)");
   }
 
   // Ensure page data is loaded (lazy load if needed)
   if (!EnsurePageLoaded(index, page_index)) {
-    return Error("Failed to load page " + std::to_string(page_index) +
-                 " metadata");
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInternal,
+        "Failed to load page " + std::to_string(page_index) + " metadata");
   }
 
-  const auto &page = index.Page(page_index);
+  const auto& page = index.Page(page_index);
   if (page.storage != Storage::kStrips) {
-    return Error("Page " + std::to_string(page_index) +
-                 " is not striped (cannot use ReadStripe)");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Page " + std::to_string(page_index) +
+                                    " is not striped (cannot use ReadStripe)");
   }
 
-  const auto &strips = index.Strips(page.payload_id);
+  const auto& strips = index.Strips(page.payload_id);
   auto offsets = index.Offsets(strips.offsets);
   auto bytecounts = index.Bytecounts(strips.bytecounts);
 
   if (strip_index >= offsets.size()) {
-    return Error("Strip index " + std::to_string(strip_index) +
-                 " out of range on page " + std::to_string(page_index) +
-                 " (has " + std::to_string(offsets.size()) + " strips)");
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kOutOfRange,
+        "Strip index " + std::to_string(strip_index) +
+            " out of range on page " + std::to_string(page_index) + " (has " +
+            std::to_string(offsets.size()) + " strips)");
   }
 
   // Read strip data using pread
   auto strip_data_span =
       ReadBytesSpan(index.Fd(), index.FileSize(), offsets[strip_index],
-                    bytecounts[strip_index], ctx.temp_buffer);
+                    bytecounts[strip_index], ctx.temp_buffer, /*strict=*/false);
   if (strip_data_span.empty()) {
-    return Error("Failed to read strip data from file");
+    // If strip is empty or missing, return specific error for caller handling
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kDataLoss,
+                                "Strip data empty or missing");
   }
 
   if (IsCompression(page.compression, Compression::kJpeg)) {
@@ -462,49 +521,80 @@ Result<void> ReadStripe(const TiffIndex &index, uint32_t page_index,
         strip_data_span, jpeg_tables_span, ctx.jpeg_stream_buffer, ctx, strip_w,
         strip_h, decompressed, jpeg_options);
     if (!decompress_result) {
-      return Error(
-          DecompressionError::Codec("JPEG", page_index, strip_index).what());
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kInternal,
+          std::string(DecompressionError::Codec("JPEG", page_index, strip_index)
+                          .what()));
+    }
+  } else if (IsCompression(page.compression, Compression::kJpeg2000)) {
+    const bool file_big_endian = !index.IsLittleEndian();
+    const bool convert_ycbcr_to_rgb =
+        IsPhotometric(page.photometric, Photometric::kYCbCr);
+    int strip_w = 0;
+    int strip_h = 0;
+    auto result =
+        DecodeJpeg2000(strip_data_span, file_big_endian, page.bits_per_sample,
+                       page.samples_per_pixel, convert_ycbcr_to_rgb, strip_w,
+                       strip_h, decompressed);
+    if (!result) {
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kInternal,
+          std::string(
+              DecompressionError::Codec("JPEG2000", page_index, strip_index)
+                  .what()));
     }
   } else if (IsCompression(page.compression, Compression::kLzw)) {
     // LZW compression
     if (!DecompressLzw(strip_data_span, decompressed)) {
-      return Error(
-          DecompressionError::Codec("LZW", page_index, strip_index).what());
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kInternal,
+          std::string(DecompressionError::Codec("LZW", page_index, strip_index)
+                          .what()));
     }
   } else if (IsCompression(page.compression, Compression::kZstd)) {
     // ZSTD compression
     if (!DecompressZstd(strip_data_span, decompressed)) {
-      return Error(
-          DecompressionError::Codec("ZSTD", page_index, strip_index).what());
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kInternal,
+          std::string(DecompressionError::Codec("ZSTD", page_index, strip_index)
+                          .what()));
     }
   } else if (IsCompression(page.compression, Compression::kAdobeDeflate) ||
              IsCompression(page.compression, Compression::kDeflate)) {
     if (!DecompressDeflate(strip_data_span, decompressed)) {
-      return Error(
-          DecompressionError::Codec("Deflate", page_index, strip_index).what());
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kInternal,
+          std::string(
+              DecompressionError::Codec("Deflate", page_index, strip_index)
+                  .what()));
     }
   } else if (IsCompression(page.compression, Compression::kNone)) {
     // Uncompressed - copy data
     decompressed.assign(strip_data_span.begin(), strip_data_span.end());
   } else {
-    return Error(
-        UnsupportedFormatError::Compression(page.compression, page_index)
-            .what());
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,
+                                std::string(UnsupportedFormatError::Compression(
+                                                page.compression, page_index)
+                                                .what()));
   }
 
   // Normalize decoded bytes (endianness + predictor) per strip.
   const uint32_t bytes_per_sample = ComputeBytesPerSample(page.bits_per_sample);
   if (bytes_per_sample == 0) {
-    return Error(
-        UnsupportedFormatError::BitsPerSample(page.bits_per_sample, page_index)
-            .what());
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kUnimplemented,
+        std::string(UnsupportedFormatError::BitsPerSample(page.bits_per_sample,
+                                                          page_index)
+                        .what()));
   }
 
   const uint32_t bytes_per_pixel = bytes_per_sample * page.samples_per_pixel;
   if (bytes_per_pixel == 0) {
-    return Error(InvalidPageError::Parameters(
-                     page_index, page.samples_per_pixel, bytes_per_sample)
-                     .what());
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        std::string(InvalidPageError::Parameters(
+                        page_index, page.samples_per_pixel, bytes_per_sample)
+                        .what()));
   }
 
   const uint32_t full_row_bytes = page.width * bytes_per_pixel;
@@ -539,8 +629,8 @@ struct StripRoiParams {
 /// @param bytes_per_pixel Bytes per pixel (for computing byte offsets)
 /// @param params Output parameters (will be filled)
 /// @return true if ROI is valid (non-zero area), false otherwise
-bool ComputeStripRoiParams(const PageHeader &page, const Roi &roi,
-                           uint32_t bytes_per_pixel, StripRoiParams &params) {
+bool ComputeStripRoiParams(const PageHeader& page, const Roi& roi,
+                           uint32_t bytes_per_pixel, StripRoiParams& params) {
   // Clamp ROI to page bounds
   params.roi_x = std::min(roi.x, page.width);
   params.roi_y = std::min(roi.y, page.height);
@@ -573,9 +663,9 @@ bool ComputeStripRoiParams(const PageHeader &page, const Roi &roi,
 /// @param dst Destination buffer
 /// @param dst_stride Destination row stride
 /// @return Number of rows written to destination
-uint32_t CopyStripRowsToRoi(const std::vector<uint8_t> &strip_data,
+uint32_t CopyStripRowsToRoi(const std::vector<uint8_t>& strip_data,
                             uint32_t strip_height, uint32_t y_offset,
-                            const StripRoiParams &params, uint8_t *dst,
+                            const StripRoiParams& params, uint8_t* dst,
                             int dst_stride) {
   uint32_t rows_written = 0;
   const int row_bytes = static_cast<int>(params.full_row_bytes);
@@ -589,9 +679,9 @@ uint32_t CopyStripRowsToRoi(const std::vector<uint8_t> &strip_data,
     }
 
     // Compute source and destination pointers
-    const uint8_t *src_row =
+    const uint8_t* src_row =
         strip_data.data() + r * row_bytes + params.roi_row_offset;
-    uint8_t *dst_row = dst + (global_y - params.roi_y) * dst_stride;
+    uint8_t* dst_row = dst + (global_y - params.roi_y) * dst_stride;
 
     // Copy the ROI portion of the row
     const uint32_t available = params.full_row_bytes - params.roi_row_offset;
@@ -606,58 +696,69 @@ uint32_t CopyStripRowsToRoi(const std::vector<uint8_t> &strip_data,
   return rows_written;
 }
 
-} // namespace
+}  // namespace
 
 // =============================================================================
 // Public API
 // =============================================================================
 
-Result<void> ReadStripedPage(const TiffIndex &index, uint32_t page_index,
-                             const Roi &roi, DecodeContext &ctx, uint8_t *dst,
+Result<void> ReadStripedPage(const TiffIndex& index, uint32_t page_index,
+                             const Roi& roi, DecodeContext& ctx, uint8_t* dst,
                              int dst_stride) {
   // ========================================
   // 1. Validation
   // ========================================
   if (page_index >= index.NumPages()) {
-    return Error("Page index " + std::to_string(page_index) +
-                 " out of range (file has " + std::to_string(index.NumPages()) +
-                 " pages)");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kOutOfRange,
+                                "Page index " + std::to_string(page_index) +
+                                    " out of range (file has " +
+                                    std::to_string(index.NumPages()) +
+                                    " pages)");
   }
 
   if (!EnsurePageLoaded(index, page_index)) {
-    return Error("Failed to load page " + std::to_string(page_index) +
-                 " metadata");
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInternal,
+        "Failed to load page " + std::to_string(page_index) + " metadata");
   }
 
-  const auto &page = index.Page(page_index);
+  const auto& page = index.Page(page_index);
   if (page.storage != Storage::kStrips) {
-    return Error("Page " + std::to_string(page_index) +
-                 " is not striped (cannot use ReadStripedPage)");
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        "Page " + std::to_string(page_index) +
+            " is not striped (cannot use ReadStripedPage)");
   }
 
   // Check compression support
   if (!IsCompression(page.compression, Compression::kJpeg) &&
+      !IsCompression(page.compression, Compression::kJpeg2000) &&
       !IsCompression(page.compression, Compression::kLzw) &&
       !IsCompression(page.compression, Compression::kNone) &&
       !IsCompression(page.compression, Compression::kZstd)) {
-    return Error(
-        UnsupportedFormatError::Compression(page.compression, page_index)
-            .what());
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,
+                                std::string(UnsupportedFormatError::Compression(
+                                                page.compression, page_index)
+                                                .what()));
   }
 
   // Validate bits per sample
   const uint32_t bytes_per_sample = ComputeBytesPerSample(page.bits_per_sample);
   if (bytes_per_sample == 0) {
-    return Error(
-        UnsupportedFormatError::BitsPerSample(page.bits_per_sample, page_index)
-            .what());
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kUnimplemented,
+        std::string(UnsupportedFormatError::BitsPerSample(page.bits_per_sample,
+                                                          page_index)
+                        .what()));
   }
 
   const uint32_t bytes_per_pixel = bytes_per_sample * page.samples_per_pixel;
   if (bytes_per_pixel == 0) {
-    return Error(InvalidPageError::Parameters(
-                     page_index, page.samples_per_pixel, bytes_per_sample)
-                     .what());
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        std::string(InvalidPageError::Parameters(
+                        page_index, page.samples_per_pixel, bytes_per_sample)
+                        .what()));
   }
 
   // ========================================
@@ -665,13 +766,15 @@ Result<void> ReadStripedPage(const TiffIndex &index, uint32_t page_index,
   // ========================================
   StripRoiParams params;
   if (!ComputeStripRoiParams(page, roi, bytes_per_pixel, params)) {
-    return Error("ROI is empty or completely outside image bounds");
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        "ROI is empty or completely outside image bounds");
   }
 
   // ========================================
   // 3. Strip iteration and ROI extraction
   // ========================================
-  const auto &strips = index.Strips(page.payload_id);
+  const auto& strips = index.Strips(page.payload_id);
   auto offsets = index.Offsets(strips.offsets);
 
   uint32_t y_offset = 0;
@@ -706,105 +809,118 @@ Result<void> ReadStripedPage(const TiffIndex &index, uint32_t page_index,
   }
 
   if (total_rows_written != params.roi_h) {
-    return Error("Incomplete ROI read: expected " +
-                 std::to_string(params.roi_h) + " rows, got " +
-                 std::to_string(total_rows_written));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInternal,
+        "Incomplete ROI read: expected " + std::to_string(params.roi_h) +
+            " rows, got " + std::to_string(total_rows_written));
   }
   return Result<void>();
 }
 
-Result<void> ReadSingleJpegPage(const TiffIndex &index, uint32_t page_index,
-                                DecodeContext &ctx, std::vector<uint8_t> &dst,
-                                int &dst_stride, int &out_width,
-                                int &out_height) {
+Result<void> ReadSingleJpegPage(const TiffIndex& index, uint32_t page_index,
+                                DecodeContext& ctx, std::vector<uint8_t>& dst,
+                                int& dst_stride, int& out_width,
+                                int& out_height) {
   if (page_index >= index.NumPages()) {
-    return Error("Page index " + std::to_string(page_index) +
-                 " out of range (file has " + std::to_string(index.NumPages()) +
-                 " pages)");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kOutOfRange,
+                                "Page index " + std::to_string(page_index) +
+                                    " out of range (file has " +
+                                    std::to_string(index.NumPages()) +
+                                    " pages)");
   }
 
-  const auto &page = index.Page(page_index);
+  const auto& page = index.Page(page_index);
   if (page.storage != Storage::kSingleJpeg) {
-    return Error("Page " + std::to_string(page_index) +
-                 " is not single-JPEG storage");
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        "Page " + std::to_string(page_index) + " is not single-JPEG storage");
   }
 
-  const auto &single = index.SingleJpeg(page.payload_id);
+  const auto& single = index.SingleJpeg(page.payload_id);
 
   // Read JPEG data using pread
   auto jpeg_data_span =
       ReadBytesSpan(index.Fd(), index.FileSize(), single.offset, single.length,
                     ctx.temp_buffer);
   if (jpeg_data_span.empty()) {
-    return Error("Failed to read JPEG data from file");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to read JPEG data from file");
   }
 
   // Decode
   if (!DecodeJpeg(ctx, jpeg_data_span, out_width, out_height, dst)) {
-    return Error("JPEG decoding failed for page " + std::to_string(page_index));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInternal,
+        "JPEG decoding failed for page " + std::to_string(page_index));
   }
 
   dst_stride = out_width * 3;
   return Result<void>();
 }
 
-Result<void> ReadPage(const TiffIndex &index, uint32_t page_index,
-                      const Roi &roi, DecodeContext &ctx, uint8_t *dst,
+Result<void> ReadPage(const TiffIndex& index, uint32_t page_index,
+                      const Roi& roi, DecodeContext& ctx, uint8_t* dst,
                       int dst_stride) {
   if (page_index >= index.NumPages()) {
-    return Error("Page index " + std::to_string(page_index) +
-                 " out of range (file has " + std::to_string(index.NumPages()) +
-                 " pages)");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kOutOfRange,
+                                "Page index " + std::to_string(page_index) +
+                                    " out of range (file has " +
+                                    std::to_string(index.NumPages()) +
+                                    " pages)");
   }
 
-  const auto &page = index.Page(page_index);
+  const auto& page = index.Page(page_index);
 
   switch (page.storage) {
-  case Storage::kTiles:
-    return ReadTiledPage(index, page_index, roi, ctx, dst, dst_stride);
+    case Storage::kTiles:
+      return ReadTiledPage(index, page_index, roi, ctx, dst, dst_stride);
 
-  case Storage::kStrips:
-    return ReadStripedPage(index, page_index, roi, ctx, dst, dst_stride);
+    case Storage::kStrips:
+      return ReadStripedPage(index, page_index, roi, ctx, dst, dst_stride);
 
-  case Storage::kSingleJpeg: {
-    // Single JPEG storage: decode entire image then crop to ROI
-    // Note: This is less efficient than tiled/striped formats since we must
-    // decode the entire JPEG before cropping. Consider converting large
-    // single-JPEG TIFFs to tiled format for better ROI performance.
-    std::vector<uint8_t> temp_dst;
-    int temp_stride = 0;
-    int w = 0, h = 0;
-    AIFOCORE_RETURN_IF_ERROR(ReadSingleJpegPage(index, page_index, ctx,
-                                                temp_dst, temp_stride, w, h));
+    case Storage::kSingleJpeg: {
+      // Single JPEG storage: decode entire image then crop to ROI
+      // Note: This is less efficient than tiled/striped formats since we must
+      // decode the entire JPEG before cropping. Consider converting large
+      // single-JPEG TIFFs to tiled format for better ROI performance.
+      std::vector<uint8_t> temp_dst;
+      int temp_stride = 0;
+      int w = 0, h = 0;
+      AIFOCORE_RETURN_IF_ERROR(ReadSingleJpegPage(index, page_index, ctx,
+                                                  temp_dst, temp_stride, w, h));
 
-    // Clamp ROI to image bounds
-    const uint32_t x0 = std::min(roi.x, static_cast<uint32_t>(w));
-    const uint32_t y0 = std::min(roi.y, static_cast<uint32_t>(h));
-    const uint32_t x1 = std::min(roi.x + roi.width, static_cast<uint32_t>(w));
-    const uint32_t y1 = std::min(roi.y + roi.height, static_cast<uint32_t>(h));
+      // Clamp ROI to image bounds
+      const uint32_t x0 = std::min(roi.x, static_cast<uint32_t>(w));
+      const uint32_t y0 = std::min(roi.y, static_cast<uint32_t>(h));
+      const uint32_t x1 = std::min(roi.x + roi.width, static_cast<uint32_t>(w));
+      const uint32_t y1 =
+          std::min(roi.y + roi.height, static_cast<uint32_t>(h));
 
-    // Validate clamped ROI
-    if (x0 >= x1 || y0 >= y1) {
-      return Error("ROI is completely outside image bounds");
+      // Validate clamped ROI
+      if (x0 >= x1 || y0 >= y1) {
+        return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                    "ROI is completely outside image bounds");
+      }
+
+      const uint32_t roi_w = x1 - x0;
+      const uint32_t roi_h = y1 - y0;
+      const int bytes_per_pixel = 3;  // JPEG output is always RGB
+
+      // Copy ROI rows from decoded image to destination
+      for (uint32_t y = 0; y < roi_h; ++y) {
+        const uint8_t* src_row =
+            temp_dst.data() + (y0 + y) * temp_stride + x0 * bytes_per_pixel;
+        uint8_t* dst_row = dst + y * dst_stride;
+        std::memcpy(dst_row, src_row, roi_w * bytes_per_pixel);
+      }
+      return Result<void>();
     }
 
-    const uint32_t roi_w = x1 - x0;
-    const uint32_t roi_h = y1 - y0;
-    const int bytes_per_pixel = 3; // JPEG output is always RGB
-
-    // Copy ROI rows from decoded image to destination
-    for (uint32_t y = 0; y < roi_h; ++y) {
-      const uint8_t *src_row =
-          temp_dst.data() + (y0 + y) * temp_stride + x0 * bytes_per_pixel;
-      uint8_t *dst_row = dst + y * dst_stride;
-      std::memcpy(dst_row, src_row, roi_w * bytes_per_pixel);
-    }
-    return Result<void>();
-  }
-
-  default:
-    return Error("Unknown storage type for page " + std::to_string(page_index));
+    default:
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kInternal,
+          "Unknown storage type for page " + std::to_string(page_index));
   }
 }
 
-} // namespace simpletiff
+}  // namespace simpletiff

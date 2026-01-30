@@ -66,5 +66,3 @@ def cquery_target_files(*, bazel_cmd: str, target: str, bazel_flags: list[str], 
             continue
         files.append(REPO_ROOT / line)
     return files
-
-

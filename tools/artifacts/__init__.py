@@ -5,5 +5,3 @@ distributable artifacts:
 - Python wheels
 - rules_pkg bundles (.tar.xz)
 """
-
-

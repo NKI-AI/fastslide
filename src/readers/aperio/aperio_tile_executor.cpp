@@ -34,19 +34,19 @@
 namespace fastslide {
 
 aifocore::Status AperioTileExecutor::ExecutePlan(
-    const core::TilePlan &plan, const AperioReader &reader,
-    runtime::TileWriter &writer, const TiffStructureMetadata &tiff_metadata) {
+    const core::TilePlan& plan, const AperioReader& reader,
+    runtime::TileWriter& writer, const TiffStructureMetadata& tiff_metadata) {
   std::atomic<int> error_count{0};
   return readers::simpletiff_exec::ExecuteOpsWithThreadPoolBestEffort(
       plan, writer,
-      [&](const core::TileReadOp &operation, runtime::TileWriter &writer_ref,
-          std::mutex &writer_mutex) -> aifocore::Status {
+      [&](const core::TileReadOp& operation, runtime::TileWriter& writer_ref,
+          std::mutex& writer_mutex) -> aifocore::Status {
         return ExecuteTileOperation(
             operation, reader, tiff_metadata.page, tiff_metadata.tile_width,
             tiff_metadata.tile_height, tiff_metadata.samples_per_pixel,
             tiff_metadata.is_tiled, writer_ref, writer_mutex);
       },
-      [&](const core::TileReadOp &operation, const aifocore::Status &status) {
+      [&](const core::TileReadOp& operation, const aifocore::Status& status) {
         const int count =
             error_count.fetch_add(1, std::memory_order_relaxed) + 1;
         if (count <= 10) {
@@ -58,10 +58,10 @@ aifocore::Status AperioTileExecutor::ExecutePlan(
 }
 
 aifocore::Status AperioTileExecutor::ExecuteTileOperation(
-    const core::TileReadOp &operation, const AperioReader &reader,
+    const core::TileReadOp& operation, const AperioReader& reader,
     uint16_t page, uint32_t tile_width, uint32_t tile_height,
-    uint16_t samples_per_pixel, bool is_tiled, runtime::TileWriter &writer,
-    std::mutex &writer_mutex) {
+    uint16_t samples_per_pixel, bool is_tiled, runtime::TileWriter& writer,
+    std::mutex& writer_mutex) {
   const TiffAccessParams tiff_params = {
       .page = page,
       .tile_width = tile_width,
@@ -73,13 +73,27 @@ aifocore::Status AperioTileExecutor::ExecuteTileOperation(
   // Read and decode the tile (returns span view of thread-local buffer)
   auto tile_data_or = ReadWithCache(operation, reader, tiff_params);
   if (!tile_data_or.ok()) {
-    std::cerr << "Failed to read/decode tile at (" << operation.tile_coord.x
-              << ", " << operation.tile_coord.y
-              << "): " << tile_data_or.status().ToString();
-    return aifocore::Status::OkStatus();  // Continue processing other tiles
+    // If the error is simply missing/empty data, treat it as a blank tile.
+    if (tile_data_or.status().code() == aifocore::StatusCode::kDataLoss) {
+      // Just continue. We won't copy any data from tile_data_or (it's invalid),
+      // so the crop loop below will use the zero-initialized 'cropped_data'
+      // buffer essentially filling the region with blank/black. We must check
+      // validity before using tile_data below.
+    } else {
+      std::cerr << aifocore::fmt::format(
+          "Failed to read/decode tile at ({}, {}) in {}: {}\n",
+          operation.tile_coord.x, operation.tile_coord.y, reader.GetFilename(),
+          tile_data_or.status().ToString());
+      return aifocore::Status::OkStatus();  // Continue processing other tiles
+    }
   }
 
-  const auto &tile_data = *tile_data_or; // span reference, not vector copy
+  // If ok, we have data. If not ok but handled (kDataLoss), we have no data to
+  // copy.
+  const bool has_tile_data = tile_data_or.ok();
+  const std::span<const uint8_t> tile_data =
+      has_tile_data ? *tile_data_or
+                    : std::span<const uint8_t>();  // Empty if no data
 
   // Extract sub-region if needed
   const uint32_t src_x = operation.transform.source.x;
@@ -90,7 +104,7 @@ aifocore::Status AperioTileExecutor::ExecuteTileOperation(
 
   // Use thread-local buffer from CRTP base class
   // This eliminates the second per-tile allocation
-  uint8_t *cropped_data =
+  uint8_t* cropped_data =
       TiffBasedTileExecutor<AperioTileExecutor>::GetBuffers().GetCropBuffer(
           crop_size);
   std::memset(cropped_data, 0, crop_size);  // Zero initialize
@@ -98,22 +112,27 @@ aifocore::Status AperioTileExecutor::ExecuteTileOperation(
   // Extract the region from the tile buffer
   // IMPORTANT: Use tile_width as stride because TIFF tiles are always
   // allocated with full tile dimensions in memory, even for edge tiles
-  for (uint32_t row = 0; row < src_height; ++row) {
-    const uint32_t tile_offset =
-        ((src_y + row) * tile_width + src_x) * samples_per_pixel;
-    const uint32_t dst_offset = row * src_width * samples_per_pixel;
-    const uint32_t bytes_to_copy = src_width * samples_per_pixel;
+  //
+  // NOTE: if has_tile_data is false (empty tile), we skip copying and leave
+  // buffer as zero.
+  if (has_tile_data && !tile_data.empty()) {
+    for (uint32_t row = 0; row < src_height; ++row) {
+      const uint32_t tile_offset =
+          ((src_y + row) * tile_width + src_x) * samples_per_pixel;
+      const uint32_t dst_offset = row * src_width * samples_per_pixel;
+      const uint32_t bytes_to_copy = src_width * samples_per_pixel;
 
-    if (tile_offset + bytes_to_copy <= tile_data.size()) {
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-      std::memcpy(cropped_data + dst_offset, tile_data.data() + tile_offset,
-                  bytes_to_copy);
-    } else {
-      std::cerr << "Tile bounds check failed at row " << row << " for tile ("
-                << operation.tile_coord.x << ", " << operation.tile_coord.y
-                << "): tile_offset=" << tile_offset
-                << " + bytes_to_copy=" << bytes_to_copy
-                << " > tile_data.size()=" << tile_data.size();
+      if (tile_offset + bytes_to_copy <= tile_data.size()) {
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+        std::memcpy(cropped_data + dst_offset, tile_data.data() + tile_offset,
+                    bytes_to_copy);
+      } else {
+        std::cerr << "Tile bounds check failed at row " << row << " for tile ("
+                  << operation.tile_coord.x << ", " << operation.tile_coord.y
+                  << "): tile_offset=" << tile_offset
+                  << " + bytes_to_copy=" << bytes_to_copy
+                  << " > tile_data.size()=" << tile_data.size();
+      }
     }
   }
 
@@ -138,10 +157,9 @@ aifocore::Status AperioTileExecutor::ExecuteTileOperation(
   return aifocore::Status::OkStatus();
 }
 
-runtime::TileKey
-AperioTileExecutor::MakeCacheKey(const core::TileReadOp &operation,
-                                 const AperioReader &reader,
-                                 const TiffAccessParams &params) {
+runtime::TileKey AperioTileExecutor::MakeCacheKey(
+    const core::TileReadOp& operation, const AperioReader& reader,
+    const TiffAccessParams& params) {
   (void)params;
   // Use tile grid coordinates for key (unique per level)
   return runtime::TileKey(reader.GetFilename(),
@@ -149,17 +167,16 @@ AperioTileExecutor::MakeCacheKey(const core::TileReadOp &operation,
                           operation.tile_coord.x, operation.tile_coord.y);
 }
 
-aifocore::Result<DecodedTileData>
-AperioTileExecutor::ReadTileFromDisk(const core::TileReadOp &operation,
-                                     const AperioReader &reader,
-                                     const TiffAccessParams &params) {
+aifocore::Result<DecodedTileData> AperioTileExecutor::ReadTileFromDisk(
+    const core::TileReadOp& operation, const AperioReader& reader,
+    const TiffAccessParams& params) {
   // Each worker thread uses its own DecodeContext for decompression
   // This is thread-safe and avoids per-tile allocations
   static thread_local simpletiff::DecodeContext decode_ctx;
-  auto &tile_buffer = GetBuffers().tile_buffer;
+  auto& tile_buffer = GetBuffers().tile_buffer;
 
   // Get TiffIndex from reader
-  const auto &tiff_index = reader.GetTiffIndex();
+  const auto& tiff_index = reader.GetTiffIndex();
 
   // op.byte_offset is actually the linear tile index (tile_y * tiles_across +
   // tile_x)
@@ -173,7 +190,7 @@ AperioTileExecutor::ReadTileFromDisk(const core::TileReadOp &operation,
                            tile_buffer, out_width, out_height);
 
   if (!result) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInternal,
         aifocore::fmt::format("Failed to read tile ({}, {}): {}",
                               operation.tile_coord.x, operation.tile_coord.y,

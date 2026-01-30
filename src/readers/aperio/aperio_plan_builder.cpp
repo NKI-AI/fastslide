@@ -31,10 +31,9 @@
 
 namespace fastslide {
 
-aifocore::Result<core::TilePlan>
-AperioPlanBuilder::BuildPlan(const core::TileRequest &request,
-                             const AperioReader &reader,
-                             TiffStructureMetadata &tiff_metadata) {
+aifocore::Result<core::TilePlan> AperioPlanBuilder::BuildPlan(
+    const core::TileRequest& request, const AperioReader& reader,
+    TiffStructureMetadata& tiff_metadata) {
 
   core::TilePlan plan;
   plan.request = request;
@@ -47,11 +46,11 @@ AperioPlanBuilder::BuildPlan(const core::TileRequest &request,
   if (!level_info_or.ok()) {
     return level_info_or.status();
   }
-  const auto &level_info = *level_info_or;
+  const auto& level_info = *level_info_or;
 
   // Get pyramid level metadata
-  const auto &pyramid_levels = reader.GetPyramidLevels();
-  const auto &aperio_level = pyramid_levels[request.level];
+  const auto& pyramid_levels = reader.GetPyramidLevels();
+  const auto& aperio_level = pyramid_levels[request.level];
   const uint16_t page = aperio_level.page;
 
   // Query TIFF structure
@@ -102,9 +101,8 @@ AperioPlanBuilder::BuildPlan(const core::TileRequest &request,
   return plan;
 }
 
-aifocore::Status
-AperioPlanBuilder::ValidateRequest(const core::TileRequest &request,
-                                   const AperioReader &reader) {
+aifocore::Status AperioPlanBuilder::ValidateRequest(
+    const core::TileRequest& request, const AperioReader& reader) {
 
   if (request.level < 0 || request.level >= reader.GetLevelCount()) {
     return aifocore::Status(
@@ -115,11 +113,11 @@ AperioPlanBuilder::ValidateRequest(const core::TileRequest &request,
   return aifocore::Status::OkStatus();
 }
 
-void AperioPlanBuilder::DetermineRegionBounds(const core::TileRequest &request,
-                                              const LevelInfo &level_info,
-                                              double &x, double &y,
-                                              uint32_t &width,
-                                              uint32_t &height) {
+void AperioPlanBuilder::DetermineRegionBounds(const core::TileRequest& request,
+                                              const LevelInfo& level_info,
+                                              double& x, double& y,
+                                              uint32_t& width,
+                                              uint32_t& height) {
   const auto bounds = readers::simpletiff_plan::DetermineRegionBounds(
       request, readers::simpletiff_plan::ToDimensions2D(level_info.dimensions));
   x = bounds.x;
@@ -128,23 +126,22 @@ void AperioPlanBuilder::DetermineRegionBounds(const core::TileRequest &request,
   height = bounds.height;
 }
 
-aifocore::Status
-AperioPlanBuilder::QueryTiffStructure(const AperioReader &reader, uint16_t page,
-                                      const LevelInfo &level_info,
-                                      TiffStructureMetadata &tiff_metadata) {
+aifocore::Status AperioPlanBuilder::QueryTiffStructure(
+    const AperioReader& reader, uint16_t page, const LevelInfo& level_info,
+    TiffStructureMetadata& tiff_metadata) {
 
   // Store page number
   tiff_metadata.page = page;
 
   // Get SimpleTiff index to query structure
-  const auto &tiff_index = reader.GetTiffIndex();
+  const auto& tiff_index = reader.GetTiffIndex();
   if (page >= tiff_index.NumPages()) {
     return aifocore::Status(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Page {} out of range", page));
   }
 
-  const auto &page_header = tiff_index.Page(page);
+  const auto& page_header = tiff_index.Page(page);
 
   // Query TIFF channel information
   // Aperio is typically RGB (3 channels), but we query the actual value
@@ -165,16 +162,16 @@ AperioPlanBuilder::QueryTiffStructure(const AperioReader &reader, uint16_t page,
   tiff_metadata.is_tiled = is_tiled;
 
   if (is_tiled) {
-    const auto &tiles = tiff_index.Tiles(page_header.payload_id);
+    const auto& tiles = tiff_index.Tiles(page_header.payload_id);
     tiff_metadata.tile_width = tiles.tile_w;
     tiff_metadata.tile_height = tiles.tile_h;
   } else if (page_header.storage == simpletiff::Storage::kStrips) {
     // For strips, tile_width = image width, tile_height = rows per strip
     tiff_metadata.tile_width = level_info.dimensions[0];
-    const auto &strips = tiff_index.Strips(page_header.payload_id);
+    const auto& strips = tiff_index.Strips(page_header.payload_id);
     tiff_metadata.tile_height = strips.rows_per_strip;
     if (tiff_metadata.tile_height == 0) {
-      tiff_metadata.tile_height = level_info.dimensions[1]; // Single strip
+      tiff_metadata.tile_height = level_info.dimensions[1];  // Single strip
     }
   } else {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
@@ -185,8 +182,8 @@ AperioPlanBuilder::QueryTiffStructure(const AperioReader &reader, uint16_t page,
 }
 
 std::vector<core::TileReadOp> AperioPlanBuilder::CreateTileOperations(
-    const core::TileRequest &request,
-    const TiffStructureMetadata &tiff_metadata, const LevelInfo &level_info,
+    const core::TileRequest& request,
+    const TiffStructureMetadata& tiff_metadata, const LevelInfo& level_info,
     double x, double y, uint32_t width, uint32_t height) {
 
   std::vector<core::TileReadOp> operations;
@@ -212,40 +209,27 @@ std::vector<core::TileReadOp> AperioPlanBuilder::CreateTileOperations(
   const uint32_t bytes_per_pixel = readers::simpletiff_plan::BytesPerPixel(
       kBitsPerSample, samples_per_pixel);
 
-  readers::simpletiff_plan::ForEachIntersectingTile(
-      readers::simpletiff_plan::ToDimensions2D(level_info.dimensions), region,
-      geom, [&](const readers::simpletiff_plan::IntersectingTile &it) {
-        core::TileReadOp op;
-        op.level = request.level;
-        op.tile_coord = {it.tile_x, it.tile_y};
-        op.source_id = page;
-        op.byte_offset = it.tile_index;
-        op.byte_size = tile_width * tile_height * bytes_per_pixel;
-
-        const uint32_t src_x = it.inter_left - it.tile_left;
-        const uint32_t src_y = it.inter_top - it.tile_top;
-        const uint32_t dest_x = it.inter_left - region.x;
-        const uint32_t dest_y = it.inter_top - region.y;
-
-        op.transform.source = {src_x, src_y, it.inter_width, it.inter_height};
-        op.transform.dest = {dest_x, dest_y, it.inter_width, it.inter_height};
-        operations.push_back(op);
+  operations = readers::simpletiff_plan::BuildTileReadOps(
+      request, readers::simpletiff_plan::ToDimensions2D(level_info.dimensions),
+      region, geom, bytes_per_pixel, 1,
+      [&](size_t, const readers::simpletiff_plan::IntersectingTile& it) {
+        return std::make_pair(static_cast<uint32_t>(page),
+                              TileCoordinate{it.tile_x, it.tile_y});
       });
 
   return operations;
 }
 
-core::OutputSpec
-AperioPlanBuilder::CreateOutputSpec(uint32_t width, uint32_t height,
-                                    uint16_t samples_per_pixel) {
+core::OutputSpec AperioPlanBuilder::CreateOutputSpec(
+    uint32_t width, uint32_t height, uint16_t samples_per_pixel) {
 
   core::OutputSpec spec;
   spec.dimensions = {width, height};
   spec.channels = samples_per_pixel;
   spec.pixel_format = core::OutputSpec::PixelFormat::kUInt8;
-  spec.background = {255, 255, 255, 255}; // White background
+  spec.background = {255, 255, 255, 255};  // White background
 
   return spec;
 }
 
-} // namespace fastslide
+}  // namespace fastslide

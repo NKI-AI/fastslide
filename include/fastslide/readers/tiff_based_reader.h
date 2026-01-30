@@ -96,15 +96,6 @@ class TiffBasedReader : public SlideReader {
   /// @param filename Path to the TIFF file
   explicit TiffBasedReader(fs::path filename);
 
-  /// @brief Get the best pyramid level for a given downsample factor
-  /// @param downsample Desired downsample factor
-  /// @param level_count Number of available levels
-  /// @param get_level_downsample Function to get downsample for a level
-  /// @return Best level index
-  int GetBestLevelForDownsampleImpl(
-      double downsample, int level_count,
-      std::function<double(int)> get_level_downsample) const;
-
   /// @brief Path to the TIFF file
   fs::path filename_;
 

@@ -52,5 +52,3 @@ PY_TAG_TO_VERSION: dict[str, str] = {
     "cp312": "3.12",
     "cp313": "3.13",
 }
-
-

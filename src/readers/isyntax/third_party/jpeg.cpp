@@ -25,10 +25,10 @@
 #ifdef defer
 #undef defer
 #endif
-#include "fastslide/runtime/decoders/jpeg_decoder.h"
 #include "fastslide/readers/isyntax/third_party/base64.h"
 #include "fastslide/readers/isyntax/third_party/platform/intrinsics.h"
 #include "fastslide/readers/isyntax/third_party/platform/platform.h"
+#include "fastslide/runtime/decoders/jpeg_decoder.h"
 
 // Toolchains differ on whether they define `__ARM_NEON` or `__ARM_NEON__`, and
 // `platform/intrinsics.h` only includes `<arm_neon.h>` for some compiler/macro
@@ -39,17 +39,16 @@
 
 namespace {
 
-bool HasJpegSoi(const uint8_t *data, size_t len) {
+bool HasJpegSoi(const uint8_t* data, size_t len) {
   return len >= 2 && data[0] == 0xFF && data[1] == 0xD8;
 }
 
-bool HasJpegEoi(const uint8_t *data, size_t len) {
+bool HasJpegEoi(const uint8_t* data, size_t len) {
   return len >= 2 && data[len - 2] == 0xFF && data[len - 1] == 0xD9;
 }
 
-aifocore::Result<std::vector<uint8_t>>
-ReadFileBytesAtOffset(file_handle_t file_handle, int64_t read_offset,
-                      size_t read_size) {
+aifocore::Result<std::vector<uint8_t>> ReadFileBytesAtOffset(
+    file_handle_t file_handle, int64_t read_offset, size_t read_size) {
   if (read_offset <= 0 || read_size == 0) {
     return std::vector<uint8_t>{};
   }
@@ -72,8 +71,8 @@ ReadFileBytesAtOffset(file_handle_t file_handle, int64_t read_offset,
   return encoded;
 }
 
-aifocore::Result<std::vector<uint8_t>>
-Base64DecodeToVector(const uint8_t *encoded, size_t encoded_len) {
+aifocore::Result<std::vector<uint8_t>> Base64DecodeToVector(
+    const uint8_t* encoded, size_t encoded_len) {
   if (encoded == nullptr || encoded_len == 0) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
                             "Base64DecodeToVector: empty input");
@@ -81,7 +80,7 @@ Base64DecodeToVector(const uint8_t *encoded, size_t encoded_len) {
   return isyntax::Base64Decode(std::span<const uint8_t>(encoded, encoded_len));
 }
 
-void SwapRedBlueInPlaceRaw(uint32_t *pixels, int width, int height) {
+void SwapRedBlueInPlaceRaw(uint32_t* pixels, int width, int height) {
   if (pixels == nullptr || width <= 0 || height <= 0) {
     return;
   }
@@ -104,7 +103,7 @@ void SwapRedBlueInPlaceRaw(uint32_t *pixels, int width, int height) {
 #elif defined(__SSE2__)
   for (int i = 0; i < num_pixels_aligned; i += 4) {
     __m128i bgra =
-        _mm_loadu_si128(reinterpret_cast<const __m128i *>(pixels + i));
+        _mm_loadu_si128(reinterpret_cast<const __m128i*>(pixels + i));
     __m128i b_mask = _mm_set1_epi32(0x000000FF);
     __m128i r_mask = _mm_set1_epi32(0x00FF0000);
     __m128i b = _mm_and_si128(bgra, b_mask);
@@ -114,7 +113,7 @@ void SwapRedBlueInPlaceRaw(uint32_t *pixels, int width, int height) {
     __m128i ga_alpha_mask = _mm_set1_epi32(0xFF00FF00);
     __m128i ga_alpha = _mm_and_si128(bgra, ga_alpha_mask);
     __m128i rgba = _mm_or_si128(ga_alpha, br_swapped);
-    _mm_storeu_si128(reinterpret_cast<__m128i *>(pixels + i), rgba);
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(pixels + i), rgba);
   }
 #endif
 
@@ -125,7 +124,7 @@ void SwapRedBlueInPlaceRaw(uint32_t *pixels, int width, int height) {
   }
 }
 
-} // namespace
+}  // namespace
 
 namespace isyntax {
 namespace jpeg {
@@ -137,8 +136,8 @@ void SwapRedBlueInPlace(std::span<uint32_t> pixels, int width, int height) {
   SwapRedBlueInPlaceRaw(pixels.data(), width, height);
 }
 
-aifocore::Result<std::vector<uint8_t>>
-ReadAssociatedImageJpegBytes(isyntax_t *isyntax, isyntax_image_t *image) {
+aifocore::Result<std::vector<uint8_t>> ReadAssociatedImageJpegBytes(
+    isyntax_t* isyntax, isyntax_image_t* image) {
   if (isyntax == nullptr || image == nullptr || isyntax->file_handle == 0) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
                             "ReadAssociatedImageJpegBytes: invalid arguments");
@@ -150,8 +149,8 @@ ReadAssociatedImageJpegBytes(isyntax_t *isyntax, isyntax_image_t *image) {
   return Base64DecodeToVector(encoded_or->data(), encoded_or->size());
 }
 
-aifocore::Result<std::vector<uint8_t>>
-ReadIccProfileBytes(isyntax_t *isyntax, isyntax_image_t *image) {
+aifocore::Result<std::vector<uint8_t>> ReadIccProfileBytes(
+    isyntax_t* isyntax, isyntax_image_t* image) {
   if (isyntax == nullptr || image == nullptr || isyntax->file_handle == 0) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
                             "ReadIccProfileBytes: invalid arguments");
@@ -170,7 +169,7 @@ aifocore::Result<DecodedImage> DecodeJpeg(std::span<const uint8_t> jpeg_bytes,
                             "DecodeJpeg: empty input");
   }
 
-  const uint8_t *input = jpeg_bytes.data();
+  const uint8_t* input = jpeg_bytes.data();
   const size_t input_len = jpeg_bytes.size();
 
   std::vector<uint8_t> with_markers;
@@ -227,14 +226,13 @@ aifocore::Result<DecodedImage> DecodeJpeg(std::span<const uint8_t> jpeg_bytes,
   return out;
 }
 
-aifocore::Result<DecodedImage>
-ReadAssociatedImagePixels(isyntax_t *isyntax, isyntax_image_t *image,
-                          isyntax_pixel_format_t fmt) {
+aifocore::Result<DecodedImage> ReadAssociatedImagePixels(
+    isyntax_t* isyntax, isyntax_image_t* image, isyntax_pixel_format_t fmt) {
   auto jpeg_or = ReadAssociatedImageJpegBytes(isyntax, image);
   AIFOCORE_RETURN_IF_ERROR(jpeg_or.status());
   return DecodeJpeg(std::span<const uint8_t>(jpeg_or->data(), jpeg_or->size()),
                     fmt);
 }
 
-} // namespace jpeg
-} // namespace isyntax
+}  // namespace jpeg
+}  // namespace isyntax

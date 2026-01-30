@@ -38,9 +38,9 @@ enum class ErrorPolicy : std::uint8_t {
 // - Direct writers can write disjoint regions without locking.
 // - Blended writers accumulate into shared buffers and must be protected.
 inline aifocore::Status WriteTileMaybeLocked(
-    runtime::TileWriter &writer, const core::TileReadOp &operation,
+    runtime::TileWriter& writer, const core::TileReadOp& operation,
     std::span<const uint8_t> pixel_data, uint32_t tile_width,
-    uint32_t tile_height, uint32_t tile_channels, std::mutex &writer_mutex) {
+    uint32_t tile_height, uint32_t tile_channels, std::mutex& writer_mutex) {
   if (writer.IsBlendingEnabled()) {
     return writer.WriteTile(operation, pixel_data, tile_width, tile_height,
                             tile_channels, writer_mutex);
@@ -61,16 +61,17 @@ inline aifocore::Status WriteTileMaybeLocked(
 // - kStopOnFirstError: returns the first error status (best-effort).
 // - kBestEffort: runs all operations and always returns OK.
 template <typename ExecuteOneFn, typename OnErrorFn>
-aifocore::Status
-ExecuteOpsWithThreadPool(const core::TilePlan &plan,
-                         runtime::TileWriter &writer, ExecuteOneFn execute_one,
-                         ErrorPolicy policy, OnErrorFn on_error) {
+aifocore::Status ExecuteOpsWithThreadPool(const core::TilePlan& plan,
+                                          runtime::TileWriter& writer,
+                                          ExecuteOneFn execute_one,
+                                          ErrorPolicy policy,
+                                          OnErrorFn on_error) {
   if (plan.operations.empty()) {
-    const auto &background = plan.output.background;
+    const auto& background = plan.output.background;
     return writer.FillBackground(background.r, background.g, background.b);
   }
 
-  auto &pool = aifocore::ThreadPoolManager::GetInstance();
+  auto& pool = aifocore::ThreadPoolManager::GetInstance();
   std::mutex writer_mutex;
   std::mutex error_mutex;
   std::optional<aifocore::Status> first_error;
@@ -83,7 +84,7 @@ ExecuteOpsWithThreadPool(const core::TilePlan &plan,
             has_error.load(std::memory_order_relaxed)) {
           return;
         }
-        const auto &operation = plan.operations[index];
+        const auto& operation = plan.operations[index];
         aifocore::Status status = execute_one(operation, writer, writer_mutex);
         if (!status.ok()) {
           error_count.fetch_add(1, std::memory_order_relaxed);
@@ -106,26 +107,25 @@ ExecuteOpsWithThreadPool(const core::TilePlan &plan,
 }
 
 template <typename ExecuteOneFn>
-aifocore::Status
-ExecuteOpsWithThreadPoolStopOnError(const core::TilePlan &plan,
-                                    runtime::TileWriter &writer,
-                                    ExecuteOneFn execute_one) {
+aifocore::Status ExecuteOpsWithThreadPoolStopOnError(
+    const core::TilePlan& plan, runtime::TileWriter& writer,
+    ExecuteOneFn execute_one) {
   return ExecuteOpsWithThreadPool(
       plan, writer, execute_one, ErrorPolicy::kStopOnFirstError,
-      [](const core::TileReadOp &, const aifocore::Status &) {});
+      [](const core::TileReadOp&, const aifocore::Status&) {});
 }
 
 template <typename ExecuteOneFn, typename OnErrorFn>
-aifocore::Status ExecuteOpsWithThreadPoolBestEffort(const core::TilePlan &plan,
-                                                    runtime::TileWriter &writer,
+aifocore::Status ExecuteOpsWithThreadPoolBestEffort(const core::TilePlan& plan,
+                                                    runtime::TileWriter& writer,
                                                     ExecuteOneFn execute_one,
                                                     OnErrorFn on_error) {
   return ExecuteOpsWithThreadPool(plan, writer, execute_one,
                                   ErrorPolicy::kBestEffort, on_error);
 }
 
-} // namespace simpletiff_exec
-} // namespace readers
-} // namespace fastslide
+}  // namespace simpletiff_exec
+}  // namespace readers
+}  // namespace fastslide
 
-#endif // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_SIMPLETIFF_TILE_EXECUTOR_UTILS_H_
+#endif  // AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_SIMPLETIFF_TILE_EXECUTOR_UTILS_H_

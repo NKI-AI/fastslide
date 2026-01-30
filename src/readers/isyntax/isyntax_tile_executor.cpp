@@ -26,8 +26,8 @@
 
 #include "aifocore/utilities/thread_pool_singleton.h"
 #include "fastslide/readers/cached_tile_executor.h"
-#include "fastslide/runtime/cache_interface.h"
 #include "fastslide/readers/isyntax/third_party/file.h"
+#include "fastslide/runtime/cache_interface.h"
 
 namespace fastslide {
 

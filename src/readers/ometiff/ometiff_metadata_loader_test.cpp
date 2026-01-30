@@ -18,8 +18,8 @@
 
 #include <map>
 #include <string>
-#include <vector>
 #include <utility>
+#include <vector>
 
 #include "simpletiff/index.h"
 

@@ -45,7 +45,7 @@ namespace isyntax {
 ///
 /// Thread-safety: Not thread-safe. Each thread should have its own Arena.
 class Arena {
-public:
+ public:
   static constexpr size_t kAlignment = 32;
 
   /// @brief Constructs an empty arena (call `Init()` before use).
@@ -70,7 +70,7 @@ public:
 
     // `std::aligned_alloc` isn't available on all platforms/toolchains (notably
     // some Windows libc implementations). Use aligned `operator new` instead.
-    base_ = static_cast<uint8_t *>(::operator new(
+    base_ = static_cast<uint8_t*>(::operator new(
         rounded_capacity, std::align_val_t(kAlignment), std::nothrow));
     if (base_ == nullptr) {
       return aifocore::Status(
@@ -88,12 +88,14 @@ public:
   ~Arena() { Free(); }
 
   // Delete copy operations
-  Arena(const Arena &) = delete;
-  Arena &operator=(const Arena &) = delete;
+  Arena(const Arena&) = delete;
+  Arena& operator=(const Arena&) = delete;
 
   // Move operations
-  Arena(Arena &&other) noexcept
-      : base_(other.base_), capacity_(other.capacity_), used_(other.used_),
+  Arena(Arena&& other) noexcept
+      : base_(other.base_),
+        capacity_(other.capacity_),
+        used_(other.used_),
         temp_count_(other.temp_count_) {
     other.base_ = nullptr;
     other.capacity_ = 0;
@@ -101,7 +103,7 @@ public:
     other.temp_count_ = 0;
   }
 
-  Arena &operator=(Arena &&other) noexcept {
+  Arena& operator=(Arena&& other) noexcept {
     if (this != &other) {
       Free();
       base_ = other.base_;
@@ -119,24 +121,26 @@ public:
   /// @brief Allocate size bytes from the arena
   /// @param size Number of bytes to allocate
   /// @return Pointer to allocated memory
-  void *Allocate(size_t size) {
+  void* Allocate(size_t size) {
     ASSERT(used_ + size <= capacity_);
-    void *result = base_ + used_;
+    void* result = base_ + used_;
     used_ += size;
     return result;
   }
 
   /// @brief Allocate space for a single object of type T
   /// @return Pointer to allocated memory (uninitialized)
-  template <typename T> T *Allocate() {
-    return static_cast<T *>(Allocate(sizeof(T)));
+  template <typename T>
+  T* Allocate() {
+    return static_cast<T*>(Allocate(sizeof(T)));
   }
 
   /// @brief Allocate space for an array of count objects of type T
   /// @param count Number of elements
   /// @return Pointer to allocated memory (uninitialized)
-  template <typename T> T *AllocateArray(size_t count) {
-    return static_cast<T *>(Allocate(count * sizeof(T)));
+  template <typename T>
+  T* AllocateArray(size_t count) {
+    return static_cast<T*>(Allocate(count * sizeof(T)));
   }
 
   /// @brief Align the current position to the given alignment
@@ -149,7 +153,7 @@ public:
   }
 
   /// @brief Get the current position in the arena
-  uint8_t *CurrentPosition() { return base_ + used_; }
+  uint8_t* CurrentPosition() { return base_ + used_; }
 
   /// @brief Get the number of bytes remaining
   size_t BytesRemaining() const { return capacity_ - used_; }
@@ -163,7 +167,7 @@ public:
     temp_count_ = 0;
   }
 
-private:
+ private:
   void Free() noexcept {
     if (base_ == nullptr) {
       return;
@@ -177,7 +181,7 @@ private:
 
   friend class ScopedArenaMemory;
 
-  uint8_t *base_ = nullptr;
+  uint8_t* base_ = nullptr;
   size_t capacity_ = 0;
   size_t used_ = 0;
   int32_t temp_count_ = 0;
@@ -199,10 +203,11 @@ private:
 ///   } // data is automatically freed here
 /// @endcode
 class ScopedArenaMemory {
-public:
+ public:
   /// @brief Begin a scoped memory region on the given arena
-  explicit ScopedArenaMemory(Arena *arena)
-      : arena_(arena), saved_used_(arena->used_),
+  explicit ScopedArenaMemory(Arena* arena)
+      : arena_(arena),
+        saved_used_(arena->used_),
         temp_index_(arena->temp_count_) {
     ++arena_->temp_count_;
   }
@@ -218,17 +223,18 @@ public:
   }
 
   // Delete copy operations
-  ScopedArenaMemory(const ScopedArenaMemory &) = delete;
-  ScopedArenaMemory &operator=(const ScopedArenaMemory &) = delete;
+  ScopedArenaMemory(const ScopedArenaMemory&) = delete;
+  ScopedArenaMemory& operator=(const ScopedArenaMemory&) = delete;
 
   // Move operations
-  ScopedArenaMemory(ScopedArenaMemory &&other) noexcept
-      : arena_(other.arena_), saved_used_(other.saved_used_),
+  ScopedArenaMemory(ScopedArenaMemory&& other) noexcept
+      : arena_(other.arena_),
+        saved_used_(other.saved_used_),
         temp_index_(other.temp_index_) {
     other.arena_ = nullptr;
   }
 
-  ScopedArenaMemory &operator=(ScopedArenaMemory &&other) noexcept {
+  ScopedArenaMemory& operator=(ScopedArenaMemory&& other) noexcept {
     if (this != &other) {
       if (arena_) {
         ASSERT(arena_->temp_count_ > 0);
@@ -244,13 +250,17 @@ public:
   }
 
   /// @brief Allocate size bytes from the arena
-  void *Allocate(size_t size) { return arena_->Allocate(size); }
+  void* Allocate(size_t size) { return arena_->Allocate(size); }
 
   /// @brief Allocate space for a single object of type T
-  template <typename T> T *Allocate() { return arena_->Allocate<T>(); }
+  template <typename T>
+  T* Allocate() {
+    return arena_->Allocate<T>();
+  }
 
   /// @brief Allocate space for an array of count objects of type T
-  template <typename T> T *AllocateArray(size_t count) {
+  template <typename T>
+  T* AllocateArray(size_t count) {
     return arena_->AllocateArray<T>(count);
   }
 
@@ -258,10 +268,10 @@ public:
   void Align(size_t alignment) { arena_->Align(alignment); }
 
   /// @brief Get the underlying arena
-  Arena *GetArena() { return arena_; }
+  Arena* GetArena() { return arena_; }
 
-private:
-  Arena *arena_ = nullptr;
+ private:
+  Arena* arena_ = nullptr;
   size_t saved_used_ = 0;
   int32_t temp_index_ = 0;
 };
@@ -285,10 +295,10 @@ private:
 ///   // Automatically freed when scope ends
 /// @endcode
 class ThreadLocalArena {
-public:
+ public:
   /// @brief Get the thread-local arena, creating it on first access per thread
   /// @return Reference to this thread's Arena (each thread has its own)
-  static aifocore::Result<Arena *> Get();
+  static aifocore::Result<Arena*> Get();
 
   /// @brief Create a scoped memory region on the thread-local arena
   /// @return RAII scope that automatically rewinds on destruction
@@ -297,8 +307,8 @@ public:
     return ScopedArenaMemory(arena);
   }
 
-private:
+ private:
   ThreadLocalArena() = delete;
 };
 
-} // namespace isyntax
+}  // namespace isyntax

@@ -34,6 +34,16 @@ namespace fastslide {
 namespace runtime {
 namespace io {
 
+/// @brief Result of a zlib decompression
+///
+/// `data.size()` always equals `actual_size_bytes`. The explicit size field is
+/// returned to make callers treat it as signal (e.g., to compare with a size
+/// hint) without having to rely on container size implicitly.
+struct ZlibDecompressionResult {
+  std::vector<uint8_t> data;
+  size_t actual_size_bytes = 0;
+};
+
 /// @brief Read a little-endian 32-bit integer from a file
 /// @param file File pointer (must be open for reading)
 /// @return 32-bit integer value or error
@@ -61,18 +71,35 @@ aifocore::Result<uint64_t> ReadLeUInt64(FILE* file);
 /// @brief Decompress zlib-compressed data
 /// @param data Pointer to compressed data
 /// @param compressed_size Size of compressed data in bytes
-/// @param expected_size Expected size of decompressed data in bytes
-/// @return Decompressed data or error
-/// @note Uses zlib inflate() for decompression
+/// @param expected_size Maximum allowed size of decompressed data in bytes
+/// @return Decompressed data (resized to actual output) or error
+/// @note Uses zlib inflate() for decompression. Fails with ResourceExhausted if
+/// the decompressed output would exceed `expected_size`.
 aifocore::Result<std::vector<uint8_t>> DecompressZlib(const uint8_t* data,
                                                       size_t compressed_size,
                                                       size_t expected_size);
+
+/// @brief Decompress zlib-compressed data, returning the actual decompressed
+/// size
+///
+/// This variant treats `expected_size_hint` as a hint only (for initial buffer
+/// sizing) and will grow the output buffer as needed. This is useful for MRXS
+/// fields where the "expected" size can be wrong, but we still want to keep the
+/// bytes intact and surface the discrepancy to the caller.
+///
+/// @param data Pointer to compressed data
+/// @param compressed_size Size of compressed data in bytes
+/// @param expected_size_hint Hint for the decompressed size in bytes
+/// @return Decompressed bytes and the actual decompressed size
+aifocore::Result<ZlibDecompressionResult> DecompressZlibWithActualSize(
+    const uint8_t* data, size_t compressed_size, size_t expected_size_hint);
 
 }  // namespace io
 }  // namespace runtime
 
 // Import into fastslide namespace for convenience
 using runtime::io::DecompressZlib;
+using runtime::io::DecompressZlibWithActualSize;
 using runtime::io::ReadLeInt32;
 using runtime::io::ReadLeInt64;
 using runtime::io::ReadLeUInt32;

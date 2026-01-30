@@ -62,8 +62,9 @@ int AperioReader::GetLevelCount() const {
 
 aifocore::Result<LevelInfo> AperioReader::GetLevelInfo(int level) const {
   if (level < 0 || level >= static_cast<int>(pyramid_levels_.size())) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            aifocore::fmt::format("Level {} not found", level));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kNotFound,
+        aifocore::fmt::format("Level {} not found", level));
   }
 
   const auto& aperio_level = pyramid_levels_[level];
@@ -101,7 +102,7 @@ aifocore::Result<ImageDimensions> AperioReader::GetAssociatedImageDimensions(
       return ImageDimensions{img.size[0], img.size[1]};
     }
   }
-  return aifocore::Status(
+  return AIFOCORE_MAKE_STATUS(
       aifocore::StatusCode::kNotFound,
       aifocore::fmt::format("Associated image '{}' not found", name));
 }
@@ -117,14 +118,14 @@ aifocore::Result<RGBImage> AperioReader::ReadAssociatedImage(
   }
 
   if (!info) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kNotFound,
         aifocore::fmt::format("Associated image '{}' not found", name));
   }
 
   // Use simpletiff to read the associated image page
   if (!tiff_index_ || info->page >= tiff_index_->NumPages()) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInternal,
         aifocore::fmt::format("Invalid page {} for associated image '{}'",
                               info->page, name));
@@ -146,7 +147,7 @@ aifocore::Result<RGBImage> AperioReader::ReadAssociatedImage(
                                      rgb_image.GetData(), stride);
 
   if (!result) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInternal,
         aifocore::fmt::format("Failed to read associated image '{}': {}", name,
                               result.error().message()));
@@ -317,8 +318,8 @@ aifocore::Status AperioReader::ProcessMetadata() {
 aifocore::Status AperioReader::LoadDirectories() {
   // SimpleTiff index should already be initialized in Create()
   if (!tiff_index_) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "TIFF index not initialized");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "TIFF index not initialized");
   }
 
   pyramid_levels_.clear();
@@ -340,7 +341,7 @@ aifocore::Status AperioReader::LoadDirectories() {
 
     // Validate dimensions
     if (page.width == 0 || page.height == 0) {
-      return aifocore::Status(
+      return AIFOCORE_MAKE_STATUS(
           aifocore::StatusCode::kInvalidArgument,
           aifocore::fmt::format("Invalid image dimensions: {}x{}", page.width,
                                 page.height));

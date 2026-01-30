@@ -112,13 +112,9 @@ class CachedTileExecutor : public TiffBasedTileExecutor<Derived> {
 
     // Cache miss: Read from disk via derived class
     // This should use TiffBasedTileExecutor's thread-local buffers
-    auto data_or =
-        Derived::ReadTileFromDisk(op, reader, std::forward<Args>(args)...);
-    if (!data_or.ok()) {
-      return data_or.status();
-    }
-
-    const auto& decoded_data = *data_or;
+    AIFOCORE_ASSIGN_OR_RETURN(
+        auto decoded_data,
+        Derived::ReadTileFromDisk(op, reader, std::forward<Args>(args)...));
 
     // Store in cache if enabled (and not bypassed)
     if (!bypass_cache && reader.IsCacheEnabled()) {
@@ -133,6 +129,50 @@ class CachedTileExecutor : public TiffBasedTileExecutor<Derived> {
     }
 
     return decoded_data.data;
+  }
+
+  /// @brief Read a tile, preserving decoded metadata (width/height/channels).
+  ///
+  /// This is required for formats where the decoded tile dimensions can differ
+  /// from the nominal metadata (e.g. edge tiles), or where decoders may return
+  /// padding that should be interpreted using the decoded dimensions.
+  template <typename Reader, typename... Args>
+  static aifocore::Result<DecodedTileData> ReadWithCacheDecoded(
+      const core::TileReadOp& op, const Reader& reader, Args&&... args) {
+    static thread_local std::shared_ptr<CachedTileData> kept_alive_tile;
+    kept_alive_tile.reset();
+
+    const bool bypass_cache = IsCacheBypassEnabled();
+
+    if (!bypass_cache && reader.IsCacheEnabled()) {
+      auto cache = reader.GetCache();
+      TileKey key =
+          Derived::MakeCacheKey(op, reader, std::forward<Args>(args)...);
+
+      if (auto tile = cache->Get(key)) {
+        kept_alive_tile = tile;
+        return DecodedTileData{
+            .data = std::span<const uint8_t>(tile->data),
+            .width = tile->size[0],
+            .height = tile->size[1],
+            .channels = tile->channels,
+        };
+      }
+    }
+
+    AIFOCORE_ASSIGN_OR_RETURN(
+        auto decoded_data,
+        Derived::ReadTileFromDisk(op, reader, std::forward<Args>(args)...));
+
+    if (!bypass_cache && reader.IsCacheEnabled()) {
+      auto cache = reader.GetCache();
+      TileKey key =
+          Derived::MakeCacheKey(op, reader, std::forward<Args>(args)...);
+      auto cached_tile = Derived::MakeCachedTileData(decoded_data);
+      cache->Put(key, cached_tile);
+    }
+
+    return decoded_data;
   }
 
   /// @brief Helper to create CachedTileData from DecodedTileData

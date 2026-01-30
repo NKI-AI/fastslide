@@ -96,7 +96,6 @@ class MrxsPlanBuilder {
   /// @return Output specification
   static core::OutputSpec CreateOutputSpec(
       uint32_t width, uint32_t height, const mrxs::SlideZoomLevel& zoom_level);
-
 };
 
 }  // namespace fastslide

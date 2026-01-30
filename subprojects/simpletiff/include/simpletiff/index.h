@@ -76,8 +76,9 @@ struct TilesRec {
   uint32_t jpeg_tables_len = 0;  ///< JPEG tables length in bytes
 
   // Lazy loading support
-  LazyArrayInfo lazy_offsets;     ///< Deferred offsets metadata
-  LazyArrayInfo lazy_bytecounts;  ///< Deferred bytecounts metadata
+  LazyArrayInfo lazy_offsets;            ///< Deferred offsets metadata
+  LazyArrayInfo lazy_bytecounts;         ///< Deferred bytecounts metadata
+  LazyArrayInfo lazy_offset_high_bytes;  ///< NDPI: high 32 bits for each offset
 
   // Cached JPEG tables (lazily loaded, valid for lifetime of mmap)
   mutable std::vector<uint8_t> jpeg_tables_cache;
@@ -98,6 +99,7 @@ struct TilesRec {
         jpeg_tables_len(other.jpeg_tables_len),
         lazy_offsets(other.lazy_offsets),
         lazy_bytecounts(other.lazy_bytecounts),
+        lazy_offset_high_bytes(other.lazy_offset_high_bytes),
         jpeg_tables_cache(std::move(other.jpeg_tables_cache)),
         jpeg_tables_state(other.jpeg_tables_state.load()) {}
 
@@ -114,6 +116,7 @@ struct TilesRec {
       jpeg_tables_len = other.jpeg_tables_len;
       lazy_offsets = other.lazy_offsets;
       lazy_bytecounts = other.lazy_bytecounts;
+      lazy_offset_high_bytes = other.lazy_offset_high_bytes;
       jpeg_tables_cache = std::move(other.jpeg_tables_cache);
       jpeg_tables_state.store(other.jpeg_tables_state.load());
     }
@@ -134,8 +137,9 @@ struct StripsRec {
   uint32_t jpeg_tables_len = 0;  ///< JPEG tables length in bytes
 
   // Lazy loading support
-  LazyArrayInfo lazy_offsets;     ///< Deferred offsets metadata
-  LazyArrayInfo lazy_bytecounts;  ///< Deferred bytecounts metadata
+  LazyArrayInfo lazy_offsets;            ///< Deferred offsets metadata
+  LazyArrayInfo lazy_bytecounts;         ///< Deferred bytecounts metadata
+  LazyArrayInfo lazy_offset_high_bytes;  ///< NDPI: high 32 bits for each offset
 
   // Cached JPEG tables (lazily loaded, valid for lifetime of mmap)
   mutable std::vector<uint8_t> jpeg_tables_cache;
@@ -153,6 +157,7 @@ struct StripsRec {
         jpeg_tables_len(other.jpeg_tables_len),
         lazy_offsets(other.lazy_offsets),
         lazy_bytecounts(other.lazy_bytecounts),
+        lazy_offset_high_bytes(other.lazy_offset_high_bytes),
         jpeg_tables_cache(std::move(other.jpeg_tables_cache)),
         jpeg_tables_state(other.jpeg_tables_state.load()) {}
 
@@ -166,6 +171,7 @@ struct StripsRec {
       jpeg_tables_len = other.jpeg_tables_len;
       lazy_offsets = other.lazy_offsets;
       lazy_bytecounts = other.lazy_bytecounts;
+      lazy_offset_high_bytes = other.lazy_offset_high_bytes;
       jpeg_tables_cache = std::move(other.jpeg_tables_cache);
       jpeg_tables_state.store(other.jpeg_tables_state.load());
     }
@@ -200,10 +206,23 @@ struct PageHeader {
   Storage storage = Storage::kUnknown;  ///< Storage type
   uint32_t payload_id = 0;              ///< Index into appropriate pool
   std::string description;              ///< Image description (optional)
+  std::string software;                 ///< Software (optional TIFF tag)
   std::optional<double> x_resolution;   ///< XResolution tag value
   std::optional<double> y_resolution;   ///< YResolution tag value
   std::optional<uint16_t>
       resolution_unit;  ///< ResolutionUnit (1=none, 2=inch, 3=cm)
+
+  // =========================
+  // NDPI (Hamamatsu) metadata
+  // =========================
+  //
+  // NDPI uses vendor-specific TIFF tags:
+  // - 65421 (SourceLens): -1=macro, -2=map, otherwise magnification
+  // - 65449 (NDPI metadata): newline separated key=value pairs (often)
+  //
+  // We keep these optional so non-NDPI TIFFs do not pay behavioral cost.
+  std::optional<double> ndpi_source_lens;  ///< Tag 65421 (SourceLens)
+  std::string ndpi_metadata;               ///< Tag 65449 (NDPI metadata blob)
 };
 
 /// Region of interest for reading

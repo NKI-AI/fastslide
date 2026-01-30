@@ -82,10 +82,13 @@ aifocore::Result<core::TilePlan> QptiffPlanBuilder::BuildPlan(
   const uint32_t bytes_per_pixel = readers::simpletiff_plan::BytesPerPixel(
       bits_per_sample, page_header.samples_per_pixel);
 
-  plan.operations = readers::simpletiff_plan::BuildChannelPageTileReadOps(
-      request, readers::simpletiff_plan::ToDimensions2D(level_info.size), region,
-      geom, bytes_per_pixel, num_channels,
-      [&](size_t ch) { return static_cast<uint32_t>(level_info.pages[ch]); });
+  plan.operations = readers::simpletiff_plan::BuildTileReadOps(
+      request, readers::simpletiff_plan::ToDimensions2D(level_info.size),
+      region, geom, bytes_per_pixel, num_channels,
+      [&](size_t ch, const readers::simpletiff_plan::IntersectingTile&) {
+        return std::make_pair(static_cast<uint32_t>(level_info.pages[ch]),
+                              TileCoordinate{static_cast<uint32_t>(ch), 0});
+      });
 
   return plan;
 }

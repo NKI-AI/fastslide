@@ -155,7 +155,7 @@ class FastSlide {
   [[nodiscard]] int GetLevelCount() const;
   [[nodiscard]] py::dict GetProperties() const;
   [[nodiscard]] py::tuple GetMpp() const;
-  [[nodiscard]] py::dict GetBounds() const;
+  [[nodiscard]] py::tuple GetBounds() const;
   [[nodiscard]] std::string GetFormat() const;
   [[nodiscard]] std::string GetQuickHash() const;
   [[nodiscard]] py::list GetChannelMetadata() const;
