@@ -17,6 +17,16 @@ fs = import('fs')
 cpp = meson.get_compiler('cpp')
 cpp_std = cpp.get_argument_syntax() == 'msvc' ? 'c++20' : 'c++20'
 
+# libc++ (Xcode 16 / Apple clang 17+) removed _LIBCPP_ENABLE_ASSERTIONS.
+# If this macro is injected via env/toolchain, undefine it and use the new
+# hardening mode macro instead. Use global arguments so subprojects inherit it.
+if host_machine.system() == 'darwin'
+  add_global_arguments([
+    '-U_LIBCPP_ENABLE_ASSERTIONS',
+    '-D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_DEBUG',
+  ], language: 'cpp')
+endif
+
 # Detect WASM environment
 is_wasm = host_machine.cpu_family() == 'wasm32' or host_machine.cpu_family() == 'wasm64'
 if is_wasm
@@ -323,6 +333,7 @@ fastslide_sources = [
   # Readers
   src_prefix + 'readers/tiff_based_reader.cpp',
   src_prefix + 'readers/simpletiff_plan_builder_utils.cpp',
+  src_prefix + 'readers/tiff_quickhash.cpp',
   
   # Aperio format
   src_prefix + 'readers/aperio/aperio_format_plugin.cpp',
@@ -355,6 +366,12 @@ fastslide_sources = [
   src_prefix + 'readers/czi/czi_plan_builder.cpp',
   src_prefix + 'readers/czi/czi_tile_executor.cpp',
   src_prefix + 'readers/czi/czi_spatial_index.cpp',
+
+  # Generic TIFF format
+  src_prefix + 'readers/generictiff/generictiff_format_plugin.cpp',
+  src_prefix + 'readers/generictiff/generictiff_plan_builder.cpp',
+  src_prefix + 'readers/generictiff/generictiff_tile_executor.cpp',
+  src_prefix + 'readers/generictiff/generictiff.cpp',
 
   # Isyntax format
   src_prefix + 'readers/isyntax/isyntax.cpp',
@@ -390,6 +407,17 @@ fastslide_sources = [
   src_prefix + 'readers/ometiff/ometiff_plan_builder.cpp',
   src_prefix + 'readers/ometiff/ometiff_tile_executor.cpp',
   src_prefix + 'readers/ometiff/ometiff_metadata_loader.cpp',
+
+  # Philips TIFF format
+  src_prefix + 'readers/philipstiff/philipstiff.cpp',
+  src_prefix + 'readers/philipstiff/philipstiff_plan_builder.cpp',
+  src_prefix + 'readers/philipstiff/philipstiff_tile_executor.cpp',
+
+  # NDPI TIFF format
+  src_prefix + 'readers/ndpitiff/ndpitiff_format_plugin.cpp',
+  src_prefix + 'readers/ndpitiff/ndpitiff.cpp',
+  src_prefix + 'readers/ndpitiff/ndpitiff_plan_builder.cpp',
+  src_prefix + 'readers/ndpitiff/ndpitiff_tile_executor.cpp',
 ]
 
 # Add conditional JPEG decoder implementation

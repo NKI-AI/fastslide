@@ -38,6 +38,8 @@ simpletiff_sources = [
   'src/predictor.cpp',
   'src/zstd.cpp',
   'src/index.cpp',
+  'src/jpeg2000.cpp',
+  'src/ndpi_mcu_tiling.cpp',
 ]
 
 # Add conditional JPEG I/O implementation

@@ -17,7 +17,7 @@
 #include "aifocore/status/result.h"
 
 // Function at the deepest level that generates an error
-aifocore::Result<std::string> ReadConfigFile(const std::string& file_path,
+aifocore::Result<std::string> ReadConfigFile(const std::string &file_path,
                                              bool simulate_error) {
   if (simulate_error) {
     return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
@@ -27,8 +27,8 @@ aifocore::Result<std::string> ReadConfigFile(const std::string& file_path,
 }
 
 // Mid-level function that processes the config
-aifocore::Result<int> ParseConfigValue(const std::string& file_path,
-                                       const std::string& key,
+aifocore::Result<int> ParseConfigValue(const std::string &file_path,
+                                       const std::string &key,
                                        bool simulate_error) {
   std::string config_content;
   AIFOCORE_ASSIGN_OR_RETURN(config_content,
@@ -45,7 +45,7 @@ aifocore::Result<int> ParseConfigValue(const std::string& file_path,
 // Higher level functions stay the same…
 
 // Higher level function that uses the config value
-aifocore::Status InitializeSystem(const std::string& config_path,
+aifocore::Status InitializeSystem(const std::string &config_path,
                                   bool simulate_error) {
   int config_value;
   AIFOCORE_ASSIGN_OR_RETURN(
@@ -59,7 +59,7 @@ aifocore::Status InitializeSystem(const std::string& config_path,
 }
 
 // Top-level function that would be called by main
-aifocore::Status StartApplication(const std::string& config_path,
+aifocore::Status StartApplication(const std::string &config_path,
                                   bool simulate_error) {
   aifocore::Status status = InitializeSystem(config_path, simulate_error);
   if (!status.ok()) {
@@ -71,7 +71,7 @@ aifocore::Status StartApplication(const std::string& config_path,
 }
 
 // Main function to run the example
-int main(int argc, char** argv) {
+int main(int argc, char **argv) {
   bool simulate_error = true;
   std::string config_path = "/etc/myapp/config.json";
 
