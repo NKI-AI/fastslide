@@ -1,0 +1,98 @@
+"""
+This module defines the dependencies and configurations for FastSlide.
+"""
+
+module(name = "fastslide")
+
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "bazel_features", version = "1.23.0")
+bazel_dep(name = "bazel_skylib", version = "1.7.1")
+bazel_dep(name = "gazelle", version = "0.41.0")
+bazel_dep(name = "cython", version = "3.0.11-1")
+bazel_dep(name = "rules_multirun", version = "0.10.0")
+bazel_dep(name = "pybind11_bazel", version = "2.13.6")
+bazel_dep(name = "googletest", version = "1.16.0.bcr.1")
+bazel_dep(name = "cereal", version = "1.3.2")
+bazel_dep(name = "fmt", version = "11.1.4")
+bazel_dep(name = "google_benchmark", version = "1.9.2")
+bazel_dep(name = "rules_python", version = "1.4.0-rc0")
+bazel_dep(name = "rules_license", version = "1.0.0")
+bazel_dep(name = "rules_cc", version = "0.1.1")
+bazel_dep(name = "buildifier_prebuilt", version = "8.0.1")
+bazel_dep(name = "aspect_rules_py", version = "1.3.2")
+
+# We are using this commit because it's not yet released
+# https://github.com/aspect-build/rules_py/commit/6ad466797d8e595016c5a8bec7186268b9ea7f6f
+# This allows sharding of tests and easier setup
+archive_override(
+    module_name = "aspect_rules_py",
+    integrity = "sha256-0EJJ2KgKvlISrxVk5Tmc74iMMJNZJZ/3dG55azcc8sA=",
+    strip_prefix = "rules_py-1445ccaf3665cb5d8f78da4f5fc4d73fd36fa165",
+    urls = ["https://github.com/aspect-build/rules_py/archive/1445ccaf3665cb5d8f78da4f5fc4d73fd36fa165.zip"],
+)
+
+bazel_dep(name = "rules_uv", version = "0.65.0", dev_dependency = True)
+
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+
+# Register multiple Python versions for wheel building
+python.toolchain(
+    is_default = True,
+    python_version = "3.11",
+)
+python.toolchain(
+    python_version = "3.9",
+)
+python.toolchain(
+    python_version = "3.10",
+)
+python.toolchain(
+    python_version = "3.12",
+)
+python.toolchain(
+    python_version = "3.13",
+)
+python.toolchain(
+    python_version = "3.14",
+)
+
+pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
+pip.parse(
+    enable_implicit_namespace_pkgs = True,
+    hub_name = "pip",
+    python_version = "3.11",
+    requirements_lock = ":requirements_linux.txt",
+    requirements_darwin = ":requirements_darwin.txt",
+)
+
+use_repo(pip, "pip")
+
+bazel_dep(name = "rules_doxygen", version = "2.5.0", dev_dependency = True)
+doxygen_extension = use_extension("@rules_doxygen//:extensions.bzl", "doxygen_extension")
+doxygen_extension.configuration(
+    platform = "mac",
+    version = "0.0.0",
+)
+use_repo(doxygen_extension, "doxygen")
+
+emsdk_version = "4.0.11"
+
+bazel_dep(name = "emsdk", version = emsdk_version)
+git_override(
+    module_name = "emsdk",
+    commit = "d49219d03a41cd12f95a33ba84273c20d41fd350",
+    remote = "https://github.com/emscripten-core/emsdk.git",
+    strip_prefix = "bazel",
+)
+
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "hwy",
+    build_file = "@//third_party:hwy.BUILD",
+    patch_args = ["-p1"],
+    patches = ["@//third_party:hwy_mac_fix.patch"],  # This is only needed on Darwin with Clang 16
+    sha256 = "58e9d5d41d6573ad15245ad76aec53a69499ca7480c092d899c4424812ed906f",
+    strip_prefix = "highway-1.2.0",
+    urls = ["https://github.com/google/highway/releases/download/1.2.0/highway-1.2.0.tar.gz"],
+)
