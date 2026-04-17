@@ -798,7 +798,7 @@ Int DecodeMacroblockLowpass(CWMImageStrCodec* pSC, CCodingContext* pContext,
   Int aLaplacianMean[2] = {0, 0}, *pLM = aLaplacianMean;
   Int iChannel, iCBP = 0;
 #ifndef ARMOPT_BITIO  // ARM opt always uses 32-bit version of getBits
-  U32 (*getBits)(BitIOInfo* pIO, U32 cBits) = _getBit16;
+  U32 (*getBits)(BitIOInfo * pIO, U32 cBits) = _getBit16;
 #endif
   CWMIMBInfo* pMBInfo = &pSC->MBInfo;
   I32* aDC[MAX_CHANNELS];

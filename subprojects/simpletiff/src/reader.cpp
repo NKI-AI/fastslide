@@ -313,8 +313,7 @@ Result<void> ReadTile(const TiffIndex& index, uint32_t page_index,
     return Result<void>();
   } else if (IsCompression(page.compression, Compression::kJpeg2000)) {
     const bool file_big_endian = !index.IsLittleEndian();
-    const bool convert_ycbcr_to_rgb =
-        IsPhotometric(page.photometric, Photometric::kYCbCr);
+    const bool convert_ycbcr_to_rgb = IsJpeg2000YCbCr(page.compression);
     AIFOCORE_RETURN_IF_ERROR(
         DecodeJpeg2000(tile_data_span, file_big_endian, page.bits_per_sample,
                        page.samples_per_pixel, convert_ycbcr_to_rgb, out_width,
@@ -528,8 +527,7 @@ Result<void> ReadStripe(const TiffIndex& index, uint32_t page_index,
     }
   } else if (IsCompression(page.compression, Compression::kJpeg2000)) {
     const bool file_big_endian = !index.IsLittleEndian();
-    const bool convert_ycbcr_to_rgb =
-        IsPhotometric(page.photometric, Photometric::kYCbCr);
+    const bool convert_ycbcr_to_rgb = IsJpeg2000YCbCr(page.compression);
     int strip_w = 0;
     int strip_h = 0;
     auto result =

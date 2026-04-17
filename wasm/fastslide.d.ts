@@ -25,8 +25,15 @@ export interface FastSlideImage {
   /** Number of color channels (typically 3 for RGB) */
   readonly channels: number;
   /** Raw image data as typed array (Uint8Array, Uint16Array, etc.) */
-  readonly data: Uint8Array | Uint16Array | Int16Array | Uint32Array | Int32Array | Float32Array | Float64Array;
-  
+  readonly data:
+    | Uint8Array
+    | Uint16Array
+    | Int16Array
+    | Uint32Array
+    | Int32Array
+    | Float32Array
+    | Float64Array;
+
   /**
    * Resample image by power-of-2 factor using box filter averaging
    * @param factor Power-of-2 factor (2, 4, 8, 16, ...)
@@ -46,21 +53,21 @@ export interface FastSlideReader {
   readonly dimensions: number[];
   /** Format name (e.g., "Aperio SVS", "MRXS", "QPTIFF") */
   readonly format: string;
-  
+
   /**
    * Get information about a specific pyramid level
    * @param level Level index (0 = highest resolution)
    * @returns Level information
    */
   getLevelInfo(level: number): FastSlideLevelInfo;
-  
+
   /**
    * Get dimensions for a specific pyramid level
    * @param level Level index (0 = highest resolution)
    * @returns [width, height] tuple
    */
   getLevelDimensions(level: number): number[];
-  
+
   /**
    * Read a region from the slide
    * @param x X coordinate (top-left corner) in level-native coordinates
@@ -70,7 +77,13 @@ export interface FastSlideReader {
    * @param level Pyramid level (0 = highest resolution)
    * @returns Image data
    */
-  readRegion(x: number, y: number, width: number, height: number, level: number): FastSlideImage;
+  readRegion(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    level: number
+  ): FastSlideImage;
 }
 
 /**
@@ -87,16 +100,16 @@ export interface FastSlideModule {
      */
     fromFilePath(path: string): FastSlideReader;
   };
-  
+
   /** FastSlideImage class */
   FastSlideImage: typeof FastSlideImage;
-  
+
   /** FastSlideLevelInfo class */
   FastSlideLevelInfo: typeof FastSlideLevelInfo;
-  
+
   /** Emscripten filesystem API */
   FS: EmscriptenFileSystem;
-  
+
   /** WORKERFS for lazy file loading */
   WORKERFS: any;
 }
@@ -110,7 +123,7 @@ export interface EmscriptenFileSystem {
    * @param path Directory path
    */
   mkdir(path: string): void;
-  
+
   /**
    * Mount a filesystem
    * @param type Filesystem type (e.g., WORKERFS)
@@ -118,20 +131,20 @@ export interface EmscriptenFileSystem {
    * @param mountpoint Mount point path
    */
   mount(type: any, opts: any, mountpoint: string): void;
-  
+
   /**
    * Unmount a filesystem
    * @param mountpoint Mount point path
    */
   unmount(mountpoint: string): void;
-  
+
   /**
    * Check if file exists
    * @param path File path
    * @returns true if file exists
    */
   analyzePath(path: string): { exists: boolean };
-  
+
   /**
    * Read file contents
    * @param path File path
@@ -139,15 +152,19 @@ export interface EmscriptenFileSystem {
    * @returns File contents
    */
   readFile(path: string, opts?: { encoding?: string }): Uint8Array | string;
-  
+
   /**
    * Write file contents
    * @param path File path
    * @param data Data to write
    * @param opts Options
    */
-  writeFile(path: string, data: string | Uint8Array, opts?: { encoding?: string }): void;
-  
+  writeFile(
+    path: string,
+    data: string | Uint8Array,
+    opts?: { encoding?: string }
+  ): void;
+
   /**
    * Delete file
    * @param path File path
@@ -160,4 +177,3 @@ export interface EmscriptenFileSystem {
  * @returns Promise that resolves to the initialized module
  */
 export default function createFastSlideModule(): Promise<FastSlideModule>;
-

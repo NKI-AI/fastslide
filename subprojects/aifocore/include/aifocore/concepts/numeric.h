@@ -30,15 +30,15 @@ namespace aifocore {
 
 // Concept for a number which is integral or float with arithmetic operations
 template <typename T>
-concept GenericNumber =
-    (std::integral<T> || std::floating_point<T>)&&requires(T a, T b) {
-      { a + b } -> std::convertible_to<T>;
-      { a - b } -> std::convertible_to<T>;
-      { a* b } -> std::convertible_to<T>;
-      { a / b } -> std::convertible_to<T>;
-      { std::fmod(a, b) } -> std::convertible_to<T>;
-      { static_cast<double>(a) } -> std::convertible_to<double>;
-    };
+concept GenericNumber = (std::integral<T> ||
+                         std::floating_point<T>)&&requires(T a, T b) {
+  { a + b } -> std::convertible_to<T>;
+  { a - b } -> std::convertible_to<T>;
+  { a* b } -> std::convertible_to<T>;
+  { a / b } -> std::convertible_to<T>;
+  { std::fmod(a, b) } -> std::convertible_to<T>;
+  { static_cast<double>(a) } -> std::convertible_to<double>;
+};
 
 // Use concepts to constrain template parameters
 template <typename T>
@@ -62,9 +62,8 @@ class Size {
 
   // Allow brace initialization with specific size arguments
   template <typename... Args>
-  constexpr explicit Size(Args... args)
-    requires(sizeof...(args) == N && (std::convertible_to<Args, T> && ...))
-  {
+  constexpr explicit Size(Args... args) requires(
+      sizeof...(args) == N && (std::convertible_to<Args, T> && ...)) {
     data_ = {static_cast<T>(args)...};
   }
 
@@ -77,30 +76,22 @@ class Size {
 
   // This allows structured bindings and .first/.second notation to work
   template <std::size_t M = N>
-  constexpr const T& first() const
-    requires(M == 2)
-  {
+  constexpr const T& first() const requires(M == 2) {
     return data_[0];
   }
 
   template <std::size_t M = N>
-  constexpr T& first()
-    requires(M == 2)
-  {
+  constexpr T& first() requires(M == 2) {
     return data_[0];
   }
 
   template <std::size_t M = N>
-  constexpr const T& second() const
-    requires(M == 2)
-  {
+  constexpr const T& second() const requires(M == 2) {
     return data_[1];
   }
 
   template <std::size_t M = N>
-  constexpr T& second()
-    requires(M == 2)
-  {
+  constexpr T& second() requires(M == 2) {
     return data_[1];
   }
 
@@ -113,26 +104,20 @@ class Size {
     return {data_.begin(), data_.end()};
   }
 
-  explicit constexpr Size(std::tuple<T, T> tuple)
-    requires(N == 2)
-  {
+  explicit constexpr Size(std::tuple<T, T> tuple) requires(N == 2) {
     data_[0] = std::get<0>(tuple);
     data_[1] = std::get<1>(tuple);
   }
 
   // Constructor from a Point (which is a std::pair) for backward compatibility
-  explicit constexpr Size(const std::pair<T, T>& point)
-    requires(N == 2)
-  {
+  explicit constexpr Size(const std::pair<T, T>& point) requires(N == 2) {
     data_[0] = point.first;
     data_[1] = point.second;
   }
 
   // Conversion operator to Size<U, N>
   template <typename U>
-  explicit operator Size<U, N>() const
-    requires std::convertible_to<T, U>
-  {
+  explicit operator Size<U, N>() const requires std::convertible_to<T, U> {
     Size<U, N> result;
     for (std::size_t i = 0; i < N; ++i) {
       result[i] = static_cast<U>(data_[i]);  // Cast each element to U
@@ -141,17 +126,14 @@ class Size {
   }
 
   // For backward compatibility with Point<T> (std::pair<T, T>)
-  explicit operator std::pair<T, T>() const
-    requires(N == 2)
-  {
+  explicit operator std::pair<T, T>() const requires(N == 2) {
     return {data_[0], data_[1]};
   }
 
   // Addition and subtraction
   template <typename U, std::size_t M>
   constexpr Size operator+(const Size<U, M>& other) const
-    requires(M == N && std::convertible_to<U, T>)
-  {
+      requires(M == N && std::convertible_to<U, T>) {
     Size result;
     for (std::size_t i = 0; i < N; ++i) {
       result[i] = data_[i] + other[i];
@@ -161,8 +143,7 @@ class Size {
 
   template <typename U, std::size_t M>
   constexpr Size operator-(const Size<U, M>& other) const
-    requires(M == N && std::convertible_to<U, T>)
-  {
+      requires(M == N && std::convertible_to<U, T>) {
     Size result;
     for (std::size_t i = 0; i < N; ++i) {
       result[i] = data_[i] - other[i];
@@ -186,8 +167,7 @@ class Size {
   // Division by a Size  object
   template <typename U, std::size_t M>
   constexpr Size operator/(const Size<U, M>& other) const
-    requires(M == N && std::convertible_to<U, T>)
-  {
+      requires(M == N && std::convertible_to<U, T>) {
     // Check for division by zero in any element
     for (std::size_t i = 0; i < N; ++i) {
       if (other[i] == 0) {
@@ -232,8 +212,7 @@ class Size {
   // Equality comparison
   template <typename U, std::size_t M>
   constexpr bool operator==(const Size<U, M>& other) const
-    requires(M == N && std::convertible_to<U, T>)
-  {
+      requires(M == N && std::convertible_to<U, T>) {
     for (std::size_t i = 0; i < N; ++i) {
       if (data_[i] != static_cast<T>(other[i])) {
         return false;
@@ -244,8 +223,7 @@ class Size {
 
   template <typename U, std::size_t M>
   constexpr bool operator!=(const Size<U, M>& other) const
-    requires(M == N && std::convertible_to<U, T>)
-  {
+      requires(M == N && std::convertible_to<U, T>) {
     return !(*this == other);
   }
 

@@ -32,8 +32,8 @@ namespace aifocore::math {
 /// @brief Element-wise addition operator.
 /// @return Lazy expression representing lhs[i] + rhs[i] for all i.
 template <typename LHS, typename RHS>
-  requires std::is_base_of_v<NDArrayExpression<LHS>, LHS> &&
-           std::is_base_of_v<NDArrayExpression<RHS>, RHS>
+requires std::is_base_of_v<NDArrayExpression<LHS>, LHS> &&
+    std::is_base_of_v<NDArrayExpression<RHS>, RHS>
 
 auto operator+(const LHS& lhs, const RHS& rhs) {
   using T = typename LHS::value_type;
@@ -47,8 +47,8 @@ auto operator+(const LHS& lhs, const RHS& rhs) {
 /// @brief Element-wise subtraction operator (binary).
 /// @return Lazy expression representing lhs[i] - rhs[i] for all i.
 template <typename LHS, typename RHS>
-  requires std::is_base_of_v<NDArrayExpression<LHS>, LHS> &&
-           std::is_base_of_v<NDArrayExpression<RHS>, RHS>
+requires std::is_base_of_v<NDArrayExpression<LHS>, LHS> &&
+    std::is_base_of_v<NDArrayExpression<RHS>, RHS>
 
 auto operator-(const LHS& lhs, const RHS& rhs) {
   using T = typename LHS::value_type;
@@ -62,8 +62,8 @@ auto operator-(const LHS& lhs, const RHS& rhs) {
 /// @brief Element-wise multiplication operator.
 /// @return Lazy expression representing lhs[i] * rhs[i] for all i.
 template <typename LHS, typename RHS>
-  requires std::is_base_of_v<NDArrayExpression<LHS>, LHS> &&
-           std::is_base_of_v<NDArrayExpression<RHS>, RHS>
+requires std::is_base_of_v<NDArrayExpression<LHS>, LHS> &&
+    std::is_base_of_v<NDArrayExpression<RHS>, RHS>
 
 auto operator*(const LHS& lhs, const RHS& rhs) {
   using T = typename LHS::value_type;

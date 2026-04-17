@@ -104,9 +104,6 @@ Set up your WORKSPACE/MODULE.bazel:
        branch = "main",
    )
    
-   # Other dependencies
-   bazel_dep(name = "abseil-cpp", version = "20230802.1")
-
 Step 2: Implement Plugin Interface
 ----------------------------------
 
@@ -267,7 +264,6 @@ Bazel BUILD Configuration
        deps = [
            "@fastslide//fastslide:slide_reader",
            "@fastslide//fastslide:runtime",
-           "@abseil-cpp//absl/status:statusor",
        ],
        copts = ["-std=c++20"],
        visibility = ["//visibility:private"],

@@ -1,7 +1,7 @@
 # FastSlide Meson Build File
 
 project('fastslide', 'cpp', 'c',
-  version: '0.2.0',
+  version: '0.2.2',
   license: 'Apache-2.0',
   default_options: [
     'cpp_std=c++20',
@@ -39,11 +39,9 @@ if is_wasm
   meson.override_dependency('threads', declare_dependency())
 endif
 
-# Add warning suppressions for third-party libraries (abseil, pybind11, etc.)
+# Add warning suppressions for third-party libraries (pybind11, etc.)
 if cpp.get_id() == 'clang' or cpp.get_id() == 'appleclang'
   add_project_arguments([
-    '-Wno-nullability-extension',       # Abseil nullability warnings
-    '-Wno-gcc-compat',                  # Abseil gcc compatibility warnings
     '-Wno-gnu-zero-variadic-macro-arguments',  # GNU variadic macro warnings
   ], language: 'cpp')
 endif

@@ -36,7 +36,7 @@
 
 #ifdef _MSC_VER
 #pragma warning( \
-        disable : 4611)  // warning C4611: interaction between '_setjmp' \
+    disable : 4611)  // warning C4611: interaction between '_setjmp' \
                          // and C++ object destruction is non-portable
 #endif
 

@@ -521,6 +521,13 @@ TEST(CompressionTest, IsCompressionHelperWorks) {
   EXPECT_FALSE(IsCompression(none_code, Compression::kJpeg));
 }
 
+TEST(CompressionTest, IsJpeg2000YCbCrDistinguishesColorSpace) {
+  EXPECT_TRUE(IsJpeg2000YCbCr(33003u));
+  EXPECT_FALSE(IsJpeg2000YCbCr(33005u));
+  EXPECT_FALSE(IsJpeg2000YCbCr(7u));
+  EXPECT_FALSE(IsJpeg2000YCbCr(0u));
+}
+
 TEST(Jpeg2000Test, CanReadSingleStripJpeg2000ClassicTiff) {
   // Construct a minimal ClassicTIFF with a single strip whose payload is a
   // JPEG2000 codestream (Compression=33003).

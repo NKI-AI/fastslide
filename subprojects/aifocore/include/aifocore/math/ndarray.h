@@ -59,10 +59,13 @@ class NDArrayView;
 template <typename E, typename T, std::size_t N>
 concept NDArrayExpressionConcept = requires(const E& expr, std::size_t i) {
   { expr.Shape() } -> std::same_as<const std::array<std::size_t, N>&>;
-  { expr.Size() } noexcept -> std::same_as<std::size_t>;
-  { expr.EvalFlat(i) } noexcept -> std::convertible_to<T>;
+  { expr.Size() }
+  noexcept->std::same_as<std::size_t>;
+  { expr.EvalFlat(i) }
+  noexcept->std::convertible_to<T>;
   typename E::value_type;
-  { E::Rank() } noexcept -> std::same_as<std::size_t>;
+  { E::Rank() }
+  noexcept->std::same_as<std::size_t>;
 };
 
 /// @brief CRTP base class for expression templates.
@@ -540,10 +543,10 @@ class NDArray : public NDArrayExpression<NDArray<T, N>> {
   /// Constrained to prevent collision with copy constructor.
   template <typename Expr>
 
-    requires NDArrayExpressionConcept<Expr, T, N> &&
-                 (!std::is_same_v<std::decay_t<Expr>, NDArray>)
-  // NOLINTNEXTLINE(runtime/explicit)
-  NDArray(const Expr& expr)
+  requires NDArrayExpressionConcept<Expr, T, N> &&
+      (!std::is_same_v<std::decay_t<Expr>, NDArray>)
+      // NOLINTNEXTLINE(runtime/explicit)
+      NDArray(const Expr& expr)
       : shape_(expr.Shape()),
         strides_(ComputeStrides(shape_)),
         data_(expr.Size()) {
@@ -560,8 +563,8 @@ class NDArray : public NDArrayExpression<NDArray<T, N>> {
   /// @brief Assign from expression template (triggers flat evaluation).
   template <typename Expr>
 
-    requires NDArrayExpressionConcept<Expr, T, N>
-  NDArray& operator=(const Expr& expr) {
+  requires NDArrayExpressionConcept<Expr, T, N> NDArray& operator=(
+      const Expr& expr) {
     shape_ = expr.Shape();
     strides_ = ComputeStrides(shape_);
     data_.resize(expr.Size());

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 from dataclasses import dataclass
@@ -12,7 +11,6 @@ from . import common
 from .specs import PLATFORMS
 
 ARTIFACT_DIR = common.REPO_ROOT / "aifo" / "fastslide" / "artifacts" / "packages"
-VERSIONS_JSON = common.REPO_ROOT / "aifo" / "fastslide" / "package" / "versions.json"
 
 
 @dataclass(frozen=True)
@@ -22,30 +20,7 @@ class BundleInfo:
 
 
 def _read_fastslide_version() -> str:
-    data = json.loads(VERSIONS_JSON.read_text(encoding="utf-8"))
-    # Supported schemas:
-    #  - {"version": "0.1.0"}  (legacy/simple)
-    #  - {"versions": [{"id": "fastslide", "version": "0.1.0", ...}, ...]}  (current)
-    version = data.get("version")
-    if isinstance(version, str) and version:
-        return version
-
-    entries = data.get("versions")
-    if isinstance(entries, list):
-        for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            if entry.get("id") != "fastslide":
-                continue
-            entry_version = entry.get("version")
-            if isinstance(entry_version, str) and entry_version:
-                return entry_version
-
-    raise ValueError(
-        "Invalid versions.json: expected either a top-level string field 'version' "
-        "or a list field 'versions' containing an entry with id='fastslide' and a string 'version'. "
-        f"File: {VERSIONS_JSON}"
-    )
+    return common.read_fastslide_version()
 
 
 def _targets_for_version(version: str) -> dict[str, BundleInfo]:

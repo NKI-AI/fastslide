@@ -4,4 +4,5 @@ This package provides small, composable building blocks for producing
 distributable artifacts:
 - Python wheels
 - rules_pkg bundles (.tar.xz)
+- Java JARs + native JNI libraries
 """

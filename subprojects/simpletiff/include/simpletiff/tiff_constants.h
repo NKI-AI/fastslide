@@ -32,12 +32,13 @@ enum class Compression : uint16_t {
   kAdobeDeflate = 8,  ///< Adobe Deflate (zlib/deflate), common in TIFF
   kDeflate = 32946,   ///< Deflate (same codec as AdobeDeflate)
   // JPEG 2000:
-  // - 33003 is used by some writers (notably older/legacy ClassicTIFFs).
-  // - 33005 is also commonly used in the wild (e.g. SVS variants).
+  // - 33003 is used by Aperio SVS for JP2K-compressed YCbCr tiles.
+  // - 33005 is used by Aperio SVS for JP2K-compressed RGB tiles.
   //
   // SimpleTIFF treats both codes as JPEG2000 and routes them to the same
   // decoder. We keep the enum value at 33003 for historical reasons and rely
-  // on IsCompression() to accept both.
+  // on IsCompression() to accept both. Use IsJpeg2000YCbCr() below to
+  // distinguish the color space from the raw compression code.
   kJpeg2000 = 33003,
   kZstd = 50000,  ///< ZSTD compression (vendor-specific code)
 };
@@ -60,6 +61,22 @@ constexpr bool IsCompression(uint16_t code, Compression expected) {
     return code == 33003u || code == 33005u;
   }
   return code == static_cast<uint16_t>(expected);
+}
+
+/// Determine whether a JPEG2000 compression code implies YCbCr color space.
+///
+/// Aperio SVS uses two vendor-specific compression codes for JP2K tiles:
+///   - 33003: JP2K with YCbCr (sYCC) color space
+///   - 33005: JP2K with RGB color space
+///
+/// The TIFF PhotometricInterpretation tag is unreliable for these files
+/// (Aperio often writes Photometric=RGB even for YCbCr-encoded tiles).
+/// OpenSlide uses the same convention to determine color space.
+///
+/// @param compression Raw compression code from the TIFF page header
+/// @return true if the code indicates YCbCr data needing conversion to RGB
+constexpr bool IsJpeg2000YCbCr(uint16_t compression) {
+  return compression == 33003u;
 }
 
 /// TIFF photometric interpretation codes

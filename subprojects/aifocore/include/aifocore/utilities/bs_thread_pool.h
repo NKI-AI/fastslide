@@ -377,7 +377,7 @@ struct [[nodiscard]] pr_task {
 #ifdef __cpp_concepts
 #define BS_THREAD_POOL_IF_PAUSE_ENABLED \
   template <bool P = pause_enabled>     \
-    requires(P)
+  requires(P)
 template <typename F>
 concept init_func_c = std::invocable<F> || std::invocable<F, std::size_t>;
 #define BS_THREAD_POOL_INIT_FUNC_CONCEPT(F) init_func_c F

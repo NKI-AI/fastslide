@@ -405,7 +405,6 @@ Add your reader to the Bazel BUILD file:
        deps = [
            ":slide_reader",
            ":tiff_based_reader", # If TIFF-based
-           "@abseil-cpp//absl/status:statusor",
            "@nlohmann_json//:json", # If using JSON
        ],
        visibility = ["//visibility:public"],

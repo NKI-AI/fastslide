@@ -490,7 +490,7 @@ Int EncodeMacroblockLowpass(CWMImageStrCodec* pSC, CCodingContext* pContext,
   Int aRLCoeffs[MAX_CHANNELS][32], iNumCoeffs[MAX_CHANNELS];
   const I32* aDC[MAX_CHANNELS];
   Int aResidual[MAX_CHANNELS][16];
-  Void (*putBits)(BitIOInfo* pIO, U32 uiBits, U32 cBits) = putBit16;
+  Void (*putBits)(BitIOInfo * pIO, U32 uiBits, U32 cBits) = putBit16;
 
   UNREFERENCED_PARAMETER(iMBX);
   UNREFERENCED_PARAMETER(iMBY);

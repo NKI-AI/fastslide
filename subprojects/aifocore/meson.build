@@ -25,7 +25,8 @@ aifocore_lib = static_library('aifocore',
 # Make library usable as dependency
 aifocore_dep = declare_dependency(
   include_directories : inc,
-  link_with : aifocore_lib
+  link_with : aifocore_lib,
+  dependencies : [fmt_dep, cereal_dep]
 )
 
 meson.override_dependency('aifocore', aifocore_dep)

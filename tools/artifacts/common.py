@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import stat
@@ -9,6 +10,7 @@ import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
+VERSIONS_JSON = REPO_ROOT / "aifo" / "fastslide" / "package" / "versions.json"
 
 
 def run(cmd: list[str], *, env: dict[str, str]) -> None:
@@ -66,3 +68,28 @@ def cquery_target_files(*, bazel_cmd: str, target: str, bazel_flags: list[str], 
             continue
         files.append(REPO_ROOT / line)
     return files
+
+
+def read_fastslide_version() -> str:
+    """Read the FastSlide version from versions.json."""
+    data = json.loads(VERSIONS_JSON.read_text(encoding="utf-8"))
+    version = data.get("version")
+    if isinstance(version, str) and version:
+        return version
+
+    entries = data.get("versions")
+    if isinstance(entries, list):
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("id") != "fastslide":
+                continue
+            entry_version = entry.get("version")
+            if isinstance(entry_version, str) and entry_version:
+                return entry_version
+
+    raise ValueError(
+        "Invalid versions.json: expected either a top-level string field 'version' "
+        "or a list field 'versions' containing an entry with id='fastslide' and a string 'version'. "
+        f"File: {VERSIONS_JSON}"
+    )

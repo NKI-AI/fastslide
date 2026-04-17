@@ -476,5 +476,5 @@ PYBIND11_MODULE(_fastslide, m) {
       "Check if file format is supported", py::arg("filename"));
 
   // Version and constants
-  m.attr("__version__") = "0.2.0";
+  m.attr("__version__") = "0.2.2";
 }

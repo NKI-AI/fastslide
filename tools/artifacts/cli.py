@@ -1,10 +1,10 @@
-"""CLI for building FastSlide artifacts (wheels + packages)."""
+"""CLI for building FastSlide artifacts (wheels + packages + JARs)."""
 
 from __future__ import annotations
 
 import argparse
 
-from . import packages, wheels
+from . import jars, packages, wheels
 from .specs import PLATFORMS, PY_TAG_TO_VERSION
 
 
@@ -45,11 +45,16 @@ def main() -> None:
         help="Skip building .tar.xz packages.",
     )
     parser.add_argument(
+        "--skip-jars",
+        action="store_true",
+        help="Skip building Java JARs + JNI.",
+    )
+    parser.add_argument(
         "--bazel-arg",
         action="append",
         default=[],
         dest="bazel_args",
-        help=("Extra arg to pass through to Bazel for wheel builds (repeatable), e.g. --bazel-arg=--verbose_failures"),
+        help="Extra arg to pass through to Bazel (repeatable), e.g. --bazel-arg=--verbose_failures",
     )
     args = parser.parse_args()
 
@@ -78,6 +83,18 @@ def main() -> None:
             keep_going=args.keep_going,
         )
         if packages_rc != 0:
+            exit_code = 1
+            if not args.keep_going:
+                raise SystemExit(exit_code)
+
+    if not args.skip_jars:
+        jars_rc = jars.build_jars(
+            bazel_cmd=args.bazel,
+            platforms=platforms,
+            keep_going=args.keep_going,
+            extra_bazel_args=args.bazel_args,
+        )
+        if jars_rc != 0:
             exit_code = 1
 
     raise SystemExit(exit_code)

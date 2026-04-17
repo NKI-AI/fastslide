@@ -114,6 +114,15 @@ constexpr std::string_view kKeyObjectiveMagnification =
 constexpr std::string_view kKeyCameraImageDivisionsPerSide =
     "CameraImageDivisionsPerSide";
 
+void LogGainMetadataSizeMismatchOnce(size_t expected_size, size_t actual_size) {
+  static std::once_flag once_flag;
+  std::call_once(once_flag, [expected_size, actual_size]() {
+    std::cerr << "MRXS: gain metadata size mismatch (expected " << expected_size
+              << " bytes, got " << actual_size
+              << "); ignoring gain metadata and using gain=1.0\n";
+  });
+}
+
 constexpr std::string_view kGroupHierarchical = "HIERARCHICAL";
 constexpr std::string_view kKeyHierCount = "HIER_COUNT";
 constexpr std::string_view kKeyIndexFile = "INDEXFILE";
@@ -1265,10 +1274,8 @@ aifocore::Status MrxsReader::ReadCameraPositions(
                                        /*expected_size_hint=*/expected_size));
       if (decompressed.actual_size_bytes !=
           static_cast<size_t>(expected_size)) {
-        std::cerr << "MRXS: gain metadata size mismatch (expected "
-                  << expected_size << " bytes, got "
-                  << decompressed.actual_size_bytes
-                  << "); ignoring gain metadata and using gain=1.0\n";
+        LogGainMetadataSizeMismatchOnce(static_cast<size_t>(expected_size),
+                                        decompressed.actual_size_bytes);
         slide_info.camera_position_gains.clear();
       } else {
         slide_info.camera_position_gains.clear();
@@ -1297,10 +1304,8 @@ aifocore::Status MrxsReader::ReadCameraPositions(
       const int expected_size = 4 * npositions;
 
       if (compressed_metadata.size() != static_cast<size_t>(expected_size)) {
-        std::cerr << "MRXS: gain metadata size mismatch (expected "
-                  << expected_size << " bytes, got "
-                  << compressed_metadata.size()
-                  << "); ignoring gain metadata and using gain=1.0\n";
+        LogGainMetadataSizeMismatchOnce(static_cast<size_t>(expected_size),
+                                        compressed_metadata.size());
         slide_info.camera_position_gains.clear();
       } else {
         slide_info.camera_position_gains.clear();

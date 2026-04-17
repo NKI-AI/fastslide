@@ -103,7 +103,7 @@ constexpr double Sinc(double x) noexcept {
 }
 
 template <int A>
-  requires ValidKernelSize<A>
+requires ValidKernelSize<A>
 
 constexpr double LanczosKernel(double x) noexcept {
   if (std::abs(x) >= A)
@@ -112,7 +112,7 @@ constexpr double LanczosKernel(double x) noexcept {
 }
 
 template <int A>
-  requires ValidKernelSize<A>
+requires ValidKernelSize<A>
 
 constexpr double CosineWindowedSinc(double x) noexcept {
   if (std::abs(x) >= A)
@@ -127,7 +127,7 @@ constexpr double CosineWindowedSinc(double x) noexcept {
 }
 
 template <int A>
-  requires ValidKernelSize<A>
+requires ValidKernelSize<A>
 
 constexpr double ComputeWeight(double x, WindowType window_type) noexcept {
   switch (window_type) {
@@ -154,7 +154,7 @@ constexpr int ReflectIndex(int x, int max) noexcept {
 
 /// @brief Runtime-initialized kernel lookup table
 template <int A, WindowType WT>
-  requires ValidKernelSize<A>
+requires ValidKernelSize<A>
 static const auto KernelTable = []() {
   constexpr int M = 1024;
   std::array<float, M + 1> t{};
@@ -170,7 +170,7 @@ static const auto KernelTable = []() {
 //---------------------------------------------------------------------------------------
 
 template <int A, WindowType WT>
-  requires ValidKernelSize<A>
+requires ValidKernelSize<A>
 
 struct KernelConfig {
   static constexpr int kKernelSize = A;

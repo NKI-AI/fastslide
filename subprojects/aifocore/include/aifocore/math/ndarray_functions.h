@@ -31,8 +31,8 @@ namespace aifocore::math {
 /// @brief Element-wise maximum of two array expressions.
 /// @return Lazy expression representing Max(lhs[i], rhs[i]) for all i.
 template <typename LHS, typename RHS>
-  requires std::is_base_of_v<NDArrayExpression<LHS>, LHS> &&
-           std::is_base_of_v<NDArrayExpression<RHS>, RHS>
+requires std::is_base_of_v<NDArrayExpression<LHS>, LHS> &&
+    std::is_base_of_v<NDArrayExpression<RHS>, RHS>
 
 auto Max(const LHS& lhs, const RHS& rhs) {
   using T = typename LHS::value_type;
@@ -46,7 +46,7 @@ auto Max(const LHS& lhs, const RHS& rhs) {
 /// @brief Element-wise maximum of array expression and scalar.
 /// @return Lazy expression representing Max(expr[i], scalar) for all i.
 template <typename Expr>
-  requires std::is_base_of_v<NDArrayExpression<Expr>, Expr>
+requires std::is_base_of_v<NDArrayExpression<Expr>, Expr>
 
 auto Max(const Expr& expr, typename Expr::value_type scalar) {
   using T = typename Expr::value_type;
@@ -56,7 +56,7 @@ auto Max(const Expr& expr, typename Expr::value_type scalar) {
 
 /// @brief Element-wise maximum of scalar and array expression.
 template <typename Expr>
-  requires std::is_base_of_v<NDArrayExpression<Expr>, Expr>
+requires std::is_base_of_v<NDArrayExpression<Expr>, Expr>
 
 auto Max(typename Expr::value_type scalar, const Expr& expr) {
   return Max(expr, scalar);
@@ -65,8 +65,8 @@ auto Max(typename Expr::value_type scalar, const Expr& expr) {
 /// @brief Element-wise minimum of two array expressions.
 /// @return Lazy expression representing Min(lhs[i], rhs[i]) for all i.
 template <typename LHS, typename RHS>
-  requires std::is_base_of_v<NDArrayExpression<LHS>, LHS> &&
-           std::is_base_of_v<NDArrayExpression<RHS>, RHS>
+requires std::is_base_of_v<NDArrayExpression<LHS>, LHS> &&
+    std::is_base_of_v<NDArrayExpression<RHS>, RHS>
 
 auto Min(const LHS& lhs, const RHS& rhs) {
   using T = typename LHS::value_type;
@@ -79,7 +79,7 @@ auto Min(const LHS& lhs, const RHS& rhs) {
 
 /// @brief Element-wise minimum of array expression and scalar.
 template <typename Expr>
-  requires std::is_base_of_v<NDArrayExpression<Expr>, Expr>
+requires std::is_base_of_v<NDArrayExpression<Expr>, Expr>
 
 auto Min(const Expr& expr, typename Expr::value_type scalar) {
   using T = typename Expr::value_type;
@@ -89,7 +89,7 @@ auto Min(const Expr& expr, typename Expr::value_type scalar) {
 
 /// @brief Element-wise minimum of scalar and array expression.
 template <typename Expr>
-  requires std::is_base_of_v<NDArrayExpression<Expr>, Expr>
+requires std::is_base_of_v<NDArrayExpression<Expr>, Expr>
 
 auto Min(typename Expr::value_type scalar, const Expr& expr) {
   return Min(expr, scalar);
