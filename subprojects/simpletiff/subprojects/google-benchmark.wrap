@@ -1,0 +1,13 @@
+[wrap-file]
+directory = benchmark-1.8.4
+source_url = https://github.com/google/benchmark/archive/refs/tags/v1.8.4.tar.gz
+source_filename = benchmark-1.8.4.tar.gz
+source_hash = 3e7059b6b11fb1bbe28e33e02519398ca94c1818874ebed18e504dc6f709be45
+patch_filename = google-benchmark_1.8.4-4_patch.zip
+patch_url = https://wrapdb.mesonbuild.com/v2/google-benchmark_1.8.4-4/get_patch
+patch_hash = d1af464d29eb42442c41bc0629f94dbc2e390d9a8656461a14adfee84bcb6250
+source_fallback_url = https://github.com/mesonbuild/wrapdb/releases/download/google-benchmark_1.8.4-4/benchmark-1.8.4.tar.gz
+wrapdb_version = 1.8.4-4
+
+[provide]
+dependency_names = benchmark, benchmark_main

@@ -1,0 +1,13 @@
+[wrap-file]
+directory = zlib-ng-2.2.5
+source_url = https://github.com/zlib-ng/zlib-ng/archive/refs/tags/2.2.5.tar.gz
+source_filename = zlib-ng-2.2.5.tar.gz
+source_hash = 5b3b022489f3ced82384f06db1e13ba148cbce38c7941e424d6cb414416acd18
+patch_filename = zlib-ng_2.2.5-1_patch.zip
+patch_url = https://wrapdb.mesonbuild.com/v2/zlib-ng_2.2.5-1/get_patch
+patch_hash = 5e4982b70bf4c15e560dc2b02319ad9efd57bccfbab67f4ca52756286bfef78a
+source_fallback_url = https://github.com/mesonbuild/wrapdb/releases/download/zlib-ng_2.2.5-1/zlib-ng-2.2.5.tar.gz
+wrapdb_version = 2.2.5-1
+
+[provide]
+dependency_names = zlib-ng
