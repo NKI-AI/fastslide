@@ -93,8 +93,6 @@ void InterleavedToPlanarRGB_U8(const uint8_t* src_interleaved,
 // 0.125*B This is close to the standard 0.299*R + 0.587*G + 0.114*B formula
 // Highway-optimized RGB to grayscale conversion for uint8 (interleaved input)
 // Uses improved approximation: 0.25*R + 0.625*G + 0.125*B
-// This sums to 1.0 (unlike the previous 0.875), preserving brightness better.
-// Implementation: (R >> 2) + (G >> 1) + (G >> 3) + (B >> 3)
 void RGBToGrayscale_U8_Interleaved(const uint8_t* src_rgb, uint8_t* dst_gray,
                                    size_t pixel_count) {
   const hn::ScalableTag<uint8_t> d_u8;
@@ -412,10 +410,9 @@ std::unique_ptr<Image> Image::ExtractChannels(
     return nullptr;
   }
 
-  // Validate channel indices
   for (uint32_t idx : channel_indices) {
     if (idx >= channels_) {
-      throw std::out_of_range("Channel index out of bounds");
+      return nullptr;
     }
   }
 
@@ -560,10 +557,8 @@ void Image::Paste(const Image& source_image, uint32_t dest_x, uint32_t dest_y,
 
   // Handle auto-initialization for blank images
   if (!initialized_) {
-    if (dimensions_[0] == 0 || dimensions_[1] == 0) {
-      throw std::invalid_argument(
-          "Cannot paste into image with zero dimensions");
-    }
+    AIFOCORE_CHECK(dimensions_[0] != 0 && dimensions_[1] != 0,
+                   "Cannot paste into image with zero dimensions");
 
     // Auto-initialize with source image properties
     format_ = source_image.format_;
@@ -583,16 +578,12 @@ void Image::Paste(const Image& source_image, uint32_t dest_x, uint32_t dest_y,
     return;  // Still empty after potential initialization
   }
 
-  // Validate compatibility
-  if (dtype_ != source_image.dtype_) {
-    throw std::invalid_argument("Data types must match for pasting");
-  }
-  if (channels_ != source_image.channels_) {
-    throw std::invalid_argument("Channel counts must match for pasting");
-  }
-  if (planar_config_ != source_image.planar_config_) {
-    throw std::invalid_argument("Planar configurations must match for pasting");
-  }
+  AIFOCORE_CHECK(dtype_ == source_image.dtype_,
+                 "Data types must match for pasting");
+  AIFOCORE_CHECK(channels_ == source_image.channels_,
+                 "Channel counts must match for pasting");
+  AIFOCORE_CHECK(planar_config_ == source_image.planar_config_,
+                 "Planar configurations must match for pasting");
 
   // Determine source region dimensions
   uint32_t src_width =

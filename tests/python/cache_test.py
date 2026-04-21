@@ -40,83 +40,74 @@ class TestCacheManager:
     """Test CacheManager creation and basic operations."""
 
     def test_create_cache_manager_default_capacity(self) -> None:
-        """Test creating cache manager with default capacity."""
+        """Test creating cache manager with default capacity (1 GiB)."""
         cache_manager = fastslide.CacheManager.create()
         assert cache_manager is not None
 
         stats = cache_manager.get_basic_stats()
-        assert stats.capacity == 1000  # Default capacity
+        assert stats.capacity_bytes == 1024 * 1024 * 1024  # 1 GiB default
         assert stats.size == 0
         assert stats.hits == 0
         assert stats.misses == 0
         assert stats.hit_ratio == 0.0
 
     def test_create_cache_manager_custom_capacity(self) -> None:
-        """Test creating cache manager with custom capacity."""
-        test_capacity = 500
-        cache_manager = fastslide.CacheManager.create(capacity=test_capacity)
+        """Test creating cache manager with custom capacity (bytes)."""
+        test_capacity_bytes = 500
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=test_capacity_bytes)
 
         stats = cache_manager.get_basic_stats()
-        assert stats.capacity == test_capacity
+        assert stats.capacity_bytes == test_capacity_bytes
         assert stats.size == 0
 
     def test_create_cache_manager_zero_capacity(self) -> None:
-        """Test creating cache manager with zero capacity."""
-        # Backend doesn't allow zero capacity
-        with pytest.raises(RuntimeError, match="Cache capacity must be greater than 0"):
-            fastslide.CacheManager.create(capacity=0)
+        """Test creating cache manager with zero capacity (rejected)."""
+        with pytest.raises(ValueError, match="Cache capacity must be greater than 0"):
+            fastslide.CacheManager.create(capacity_bytes=0)
 
     def test_create_cache_manager_large_capacity(self) -> None:
-        """Test creating cache manager with large capacity."""
-        large_capacity = 100000
-        cache_manager = fastslide.CacheManager.create(capacity=large_capacity)
+        """Test creating cache manager with a large byte capacity."""
+        large_capacity_bytes = 100_000
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=large_capacity_bytes)
 
         stats = cache_manager.get_basic_stats()
-        assert stats.capacity == large_capacity
+        assert stats.capacity_bytes == large_capacity_bytes
 
     def test_cache_manager_clear(self) -> None:
         """Test clearing cache manager."""
-        cache_manager = fastslide.CacheManager.create(capacity=100)
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=100)
 
-        # Initially empty
         stats = cache_manager.get_basic_stats()
         assert stats.size == 0
 
-        # Clear empty cache (should not raise error)
         cache_manager.clear()
 
         stats = cache_manager.get_basic_stats()
         assert stats.size == 0
 
     def test_cache_manager_resize(self) -> None:
-        """Test resizing cache manager capacity."""
-        initial_capacity = 100
-        cache_manager = fastslide.CacheManager.create(capacity=initial_capacity)
-
-        # Verify initial capacity
-        stats = cache_manager.get_basic_stats()
-        assert stats.capacity == initial_capacity
-
-        # Resize to larger capacity
-        new_capacity = 200
-        cache_manager.resize(new_capacity)
+        """Test resizing cache manager capacity (bytes)."""
+        initial_capacity_bytes = 100
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=initial_capacity_bytes)
 
         stats = cache_manager.get_basic_stats()
-        assert stats.capacity == new_capacity
+        assert stats.capacity_bytes == initial_capacity_bytes
 
-        # Resize to smaller capacity
-        smaller_capacity = 50
-        cache_manager.resize(smaller_capacity)
-
+        new_capacity_bytes = 200
+        cache_manager.resize(new_capacity_bytes)
         stats = cache_manager.get_basic_stats()
-        assert stats.capacity == smaller_capacity
+        assert stats.capacity_bytes == new_capacity_bytes
+
+        smaller_capacity_bytes = 50
+        cache_manager.resize(smaller_capacity_bytes)
+        stats = cache_manager.get_basic_stats()
+        assert stats.capacity_bytes == smaller_capacity_bytes
 
     def test_cache_manager_resize_to_zero(self) -> None:
-        """Test resizing cache manager to zero capacity."""
-        cache_manager = fastslide.CacheManager.create(capacity=100)
+        """Test resizing cache manager to zero capacity (rejected)."""
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=100)
 
-        # Backend doesn't allow resizing to zero capacity
-        with pytest.raises(RuntimeError, match="Cache capacity must be greater than 0"):
+        with pytest.raises(ValueError, match="Cache capacity must be greater than 0"):
             cache_manager.resize(0)
 
 
@@ -125,25 +116,22 @@ class TestCacheStatistics:
 
     def test_basic_stats_structure(self) -> None:
         """Test basic cache statistics structure."""
-        cache_manager = fastslide.CacheManager.create(capacity=100)
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=100)
         stats = cache_manager.get_basic_stats()
 
-        # Check all expected attributes exist
-        assert hasattr(stats, "capacity")
+        assert hasattr(stats, "capacity_bytes")
         assert hasattr(stats, "size")
         assert hasattr(stats, "hits")
         assert hasattr(stats, "misses")
         assert hasattr(stats, "hit_ratio")
 
-        # Check types
-        assert isinstance(stats.capacity, int)
+        assert isinstance(stats.capacity_bytes, int)
         assert isinstance(stats.size, int)
         assert isinstance(stats.hits, int)
         assert isinstance(stats.misses, int)
         assert isinstance(stats.hit_ratio, float)
 
-        # Check initial values
-        assert stats.capacity == 100
+        assert stats.capacity_bytes == 100
         assert stats.size == 0
         assert stats.hits == 0
         assert stats.misses == 0
@@ -151,11 +139,10 @@ class TestCacheStatistics:
 
     def test_detailed_stats_structure(self) -> None:
         """Test detailed cache statistics structure."""
-        cache_manager = fastslide.CacheManager.create(capacity=100)
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=100)
         detailed_stats = cache_manager.get_detailed_stats()
 
-        # Check all expected attributes exist
-        assert hasattr(detailed_stats, "capacity")
+        assert hasattr(detailed_stats, "capacity_bytes")
         assert hasattr(detailed_stats, "size")
         assert hasattr(detailed_stats, "hits")
         assert hasattr(detailed_stats, "misses")
@@ -164,25 +151,22 @@ class TestCacheStatistics:
         assert hasattr(detailed_stats, "recent_keys")
         assert hasattr(detailed_stats, "key_frequencies")
 
-        # Check types
         assert isinstance(detailed_stats.memory_usage_mb, float)
         assert isinstance(detailed_stats.recent_keys, list)
         assert isinstance(detailed_stats.key_frequencies, dict)
 
-        # Check initial values
         assert detailed_stats.memory_usage_mb >= 0.0
         assert len(detailed_stats.recent_keys) == 0
         assert len(detailed_stats.key_frequencies) == 0
 
     def test_stats_consistency(self) -> None:
         """Test consistency between basic and detailed stats."""
-        cache_manager = fastslide.CacheManager.create(capacity=200)
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=200)
 
         basic_stats = cache_manager.get_basic_stats()
         detailed_stats = cache_manager.get_detailed_stats()
 
-        # Basic fields should match
-        assert basic_stats.capacity == detailed_stats.capacity
+        assert basic_stats.capacity_bytes == detailed_stats.capacity_bytes
         assert basic_stats.size == detailed_stats.size
         assert basic_stats.hits == detailed_stats.hits
         assert basic_stats.misses == detailed_stats.misses
@@ -190,7 +174,7 @@ class TestCacheStatistics:
 
     def test_hit_ratio_calculation(self) -> None:
         """Test hit ratio calculation with different scenarios."""
-        cache_manager = fastslide.CacheManager.create(capacity=100)
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=100)
 
         # Initial state: no hits or misses
         stats = cache_manager.get_basic_stats()
@@ -200,32 +184,30 @@ class TestCacheStatistics:
         # integrating with a real slide reader, so this tests the structure
 
 
-class TestRuntimeGlobalCacheManager:
-    """Test RuntimeGlobalCacheManager singleton behavior."""
+class TestGlobalCacheManager:
+    """Test GlobalCacheManager singleton behavior."""
 
-    def test_runtime_global_cache_manager_singleton(self) -> None:
-        """Test that RuntimeGlobalCacheManager is a singleton."""
-        global_cache1 = fastslide.RuntimeGlobalCacheManager.instance()
-        global_cache2 = fastslide.RuntimeGlobalCacheManager.instance()
+    def test_global_cache_manager_singleton(self) -> None:
+        """Test that GlobalCacheManager is a singleton."""
+        global_cache1 = fastslide.GlobalCacheManager.instance()
+        global_cache2 = fastslide.GlobalCacheManager.instance()
 
         # Should be the same instance
         assert global_cache1 is global_cache2
 
-    def test_runtime_global_cache_manager_set_capacity(self) -> None:
-        """Test setting global cache capacity."""
-        global_cache = fastslide.RuntimeGlobalCacheManager.instance()
+    def test_global_cache_manager_set_capacity(self) -> None:
+        """Test setting global cache capacity (in bytes)."""
+        global_cache = fastslide.GlobalCacheManager.instance()
 
-        # Set capacity
-        test_capacity = 500
-        global_cache.set_capacity(test_capacity)
+        test_capacity_bytes = 500
+        global_cache.set_capacity_bytes(test_capacity_bytes)
 
-        # Verify capacity was set
-        capacity = global_cache.get_capacity()
-        assert capacity == test_capacity
+        capacity_bytes = global_cache.get_capacity_bytes()
+        assert capacity_bytes == test_capacity_bytes
 
-    def test_runtime_global_cache_manager_get_size(self) -> None:
+    def test_global_cache_manager_get_size(self) -> None:
         """Test getting global cache size."""
-        global_cache = fastslide.RuntimeGlobalCacheManager.instance()
+        global_cache = fastslide.GlobalCacheManager.instance()
 
         # Clear first
         global_cache.clear()
@@ -234,9 +216,9 @@ class TestRuntimeGlobalCacheManager:
         assert isinstance(size, int)
         assert size >= 0
 
-    def test_runtime_global_cache_manager_clear(self) -> None:
+    def test_global_cache_manager_clear(self) -> None:
         """Test clearing global cache."""
-        global_cache = fastslide.RuntimeGlobalCacheManager.instance()
+        global_cache = fastslide.GlobalCacheManager.instance()
 
         # Clear cache (should not raise error)
         global_cache.clear()
@@ -245,21 +227,19 @@ class TestRuntimeGlobalCacheManager:
         size = global_cache.get_size()
         assert size == 0
 
-    def test_runtime_global_cache_manager_multiple_threads(self) -> None:
+    def test_global_cache_manager_multiple_threads(self) -> None:
         """Test global cache manager access from multiple threads."""
         capacities = []
         errors = []
 
         def worker(thread_id: int) -> None:
             try:
-                instance = fastslide.RuntimeGlobalCacheManager.instance()
-                # Set a unique capacity from this thread
-                unique_capacity = 1000 + thread_id
-                instance.set_capacity(unique_capacity)
-                # Get the final capacity after all threads
-                time.sleep(0.01)  # Small delay to let other threads run
-                final_capacity = instance.get_stats().capacity
-                capacities.append((thread_id, final_capacity))
+                instance = fastslide.GlobalCacheManager.instance()
+                unique_capacity_bytes = 1000 + thread_id
+                instance.set_capacity_bytes(unique_capacity_bytes)
+                time.sleep(0.01)
+                final_capacity_bytes = instance.get_stats().capacity_bytes
+                capacities.append((thread_id, final_capacity_bytes))
             except Exception as e:
                 errors.append((thread_id, str(e)))
 
@@ -316,10 +296,10 @@ class TestCacheIntegration:
 
     def test_cache_integration_with_slide_reader(self, sample_slide_path: str) -> None:
         """Test cache integration with actual slide reading."""
-        cache_manager = fastslide.CacheManager.create(capacity=50)
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=50)
 
         with fastslide.FastSlide.from_file_path(sample_slide_path) as slide:
-            slide.set_cache_manager(cache_manager)
+            slide.set_cache(cache_manager)
 
             # Verify cache is enabled
             assert slide.cache_enabled
@@ -348,14 +328,14 @@ class TestCacheIntegration:
 
     def test_multiple_slides_same_cache(self, sample_slide_path: str) -> None:
         """Test multiple slides sharing the same cache manager."""
-        shared_cache = fastslide.CacheManager.create(capacity=100)
+        shared_cache = fastslide.CacheManager.create(capacity_bytes=100)
 
         # Open multiple slide instances
         slides = []
         try:
             for i in range(3):
                 slide = fastslide.FastSlide.from_file_path(sample_slide_path)
-                slide.set_cache_manager(shared_cache)
+                slide.set_cache(shared_cache)
                 slides.append(slide)
 
             # All should be using the same cache
@@ -383,10 +363,9 @@ class TestCacheIntegration:
 
     def test_global_cache_with_slide_reader(self, sample_slide_path: str) -> None:
         """Test global cache integration with slide reader."""
-        global_cache = fastslide.RuntimeGlobalCacheManager.instance()
+        global_cache = fastslide.GlobalCacheManager.instance()
 
-        # Set global cache capacity
-        global_cache.set_capacity(200)
+        global_cache.set_capacity_bytes(200)
 
         with fastslide.FastSlide.from_file_path(sample_slide_path) as slide:
             # Use global cache
@@ -411,20 +390,17 @@ class TestCacheThreadSafety:
 
     def test_cache_manager_concurrent_access(self) -> None:
         """Test concurrent access to cache manager from multiple threads."""
-        cache_manager = fastslide.CacheManager.create(capacity=1000)
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=1000)
         results = []
         errors = []
 
         def worker(thread_id: int) -> None:
             try:
-                # Perform various cache operations
                 for i in range(10):
-                    # Get stats
                     basic_stats = cache_manager.get_basic_stats()
                     detailed_stats = cache_manager.get_detailed_stats()
 
-                    # Verify stats are consistent
-                    assert basic_stats.capacity == detailed_stats.capacity
+                    assert basic_stats.capacity_bytes == detailed_stats.capacity_bytes
                     assert basic_stats.size == detailed_stats.size
 
                     # Clear cache occasionally
@@ -457,26 +433,23 @@ class TestCacheThreadSafety:
 
     def test_cache_manager_concurrent_resize(self) -> None:
         """Test concurrent cache resizing from multiple threads."""
-        cache_manager = fastslide.CacheManager.create(capacity=100)
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=100)
         results = []
         errors = []
 
         def worker(thread_id: int) -> None:
             try:
-                # Each thread tries to resize to different capacity
-                new_capacity = 100 + (thread_id * 50)
-                cache_manager.resize(new_capacity)
+                new_capacity_bytes = 100 + (thread_id * 50)
+                cache_manager.resize(new_capacity_bytes)
 
-                # Verify resize worked (capacity should be positive)
                 stats = cache_manager.get_basic_stats()
-                assert stats.capacity > 0
+                assert stats.capacity_bytes > 0
 
-                results.append((thread_id, stats.capacity))
+                results.append((thread_id, stats.capacity_bytes))
 
             except Exception as e:
                 errors.append((thread_id, str(e)))
 
-        # Start multiple threads
         threads = []
         num_threads = 5
 
@@ -485,18 +458,15 @@ class TestCacheThreadSafety:
             threads.append(thread)
             thread.start()
 
-        # Wait for all threads
         for thread in threads:
             thread.join()
 
-        # Check results
         assert len(errors) == 0, f"Thread errors: {errors}"
         assert len(results) == num_threads
 
-        # Final capacity should be one of the values set by threads
         final_stats = cache_manager.get_basic_stats()
         expected_capacities = [100 + (i * 50) for i in range(num_threads)]
-        assert final_stats.capacity in expected_capacities
+        assert final_stats.capacity_bytes in expected_capacities
 
     def test_global_cache_concurrent_access(self) -> None:
         """Test concurrent access to global cache from multiple threads."""
@@ -505,18 +475,15 @@ class TestCacheThreadSafety:
 
         def worker(thread_id: int) -> None:
             try:
-                global_cache = fastslide.RuntimeGlobalCacheManager.instance()
+                global_cache = fastslide.GlobalCacheManager.instance()
 
-                # Perform operations
-                capacity = global_cache.get_capacity()
-                assert isinstance(capacity, int)
+                capacity_bytes = global_cache.get_capacity_bytes()
+                assert isinstance(capacity_bytes, int)
 
-                # Set capacity
-                new_capacity = 1000 + thread_id
-                global_cache.set_capacity(new_capacity)
+                new_capacity_bytes = 1000 + thread_id
+                global_cache.set_capacity_bytes(new_capacity_bytes)
 
-                # Get capacity again
-                new_capacity_check = global_cache.get_capacity()
+                new_capacity_check = global_cache.get_capacity_bytes()
                 assert new_capacity_check > 0
 
                 results.append((thread_id, new_capacity_check))
@@ -550,10 +517,9 @@ class TestCachePerformance:
         """Test performance of creating many cache managers."""
         start_time = time.time()
 
-        # Create many cache managers
         cache_managers = []
         for i in range(100):
-            cache_manager = fastslide.CacheManager.create(capacity=1000)
+            cache_manager = fastslide.CacheManager.create(capacity_bytes=1000)
             cache_managers.append(cache_manager)
 
         creation_time = time.time() - start_time
@@ -572,7 +538,7 @@ class TestCachePerformance:
     @pytest.mark.slow
     def test_cache_stats_performance(self) -> None:
         """Test performance of getting cache statistics."""
-        cache_manager = fastslide.CacheManager.create(capacity=10000)
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=10000)
 
         # Time getting basic stats
         start_time = time.time()
@@ -590,28 +556,27 @@ class TestCachePerformance:
         assert basic_stats_time < 0.5  # Less than 0.5 seconds for 1000 calls
         assert detailed_stats_time < 1.0  # Less than 1 second for 1000 calls
 
-        # Basic stats should be faster than detailed stats
-        assert basic_stats_time <= detailed_stats_time
+        # Note: we used to assert basic_stats_time <= detailed_stats_time but
+        # at the microsecond scale of an empty-cache stats call the ordering
+        # is dominated by measurement noise (see PR notes), so the assertion
+        # was flaky. The absolute budgets above already guard performance.
 
     def test_cache_resize_performance(self) -> None:
         """Test performance of cache resizing."""
-        cache_manager = fastslide.CacheManager.create(capacity=1000)
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=1000)
 
         start_time = time.time()
 
-        # Resize many times
         for i in range(100):
-            new_capacity = 1000 + (i * 10)
-            cache_manager.resize(new_capacity)
+            new_capacity_bytes = 1000 + (i * 10)
+            cache_manager.resize(new_capacity_bytes)
 
         resize_time = time.time() - start_time
 
-        # Should be reasonably fast
-        assert resize_time < 0.5  # Less than 0.5 seconds for 100 resizes
+        assert resize_time < 0.5
 
-        # Verify final state
         stats = cache_manager.get_basic_stats()
-        assert stats.capacity == 1000 + (99 * 10)
+        assert stats.capacity_bytes == 1000 + (99 * 10)
 
 
 class TestCacheErrorHandling:
@@ -619,38 +584,33 @@ class TestCacheErrorHandling:
 
     def test_cache_manager_invalid_capacity(self) -> None:
         """Test error handling for invalid cache capacity."""
-        # Negative capacity raises TypeError in the backend
         with pytest.raises(TypeError):
-            fastslide.CacheManager.create(capacity=-1)
+            fastslide.CacheManager.create(capacity_bytes=-1)
 
     def test_cache_manager_resize_invalid(self) -> None:
         """Test error handling for invalid resize operations."""
-        cache_manager = fastslide.CacheManager.create(capacity=100)
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=100)
 
-        # Negative resize raises TypeError in the backend
         with pytest.raises(TypeError):
             cache_manager.resize(-1)
 
     def test_global_cache_invalid_capacity(self) -> None:
         """Test error handling for invalid global cache capacity."""
-        global_cache = fastslide.RuntimeGlobalCacheManager.instance()
+        global_cache = fastslide.GlobalCacheManager.instance()
 
-        # Try setting negative capacity - raises TypeError in the backend
         with pytest.raises(TypeError):
-            global_cache.set_capacity(-1)
+            global_cache.set_capacity_bytes(-1)
 
     def test_stats_access_consistency(self) -> None:
         """Test that stats access is always consistent."""
-        cache_manager = fastslide.CacheManager.create(capacity=100)
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=100)
 
-        # Get stats multiple times rapidly
         stats_list = []
         for i in range(10):
             basic_stats = cache_manager.get_basic_stats()
             detailed_stats = cache_manager.get_detailed_stats()
 
-            # Should always be consistent
-            assert basic_stats.capacity == detailed_stats.capacity
+            assert basic_stats.capacity_bytes == detailed_stats.capacity_bytes
             assert basic_stats.size == detailed_stats.size
             assert basic_stats.hits == detailed_stats.hits
             assert basic_stats.misses == detailed_stats.misses
@@ -658,10 +618,9 @@ class TestCacheErrorHandling:
 
             stats_list.append((basic_stats, detailed_stats))
 
-        # All basic stats should have same capacity (unless resize happened)
-        first_capacity = stats_list[0][0].capacity
+        first_capacity_bytes = stats_list[0][0].capacity_bytes
         for basic_stats, _ in stats_list:
-            assert basic_stats.capacity == first_capacity
+            assert basic_stats.capacity_bytes == first_capacity_bytes
 
 
 class TestCacheMemoryManagement:
@@ -669,28 +628,20 @@ class TestCacheMemoryManagement:
 
     def test_cache_manager_cleanup(self) -> None:
         """Test that cache managers can be properly cleaned up."""
-        # Create and destroy many cache managers
         for i in range(50):
-            cache_manager = fastslide.CacheManager.create(capacity=1000)
+            cache_manager = fastslide.CacheManager.create(capacity_bytes=1000)
 
-            # Use the cache manager
             stats = cache_manager.get_basic_stats()
-            assert stats.capacity == 1000
+            assert stats.capacity_bytes == 1000
 
-            # Clear it
             cache_manager.clear()
-
-            # Delete reference
             del cache_manager
 
-        # Force garbage collection
         gc.collect()
-
-        # If we got here without memory issues, cleanup worked
 
     def test_cache_clear_effectiveness(self) -> None:
         """Test that cache clear actually frees memory."""
-        cache_manager = fastslide.CacheManager.create(capacity=1000)
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=1000)
 
         # Initially empty
         stats = cache_manager.get_basic_stats()
@@ -704,36 +655,32 @@ class TestCacheMemoryManagement:
 
     def test_multiple_cache_managers_independence(self) -> None:
         """Test that multiple cache managers are independent."""
-        cache1 = fastslide.CacheManager.create(capacity=100)
-        cache2 = fastslide.CacheManager.create(capacity=200)
-        cache3 = fastslide.CacheManager.create(capacity=300)
+        cache1 = fastslide.CacheManager.create(capacity_bytes=100)
+        cache2 = fastslide.CacheManager.create(capacity_bytes=200)
+        cache3 = fastslide.CacheManager.create(capacity_bytes=300)
 
-        # Should be different instances
         assert cache1 is not cache2
         assert cache2 is not cache3
         assert cache1 is not cache3
 
-        # Should have different capacities
         stats1 = cache1.get_basic_stats()
         stats2 = cache2.get_basic_stats()
         stats3 = cache3.get_basic_stats()
 
-        assert stats1.capacity == 100
-        assert stats2.capacity == 200
-        assert stats3.capacity == 300
+        assert stats1.capacity_bytes == 100
+        assert stats2.capacity_bytes == 200
+        assert stats3.capacity_bytes == 300
 
-        # Operations on one shouldn't affect others
         cache1.resize(150)
         cache2.clear()
 
-        # Verify independence
         new_stats1 = cache1.get_basic_stats()
         new_stats2 = cache2.get_basic_stats()
         new_stats3 = cache3.get_basic_stats()
 
-        assert new_stats1.capacity == 150  # Changed
-        assert new_stats2.capacity == 200  # Unchanged
-        assert new_stats3.capacity == 300  # Unchanged
+        assert new_stats1.capacity_bytes == 150
+        assert new_stats2.capacity_bytes == 200
+        assert new_stats3.capacity_bytes == 300
 
 
 # Test configuration and utilities

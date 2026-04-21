@@ -15,86 +15,61 @@
 #ifndef AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_RUNTIME_TILE_WRITER_H_
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_RUNTIME_TILE_WRITER_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <span>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
-#include <mutex>
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/image.h"
 
-/**
- * @file tile_writer.h
- * @brief Primary tile writer interface with automatic strategy selection
- *
- * This is the main tile writing interface for FastSlide. It automatically:
- * - Chooses between blended (weighted) vs direct writing based on plan metadata
- * - Supports arbitrary channel counts (1, 3, 4, N) and data types
- * - Provides optimal performance for each format (MRXS, SVS, QPTIFF, etc.)
- * - Maintains clean, consistent API across all slide formats
- */
+/// @file tile_writer.h
+/// @brief Canvas compositing surface for FastSlide.
+///
+/// Provides a single compositing interface that supports:
+/// - Blended (weighted / sub-pixel) painting for MRXS-style fractional tiles
+/// - Direct painting for SVS, QPTIFF, and other aligned tile formats
+/// - Arbitrary channel counts (1, 3, 4, N) and data types (UInt8, UInt16, ...)
 
 namespace fastslide {
 namespace runtime {
 
-// Forward declaration
-class ITileWriterStrategy;
-
-/// @brief Primary tile writer with automatic strategy selection
+/// @brief Compositing canvas that paints decoded tiles onto an output image.
 ///
-/// This class provides a clean, unified interface for all tile writing
-/// operations. It automatically selects the most efficient internal
-/// implementation based on the TilePlan characteristics:
-///
-/// - **Blended Writing**: For MRXS and other formats requiring fractional
-/// positioning
-/// - **Direct Writing**: For SVS, QPTIFF, and other aligned tile formats
-/// - **Multi-Channel Support**: Handles 1, 3, 4, or N channels seamlessly
-/// - **Multiple Data Types**: UInt8, UInt16, Float32 with optimal performance
+/// Handles RGB8 with sub-pixel bilinear blending and coverage tracking,
+/// as well as direct memcpy paths for grayscale, RGBA, spectral, planar,
+/// and non-UInt8 data types.
 ///
 /// ## Usage Examples:
 ///
-/// ### Simple Usage (Automatic Strategy Selection):
+/// ### Simple Usage:
 /// ```cpp
-/// // Automatically chooses strategy based on plan
-/// TileWriter writer(plan);
-///
-/// // Execute tiles (same interface for all formats)
-/// for (const auto& op : plan.operations) {
-///   auto status = reader.ExecutePlan(plan, writer);
-/// }
-///
-/// // Get result (returns appropriate type based on channels)
-/// auto result = writer.Finalize();
+/// Canvas canvas(plan);
+/// auto status = reader.ExecutePlan(plan, canvas);
+/// canvas.Finalize();
+/// auto result = canvas.GetOutput();
 /// ```
 ///
-/// ### Advanced Usage (Manual Configuration):
+/// ### Manual Configuration:
 /// ```cpp
-/// // Manual configuration for specific needs
-/// TileWriter::Config config;
+/// Canvas::Config config;
 /// config.dimensions = {1024, 1024};
-/// config.channels = 5;  // Spectral imaging data
+/// config.channels = 5;
 /// config.data_type = DataType::kUInt16;
-/// config.enable_blending = false;  // Force direct mode
-///
-/// TileWriter writer(config);
+/// Canvas canvas(config);
 /// ```
-class TileWriter {
+class Canvas {
  public:
-  /// @brief Destructor (required for PIMPL with incomplete strategy types)
-  virtual ~TileWriter();
-
-  /// @brief Background color specification (multi-channel)
+  /// @brief Background color specification (multi-channel).
   struct BackgroundColor {
-    std::vector<double> values;  // Per-channel background values [0-255]
+    std::vector<double> values;
 
-    // Convenience constructors
-    BackgroundColor() : values{255.0} {}  // White/max for single channel
+    BackgroundColor() : values{255.0} {}
 
     explicit BackgroundColor(uint8_t gray)
         : values{static_cast<double>(gray)} {}
@@ -107,85 +82,48 @@ class TileWriter {
         : values(std::move(vals)) {}
   };
 
-  /// @brief Configuration for manual writer creation
+  /// @brief Configuration for manual canvas creation.
   struct Config {
     ImageDimensions dimensions;
     uint32_t channels = 3;
     DataType data_type = DataType::kUInt8;
     PlanarConfig planar_config = PlanarConfig::kContiguous;
     BackgroundColor background;
-    bool enable_blending = false;  // Auto-detected by default
-    bool enable_subpixel_resampling = true;
+    bool enable_blending = false;
+    /// @brief When true, the output `Image` is constructed with
+    ///        `ImageFormat::kSpectral` regardless of channel count.
+    ///        See `core::OutputSpec::force_spectral_image` for the
+    ///        plan-builder hint that drives this.
+    bool force_spectral_image = false;
   };
 
-  /// @brief Output image (always returns Image since RGBImage is just an alias)
-  using OutputImage = Image;
+  /// @brief Create canvas from TilePlan (recommended).
+  explicit Canvas(const core::TilePlan& plan);
 
-  /// @brief Create writer from TilePlan (automatic strategy selection)
-  ///
-  /// This is the recommended constructor. It analyzes the plan to:
-  /// - Detect if blending is needed (blend_metadata present)
-  /// - Determine channel count and data type
-  /// - Choose optimal implementation strategy
-  ///
-  /// @param plan Execution plan containing output spec and operations
-  explicit TileWriter(const core::TilePlan& plan);
+  /// @brief Create canvas with manual configuration.
+  explicit Canvas(const Config& config);
 
-  /// @brief Create writer with manual configuration
-  ///
-  /// For advanced users who need specific control over the writer behavior.
-  ///
-  /// @param config Manual configuration
-  explicit TileWriter(const Config& config);
+  /// @brief Convenience constructor for RGB output.
+  Canvas(ImageDimensions dimensions,
+         BackgroundColor background = BackgroundColor(255, 255, 255),
+         bool enable_blending = false);
 
-  /// @brief Convenience constructor for RGB output
-  ///
-  /// Creates a writer optimized for RGB output with optional blending.
-  ///
-  /// @param dimensions Output dimensions
-  /// @param background RGB background color
-  /// @param enable_blending Whether to enable advanced blending features
-  TileWriter(ImageDimensions dimensions,
-             BackgroundColor background = BackgroundColor(255, 255, 255),
-             bool enable_blending = false);
-
-  // Tile writer interface methods
-  [[nodiscard]] aifocore::Status WriteTile(const core::TileReadOp& op,
-                                           std::span<const uint8_t> pixel_data,
+  /// @brief Paint a decoded tile onto the canvas.
+  [[nodiscard]] aifocore::Status PaintTile(const core::TileReadOp& op,
+                                           std::span<const uint8_t> tile_data,
                                            uint32_t tile_width,
                                            uint32_t tile_height,
                                            uint32_t tile_channels);
 
-  /// @brief Write tile with explicit mutex for thread-safe accumulation
-  ///
-  /// This overload is used when tiles are processed in parallel by multiple
-  /// threads. The mutex protects the accumulator during blending operations.
-  /// For non-blended strategies, the mutex parameter is ignored.
-  ///
-  /// @param op Tile operation metadata
-  /// @param pixel_data Tile pixel data
-  /// @param tile_width Tile width
-  /// @param tile_height Tile height
-  /// @param tile_channels Number of channels
-  /// @param accumulator_mutex Mutex for thread-safe accumulation
-  [[nodiscard]] aifocore::Status WriteTile(const core::TileReadOp& op,
-                                           std::span<const uint8_t> pixel_data,
+  /// @brief Paint a decoded tile under an explicit mutex.
+  [[nodiscard]] aifocore::Status PaintTile(const core::TileReadOp& op,
+                                           std::span<const uint8_t> tile_data,
                                            uint32_t tile_width,
                                            uint32_t tile_height,
                                            uint32_t tile_channels,
                                            std::mutex& accumulator_mutex);
 
-  /// @brief Fill entire canvas with background color (for empty plans)
-  ///
-  /// This method should ONLY be called by readers when handling empty plans
-  /// (no tiles to read). It's not used during normal tile writing operations.
-  ///
-  /// For 1, 3, or 4 channels, fills with the specified RGB color.
-  /// For > 4 channels (spectral), always fills with 0 (black/transparent).
-  ///
-  /// @param r Red value (0-255)
-  /// @param g Green value (0-255)
-  /// @param b Blue value (0-255)
+  /// @brief Fill entire canvas with background color (for empty plans).
   [[nodiscard]] aifocore::Status FillBackground(uint8_t r, uint8_t g,
                                                 uint8_t b);
 
@@ -195,29 +133,78 @@ class TileWriter {
 
   [[nodiscard]] uint32_t GetChannels() const;
 
-  /// @brief Get output image after finalization
-  ///
-  /// Returns the final Image with appropriate format and channel count.
-  /// Automatically optimized for RGB (3-channel) or multi-channel data.
-  ///
-  /// @return StatusOr containing final Image result
-  [[nodiscard]] aifocore::Result<OutputImage> GetOutput();
+  /// @brief Get output image after finalization.
+  [[nodiscard]] aifocore::Result<Image> GetOutput();
 
-  /// @brief Check if writer uses blended composition
+  /// @brief Check if canvas uses blended composition.
   [[nodiscard]] bool IsBlendingEnabled() const;
 
-  /// @brief Get the internal strategy type (for debugging/testing)
-  [[nodiscard]] std::string GetStrategyName() const;
-
  private:
-  /// @brief Create appropriate strategy based on configuration
-  std::unique_ptr<ITileWriterStrategy> CreateStrategy(const Config& config);
-
-  /// @brief Analyze plan to determine optimal configuration
+  void InitOutputImage();
   Config AnalyzePlan(const core::TilePlan& plan);
 
-  std::unique_ptr<ITileWriterStrategy> strategy_;
+  // -- Paint internals ------------------------------------------------------
+
+  aifocore::Status PaintTileLocked(const core::TileReadOp& op,
+                                   std::span<const uint8_t> pixel_data,
+                                   uint32_t tile_width, uint32_t tile_height,
+                                   uint32_t tile_channels);
+
+  aifocore::Status PaintTileRgb8Blended(const core::TileReadOp& op,
+                                        std::span<const uint8_t> pixel_data,
+                                        uint32_t tile_width,
+                                        uint32_t tile_height,
+                                        uint32_t tile_channels);
+
+  /// @brief Integer-position copy with coverage tracking for 16-bit RGB.
+  ///
+  /// Selected when the Canvas is configured for 3-channel kContiguous RGB
+  /// at 16 bits per sample. No bilinear sampling and no sRGB gain are
+  /// applied -- fluorescence intensities live in linear space and we
+  /// already drop the BlendMetadata in the plan builder for 16-bit slides.
+  aifocore::Status PaintTileRgb16Copy(const core::TileReadOp& op,
+                                      std::span<const uint8_t> pixel_data,
+                                      uint32_t tile_width, uint32_t tile_height,
+                                      uint32_t tile_channels);
+
+  /// @brief Templated integer-position RGB blit with coverage tracking.
+  ///
+  /// Used by both the 8-bit RGB brightfield blender (after gain has been
+  /// applied to the source pixels) and the new 16-bit fluorescence copy
+  /// path. The coverage map remains a single byte per pixel.
+  template <typename PixelT>
+  void RgbBlitT(const PixelT* src, int src_w, int src_h, int dest_x,
+                int dest_y);
+
+  template <typename PixelT>
+  void RgbBlitOffsetT(const PixelT* src, int src_w, int src_h, int src_off_x,
+                      int src_off_y, int blit_w, int blit_h, int dest_x,
+                      int dest_y);
+
+  void BilinearRgbBlit(const uint8_t* src, int src_w, int src_h, double dest_x,
+                       double dest_y, double src_offset_x, double src_offset_y,
+                       int visible_w, int visible_h);
+
+  aifocore::Status PaintTilePlanar(const core::TileReadOp& op,
+                                   std::span<const uint8_t> pixel_data,
+                                   uint32_t tile_width, uint32_t tile_height);
+
+  aifocore::Status PaintTileInterleaved(const core::TileReadOp& op,
+                                        std::span<const uint8_t> pixel_data,
+                                        uint32_t tile_width,
+                                        uint32_t tile_height,
+                                        uint32_t tile_channels);
+
+  // -- State ----------------------------------------------------------------
+
   Config config_;
+  std::unique_ptr<Image> output_image_;
+  std::vector<uint8_t> coverage_;  ///< Used by the RGB8/RGB16 copy blenders.
+  int out_w_ = 0;
+  int out_h_ = 0;
+  bool use_rgb8_blending_ = false;  ///< 3ch UInt8 contiguous (full bilinear).
+  bool use_rgb16_copy_blending_ = false;  ///< 3ch UInt16 contiguous (copy).
+  bool finalized_ = false;
 };
 
 }  // namespace runtime

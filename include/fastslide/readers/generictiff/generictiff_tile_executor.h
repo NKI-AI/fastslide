@@ -18,7 +18,7 @@ class GenericTiffTileExecutor
   /// @brief Execute a pre-built tile plan by reading and decoding TIFF tiles.
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
                                       const GenericTiffReader& reader,
-                                      runtime::TileWriter& writer);
+                                      runtime::Canvas& writer);
 };
 }  // namespace fastslide
 

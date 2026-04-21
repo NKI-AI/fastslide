@@ -17,7 +17,7 @@ with native Python bindings for integration into machine learning and scientific
 **Design Goals:**
 
 - **Fast C++ Core**: Built with modern C++20 for maximum performance
-- **Native Python Bindings**: Zero-overhead integration using pybind11
+- **Native Python Bindings**: Zero-overhead integration using nanobind
 - **Thread-Safe**: Safe for multi-threaded applications and PyTorch DataLoaders
 - **Format Support**: MRXS (3DHistech), Aperio SVS, and QPTIFF formats
 

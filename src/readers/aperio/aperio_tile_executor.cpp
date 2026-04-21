@@ -26,6 +26,7 @@
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/readers/aperio/aperio.h"
 #include "fastslide/readers/aperio/aperio_plan_builder.h"
+#include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/readers/simpletiff_tile_executor_utils.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/tile_writer.h"
@@ -35,11 +36,11 @@ namespace fastslide {
 
 aifocore::Status AperioTileExecutor::ExecutePlan(
     const core::TilePlan& plan, const AperioReader& reader,
-    runtime::TileWriter& writer, const TiffStructureMetadata& tiff_metadata) {
+    runtime::Canvas& writer, const TiffStructureMetadata& tiff_metadata) {
   std::atomic<int> error_count{0};
   return readers::simpletiff_exec::ExecuteOpsWithThreadPoolBestEffort(
       plan, writer,
-      [&](const core::TileReadOp& operation, runtime::TileWriter& writer_ref,
+      [&](const core::TileReadOp& operation, runtime::Canvas& writer_ref,
           std::mutex& writer_mutex) -> aifocore::Status {
         return ExecuteTileOperation(
             operation, reader, tiff_metadata.page, tiff_metadata.tile_width,
@@ -60,7 +61,7 @@ aifocore::Status AperioTileExecutor::ExecutePlan(
 aifocore::Status AperioTileExecutor::ExecuteTileOperation(
     const core::TileReadOp& operation, const AperioReader& reader,
     uint16_t page, uint32_t tile_width, uint32_t tile_height,
-    uint16_t samples_per_pixel, bool is_tiled, runtime::TileWriter& writer,
+    uint16_t samples_per_pixel, bool is_tiled, runtime::Canvas& writer,
     std::mutex& writer_mutex) {
   const TiffAccessParams tiff_params = {
       .page = page,
@@ -70,84 +71,40 @@ aifocore::Status AperioTileExecutor::ExecuteTileOperation(
       .is_tiled = is_tiled,
   };
 
-  // Read and decode the tile (returns span view of thread-local buffer)
-  auto tile_data_or = ReadWithCache(operation, reader, tiff_params);
-  if (!tile_data_or.ok()) {
-    // If the error is simply missing/empty data, treat it as a blank tile.
-    if (tile_data_or.status().code() == aifocore::StatusCode::kDataLoss) {
-      // Just continue. We won't copy any data from tile_data_or (it's invalid),
-      // so the crop loop below will use the zero-initialized 'cropped_data'
-      // buffer essentially filling the region with blank/black. We must check
-      // validity before using tile_data below.
+  auto decoded_or = ReadWithCacheDecoded(operation, reader, tiff_params);
+
+  std::span<const uint8_t> pixel_data;
+  uint32_t paint_w = tile_width;
+  uint32_t paint_h = tile_height;
+  uint32_t paint_channels = static_cast<uint32_t>(samples_per_pixel);
+
+  if (!decoded_or.ok()) {
+    if (decoded_or.status().code() == aifocore::StatusCode::kDataLoss) {
+      const size_t full_tile_bytes =
+          static_cast<size_t>(tile_width) * tile_height * samples_per_pixel;
+      uint8_t* zeros =
+          TiffBasedTileExecutor<AperioTileExecutor>::GetBuffers().GetCropBuffer(
+              full_tile_bytes);
+      std::memset(zeros, 0, full_tile_bytes);
+      pixel_data = std::span<const uint8_t>(zeros, full_tile_bytes);
     } else {
       std::cerr << aifocore::fmt::format(
           "Failed to read/decode tile at ({}, {}) in {}: {}\n",
           operation.tile_coord.x, operation.tile_coord.y, reader.GetFilename(),
-          tile_data_or.status().ToString());
+          decoded_or.status().ToString());
       return aifocore::Status::OkStatus();  // Continue processing other tiles
     }
+  } else {
+    const DecodedTileData& decoded = *decoded_or;
+    pixel_data = decoded.data;
+    paint_w = decoded.width;
+    paint_h = decoded.height;
+    paint_channels = decoded.channels;
   }
 
-  // If ok, we have data. If not ok but handled (kDataLoss), we have no data to
-  // copy.
-  const bool has_tile_data = tile_data_or.ok();
-  const std::span<const uint8_t> tile_data =
-      has_tile_data ? *tile_data_or
-                    : std::span<const uint8_t>();  // Empty if no data
-
-  // Extract sub-region if needed
-  const uint32_t src_x = operation.transform.source.x;
-  const uint32_t src_y = operation.transform.source.y;
-  const uint32_t src_width = operation.transform.source.width;
-  const uint32_t src_height = operation.transform.source.height;
-  const size_t crop_size = src_width * src_height * samples_per_pixel;
-
-  // Use thread-local buffer from CRTP base class
-  // This eliminates the second per-tile allocation
-  uint8_t* cropped_data =
-      TiffBasedTileExecutor<AperioTileExecutor>::GetBuffers().GetCropBuffer(
-          crop_size);
-  std::memset(cropped_data, 0, crop_size);  // Zero initialize
-
-  // Extract the region from the tile buffer
-  // IMPORTANT: Use tile_width as stride because TIFF tiles are always
-  // allocated with full tile dimensions in memory, even for edge tiles
-  //
-  // NOTE: if has_tile_data is false (empty tile), we skip copying and leave
-  // buffer as zero.
-  if (has_tile_data && !tile_data.empty()) {
-    for (uint32_t row = 0; row < src_height; ++row) {
-      const uint32_t tile_offset =
-          ((src_y + row) * tile_width + src_x) * samples_per_pixel;
-      const uint32_t dst_offset = row * src_width * samples_per_pixel;
-      const uint32_t bytes_to_copy = src_width * samples_per_pixel;
-
-      if (tile_offset + bytes_to_copy <= tile_data.size()) {
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        std::memcpy(cropped_data + dst_offset, tile_data.data() + tile_offset,
-                    bytes_to_copy);
-      } else {
-        std::cerr << "Tile bounds check failed at row " << row << " for tile ("
-                  << operation.tile_coord.x << ", " << operation.tile_coord.y
-                  << "): tile_offset=" << tile_offset
-                  << " + bytes_to_copy=" << bytes_to_copy
-                  << " > tile_data.size()=" << tile_data.size();
-      }
-    }
-  }
-
-  // Write extracted region
-  // Create modified operation with source at (0,0) since we've extracted the
-  // sub-region
-  core::TileReadOp modified_op = operation;
-  modified_op.transform.source.x = 0;
-  modified_op.transform.source.y = 0;
-  modified_op.transform.source.width = src_width;
-  modified_op.transform.source.height = src_height;
-
-  auto write_status = readers::simpletiff_exec::WriteTileMaybeLocked(
-      writer, modified_op, std::span<const uint8_t>(cropped_data, crop_size),
-      src_width, src_height, samples_per_pixel, writer_mutex);
+  auto write_status = readers::simpletiff_exec::PaintTileMaybeLocked(
+      writer, operation, pixel_data, paint_w, paint_h, paint_channels,
+      writer_mutex);
 
   if (!write_status.ok()) {
     std::cerr << "Failed to write tile: " << write_status.ToString();
@@ -170,45 +127,35 @@ runtime::TileKey AperioTileExecutor::MakeCacheKey(
 aifocore::Result<DecodedTileData> AperioTileExecutor::ReadTileFromDisk(
     const core::TileReadOp& operation, const AperioReader& reader,
     const TiffAccessParams& params) {
-  // Each worker thread uses its own DecodeContext for decompression
-  // This is thread-safe and avoids per-tile allocations
+  // Each worker thread uses its own DecodeContext for decompression. This is
+  // thread-safe and avoids per-tile allocations.
   static thread_local simpletiff::DecodeContext decode_ctx;
   auto& tile_buffer = GetBuffers().tile_buffer;
 
-  // Get TiffIndex from reader
   const auto& tiff_index = reader.GetTiffIndex();
+  // operation.byte_offset is the linear tile index for tiled TIFFs and the
+  // strip index for striped TIFFs (e.g. some SVS associated images / fallback
+  // pyramids). The shared helper picks the right code path based on the page
+  // header.
+  const uint32_t tile_or_strip_index =
+      static_cast<uint32_t>(operation.byte_offset);
 
-  // op.byte_offset is actually the linear tile index (tile_y * tiles_across +
-  // tile_x)
-  const uint32_t tile_index = static_cast<uint32_t>(operation.byte_offset);
+  AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
+                            readers::simpletiff_decode::ReadTileOrStrip(
+                                tiff_index, static_cast<uint32_t>(params.page),
+                                tile_or_strip_index, decode_ctx, tile_buffer));
 
-  // Use simpletiff::ReadTile to decompress the tile
-  int out_width = 0;
-  int out_height = 0;
-  auto result =
-      simpletiff::ReadTile(tiff_index, params.page, tile_index, decode_ctx,
-                           tile_buffer, out_width, out_height);
-
-  if (!result) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kInternal,
-        aifocore::fmt::format("Failed to read tile ({}, {}): {}",
-                              operation.tile_coord.x, operation.tile_coord.y,
-                              result.error().message()));
-  }
-
-  // Verify dimensions match expectations
-  if (static_cast<uint32_t>(out_width) != params.tile_width ||
-      static_cast<uint32_t>(out_height) != params.tile_height) {
+  // For tiled storage we expect the decoded tile to match the planned tile
+  // geometry. Strip storage produces strip-shaped buffers, so don't compare.
+  if (params.is_tiled && (decoded.width != params.tile_width ||
+                          decoded.height != params.tile_height)) {
     std::cerr << "Tile dimension mismatch: expected " << params.tile_width
-              << "x" << params.tile_height << ", got " << out_width << "x"
-              << out_height;
+              << "x" << params.tile_height << ", got " << decoded.width << "x"
+              << decoded.height << "\n";
   }
 
-  return DecodedTileData{
-      std::span<const uint8_t>(tile_buffer.data(), tile_buffer.size()),
-      static_cast<uint32_t>(out_width), static_cast<uint32_t>(out_height),
-      static_cast<uint32_t>(params.samples_per_pixel)};
+  return DecodedTileData{decoded.data, decoded.width, decoded.height,
+                         decoded.channels};
 }
 
 }  // namespace fastslide

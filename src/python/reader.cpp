@@ -14,8 +14,14 @@
 
 #include "fastslide/python/reader.h"
 
+#include <nanobind/stl/optional.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/variant.h>
+#include <nanobind/stl/vector.h>
+
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -49,22 +55,6 @@ void AssociatedImages::EnsureNamesLoaded() const {
   if (!names_loaded_) {
     auto reader = GetReader();
     available_names_ = reader->GetAssociatedImageNames();
-
-    // Also add image-type data from MRXS nonhier layers
-    auto* mrxs_reader = dynamic_cast<MrxsReader*>(reader.get());
-    if (mrxs_reader) {
-      auto all_data_names = mrxs_reader->GetAssociatedDataNames();
-      for (const auto& name : all_data_names) {
-        // Move items starting with "ScanDataLayer_Slide" to associated_images
-        const std::string prefix = "ScanDataLayer_Slide";
-        if (name.find(prefix) == 0) {
-          // Strip prefix and add to images
-          std::string stripped_name = name.substr(prefix.length());
-          available_names_.push_back(stripped_name);
-        }
-      }
-    }
-
     names_loaded_ = true;
   }
 }
@@ -73,51 +63,26 @@ std::shared_ptr<fastslide::Image> AssociatedImages::GetItem(
     const std::string& name) const {
   EnsureNamesLoaded();
 
-  // Check if image exists
   if (std::find(available_names_.begin(), available_names_.end(), name) ==
       available_names_.end()) {
-    throw py::key_error("Associated image '" + name + "' not found");
+    throw nb::key_error(("Associated image '" + name + "' not found").c_str());
   }
 
-  // Check cache first
   auto cache_it = cache_.find(name);
   if (cache_it != cache_.end() && cache_it->second) {
     return cache_it->second;
   }
 
-  // Try to load from standard associated images first
   auto reader = GetReader();
   auto result = reader->ReadAssociatedImage(name);
-
   if (!result.ok()) {
-    // Try loading from MRXS nonhier layers
-    // Need to add back the prefix we stripped
-    auto* mrxs_reader = dynamic_cast<MrxsReader*>(reader.get());
-    if (mrxs_reader) {
-      std::string full_name = "ScanDataLayer_" + name;
-      auto data_or = mrxs_reader->LoadAssociatedData(full_name);
-      if (data_or.ok() && data_or->IsImage()) {
-        const auto* image = data_or->GetImage();
-        if (image) {
-          auto result_image = image->Clone();
-          std::shared_ptr<fastslide::Image> shared_result =
-              std::move(result_image);
-          cache_[name] = shared_result;
-          return shared_result;
-        }
-      }
-    }
-
     throw std::runtime_error("Failed to read associated image '" + name +
                              "': " + std::string(result.status().message()));
   }
 
   auto result_image =
       std::make_shared<fastslide::Image>(std::move(result.value()));
-
-  // Cache the result
   cache_[name] = result_image;
-
   return result_image;
 }
 
@@ -132,37 +97,21 @@ std::vector<std::string> AssociatedImages::Keys() const {
   return available_names_;
 }
 
-py::tuple AssociatedImages::GetDimensions(const std::string& name) const {
+nb::tuple AssociatedImages::GetDimensions(const std::string& name) const {
   EnsureNamesLoaded();
 
   if (!Contains(name)) {
-    throw py::key_error("Associated image '" + name + "' not found");
+    throw nb::key_error(("Associated image '" + name + "' not found").c_str());
   }
 
   auto reader = GetReader();
   auto dims_or = reader->GetAssociatedImageDimensions(name);
-
   if (!dims_or.ok()) {
-    // Try MRXS nonhier with prefix added back
-    auto* mrxs_reader = dynamic_cast<MrxsReader*>(reader.get());
-    if (mrxs_reader) {
-      std::string full_name = "ScanDataLayer_Slide" + name;
-      auto data_or = mrxs_reader->LoadAssociatedData(full_name);
-      if (data_or.ok() && data_or->IsImage()) {
-        const auto* image = data_or->GetImage();
-        if (image) {
-          const auto& dims = image->GetDimensions();
-          return py::make_tuple(dims[0], dims[1]);
-        }
-      }
-    }
-
     throw std::runtime_error("Failed to get dimensions for '" + name +
                              "': " + std::string(dims_or.status().message()));
   }
-
   const auto& dims = dims_or.value();
-  return py::make_tuple(dims[0], dims[1]);
+  return nb::make_tuple(dims[0], dims[1]);
 }
 
 size_t AssociatedImages::GetCacheSize() const {
@@ -190,33 +139,20 @@ std::shared_ptr<SlideReader> AssociatedData::GetReader() const {
 void AssociatedData::EnsureNamesLoaded() const {
   if (!names_loaded_) {
     auto reader = GetReader();
-
-    // Only MRXS supports associated data currently
-    auto* mrxs_reader = dynamic_cast<MrxsReader*>(reader.get());
-    if (mrxs_reader) {
-      auto all_names = mrxs_reader->GetAssociatedDataNames();
-      // Filter out images (items starting with "ScanDataLayer_Slide")
-      // Those go in AssociatedImages with the prefix stripped
-      const std::string image_prefix = "ScanDataLayer_Slide";
-      for (const auto& name : all_names) {
-        if (name.find(image_prefix) != 0) {
-          // Not an image, keep in associated_data
-          available_names_.push_back(name);
-        }
-      }
+    if (auto* mrxs_reader = dynamic_cast<MrxsReader*>(reader.get())) {
+      available_names_ = mrxs_reader->GetNonImageAssociatedDataNames();
     }
-
     names_loaded_ = true;
   }
 }
 
-py::object AssociatedData::GetItem(const std::string& name) const {
+nb::object AssociatedData::GetItem(const std::string& name) const {
   EnsureNamesLoaded();
 
   // Check if data exists
   if (std::find(available_names_.begin(), available_names_.end(), name) ==
       available_names_.end()) {
-    throw py::key_error("Associated data '" + name + "' not found");
+    throw nb::key_error(("Associated data '" + name + "' not found").c_str());
   }
 
   // Check cache first
@@ -241,19 +177,19 @@ py::object AssociatedData::GetItem(const std::string& name) const {
   const auto& data = *data_or;
 
   // Return appropriate Python type
-  py::object result;
+  nb::object result;
   if (data.IsXml()) {
     const auto* xml = data.GetXml();
     if (!xml) {
       throw std::runtime_error("XML data is null");
     }
-    result = py::str(*xml);
+    result = nb::str(xml->c_str(), xml->size());
   } else {
     const auto* binary = data.GetBinary();
     if (!binary) {
       throw std::runtime_error("Binary data is null");
     }
-    result = py::bytes(reinterpret_cast<const char*>(binary->data()),
+    result = nb::bytes(reinterpret_cast<const char*>(binary->data()),
                        binary->size());
   }
 
@@ -277,7 +213,7 @@ std::string AssociatedData::GetType(const std::string& name) const {
   EnsureNamesLoaded();
 
   if (!Contains(name)) {
-    throw py::key_error("Associated data '" + name + "' not found");
+    throw nb::key_error(("Associated data '" + name + "' not found").c_str());
   }
 
   auto reader = GetReader();
@@ -314,6 +250,16 @@ FastSlide::FastSlide(std::shared_ptr<SlideReader> reader,
 
 std::unique_ptr<FastSlide> FastSlide::FromFilePath(
     const std::string& file_path) {
+  // Validate file existence up front so callers get a clean, predictable
+  // error instead of a format-specific factory writing to stderr and
+  // returning a half-initialised reader (e.g. the Aperio/TIFF factory does
+  // this for missing paths).
+  std::error_code ec;
+  if (!std::filesystem::exists(file_path, ec) || ec) {
+    throw std::runtime_error("Failed to open slide '" + file_path +
+                             "': file does not exist");
+  }
+
   auto reader_or =
       fastslide::runtime::GetGlobalRegistry().CreateReader(file_path);
   if (!reader_or.ok()) {
@@ -347,8 +293,8 @@ FastSlide& FastSlide::__enter__() {
   return *this;
 }
 
-bool FastSlide::__exit__(py::object exc_type, py::object exc_value,
-                         py::object traceback) {
+bool FastSlide::__exit__(nb::object exc_type, nb::object exc_value,
+                         nb::object traceback) {
   Close();
   return false;
 }
@@ -389,7 +335,7 @@ AssociatedData& FastSlide::GetAssociatedData() {
   return *associated_data_;
 }
 
-py::tuple FastSlide::GetDimensions() const {
+nb::tuple FastSlide::GetDimensions() const {
   if (is_closed_) {
     throw std::runtime_error("Cannot get dimensions: slide reader is closed");
   }
@@ -398,17 +344,17 @@ py::tuple FastSlide::GetDimensions() const {
     throw std::runtime_error("Failed to get level 0 info");
   }
   const auto& info = level_info_or.value();
-  return py::make_tuple(info.dimensions[0], info.dimensions[1]);
+  return nb::make_tuple(info.dimensions[0], info.dimensions[1]);
 }
 
-py::tuple FastSlide::GetLevelDimensions() const {
+nb::tuple FastSlide::GetLevelDimensions() const {
   if (is_closed_) {
     throw std::runtime_error(
         "Cannot get level dimensions: slide reader is closed");
   }
 
   int level_count = reader_->GetLevelCount();
-  py::tuple result(level_count);
+  nb::list result;
 
   for (int i = 0; i < level_count; ++i) {
     auto level_info_or = reader_->GetLevelInfo(i);
@@ -417,19 +363,19 @@ py::tuple FastSlide::GetLevelDimensions() const {
                                " info");
     }
     const auto& info = level_info_or.value();
-    result[i] = py::make_tuple(info.dimensions[0], info.dimensions[1]);
+    result.append(nb::make_tuple(info.dimensions[0], info.dimensions[1]));
   }
-  return result;
+  return nb::tuple(result);
 }
 
-py::tuple FastSlide::GetLevelDownsamples() const {
+nb::tuple FastSlide::GetLevelDownsamples() const {
   if (is_closed_) {
     throw std::runtime_error(
         "Cannot get level downsamples: slide reader is closed");
   }
 
   int level_count = reader_->GetLevelCount();
-  py::tuple result(level_count);
+  nb::list result;
 
   for (int i = 0; i < level_count; ++i) {
     auto level_info_or = reader_->GetLevelInfo(i);
@@ -437,9 +383,9 @@ py::tuple FastSlide::GetLevelDownsamples() const {
       throw std::runtime_error("Failed to get level " + std::to_string(i) +
                                " info");
     }
-    result[i] = level_info_or.value().downsample_factor;
+    result.append(level_info_or.value().downsample_factor);
   }
-  return result;
+  return nb::tuple(result);
 }
 
 int FastSlide::GetLevelCount() const {
@@ -449,13 +395,13 @@ int FastSlide::GetLevelCount() const {
   return reader_->GetLevelCount();
 }
 
-py::dict FastSlide::GetProperties() const {
+nb::dict FastSlide::GetProperties() const {
   if (is_closed_) {
     throw std::runtime_error("Cannot get properties: slide reader is closed");
   }
 
   const auto& props = reader_->GetProperties();
-  py::dict result;
+  nb::dict result;
   result["mpp_x"] = props.mpp[0];
   result["mpp_y"] = props.mpp[1];
   result["objective_magnification"] = props.objective_magnification;
@@ -484,6 +430,13 @@ std::string FastSlide::GetFormat() const {
   return reader_->GetFormatName();
 }
 
+std::string FastSlide::GetDtype() const {
+  if (is_closed_) {
+    throw std::runtime_error("Cannot get dtype: slide reader is closed");
+  }
+  return fastslide::GetDataTypeName(reader_->GetDataType());
+}
+
 std::string FastSlide::GetQuickHash() const {
   if (is_closed_) {
     throw std::runtime_error("Cannot get quickhash: slide reader is closed");
@@ -496,42 +449,42 @@ std::string FastSlide::GetQuickHash() const {
   return hash_or.value();
 }
 
-py::tuple FastSlide::GetMpp() const {
+nb::tuple FastSlide::GetMpp() const {
   if (is_closed_) {
     throw std::runtime_error("Cannot get MPP: slide reader is closed");
   }
   const auto& props = reader_->GetProperties();
-  return py::make_tuple(props.mpp[0], props.mpp[1]);
+  return nb::make_tuple(props.mpp[0], props.mpp[1]);
 }
 
-py::tuple FastSlide::GetBounds() const {
+nb::tuple FastSlide::GetBounds() const {
   if (is_closed_) {
     throw std::runtime_error("Cannot get bounds: slide reader is closed");
   }
   const auto& props = reader_->GetProperties();
   const auto& bounds = props.bounds;
 
-  auto coordinates = py::make_tuple(bounds.x, bounds.y);
-  auto size = py::make_tuple(bounds.width, bounds.height);
+  auto coordinates = nb::make_tuple(bounds.x, bounds.y);
+  auto size = nb::make_tuple(bounds.width, bounds.height);
 
-  return py::make_tuple(coordinates, size);
+  return nb::make_tuple(coordinates, size);
 }
 
-py::list FastSlide::GetChannelMetadata() const {
+nb::list FastSlide::GetChannelMetadata() const {
   if (is_closed_) {
     throw std::runtime_error(
         "Cannot get channel metadata: slide reader is closed");
   }
 
   auto channel_metadata = reader_->GetChannelMetadata();
-  py::list result;
+  nb::list result;
 
   for (const auto& channel : channel_metadata) {
-    py::dict channel_dict;
+    nb::dict channel_dict;
     channel_dict["name"] = channel.name;
     channel_dict["biomarker"] = channel.biomarker;
     channel_dict["color"] =
-        py::make_tuple(channel.color[0], channel.color[1], channel.color[2]);
+        nb::make_tuple(channel.color[0], channel.color[1], channel.color[2]);
     channel_dict["exposure_time"] = channel.exposure_time;
     channel_dict["signal_units"] = channel.signal_units;
 
@@ -578,7 +531,7 @@ std::string FastSlide::GetSourcePath() const {
   return source_path_;
 }
 
-py::tuple FastSlide::ConvertLevel0ToLevelNative(int64_t x, int64_t y,
+nb::tuple FastSlide::ConvertLevel0ToLevelNative(int64_t x, int64_t y,
                                                 int level) const {
   if (is_closed_) {
     throw std::runtime_error(
@@ -586,7 +539,7 @@ py::tuple FastSlide::ConvertLevel0ToLevelNative(int64_t x, int64_t y,
   }
 
   if (level == 0) {
-    return py::make_tuple(x, y);
+    return nb::make_tuple(x, y);
   }
 
   auto level_info_or = reader_->GetLevelInfo(level);
@@ -599,10 +552,10 @@ py::tuple FastSlide::ConvertLevel0ToLevelNative(int64_t x, int64_t y,
   uint32_t native_x = static_cast<uint32_t>(x / downsample);
   uint32_t native_y = static_cast<uint32_t>(y / downsample);
 
-  return py::make_tuple(native_x, native_y);
+  return nb::make_tuple(native_x, native_y);
 }
 
-py::tuple FastSlide::ConvertLevelNativeToLevel0(uint32_t x, uint32_t y,
+nb::tuple FastSlide::ConvertLevelNativeToLevel0(uint32_t x, uint32_t y,
                                                 int level) const {
   if (is_closed_) {
     throw std::runtime_error(
@@ -610,7 +563,7 @@ py::tuple FastSlide::ConvertLevelNativeToLevel0(uint32_t x, uint32_t y,
   }
 
   if (level == 0) {
-    return py::make_tuple(x, y);
+    return nb::make_tuple(x, y);
   }
 
   auto level_info_or = reader_->GetLevelInfo(level);
@@ -623,7 +576,7 @@ py::tuple FastSlide::ConvertLevelNativeToLevel0(uint32_t x, uint32_t y,
   int64_t level0_x = static_cast<int64_t>(x * downsample);
   int64_t level0_y = static_cast<int64_t>(y * downsample);
 
-  return py::make_tuple(level0_x, level0_y);
+  return nb::make_tuple(level0_x, level0_y);
 }
 
 // Channel visibility controls

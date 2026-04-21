@@ -118,9 +118,10 @@ int main(int argc, char** argv) {
 
   // Check cache stats
   auto stats = cache->GetStats();
-  std::cout << "Cache stats: Size=" << stats.size << "/" << stats.capacity
-            << " (tiles, capacity is approx), Hits=" << stats.hits
-            << ", Misses=" << stats.misses << "\n";
+  std::cout << "Cache stats: tiles=" << stats.size
+            << ", capacity=" << (stats.capacity_bytes / (1024 * 1024))
+            << " MB, hits=" << stats.hits << ", misses=" << stats.misses
+            << "\n";
   std::cout << "Memory usage: "
             << (static_cast<double>(stats.memory_usage_bytes) /
                 (1024.0 * 1024.0))
@@ -146,9 +147,10 @@ int main(int argc, char** argv) {
 
   // Check cache stats again
   stats = cache->GetStats();
-  std::cout << "Cache stats: Size=" << stats.size << "/" << stats.capacity
-            << " (tiles, capacity is approx), Hits=" << stats.hits
-            << ", Misses=" << stats.misses << "\n";
+  std::cout << "Cache stats: tiles=" << stats.size
+            << ", capacity=" << (stats.capacity_bytes / (1024 * 1024))
+            << " MB, hits=" << stats.hits << ", misses=" << stats.misses
+            << "\n";
   std::cout << "Hit ratio: " << std::fixed << std::setprecision(2)
             << stats.hit_ratio << "\n";
 
@@ -176,9 +178,10 @@ int main(int argc, char** argv) {
             << elapsed.count() << "s\n";
 
   stats = cache->GetStats();
-  std::cout << "Cache stats: Size=" << stats.size << "/" << stats.capacity
-            << " (tiles, capacity is approx), Hits=" << stats.hits
-            << ", Misses=" << stats.misses << "\n";
+  std::cout << "Cache stats: tiles=" << stats.size
+            << ", capacity=" << (stats.capacity_bytes / (1024 * 1024))
+            << " MB, hits=" << stats.hits << ", misses=" << stats.misses
+            << "\n";
 
   // Access associated data
 
@@ -203,9 +206,10 @@ int main(int argc, char** argv) {
             << " channels, " << fastslide::GetName(region_cold.GetDataType())
             << "\n";
 
-  std::cout << "Cache stats: Size=" << stats.size << "/" << stats.capacity
-            << " (tiles, capacity is approx), Hits=" << stats.hits
-            << ", Misses=" << stats.misses << "\n";
+  std::cout << "Cache stats: tiles=" << stats.size
+            << ", capacity=" << (stats.capacity_bytes / (1024 * 1024))
+            << " MB, hits=" << stats.hits << ", misses=" << stats.misses
+            << "\n";
   std::cout << "Hit ratio: " << std::fixed << std::setprecision(2)
             << stats.hit_ratio << "\n";
   return 0;

@@ -22,9 +22,11 @@
 #include "fastslide/readers/isyntax/isyntax.h"
 #include "fastslide/readers/mrxs/mrxs_format_plugin.h"
 #include "fastslide/readers/ometiff/ometiff_format_plugin.h"
+#include "fastslide/readers/omezarr/omezarr_format_plugin.h"
 #include "fastslide/readers/qptiff/qptiff_format_plugin.h"
 
 #include "fastslide/readers/aperio/aperio_format_plugin.h"  // SVS format not implemented yet
+#include "fastslide/readers/dicom/dicom_format_plugin.h"
 #include "fastslide/readers/generictiff/generictiff_format_plugin.h"
 #include "fastslide/readers/ndpitiff/ndpitiff_format_plugin.h"
 
@@ -56,10 +58,12 @@ inline std::vector<FormatDescriptor> GetBuiltinFormats() {
       formats::czi::CreateCziFormatDescriptor(),
       formats::mrxs::CreateMrxsFormatDescriptor(),
       formats::ometiff::CreateOmetiffFormatDescriptor(),
+      formats::omezarr::CreateOmezarrFormatDescriptor(),
       formats::qptiff::CreateQptiffFormatDescriptor(),
       formats::aperio::CreateAperioFormatDescriptor(),
       formats::generictiff::CreateGenericTiffFormatDescriptor(),
       formats::ndpitiff::CreateNdpiTiffFormatDescriptor(),
+      formats::dicom::CreateDicomFormatDescriptor(),
   };
 
   // iSyntax format
@@ -71,11 +75,9 @@ inline std::vector<FormatDescriptor> GetBuiltinFormats() {
   isyntax_desc.factory = [](std::shared_ptr<ITileCache> cache,
                             std::string_view filename)
       -> aifocore::Result<std::unique_ptr<SlideReader>> {
-    auto result = IsyntaxReader::Create(filename);
-    if (!result.ok()) {
-      return result.status();
-    }
-    auto reader = std::unique_ptr<SlideReader>(std::move(result.value()));
+    AIFOCORE_ASSIGN_OR_RETURN(auto isyntax_reader,
+                              IsyntaxReader::Create(filename));
+    auto reader = std::unique_ptr<SlideReader>(std::move(isyntax_reader));
     reader->SetCache(cache);
     return reader;
   };

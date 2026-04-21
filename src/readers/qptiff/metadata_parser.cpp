@@ -32,20 +32,20 @@ aifocore::Status QpTiffMetadataParser::ParseSlideMetadata(
     const std::string& xml_content, QpTiffSlideMetadata& metadata) {
 
   if (!IsQpTiffFormat(xml_content)) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Invalid QPTIFF XML format");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Invalid QPTIFF XML format");
   }
 
   pugi::xml_document doc;
   if (!doc.load_string(xml_content.c_str())) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Failed to parse XML metadata");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Failed to parse XML metadata");
   }
 
   auto root = doc.child("PerkinElmer-QPI-ImageDescription");
   if (root.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Invalid XML structure - missing root element");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Invalid XML structure - missing root element");
   }
 
   return ExtractResolutionInfo(root, metadata);
@@ -56,14 +56,14 @@ aifocore::Result<QpTiffChannelInfo> QpTiffMetadataParser::ParseChannelInfo(
 
   pugi::xml_document doc;
   if (!doc.load_string(xml_content.c_str())) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Failed to parse XML metadata");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Failed to parse XML metadata");
   }
 
   auto root = doc.child("PerkinElmer-QPI-ImageDescription");
   if (root.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Invalid XML structure");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Invalid XML structure");
   }
 
   QpTiffChannelInfo channel;
@@ -128,8 +128,8 @@ aifocore::Status QpTiffMetadataParser::ExtractResolutionInfo(
 
   auto resolution_node = root_node.child("ScanProfile").child("root");
   if (resolution_node.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "Resolution information not found in XML");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "Resolution information not found in XML");
   }
 
   // Extract pixel size
@@ -155,8 +155,8 @@ aifocore::Status QpTiffMetadataParser::ExtractResolutionInfo(
   }
 
   if (metadata.mpp_x <= 0.0 || metadata.mpp_y <= 0.0) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "Valid pixel size not found in XML");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "Valid pixel size not found in XML");
   }
 
   return aifocore::Status::OkStatus();

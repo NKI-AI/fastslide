@@ -75,7 +75,7 @@ TEST(TileTransformTest, PartialTile) {
   // Edge tile that's partially outside image bounds
   TileTransform transform;
   transform.source = {0, 0, 256, 256};
-  transform.dest = {3840, 3840, 256, 256};  // Partial tile at edge
+  transform.dest = {3840.0, 3840.0, 256, 256};  // Partial tile at edge
   transform.scale_x = 1.0;
   transform.scale_y = 1.0;
 
@@ -101,22 +101,19 @@ TEST(TileTransformTest, Downsampling) {
 TEST(BlendMetadataTest, DefaultValues) {
   BlendMetadata metadata;
 
-  EXPECT_DOUBLE_EQ(metadata.fractional_x, 0.0);
-  EXPECT_DOUBLE_EQ(metadata.fractional_y, 0.0);
   EXPECT_DOUBLE_EQ(metadata.weight, 1.0);
+  EXPECT_FLOAT_EQ(metadata.gain, 1.0f);
   EXPECT_EQ(metadata.mode, BlendMode::kOverwrite);
-  EXPECT_TRUE(metadata.enable_subpixel_resampling);
 }
 
 TEST(BlendMetadataTest, SubpixelPositioning) {
   BlendMetadata metadata;
-  metadata.fractional_x = 0.375;
-  metadata.fractional_y = 0.625;
-  metadata.weight = 1.0;
+  metadata.weight = 0.875;
+  metadata.gain = 1.03f;
   metadata.mode = BlendMode::kAverage;
 
-  EXPECT_NEAR(metadata.fractional_x, 0.375, 1e-9);
-  EXPECT_NEAR(metadata.fractional_y, 0.625, 1e-9);
+  EXPECT_NEAR(metadata.weight, 0.875, 1e-9);
+  EXPECT_FLOAT_EQ(metadata.gain, 1.03f);
   EXPECT_EQ(metadata.mode, BlendMode::kAverage);
 }
 
@@ -130,11 +127,13 @@ TEST(BlendMetadataTest, WeightedBlending) {
 
 TEST(BlendMetadataTest, DisableSubpixelResampling) {
   BlendMetadata metadata;
-  metadata.fractional_x = 0.5;
-  metadata.fractional_y = 0.5;
-  metadata.enable_subpixel_resampling = false;
+  metadata.weight = 0.5;
+  metadata.gain = 0.98f;
+  metadata.mode = BlendMode::kMaxIntensity;
 
-  EXPECT_FALSE(metadata.enable_subpixel_resampling);
+  EXPECT_DOUBLE_EQ(metadata.weight, 0.5);
+  EXPECT_FLOAT_EQ(metadata.gain, 0.98f);
+  EXPECT_EQ(metadata.mode, BlendMode::kMaxIntensity);
 }
 
 // ============================================================================
@@ -146,7 +145,7 @@ TEST(TileReadOpTest, BasicConstruction) {
   op.level = 0;
   op.tile_coord = {5, 7};
   op.transform.source = {0, 0, 256, 256};
-  op.transform.dest = {1280, 1792, 256, 256};
+  op.transform.dest = {1280.0, 1792.0, 256, 256};
   op.source_id = 0;
   op.byte_offset = 1024;
   op.byte_size = 65536;
@@ -170,16 +169,15 @@ TEST(TileReadOpTest, WithBlendMetadata) {
   op.byte_size = 1024;
 
   BlendMetadata blend;
-  blend.fractional_x = 0.25;
-  blend.fractional_y = 0.75;
-  blend.weight = 1.0;
+  blend.weight = 0.25;
+  blend.gain = 1.01f;
   blend.mode = BlendMode::kAverage;
 
   op.blend_metadata = blend;
 
   ASSERT_TRUE(op.blend_metadata.has_value());
-  EXPECT_DOUBLE_EQ(op.blend_metadata->fractional_x, 0.25);
-  EXPECT_DOUBLE_EQ(op.blend_metadata->fractional_y, 0.75);
+  EXPECT_DOUBLE_EQ(op.blend_metadata->weight, 0.25);
+  EXPECT_FLOAT_EQ(op.blend_metadata->gain, 1.01f);
   EXPECT_EQ(op.blend_metadata->mode, BlendMode::kAverage);
 }
 
@@ -339,7 +337,8 @@ TEST(TilePlanTest, MultiTilePlan) {
       op.level = 0;
       op.tile_coord = {x, y};
       op.transform.source = {0, 0, 256, 256};
-      op.transform.dest = {x * 256, y * 256, 256, 256};
+      op.transform.dest = {static_cast<double>(x * 256),
+                           static_cast<double>(y * 256), 256, 256};
       op.source_id = 0;
       op.byte_offset = (y * 4 + x) * 65536;
       op.byte_size = 65536;
@@ -435,24 +434,24 @@ TEST(TilePlanTest, PlanWithBlending) {
   TileReadOp op1;
   op1.level = 0;
   op1.tile_coord = {0, 0};
-  op1.transform.dest = {0, 0, 256, 256};
+  op1.transform.dest = {0.0, 0.0, 256, 256};
   op1.byte_size = 1000;
 
   BlendMetadata blend1;
-  blend1.fractional_x = 0.0;
-  blend1.fractional_y = 0.0;
+  blend1.weight = 1.0;
+  blend1.gain = 1.0f;
   blend1.mode = BlendMode::kAverage;
   op1.blend_metadata = blend1;
 
   TileReadOp op2;
   op2.level = 0;
   op2.tile_coord = {1, 0};
-  op2.transform.dest = {240, 0, 256, 256};  // 16-pixel overlap
+  op2.transform.dest = {240.0, 0.0, 256, 256};  // 16-pixel overlap
   op2.byte_size = 1000;
 
   BlendMetadata blend2;
-  blend2.fractional_x = 0.5;
-  blend2.fractional_y = 0.0;
+  blend2.weight = 0.5;
+  blend2.gain = 1.02f;
   blend2.mode = BlendMode::kAverage;
   op2.blend_metadata = blend2;
 

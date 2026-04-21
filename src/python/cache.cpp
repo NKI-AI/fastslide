@@ -29,9 +29,9 @@ CacheManager::CacheManager(std::shared_ptr<ITileCache> cache)
     : cache_(std::move(cache)) {}
 
 aifocore::Result<std::shared_ptr<CacheManager>> CacheManager::Create(
-    size_t capacity) {
+    size_t capacity_bytes) {
   std::shared_ptr<LRUTileCache> cache;
-  AIFOCORE_ASSIGN_OR_RETURN(cache, LRUTileCache::Create(capacity));
+  AIFOCORE_ASSIGN_OR_RETURN(cache, LRUTileCache::Create(capacity_bytes));
   return std::shared_ptr<CacheManager>(new CacheManager(std::move(cache)));
 }
 
@@ -54,21 +54,20 @@ ITileCache::Stats CacheManager::GetBasicStats() const {
 CacheInspectionStats CacheManager::GetDetailedStats() const {
   auto basic = cache_->GetStats();
   CacheInspectionStats detailed;
-  detailed.capacity = basic.capacity;
+  detailed.capacity_bytes = basic.capacity_bytes;
   detailed.size = basic.size;
   detailed.hits = basic.hits;
   detailed.misses = basic.misses;
   detailed.hit_ratio = basic.hit_ratio;
-  detailed.memory_usage_mb =
-      basic.memory_usage_bytes / (1024.0 * 1024.0);  // Convert bytes to MB
+  detailed.memory_usage_mb = basic.memory_usage_bytes / (1024.0 * 1024.0);
   // TODO(jonasteuwen): Add actual key tracking if needed
   return detailed;
 }
 
-aifocore::Status CacheManager::Resize(size_t new_capacity) {
-  // Create new cache with new capacity
+aifocore::Status CacheManager::Resize(size_t new_capacity_bytes) {
   std::shared_ptr<LRUTileCache> new_cache;
-  AIFOCORE_ASSIGN_OR_RETURN(new_cache, LRUTileCache::Create(new_capacity));
+  AIFOCORE_ASSIGN_OR_RETURN(new_cache,
+                            LRUTileCache::Create(new_capacity_bytes));
   cache_ = std::move(new_cache);
   return aifocore::Status::OkStatus();
 }

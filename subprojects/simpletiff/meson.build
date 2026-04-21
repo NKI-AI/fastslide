@@ -76,7 +76,6 @@ headers_to_install = [
   'include/simpletiff/predictor.h',
   'include/simpletiff/zstd.h',
   'include/simpletiff/tiff_constants.h',
-  'include/simpletiff/errors.h',
 ]
 
 if png_dep.found()

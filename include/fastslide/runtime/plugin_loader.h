@@ -15,9 +15,6 @@
 #ifndef AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_RUNTIME_PLUGIN_LOADER_H_
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_RUNTIME_PLUGIN_LOADER_H_
 
-#include <cstddef>
-#include <functional>
-#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -27,13 +24,13 @@
 
 /**
  * @file plugin_loader.h
- * @brief Plugin loading system with version constraints and feature detection
- * 
- * This header defines an enhanced plugin loading system that supports:
- * - Version constraint checking
- * - Optional feature detection (e.g., hardware codecs)
- * - Runtime plugin discovery
- * - Deployment-specific plugin filtering
+ * @brief Built-in plugin initialization and capability-based filtering.
+ *
+ * Defines:
+ * - PluginLoadContext: environment description (available codecs, hardware,
+ *   FastSlide version) used to filter built-in formats.
+ * - BuiltInPluginsInitializer: helper that registers all built-in format
+ *   plugins with a ReaderRegistry, optionally filtered by a load context.
  */
 
 namespace fastslide {
@@ -42,109 +39,28 @@ namespace runtime {
 // Forward declaration
 class ReaderRegistry;
 
-/// @brief Version constraint type
-///
-/// Specifies version requirements for a plugin. Uses semantic versioning.
-/// Examples: ">=1.0.0", "^2.0", "~1.2.3"
-struct VersionConstraint {
-  /// @brief Constraint string (e.g., ">=1.0.0", "^2.0")
-  std::string constraint;
-
-  /// @brief Check if a version satisfies this constraint
-  /// @param version Version string to check (e.g., "1.2.3")
-  /// @return True if version satisfies constraint
-  [[nodiscard]] bool IsSatisfiedBy(std::string_view version) const;
-
-  /// @brief Parse a constraint string
-  /// @param constraint_str Constraint string
-  /// @return Parsed constraint or error
-  [[nodiscard]] static aifocore::Result<VersionConstraint> Parse(
-      std::string_view constraint_str);
-};
-
-/// @brief Plugin capability requirements
-///
-/// Defines what capabilities must be available for a plugin to load.
-/// This allows deployments to disable incompatible plugins without
-/// recompilation.
-struct PluginRequirements {
-  /// @brief Minimum FastSlide version required
-  VersionConstraint min_version;
-
-  /// @brief Maximum FastSlide version supported (empty = no limit)
-  std::string max_version;
-
-  /// @brief Required hardware capabilities (e.g., "cuda", "opencl")
-  std::vector<std::string> required_hardware;
-
-  /// @brief Required codec capabilities (e.g., "jpeg2000", "jpegxr")
-  std::vector<std::string> required_codecs;
-
-  /// @brief Optional features (plugin works without, but with reduced functionality)
-  std::vector<std::string> optional_features;
-};
-
 /// @brief Plugin loading context
 ///
-/// Provides information about the current environment to plugin loaders.
-/// This allows loaders to make informed decisions about which plugins
-/// to load based on available resources and capabilities.
+/// Describes the current environment so callers can filter which built-in
+/// plugins should be loaded based on available codecs and hardware.
 struct PluginLoadContext {
-  /// @brief Available codec capabilities
+  /// @brief Available codec capabilities (e.g. "jpeg", "png", "jpeg2000")
   std::vector<std::string> available_codecs;
 
-  /// @brief Available hardware capabilities
+  /// @brief Available hardware capabilities (e.g. "cuda", "opencl")
   std::vector<std::string> available_hardware;
 
   /// @brief FastSlide version string
   std::string fastslide_version;
 
-  /// @brief Check if a capability is available
+  /// @brief Check if a capability is available (codec or hardware).
   /// @param capability Capability name
   /// @return True if available
   [[nodiscard]] bool HasCapability(std::string_view capability) const;
 
-  /// @brief Create default context with auto-detected capabilities
+  /// @brief Create default context with auto-detected capabilities.
   /// @return Default context
   static PluginLoadContext CreateDefault();
-};
-
-/// @brief Plugin loader interface (enhanced)
-///
-/// Enhanced plugin loader that understands version constraints and
-/// optional features. Loaders can:
-/// - Query available capabilities before loading
-/// - Skip incompatible plugins gracefully
-/// - Provide detailed error messages about missing dependencies
-class PluginLoader {
- public:
-  virtual ~PluginLoader() = default;
-
-  /// @brief Get loader name for diagnostics
-  /// @return Loader name
-  [[nodiscard]] virtual std::string GetLoaderName() const = 0;
-
-  /// @brief Load plugins with context information
-  /// @param registry Registry to register plugins with
-  /// @param context Loading context (available capabilities, version)
-  /// @return Status indicating success or failure
-  [[nodiscard]] virtual aifocore::Status LoadPlugins(
-      ReaderRegistry& registry, const PluginLoadContext& context) = 0;
-
-  /// @brief Check if loader can provide plugins in current context
-  /// @param context Loading context
-  /// @return True if loader has plugins available
-  [[nodiscard]] virtual bool CanLoadInContext(
-      const PluginLoadContext& context) const {
-    return true;  // Default: always try
-  }
-
-  /// @brief Get plugin requirements (for pre-flight checks)
-  /// @return Vector of plugin requirements this loader provides
-  [[nodiscard]] virtual std::vector<PluginRequirements> GetPluginRequirements()
-      const {
-    return {};  // Default: no specific requirements
-  }
 };
 
 /// @brief Built-in plugins initializer
@@ -188,9 +104,6 @@ class BuiltInPluginsInitializer {
 // Import into fastslide namespace
 using runtime::BuiltInPluginsInitializer;
 using runtime::PluginLoadContext;
-using runtime::PluginLoader;
-using runtime::PluginRequirements;
-using runtime::VersionConstraint;
 
 }  // namespace fastslide
 

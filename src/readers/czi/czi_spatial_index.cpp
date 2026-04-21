@@ -39,12 +39,13 @@ CziSpatialIndex::CziSpatialIndex(
 aifocore::Result<std::shared_ptr<CziSpatialIndex>> CziSpatialIndex::Build(
     std::vector<SpatialTile> tiles, double step) {
   if (tiles.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Cannot build CZI spatial index from empty list");
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        "Cannot build CZI spatial index from empty list");
   }
   if (step <= 0.0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Invalid CZI spatial index step");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Invalid CZI spatial index step");
   }
 
   ankerl::unordered_dense::map<std::pair<int32_t, int32_t>, std::vector<size_t>>

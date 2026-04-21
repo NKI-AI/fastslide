@@ -15,9 +15,6 @@
 #ifndef AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_TILE_EXECUTOR_H_
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_TILE_EXECUTOR_H_
 
-#include <span>
-#include <vector>
-
 #include <mutex>
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
@@ -41,7 +38,7 @@ class MrxsTileExecutor : public CachedTileExecutor<MrxsTileExecutor> {
   /// @return Status indicating success or failure
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
                                       const MrxsReader& reader,
-                                      runtime::TileWriter& writer);
+                                      runtime::Canvas& writer);
 
   friend class CachedTileExecutor<MrxsTileExecutor>;
 
@@ -55,7 +52,7 @@ class MrxsTileExecutor : public CachedTileExecutor<MrxsTileExecutor> {
   /// @return Status indicating success or failure
   static aifocore::Status ExecuteTileOperation(
       const core::TileReadOp& op, const MrxsReader& reader,
-      const mrxs::SlideZoomLevel& zoom_level, runtime::TileWriter& writer,
+      const mrxs::SlideZoomLevel& zoom_level, runtime::Canvas& writer,
       std::mutex& accumulator_mutex);
 
   /// @brief Create cache key for a tile
@@ -71,27 +68,6 @@ class MrxsTileExecutor : public CachedTileExecutor<MrxsTileExecutor> {
   static aifocore::Result<DecodedTileData> ReadTileFromDisk(
       const core::TileReadOp& op, const MrxsReader& reader,
       const mrxs::SlideZoomLevel& zoom_level);
-
-  /// @brief Extract sub-region from decoded tile
-  /// @param image_data Decoded tile image data
-  /// @param img_w Image width
-  /// @param img_h Image height
-  /// @param op Tile operation with crop information
-  /// @return Extracted sub-region as span (thread-local)
-  static std::span<const uint8_t> ExtractSubRegion(
-      std::span<const uint8_t> image_data, uint32_t img_w, uint32_t img_h,
-      const core::TileReadOp& op);
-
-  /// @brief Check if sub-region extraction is needed
-  /// @param image_width Decoded image width
-  /// @param image_height Decoded image height
-  /// @param expected_width Expected output width
-  /// @param expected_height Expected output height
-  /// @return True if extraction is needed
-  static bool NeedsSubRegionExtraction(uint32_t image_width,
-                                       uint32_t image_height,
-                                       uint32_t expected_width,
-                                       uint32_t expected_height);
 };
 
 }  // namespace fastslide

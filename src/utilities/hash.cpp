@@ -44,8 +44,8 @@ QuickHashBuilder::~QuickHashBuilder() {
 
 aifocore::Status QuickHashBuilder::HashFile(const fs::path& file_path) {
   if (finalized_) {
-    return aifocore::Status(aifocore::StatusCode::kFailedPrecondition,
-                            "Hash already finalized");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "Hash already finalized");
   }
 
   // Note: ifstream doesn't support wchar_t path on all platforms/compilers
@@ -55,7 +55,7 @@ aifocore::Status QuickHashBuilder::HashFile(const fs::path& file_path) {
   // need _wfopen. std::ifstream handles fs::path natively.
   std::ifstream file(file_path, std::ios::binary);
   if (!file.is_open()) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kNotFound,
         aifocore::fmt::format("Cannot open file: {}", file_path.string()));
   }
@@ -67,7 +67,7 @@ aifocore::Status QuickHashBuilder::HashFile(const fs::path& file_path) {
   }
 
   if (file.bad()) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInternal,
         aifocore::fmt::format("Error reading file: {}", file_path.string()));
   }
@@ -79,21 +79,21 @@ aifocore::Status QuickHashBuilder::HashFilePart(const fs::path& file_path,
                                                 int64_t offset,
                                                 int64_t length) {
   if (finalized_) {
-    return aifocore::Status(aifocore::StatusCode::kFailedPrecondition,
-                            "Hash already finalized");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "Hash already finalized");
   }
 
   FILE* file = aifocore::portable_fopen(file_path, "rb");
   if (!file) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kNotFound,
         aifocore::fmt::format("Cannot open file: {}", file_path.string()));
   }
 
   if (aifocore::portable_fseek(file, offset, SEEK_SET) != 0) {
     fclose(file);
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Failed to seek in file");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to seek in file");
   }
 
   std::array<uint8_t, 8192> buffer;
@@ -113,8 +113,8 @@ aifocore::Status QuickHashBuilder::HashFilePart(const fs::path& file_path,
     if (bytes_read < to_read) {
       if (ferror(file)) {
         aifocore::portable_fclose(file);
-        return aifocore::Status(aifocore::StatusCode::kInternal,
-                                "Error reading file");
+        return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                    "Error reading file");
       }
       break;  // EOF
     }
@@ -127,8 +127,8 @@ aifocore::Status QuickHashBuilder::HashFilePart(const fs::path& file_path,
 aifocore::Status QuickHashBuilder::HashData(const uint8_t* data,
                                             size_t length) {
   if (finalized_) {
-    return aifocore::Status(aifocore::StatusCode::kFailedPrecondition,
-                            "Hash already finalized");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "Hash already finalized");
   }
 
   sha_256_write(static_cast<Sha_256*>(ctx_), data, length);

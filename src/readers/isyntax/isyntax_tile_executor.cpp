@@ -57,7 +57,7 @@ void CopyRgbaToRgb(const uint32_t* src, uint8_t* dst, int width, int height) {
 
 aifocore::Status IsyntaxTileExecutor::ExecutePlan(const core::TilePlan& plan,
                                                   const IsyntaxReader& reader,
-                                                  runtime::TileWriter& writer) {
+                                                  runtime::Canvas& writer) {
   if (plan.operations.empty()) {
     // No tiles to read - fill with background color (white)
     return writer.FillBackground(255, 255, 255);
@@ -95,7 +95,7 @@ aifocore::Status IsyntaxTileExecutor::ExecutePlan(const core::TilePlan& plan,
 
 aifocore::Status IsyntaxTileExecutor::ExecuteTileOperation(
     const core::TileReadOp& op, const IsyntaxReader& reader,
-    runtime::TileWriter& writer, std::mutex& accumulator_mutex) {
+    runtime::Canvas& writer, std::mutex& accumulator_mutex) {
   // Get tile size from reader
   ImageDimensions tile_dims = reader.GetTileSize();
   const uint32_t tile_w = static_cast<uint32_t>(tile_dims[0]);
@@ -111,9 +111,9 @@ aifocore::Status IsyntaxTileExecutor::ExecuteTileOperation(
 
   const auto& rgb_span = *tile_data_or;
 
-  // Write to output using TileWriter with mutex for thread-safe accumulation
+  // Write to output using Canvas with mutex for thread-safe accumulation
   auto write_status =
-      writer.WriteTile(op, rgb_span, tile_w, tile_h, 3, accumulator_mutex);
+      writer.PaintTile(op, rgb_span, tile_w, tile_h, 3, accumulator_mutex);
 
   if (!write_status.ok()) {
     std::cerr << "Failed to write tile: " << write_status.ToString() << "\n";
@@ -160,13 +160,10 @@ aifocore::Result<DecodedTileData> IsyntaxTileExecutor::ReadTileFromDisk(
   {
     std::lock_guard<std::mutex> lock(reader.GetMutex());
 
-    auto st = reader.GetIsyntaxFile().ReadTile(
+    AIFOCORE_RETURN_IF_ERROR(reader.GetIsyntaxFile().ReadTile(
         op.level, op.tile_coord.x, op.tile_coord.y,
         std::span<uint32_t>(rgba_buffer, tile_w * tile_h),
-        isyntax::PixelFormat::kRgba);
-    if (!st.ok()) {
-      return st;
-    }
+        isyntax::PixelFormat::kRgba));
   }
 
   // Convert RGBA to RGB in pooled buffer

@@ -14,174 +14,112 @@
 
 #include "fastslide/readers/mrxs/mrxs_decoder.h"
 
-#include <algorithm>
 #include <cstring>
-#include <string>
+#include <span>
 #include <vector>
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
+#include "fastslide/runtime/decoders/bmp_decoder.h"
 #include "fastslide/runtime/decoders/jpeg_decoder.h"
-#include "lodepng/lodepng.h"
+#include "fastslide/runtime/decoders/jpeg_xr_decoder.h"
+#include "fastslide/runtime/decoders/png_decoder.h"
 
 namespace fastslide::mrxs::internal {
+namespace {
 
-/// @brief Decode compressed image data based on the specified format
+/// @brief Wrap a `runtime::decoders::DecodedRgb` into an `RGBImage`.
 ///
-/// Routes the compressed data to the appropriate decoder based on format type.
-/// Supports JPEG, PNG, and BMP formats commonly used in MRXS slides.
-///
-/// @param data Compressed image data
-/// @param format Image format (JPEG/PNG/BMP)
-/// @return Result containing decoded RGB image or error
-/// @retval InvalidArgument if format is unknown or unsupported
+/// The `RGBImage` owns its own contiguous buffer, so we copy the decoded
+/// pixels into it rather than transferring ownership.
+RGBImage RgbToImage(const runtime::decoders::DecodedRgb& decoded) {
+  RGBImage img(ImageDimensions{decoded.width, decoded.height},
+               ImageFormat::kRGB, DataType::kUInt8);
+  std::memcpy(img.GetData(), decoded.rgb.data(), decoded.rgb.size());
+  return img;
+}
+
+}  // namespace
+
 aifocore::Result<RGBImage> DecodeImage(const std::vector<uint8_t>& data,
                                        MrxsImageFormat format) {
+  const std::span<const uint8_t> bytes(data);
   switch (format) {
-    case MrxsImageFormat::kJpeg:
-      return DecodeJpeg(data);
-    case MrxsImageFormat::kPng:
-      return DecodePng(data);
-    case MrxsImageFormat::kBmp:
-      return DecodeBmp(data);
+    case MrxsImageFormat::kJpeg: {
+      runtime::decoders::JpegDecodeOptions opts{};
+      opts.no_ycbcr_conversion = true;
+      AIFOCORE_ASSIGN_OR_RETURN(
+          auto decoded, runtime::decoders::DecodeJpegToRgb(bytes, opts));
+      return RgbToImage(decoded);
+    }
+    case MrxsImageFormat::kPng: {
+      AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
+                                runtime::decoders::DecodePngToRgb(bytes));
+      return RgbToImage(decoded);
+    }
+    case MrxsImageFormat::kBmp: {
+      AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
+                                runtime::decoders::DecodeBmpToRgb(bytes));
+      return RgbToImage(decoded);
+    }
+    case MrxsImageFormat::kJpegXr: {
+      AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
+                                runtime::decoders::DecodeJpegXrToRgb(bytes));
+      return RgbToImage(decoded);
+    }
     default:
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "Unknown or unsupported image format");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "Unknown or unsupported image format");
   }
 }
 
-/// @brief Decode JPEG-compressed image data using libjpeg(-turbo fast path)
-///
-/// Decompresses JPEG data and converts to RGB format. Handles standard JPEG
-/// tiles as used in MRXS slides. The decoder forces RGB output and uses
-/// libjpeg-turbo's SIMD paths when available.
-///
-/// Uses setjmp/longjmp error handling to catch JPEG library errors and convert
-/// them to Status returns instead of crashing the process.
-///
-/// @param data JPEG-compressed data
-/// @return Result containing decoded RGB image or error
-/// @retval InvalidArgument if data is empty
-/// @retval Internal if JPEG decompression fails
-aifocore::Result<RGBImage> DecodeJpeg(const std::vector<uint8_t>& data) {
-  runtime::decoders::JpegDecodeOptions opts{};
-  opts.no_ycbcr_conversion = true;
-  AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
-                            runtime::decoders::DecodeJpegToRgb(data, opts));
-  RGBImage result(ImageDimensions{decoded.width, decoded.height},
-                  ImageFormat::kRGB, DataType::kUInt8);
-  std::memcpy(result.GetData(), decoded.rgb.data(), decoded.rgb.size());
-  return result;
-}
+aifocore::Result<Image> DecodeImage16(const std::vector<uint8_t>& data,
+                                      MrxsImageFormat format) {
+  const std::span<const uint8_t> bytes(data);
 
-/// @brief Decode PNG-compressed image data using lodepng
-///
-/// Decompresses PNG data and converts to RGB format. Uses the lodepng library
-/// for decoding. Forces 8-bit RGB output suitable for OpenSlide compatibility.
-///
-/// @param data PNG-compressed data
-/// @return Result containing decoded RGB image or error
-/// @retval InvalidArgument if data is empty
-/// @retval Internal if PNG decompression fails
-aifocore::Result<RGBImage> DecodePng(const std::vector<uint8_t>& data) {
-  if (data.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Empty PNG data");
-  }
-
-  std::vector<unsigned char> image;
-  unsigned int width, height;
-
-  // Decode PNG to RGB
-  unsigned int error = lodepng::decode(image, width, height, data, LCT_RGB, 8);
-
-  if (error) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            fmt::format("PNG decode error {}: {}", error,
-                                        lodepng_error_text(error)));
-  }
-
-  // Create RGB image
-  RGBImage result(ImageDimensions{static_cast<uint32_t>(width),
-                                  static_cast<uint32_t>(height)},
-                  ImageFormat::kRGB, DataType::kUInt8);
-
-  // Copy data
-  std::memcpy(result.GetData(), image.data(), image.size());
-
-  return result;
-}
-
-/// @brief Decode BMP image data
-///
-/// Decodes uncompressed 24-bit BMP images. Handles both top-down and bottom-up
-/// BMP formats and converts BGR pixel order to RGB. Only supports uncompressed
-/// 24-bit BMPs as commonly used in MRXS slides.
-///
-/// @param data BMP image data
-/// @return Result containing decoded RGB image or error
-/// @retval InvalidArgument if data is too small or invalid
-/// @retval Unimplemented if BMP is not 24-bit uncompressed
-aifocore::Result<RGBImage> DecodeBmp(const std::vector<uint8_t>& data) {
-  // Simplified BMP decoder for 24-bit uncompressed BMP
-  if (data.size() < 54) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "BMP data too small");
-  }
-
-  // Check BMP signature
-  if (data[0] != 'B' || data[1] != 'M') {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Invalid BMP signature");
-  }
-
-  // Read header
-  const int32_t data_offset = *reinterpret_cast<const int32_t*>(&data[10]);
-  const int32_t width = *reinterpret_cast<const int32_t*>(&data[18]);
-  const int32_t height_raw = *reinterpret_cast<const int32_t*>(&data[22]);
-  const int16_t bits_per_pixel = *reinterpret_cast<const int16_t*>(&data[28]);
-
-  // Only support 24-bit BMP
-  if (bits_per_pixel != 24) {
-    return aifocore::Status(
-        aifocore::StatusCode::kUnimplemented,
-        fmt::format("Only 24-bit BMP supported, got {}-bit", bits_per_pixel));
-  }
-
-  const int32_t height = std::abs(height_raw);
-  const bool top_down = height_raw < 0;
-
-  // Calculate row stride (rows are padded to 4-byte boundaries)
-  const uint32_t row_stride_src = ((width * 3) + 3) & ~3;
-
-  if (data_offset + row_stride_src * height >
-      static_cast<int32_t>(data.size())) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "BMP data truncated");
-  }
-
-  // Create RGB image
-  RGBImage result(ImageDimensions{static_cast<uint32_t>(width),
-                                  static_cast<uint32_t>(height)},
-                  ImageFormat::kRGB, DataType::kUInt8);
-
-  uint8_t* result_data = result.GetData();
-
-  // BMP stores pixels as BGR, we need RGB
-  for (int32_t y = 0; y < height; ++y) {
-    const int32_t src_y = top_down ? y : (height - 1 - y);
-    const uint8_t* src_row = &data[data_offset + src_y * row_stride_src];
-    uint8_t* dst_row = &result_data[y * width * 3];
-
-    for (int32_t x = 0; x < width; ++x) {
-      // Convert BGR to RGB
-      dst_row[x * 3 + 0] = src_row[x * 3 + 2];  // R
-      dst_row[x * 3 + 1] = src_row[x * 3 + 1];  // G
-      dst_row[x * 3 + 2] = src_row[x * 3 + 0];  // B
+  runtime::decoders::DecodedRgb16 decoded;
+  switch (format) {
+    case MrxsImageFormat::kPng: {
+      AIFOCORE_ASSIGN_OR_RETURN(decoded,
+                                runtime::decoders::DecodePng16ToRgb(bytes));
+      break;
+    }
+    case MrxsImageFormat::kJpegXr: {
+      AIFOCORE_ASSIGN_OR_RETURN(decoded,
+                                runtime::decoders::DecodeJpegXrToRgb16(bytes));
+      break;
+    }
+    case MrxsImageFormat::kJpeg:
+    case MrxsImageFormat::kBmp:
+    case MrxsImageFormat::kUnknown:
+    default: {
+      const char* fmt_name = "Unknown";
+      switch (format) {
+        case MrxsImageFormat::kJpeg:
+          fmt_name = "JPEG";
+          break;
+        case MrxsImageFormat::kBmp:
+          fmt_name = "BMP";
+          break;
+        case MrxsImageFormat::kPng:
+        case MrxsImageFormat::kJpegXr:
+        case MrxsImageFormat::kUnknown:
+          break;
+      }
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kUnimplemented,
+          aifocore::fmt::format(
+              "16-bit MRXS tile decoding is implemented for PNG and JPEG-XR; "
+              "got format='{}'. JPEG-2000 16-bit tiles are not supported yet",
+              fmt_name));
     }
   }
 
-  return result;
+  Image img(ImageDimensions{decoded.width, decoded.height}, ImageFormat::kRGB,
+            DataType::kUInt16);
+  std::memcpy(img.GetData(), decoded.rgb.data(),
+              decoded.rgb.size() * sizeof(uint16_t));
+  return img;
 }
 
 }  // namespace fastslide::mrxs::internal

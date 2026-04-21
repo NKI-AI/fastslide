@@ -12,6 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/// @file cache_interface_test.cpp
+/// @brief Tests for cache domain types (TileKey, CachedTileData) and stub
+///        ITileCache implementations.
+///
+/// This file tests:
+/// 1. TileKey construction, equality, and field differentiation
+/// 2. CachedTileData construction and memory usage
+/// 3. Stub ITileCache implementations for dependency injection testing:
+///    - SimpleCacheStub: Basic map-based cache (no eviction)
+///    - AlwaysMissCacheStub: Always returns nullptr (tests cache-bypass paths)
+///    - AlwaysHitCacheStub: Always returns tile (tests warm-cache paths)
+///
+/// These stubs can be reused in other tests to isolate cache behavior from
+/// reader logic.
+
 #include "fastslide/runtime/cache_interface.h"
 
 #include <gtest/gtest.h>
@@ -56,7 +71,7 @@ class SimpleCacheStub : public ITileCache {
 
   size_t GetSize() const override { return tiles_.size(); }
 
-  size_t GetCapacity() const override { return 1000; }
+  size_t GetCapacityBytes() const override { return 1000; }
 
   size_t GetMemoryUsage() const override {
     size_t total = 0;
@@ -68,7 +83,7 @@ class SimpleCacheStub : public ITileCache {
 
   Stats GetStats() const override {
     Stats stats;
-    stats.capacity = GetCapacity();
+    stats.capacity_bytes = GetCapacityBytes();
     stats.size = GetSize();
     stats.hits = hits_;
     stats.misses = misses_;
@@ -109,13 +124,13 @@ class AlwaysMissCacheStub : public ITileCache {
 
   size_t GetSize() const override { return 0; }
 
-  size_t GetCapacity() const override { return 100; }
+  size_t GetCapacityBytes() const override { return 100; }
 
   size_t GetMemoryUsage() const override { return 0; }
 
   Stats GetStats() const override {
     Stats stats;
-    stats.capacity = 100;
+    stats.capacity_bytes = 100;
     stats.size = 0;
     stats.hits = 0;
     stats.misses = misses_;
@@ -156,7 +171,7 @@ class AlwaysHitCacheStub : public ITileCache {
 
   size_t GetSize() const override { return 1; }
 
-  size_t GetCapacity() const override { return 100; }
+  size_t GetCapacityBytes() const override { return 100; }
 
   size_t GetMemoryUsage() const override {
     return dummy_tile_ ? dummy_tile_->GetMemoryUsage() : 0;
@@ -164,7 +179,7 @@ class AlwaysHitCacheStub : public ITileCache {
 
   Stats GetStats() const override {
     Stats stats;
-    stats.capacity = 100;
+    stats.capacity_bytes = 100;
     stats.size = 1;
     stats.hits = hits_;
     stats.misses = 0;
@@ -470,7 +485,7 @@ TEST(CacheInterfaceTest, PolymorphicUsage) {
 
   // All caches support the same interface
   for (auto& cache : caches) {
-    EXPECT_GT(cache->GetCapacity(), 0);  // Has some capacity
+    EXPECT_GT(cache->GetCapacityBytes(), 0);  // Has some capacity
 
     TileKey key{"poly.mrxs", 0, 0, 0};
     std::vector<uint8_t> data(256 * 256 * 3);
@@ -480,7 +495,7 @@ TEST(CacheInterfaceTest, PolymorphicUsage) {
     cache->Put(key, tile);
 
     auto stats = cache->GetStats();
-    EXPECT_GT(stats.capacity, 0);
+    EXPECT_GT(stats.capacity_bytes, 0);
   }
 }
 

@@ -15,120 +15,17 @@
 #include "fastslide/runtime/plugin_loader.h"
 
 #include <algorithm>
-#include <cstddef>
-#include <memory>
-#include <regex>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include "aifocore/status/result.h"
-#include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/readers.h"
 #include "fastslide/runtime/reader_registry.h"
 
 namespace fastslide {
 namespace runtime {
-
-namespace {
-
-/// @brief Parse semantic version string (major.minor.patch)
-struct SemanticVersion {
-  int major = 0;
-  int minor = 0;
-  int patch = 0;
-
-  static aifocore::Result<SemanticVersion> Parse(std::string_view version_str) {
-    std::regex version_regex(R"((\d+)\.(\d+)\.(\d+))");
-    std::string version_string(version_str);
-    std::smatch match;
-
-    if (!std::regex_search(version_string, match, version_regex)) {
-      return aifocore::Status(
-          aifocore::StatusCode::kInvalidArgument,
-          aifocore::fmt::format("Invalid version string: {}", version_str));
-    }
-
-    SemanticVersion version;
-    version.major = std::stoi(match[1].str());
-    version.minor = std::stoi(match[2].str());
-    version.patch = std::stoi(match[3].str());
-
-    return version;
-  }
-
-  [[nodiscard]] bool operator>=(const SemanticVersion& other) const {
-    if (major != other.major)
-      return major >= other.major;
-    if (minor != other.minor)
-      return minor >= other.minor;
-    return patch >= other.patch;
-  }
-
-  [[nodiscard]] bool operator<=(const SemanticVersion& other) const {
-    if (major != other.major)
-      return major <= other.major;
-    if (minor != other.minor)
-      return minor <= other.minor;
-    return patch <= other.patch;
-  }
-};
-
-}  // namespace
-
-// ============================================================================
-// VersionConstraint implementation
-// ============================================================================
-
-bool VersionConstraint::IsSatisfiedBy(std::string_view version) const {
-  auto version_or = SemanticVersion::Parse(version);
-
-  if (!version_or.ok()) {
-    return false;
-  }
-
-  // Parse constraint
-  if (constraint.empty()) {
-    return true;  // No constraint means any version
-  }
-
-  // Simple ">=" constraint
-  if (constraint.substr(0, 2) == ">=") {
-    auto constraint_version_or = SemanticVersion::Parse(constraint.substr(2));
-    if (!constraint_version_or.ok()) {
-      return false;
-    }
-    return *version_or >= *constraint_version_or;
-  }
-
-  // Simple "=" constraint
-  if (constraint[0] == '=') {
-    auto constraint_version_or = SemanticVersion::Parse(constraint.substr(1));
-    if (!constraint_version_or.ok()) {
-      return false;
-    }
-    auto cv = *constraint_version_or;
-    auto v = *version_or;
-    return v.major == cv.major && v.minor == cv.minor && v.patch == cv.patch;
-  }
-
-  // No operator means exact match
-  auto constraint_version_or = SemanticVersion::Parse(constraint);
-  if (!constraint_version_or.ok()) {
-    return false;
-  }
-  auto cv = *constraint_version_or;
-  auto v = *version_or;
-  return v.major == cv.major && v.minor == cv.minor && v.patch == cv.patch;
-}
-
-aifocore::Result<VersionConstraint> VersionConstraint::Parse(
-    std::string_view constraint_str) {
-  VersionConstraint constraint;
-  constraint.constraint = std::string(constraint_str);
-  return constraint;
-}
 
 // ============================================================================
 // PluginLoadContext implementation
@@ -242,10 +139,6 @@ bool BuiltInPluginsInitializer::CanLoadFormat(
 
   return false;
 }
-
-// ============================================================================
-// Plugin loader implementations
-// ============================================================================
 
 }  // namespace runtime
 }  // namespace fastslide

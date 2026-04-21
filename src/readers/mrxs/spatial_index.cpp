@@ -140,13 +140,14 @@ aifocore::Result<std::unique_ptr<MrxsSpatialIndex>> MrxsSpatialIndex::Build(
     const PyramidLevelParameters& level_params, int level,
     const SlideDataInfo& slide_info) {
   if (tiles.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Cannot build spatial index from empty tile list");
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        "Cannot build spatial index from empty tile list");
   }
 
   // Extract zoom level information
   if (level < 0 || level >= static_cast<int>(slide_info.zoom_levels.size())) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid level {} (must be 0-{})", level,
                               slide_info.zoom_levels.size() - 1));
@@ -158,7 +159,7 @@ aifocore::Result<std::unique_ptr<MrxsSpatialIndex>> MrxsSpatialIndex::Build(
   const double step_x = level_params.horizontal_tile_step;
   const double step_y = level_params.vertical_tile_step;
 
-  // Precompute subtile dimensions once.
+  // Tile dimensions within stored image (accounts for subdivision)
   const double subtile_w =
       static_cast<double>(image_width) / level_params.subtiles_per_stored_image;
   const double subtile_h = static_cast<double>(image_height) /

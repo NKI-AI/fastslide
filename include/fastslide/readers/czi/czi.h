@@ -96,13 +96,17 @@ class CziReader : public SlideReader, public ReaderFactory<CziReader> {
 
   ImageFormat GetImageFormat() const override { return ImageFormat::kRGB; }
 
+  [[nodiscard]] DataType GetDataType() const override {
+    return DataType::kUInt8;
+  }
+
   ImageDimensions GetTileSize() const override;
 
   aifocore::Result<core::TilePlan> PrepareRequest(
       const core::TileRequest& request) const override;
 
   aifocore::Status ExecutePlan(const core::TilePlan& plan,
-                               runtime::TileWriter& writer) const override;
+                               runtime::Canvas& writer) const override;
 
   /// @brief Get the filename as string (for cache keys).
   [[nodiscard]] const std::string& GetFilename() const { return filename_; }

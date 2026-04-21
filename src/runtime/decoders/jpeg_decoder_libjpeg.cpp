@@ -68,23 +68,24 @@ aifocore::Result<DecodedRgb> DecodeJpegToRgb(
     std::span<const uint8_t> jpeg_bytes, const JpegDecodeOptions& options) {
   (void)options;  // libjpeg path always converts to RGB.
   if (jpeg_bytes.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "JPEG input is empty");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "JPEG input is empty");
   }
 
   jpeg_decompress_struct* c = g_tls_jpeg.Get();
   if (setjmp(g_tls_jpeg.jump_buffer)) {
     jpeg_abort_decompress(c);
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            aifocore::fmt::format("JPEG decode error: {}",
-                                                  g_tls_jpeg.error_message));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInternal,
+        aifocore::fmt::format("JPEG decode error: {}",
+                              g_tls_jpeg.error_message));
   }
 
   jpeg_mem_src(c, const_cast<unsigned char*>(jpeg_bytes.data()),
                static_cast<unsigned long>(jpeg_bytes.size()));
   if (jpeg_read_header(c, TRUE) != JPEG_HEADER_OK) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Failed to read JPEG header");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to read JPEG header");
   }
 
   c->dct_method = JDCT_IFAST;
@@ -100,8 +101,8 @@ aifocore::Result<DecodedRgb> DecodeJpegToRgb(
 #endif
 
   if (!jpeg_start_decompress(c)) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Failed to start JPEG decompression");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to start JPEG decompression");
   }
 
   const uint32_t width = static_cast<uint32_t>(c->output_width);
@@ -109,8 +110,8 @@ aifocore::Result<DecodedRgb> DecodeJpegToRgb(
   const int channels = static_cast<int>(c->output_components);
   if (width == 0 || height == 0 || channels != 3) {
     jpeg_abort_decompress(c);
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Unsupported JPEG output format");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Unsupported JPEG output format");
   }
 
   DecodedRgb out{};
@@ -132,8 +133,8 @@ aifocore::Result<DecodedRgb> DecodeJpegToRgb(
     const JDIMENSION got = jpeg_read_scanlines(c, rows.data(), n);
     if (got == 0) {
       jpeg_abort_decompress(c);
-      return aifocore::Status(aifocore::StatusCode::kInternal,
-                              "JPEG read_scanlines returned 0");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                  "JPEG read_scanlines returned 0");
     }
   }
 

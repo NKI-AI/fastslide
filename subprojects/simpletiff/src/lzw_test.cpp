@@ -73,10 +73,10 @@ TEST(LzwTest, PythonReferenceCase) {
   const size_t expected_len = 40;
 
   std::vector<uint8_t> output;
-  bool result =
+  auto result =
       DecompressLzw(std::span<const uint8_t>(input, sizeof(input)), output);
 
-  ASSERT_TRUE(result) << "LZW decompression failed";
+  ASSERT_TRUE(result.ok()) << "LZW decompression failed: " << result.status();
   ASSERT_EQ(output.size(), expected_len) << "Output size mismatch";
 
   // Compare output
@@ -100,10 +100,10 @@ TEST(LzwTest, ImagecodecsTestMSB_Case1) {
   const char* expected = "say hammer yo hammer mc hammer go hammer";
 
   std::vector<uint8_t> output;
-  bool result =
+  auto result =
       DecompressLzw(std::span<const uint8_t>(input, sizeof(input)), output);
 
-  ASSERT_TRUE(result);
+  ASSERT_TRUE(result.ok()) << result.status();
   EXPECT_EQ(output.size(), strlen(expected));
   EXPECT_EQ(std::string(output.begin(), output.end()), std::string(expected));
 }
@@ -117,10 +117,10 @@ TEST(LzwTest, ImagecodecsTestMSB_Case2) {
   const char* expected = "and the rest can go and play";
 
   std::vector<uint8_t> output;
-  bool result =
+  auto result =
       DecompressLzw(std::span<const uint8_t>(input, sizeof(input)), output);
 
-  ASSERT_TRUE(result);
+  ASSERT_TRUE(result.ok()) << result.status();
   EXPECT_EQ(output.size(), strlen(expected));
   EXPECT_EQ(std::string(output.begin(), output.end()), std::string(expected));
 }
@@ -133,10 +133,10 @@ TEST(LzwTest, ImagecodecsTestMSB_Case3) {
   const char* expected = "can't touch this";
 
   std::vector<uint8_t> output;
-  bool result =
+  auto result =
       DecompressLzw(std::span<const uint8_t>(input, sizeof(input)), output);
 
-  ASSERT_TRUE(result);
+  ASSERT_TRUE(result.ok()) << result.status();
   EXPECT_EQ(output.size(), strlen(expected));
   EXPECT_EQ(std::string(output.begin(), output.end()), std::string(expected));
 }
@@ -145,10 +145,10 @@ TEST(LzwTest, ImagecodecsTestMSB_EmptyOutput) {
   const uint8_t input[] = {0x80, 0x40, 0x40};
 
   std::vector<uint8_t> output;
-  bool result =
+  auto result =
       DecompressLzw(std::span<const uint8_t>(input, sizeof(input)), output);
 
-  ASSERT_TRUE(result);
+  ASSERT_TRUE(result.ok()) << result.status();
   EXPECT_EQ(output.size(), 0);
 }
 
@@ -163,8 +163,8 @@ TEST(LzwTest, ImagecodecsImageNoEOI) {
 
   // Decompress LZW
   std::vector<uint8_t> decoded;
-  bool result = DecompressLzw(std::span<const uint8_t>(encoded), decoded);
-  ASSERT_TRUE(result) << "LZW decompression failed";
+  auto result = DecompressLzw(std::span<const uint8_t>(encoded), decoded);
+  ASSERT_TRUE(result.ok()) << "LZW decompression failed: " << result.status();
 
   // Read expected output
   auto expected = ReadTestDataFile("image_noeoi.bin");
@@ -205,11 +205,12 @@ TEST(LzwTest, ImagecodecsCorruptStream) {
 
   std::vector<uint8_t> decoded;
   // This should fail gracefully, not crash
-  bool result = DecompressLzw(std::span<const uint8_t>(encoded), decoded);
+  auto result = DecompressLzw(std::span<const uint8_t>(encoded), decoded);
 
-  // We expect this to fail (return false) rather than crash
-  // The imagecodecs test expects a RuntimeError
-  EXPECT_FALSE(result) << "Corrupt stream should not decompress successfully";
+  // We expect this to fail rather than crash. The imagecodecs test expects
+  // a RuntimeError; here it's an aifocore::Status with kDataLoss/etc.
+  EXPECT_FALSE(result.ok())
+      << "Corrupt stream should not decompress successfully";
 }
 
 }  // namespace

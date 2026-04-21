@@ -59,7 +59,8 @@ TEST(DeflateTest, ZlibWrappedStreamRoundtrip) {
   ASSERT_FALSE(compressed.empty());
 
   std::vector<uint8_t> decompressed;
-  ASSERT_TRUE(DecompressDeflate(compressed, decompressed));
+  auto status = DecompressDeflate(compressed, decompressed);
+  ASSERT_TRUE(status.ok()) << status.status();
   EXPECT_EQ(decompressed, original);
 }
 

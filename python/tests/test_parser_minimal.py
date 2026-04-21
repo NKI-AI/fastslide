@@ -80,8 +80,6 @@ def _write_minimal_czi(
     dir_payload = entry + dims
 
     # Subblock directory header (ZISRAWDIRECTORY)
-    # OpenSlide seg_size computation: seg_size = used_size - sizeof(hdr) + sizeof(seg_hdr)
-    # where sizeof(seg_hdr) == 32.
     used_size = (_SUBBLK_DIR_HDR_STRUCT.size - 32) + len(dir_payload)
     subblk_dir_hdr = _SUBBLK_DIR_HDR_STRUCT.pack(
         b"ZISRAWDIRECTORY\x00",

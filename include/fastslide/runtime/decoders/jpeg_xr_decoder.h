@@ -21,6 +21,7 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/runtime/decoders/jpeg_decoder.h"
+#include "fastslide/runtime/decoders/png_decoder.h"
 
 namespace fastslide::runtime::decoders {
 
@@ -31,6 +32,16 @@ struct ExpectedDimensions {
 
 /// @brief Decode a JPEG-XR (JXR) bitstream to RGB8 using jxrlib.
 [[nodiscard]] aifocore::Result<DecodedRgb> DecodeJpegXrToRgb(
+    std::span<const uint8_t> jxr_bytes,
+    std::optional<ExpectedDimensions> expected = std::nullopt);
+
+/// @brief Decode a JPEG-XR (JXR) bitstream to interleaved RGB16 using jxrlib.
+///
+/// Output samples are returned in host endianness so callers can treat the
+/// buffer as a flat `uint16_t` array. This is the path used by 16-bit
+/// 3DHISTECH MRXS fluorescence slides where each filter level is stored as a
+/// JPEG-XR with up to three 16-bit channels packed into the R/G/B planes.
+[[nodiscard]] aifocore::Result<DecodedRgb16> DecodeJpegXrToRgb16(
     std::span<const uint8_t> jxr_bytes,
     std::optional<ExpectedDimensions> expected = std::nullopt);
 

@@ -130,8 +130,28 @@ class MrxsReader : public SlideReader, public ReaderFactory<MrxsReader> {
 
   [[nodiscard]] std::string GetFormatName() const override { return "MRXS"; }
 
+  /// @brief Public image format used by the FFI / viewers.
+  ///
+  /// For brightfield slides this stays `kRGB`. Fluorescence slides with
+  /// parsed filter metadata expose `kSpectral` regardless of channel
+  /// count -- the underlying buffer layout for 3-channel cases is still
+  /// RGB-shaped, but channels are independent fluorophores rather than
+  /// color components, and downstream consumers must use the
+  /// multi-channel display path. The Canvas honors this via
+  /// `OutputSpec::force_spectral_image`, set by the plan builder. We
+  /// also gate on `!filters.empty()` so the format stays consistent with
+  /// `GetChannelMetadata()`, which returns RGB defaults when filter
+  /// metadata is missing.
   [[nodiscard]] ImageFormat GetImageFormat() const override {
-    return ImageFormat::kRGB;
+    return (slide_info_.slide_type == mrxs::MrxsSlideType::kFluorescence &&
+            !slide_info_.filters.empty())
+               ? ImageFormat::kSpectral
+               : ImageFormat::kRGB;
+  }
+
+  [[nodiscard]] DataType GetDataType() const override {
+    return slide_info_.camera_bitdepth >= 16 ? DataType::kUInt16
+                                             : DataType::kUInt8;
   }
 
   [[nodiscard]] ImageDimensions GetTileSize() const override;
@@ -143,7 +163,7 @@ class MrxsReader : public SlideReader, public ReaderFactory<MrxsReader> {
       const core::TileRequest& request) const override;
 
   [[nodiscard]] aifocore::Status ExecutePlan(
-      const core::TilePlan& plan, runtime::TileWriter& writer) const override;
+      const core::TilePlan& plan, runtime::Canvas& writer) const override;
 
   /// @brief Read a region with fractional positioning (MRXS-specific)
   ///
@@ -165,9 +185,18 @@ class MrxsReader : public SlideReader, public ReaderFactory<MrxsReader> {
     return slide_info_;
   }
 
-  /// @brief Get list of available associated data names
-  /// @return Vector of data names
+  /// @brief Get list of available associated data names.
+  ///
+  /// Returns *all* non-hierarchical record names known to the reader,
+  /// including the `ScanDataLayer_Slide*` records that are also surfaced as
+  /// associated images via @ref GetAssociatedImageNames.
   [[nodiscard]] std::vector<std::string> GetAssociatedDataNames() const;
+
+  /// @brief Get only the non-image associated data names.
+  ///
+  /// Filters @ref GetAssociatedDataNames to exclude entries that are
+  /// already exposed as associated images (XML / binary blobs only).
+  [[nodiscard]] std::vector<std::string> GetNonImageAssociatedDataNames() const;
 
   /// @brief Get information about associated data without loading it
   /// @param name Data name

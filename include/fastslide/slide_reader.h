@@ -34,13 +34,12 @@
 #include "fastslide/image.h"
 #include "fastslide/metadata.h"
 #include "fastslide/runtime/cache_interface.h"
-#include "fastslide/slide_options.h"
 #include "fastslide/utilities/colors.h"
 
 // Forward declarations to avoid circular dependencies
 namespace fastslide {
 namespace runtime {
-class TileWriter;
+class Canvas;
 }
 }  // namespace fastslide
 
@@ -135,8 +134,9 @@ class SlideReader {
   /// @note Default implementation returns UnimplementedError
   [[nodiscard]] virtual aifocore::Result<core::TilePlan> PrepareRequest(
       const core::TileRequest& request) const {
-    return aifocore::Status(aifocore::StatusCode::kUnimplemented,
-                            "PrepareRequest not implemented for this reader");
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kUnimplemented,
+        "PrepareRequest not implemented for this reader");
   }
 
   /// @brief Execute a tile reading plan (stage 2: execution)
@@ -150,16 +150,16 @@ class SlideReader {
   /// This stage performs all I/O and can:
   /// - Use cache to skip reads
   /// - Execute in parallel (if thread pool available)
-  /// - Stream results (if using StreamingTileWriter)
+  /// - Stream results (if using streaming Canvas)
   ///
   /// @param plan Execution plan from PrepareRequest()
   /// @param writer Destination for decoded pixels
   /// @return Status indicating success or errors
   /// @note Default implementation returns UnimplementedError
   [[nodiscard]] virtual aifocore::Status ExecutePlan(
-      const core::TilePlan& plan, runtime::TileWriter& writer) const {
-    return aifocore::Status(aifocore::StatusCode::kUnimplemented,
-                            "ExecutePlan not implemented for this reader");
+      const core::TilePlan& plan, runtime::Canvas& canvas) const {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,
+                                "ExecutePlan not implemented for this reader");
   }
 
   /// @brief Prepare multiple requests in batch
@@ -189,34 +189,15 @@ class SlideReader {
   // =========================================================================
 
   /// @brief Read a region from the slide
+  ///
+  /// Routes through the two-stage pipeline: RegionToTileRequest ->
+  /// PrepareRequest -> ExecutePlan. All format-specific logic lives in
+  /// PrepareRequest and ExecutePlan overrides.
+  ///
   /// @param region Region specification
   /// @return Image or error status
-  ///
-  /// @note **ARCHITECTURAL REQUIREMENT**: All readers MUST implement the
-  ///       two-stage pipeline (PrepareRequest + ExecutePlan). This method
-  ///       is now FINAL and routes through ReadRegionViaPipeline(), which
-  ///       calls the two-stage pipeline.
-  ///
-  ///       **Status (v2.0)**:
-  ///       - ✅ QPTIFF: Implements PrepareRequest/ExecutePlan
-  ///       - ✅ SVS: Implements PrepareRequest/ExecutePlan
-  ///       - ✅ MRXS: Implements PrepareRequest/ExecutePlan
-  ///
-  ///       All built-in readers now comply with v2.0 architecture.
-  [[nodiscard]] virtual aifocore::Result<Image> ReadRegion(
-      const RegionSpec& region) const {
-    return ReadRegionViaPipeline(region);
-  }
-
-  /// @brief Read a region from the slide with options
-  /// @param region Region specification
-  /// @param options Read options including coordinate space and color
-  /// correction
-  /// @return Image or error status
-  [[nodiscard]] virtual aifocore::Result<Image> ReadRegion(
-      const RegionSpec& region, const RegionReadOptions& options) const {
-    return ReadRegion(region);
-  }
+  [[nodiscard]] aifocore::Result<Image> ReadRegion(
+      const RegionSpec& region) const;
 
   /// @brief Read an associated image
   /// @param name Associated image name
@@ -237,6 +218,10 @@ class SlideReader {
   /// data
   [[nodiscard]] virtual ImageFormat GetImageFormat() const = 0;
 
+  /// @brief Get pixel data type (e.g. UInt8, UInt16)
+  /// @return DataType for pixel values in this slide
+  [[nodiscard]] virtual DataType GetDataType() const = 0;
+
   /// @brief Get optimal tile size for efficient reading
   /// @return Tile size (width, height) in pixels, or {0, 0} if not tiled
   [[nodiscard]] virtual ImageDimensions GetTileSize() const = 0;
@@ -248,8 +233,8 @@ class SlideReader {
   ///   - For MRXS: Slidedat.ini + all lowest resolution tile data
   ///   - For SVS/TIFF: TIFF header/metadata + lowest resolution tile data
   [[nodiscard]] virtual aifocore::Result<std::string> GetQuickHash() const {
-    return aifocore::Status(aifocore::StatusCode::kUnimplemented,
-                            "GetQuickHash not implemented for this reader");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,
+                                "GetQuickHash not implemented for this reader");
   }
 
   /// @brief Set tile cache for caching decoded internal tiles
@@ -301,37 +286,10 @@ class SlideReader {
   SlideReader() = default;
 
   // =========================================================================
-  // Protected Helpers for Two-Stage Pipeline Migration
+  // Protected Helpers
   // =========================================================================
 
-  /// @brief Read region via two-stage pipeline (helper for migration)
-  ///
-  /// This protected helper routes a RegionSpec through the two-stage
-  /// pipeline (PrepareRequest → ExecutePlan), providing a migration path
-  /// for readers to adopt the v2.0 architecture.
-  ///
-  /// **Migration Pattern:**
-  /// 1. Implement `PrepareRequest()` (planning logic)
-  /// 2. Implement `ExecutePlan()` (I/O + decode logic)
-  /// 3. Update `ReadRegion()` to call this helper
-  ///
-  /// **Example Usage:**
-  /// ```cpp
-  /// aifocore::Result<Image> MyReader::ReadRegion(const RegionSpec& region)
-  /// const
-  /// {
-  ///   // Route through two-stage pipeline
-  ///   return ReadRegionViaPipeline(region);
-  /// }
-  /// ```
-  ///
-  /// @param region Region specification
-  /// @return Image or error status
-  /// @note Requires PrepareRequest() and ExecutePlan() to be implemented
-  [[nodiscard]] aifocore::Result<Image> ReadRegionViaPipeline(
-      const RegionSpec& region) const;
-
-  /// @brief Convert RegionSpec to TileRequest (helper)
+  /// @brief Convert RegionSpec to TileRequest
   ///
   /// Converts a region specification into a tile request suitable for
   /// the two-stage pipeline. This is a pure function that performs no I/O.

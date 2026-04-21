@@ -36,11 +36,11 @@
 #include "fastslide/readers/qptiff/qptiff_metadata_loader.h"
 #include "fastslide/readers/qptiff/qptiff_plan_builder.h"
 #include "fastslide/readers/qptiff/qptiff_tile_executor.h"
+#include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/runtime/tile_writer.h"
 #include "fastslide/slide_reader.h"
 #include "fastslide/utilities/colors.h"
 #include "simpletiff/index.h"
-#include "simpletiff/reader.h"
 #include "simpletiff/tiff_parser.h"
 
 namespace fastslide {
@@ -165,38 +165,13 @@ aifocore::Result<RGBImage> QpTiffReader::ReadAssociatedImage(
   }
 
   const QpTiffAssociatedInfo& info = associated_images_.at(std::string(name));
-
-  // Use simpletiff to read the associated image page
-  if (!tiff_index_ || info.page >= tiff_index_->NumPages()) {
+  if (!tiff_index_) {
     return aifocore::Status(
         aifocore::StatusCode::kInternal,
-        aifocore::fmt::format("Invalid page {} for associated image '{}'",
-                              info.page, name));
+        aifocore::fmt::format("TIFF index not initialized for '{}'", name));
   }
-
-  const auto& page_header = tiff_index_->Page(info.page);
-  const uint32_t width = info.size[0];
-  const uint32_t height = info.size[1];
-  const uint16_t samples_per_pixel = page_header.samples_per_pixel;
-
-  // Create RGBImage with proper dimensions
-  RGBImage rgb_image({width, height}, ImageFormat::kRGB, DataType::kUInt8);
-
-  // Read the page using simpletiff directly into the image buffer
-  simpletiff::DecodeContext ctx;
-  simpletiff::Roi roi{0, 0, width, height};
-  const int stride = static_cast<int>(width) * samples_per_pixel;
-  auto result = simpletiff::ReadPage(*tiff_index_, info.page, roi, ctx,
-                                     rgb_image.GetData(), stride);
-
-  if (!result) {
-    return aifocore::Status(
-        aifocore::StatusCode::kInternal,
-        aifocore::fmt::format("Failed to read associated image '{}': {}", name,
-                              result.error().message()));
-  }
-
-  return rgb_image;
+  return readers::simpletiff_decode::ReadAssociatedTiffPage(
+      *tiff_index_, info.page, info.size, name);
 }
 
 // TODO(jonasteuwen): This function could fail,
@@ -259,7 +234,7 @@ aifocore::Result<core::TilePlan> QpTiffReader::PrepareRequest(
 }
 
 aifocore::Status QpTiffReader::ExecutePlan(const core::TilePlan& plan,
-                                           runtime::TileWriter& writer) const {
+                                           runtime::Canvas& writer) const {
   // Use the tile executor helper to execute the plan with tiff_index_
   return QptiffTileExecutor::ExecutePlan(plan, *this, writer);
 }
@@ -292,7 +267,12 @@ aifocore::Status QpTiffReader::ProcessMetadata() {
   // Set output planar config based on format
   if (format_ == ImageFormat::kRGB) {
     output_planar_config_ = PlanarConfig::kContiguous;  // RGB is interleaved
-  } else {
+  }
+
+  // Derive pixel data type from the first pyramid page's bits_per_sample.
+  if (!pyramid_.empty() && !pyramid_[0].pages.empty()) {
+    const auto& ph = tiff_index_->Page(pyramid_[0].pages[0]);
+    data_type_ = DataTypeFromBitsPerSample(ph.bits_per_sample);
   }
 
   return aifocore::Status::OkStatus();

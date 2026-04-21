@@ -84,14 +84,14 @@ class LRUTileCache : public ITileCache {
   void Put(const TileKey& key, std::shared_ptr<CachedTileData> tile) override;
   void Clear() override;
   size_t GetSize() const override;
-  size_t GetCapacity() const override;
+  size_t GetCapacityBytes() const override;
   size_t GetMemoryUsage() const override;
   Stats GetStats() const override;
 
   /// @brief Set cache capacity in bytes
   /// @param capacity_bytes New capacity in bytes
   /// @return Status indicating success or failure
-  aifocore::Status SetCapacity(size_t capacity_bytes);
+  aifocore::Status SetCapacityBytes(size_t capacity_bytes);
 
  private:
   /// @brief Internal cache entry

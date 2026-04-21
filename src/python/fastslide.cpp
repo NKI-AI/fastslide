@@ -12,11 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <pybind11/numpy.h>
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
+#include <nanobind/nanobind.h>
+#include <nanobind/ndarray.h>
+#include <nanobind/stl/optional.h>
+#include <nanobind/stl/shared_ptr.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/tuple.h>
+#include <nanobind/stl/unique_ptr.h>
+#include <nanobind/stl/unordered_map.h>
+#include <nanobind/stl/vector.h>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -35,45 +42,7 @@
 #include "fastslide/runtime/reader_registry.h"
 #include "fastslide/slide_reader.h"
 
-namespace py = pybind11;
-
-namespace pybind11::detail {
-/// @brief Type caster for NDArrayView to numpy array (view)
-/// @tparam T Data type
-/// @tparam N Rank
-template <typename T, size_t N>
-struct type_caster<aifocore::math::NDArrayView<T, N>> {
- public:
-  using Type = aifocore::math::NDArrayView<T, N>;
-  PYBIND11_TYPE_CASTER(Type, const_name("NDArrayView[") + type_caster<T>::name +
-                                 const_name("]"));
-
-  /// @brief Convert Python object to C++ (not implemented for view)
-  bool load(handle, bool) { return false; }
-
-  /// @brief Convert C++ object to Python (view to numpy array)
-  static handle cast(const aifocore::math::NDArrayView<T, N>& src,
-                     return_value_policy /* policy */, handle parent) {
-    std::vector<ssize_t> shape(N);
-    std::vector<ssize_t> strides(N);
-    const auto& src_shape = src.Shape();
-    const auto& src_strides = src.Strides();
-
-    for (size_t i = 0; i < N; ++i) {
-      shape[i] = static_cast<ssize_t>(src_shape[i]);
-      strides[i] = static_cast<ssize_t>(src_strides[i] * sizeof(T));
-    }
-
-    // Treat parent as base if it exists (e.g., Image object)
-    object base;
-    if (parent) {
-      base = reinterpret_borrow<object>(parent);
-    }
-
-    return py::array_t<T>(shape, strides, src.Data(), base).release();
-  }
-};
-}  // namespace pybind11::detail
+namespace nb = nanobind;
 
 using fastslide::RegionSpec;
 using fastslide::SlideReader;
@@ -86,15 +55,50 @@ namespace {
 /// @brief Convert aifocore::Status to Python exception
 void ThrowPyErrorFromStatus(const aifocore::Status& status) {
   if (status.code() == aifocore::StatusCode::kInvalidArgument) {
-    throw py::value_error(status.ToString());
+    throw nb::value_error(status.ToString().c_str());
   }
   // Raise generic runtime error for all other cases
   throw std::runtime_error(status.ToString());
 }
 
+/// @brief Build a zero-copy numpy view of an Image's pixel buffer.
+///
+/// The returned `nb::ndarray` keeps `image_handle` alive via nanobind's
+/// owner mechanism, so the underlying `fastslide::Image` storage is not
+/// freed while the numpy array is in use. No data is copied.
+nb::object MakeNumpyView(const fastslide::Image& image,
+                         nb::handle image_handle) {
+  nb::object result;
+  fastslide::DispatchByDataType(image.GetDataType(), [&]<typename T>() {
+    // Const Image::ArrayView<T>() returns NDArrayView<const T, 3>. We need a
+    // mutable T* to construct nb::ndarray<numpy, T, ...>. Casting away const
+    // matches the previous pybind11 behavior, where the returned numpy view
+    // was writable.
+    auto view = image.ArrayView<T>();
+    const auto& src_shape = view.Shape();
+    const auto& src_strides = view.Strides();
+
+    using ArrayT =
+        nb::ndarray<nb::numpy, T, nb::ndim<3>, nb::c_contig, nb::device::cpu>;
+    ArrayT arr(
+        /*data=*/const_cast<T*>(view.Data()),
+        /*shape=*/{src_shape[0], src_shape[1], src_shape[2]},
+        /*owner=*/image_handle,
+        /*strides=*/
+        {static_cast<int64_t>(src_strides[0]),
+         static_cast<int64_t>(src_strides[1]),
+         static_cast<int64_t>(src_strides[2])});
+    // rv_policy::reference avoids any data copy; ownership of the returned
+    // numpy object is transferred to the caller while the underlying buffer
+    // remains owned by the Image (kept alive via the owner handle above).
+    result = nb::cast(std::move(arr), nb::rv_policy::reference);
+  });
+  return result;
+}
+
 }  // namespace
 
-PYBIND11_MODULE(_fastslide, m) {
+NB_MODULE(_fastslide, m) {
   m.doc() =
       "FastSlide: High-performance, thread-safe digital pathology slide reader";
 
@@ -103,83 +107,105 @@ PYBIND11_MODULE(_fastslide, m) {
   using fastslide::runtime::ITileCache;
 
   // Enums
-  py::enum_<fastslide::ImageFormat>(m, "ImageFormat")
+  nb::enum_<fastslide::ImageFormat>(m, "ImageFormat")
       .value("GRAY", fastslide::ImageFormat::kGray)
       .value("RGB", fastslide::ImageFormat::kRGB)
       .value("RGBA", fastslide::ImageFormat::kRGBA)
       .value("SPECTRAL", fastslide::ImageFormat::kSpectral)
       .export_values();
 
-  py::enum_<fastslide::PlanarConfig>(m, "PlanarConfig")
+  nb::enum_<fastslide::PlanarConfig>(m, "PlanarConfig")
       .value("CONTIGUOUS", fastslide::PlanarConfig::kContiguous)
       .value("SEPARATE", fastslide::PlanarConfig::kSeparate)
       .export_values();
 
   // Image class binding
-  py::class_<fastslide::Image, std::shared_ptr<fastslide::Image>>(m, "Image")
-      .def_property_readonly("width", &fastslide::Image::GetWidth)
-      .def_property_readonly("height", &fastslide::Image::GetHeight)
-      .def_property_readonly("channels", &fastslide::Image::GetChannels)
-      .def_property_readonly("format", &fastslide::Image::GetFormat)
-      .def_property_readonly(
-          "dtype",
-          [](const fastslide::Image& self) {
-            return fastslide::GetDataTypeName(self.GetDataType());
-          })
-      .def_property_readonly("planar_config",
-                             &fastslide::Image::GetPlanarConfig)
+  nb::class_<fastslide::Image>(m, "Image")
+      .def_prop_ro("width", &fastslide::Image::GetWidth)
+      .def_prop_ro("height", &fastslide::Image::GetHeight)
+      .def_prop_ro("channels", &fastslide::Image::GetChannels)
+      .def_prop_ro("format", &fastslide::Image::GetFormat)
+      .def_prop_ro("dtype",
+                   [](const fastslide::Image& self) {
+                     return fastslide::GetDataTypeName(self.GetDataType());
+                   })
+      .def_prop_ro("planar_config", &fastslide::Image::GetPlanarConfig)
+      .def_prop_ro("is_interleaved", &fastslide::Image::IsInterleaved,
+                   "True if the image is stored interleaved (HWC).")
+      .def_prop_ro("is_separate", &fastslide::Image::IsSeparate,
+                   "True if the image is stored band-separate / planar (CHW).")
       .def(
           "numpy",
-          [](py::object self_py) -> py::object {
-            const auto& self = self_py.cast<const fastslide::Image&>();
-            py::object result;
-            // Dispatch to the correct type for ArrayView
-            fastslide::DispatchByDataType(
-                self.GetDataType(), [&]<typename T>() {
-                  // Get NDArrayView<T, 3>
-                  auto view = self.ArrayView<T>();
-                  // Cast to numpy array using the type caster we defined
-                  // Pass self_py as parent to keep Image alive
-                  result = py::cast(view,
-                                    py::return_value_policy::reference_internal,
-                                    self_py);
-                });
-            return result;
+          [](nb::handle self_py) -> nb::object {
+            const auto& self = nb::cast<const fastslide::Image&>(self_py);
+            return MakeNumpyView(self, self_py);
           },
-          "Get a numpy array view of the image data (zero-copy)");
+          "Get a numpy array view of the image data (zero-copy)")
+      .def(
+          "to_interleaved",
+          [](nb::handle self_py) -> nb::object {
+            // No-op fast path: when already interleaved, return the *same*
+            // Python object. No allocation, no data movement, no clone.
+            const auto& self = nb::cast<const fastslide::Image&>(self_py);
+            if (self.IsInterleaved()) {
+              return nb::borrow(self_py);
+            }
+            return nb::cast(self.ToInterleaved());
+          },
+          "Return an interleaved (HWC) view of this image.\n\n"
+          "If the image is already interleaved, returns ``self`` unchanged "
+          "(no copy). Otherwise allocates a new Image with the same pixels "
+          "in interleaved layout. Peak extra memory during conversion equals "
+          "the image size.")
+      .def(
+          "to_separate",
+          [](nb::handle self_py) -> nb::object {
+            // Symmetric no-op fast path for the planar/separate direction.
+            const auto& self = nb::cast<const fastslide::Image&>(self_py);
+            if (self.IsSeparate()) {
+              return nb::borrow(self_py);
+            }
+            return nb::cast(self.ToPlanar());
+          },
+          "Return a band-separate (CHW) view of this image.\n\n"
+          "If the image is already band-separate, returns ``self`` unchanged "
+          "(no copy). Otherwise allocates a new Image with the same pixels "
+          "in planar layout.");
 
   // Cache-related classes
-  py::class_<CacheInspectionStats>(m, "CacheInspectionStats")
-      .def_readwrite("capacity", &CacheInspectionStats::capacity)
-      .def_readwrite("size", &CacheInspectionStats::size)
-      .def_readwrite("hits", &CacheInspectionStats::hits)
-      .def_readwrite("misses", &CacheInspectionStats::misses)
-      .def_readwrite("hit_ratio", &CacheInspectionStats::hit_ratio)
-      .def_readwrite("memory_usage_mb", &CacheInspectionStats::memory_usage_mb)
-      .def_readwrite("recent_keys", &CacheInspectionStats::recent_keys)
-      .def_readwrite("key_frequencies", &CacheInspectionStats::key_frequencies);
+  nb::class_<CacheInspectionStats>(m, "CacheInspectionStats")
+      .def_rw("capacity_bytes", &CacheInspectionStats::capacity_bytes)
+      .def_rw("size", &CacheInspectionStats::size)
+      .def_rw("hits", &CacheInspectionStats::hits)
+      .def_rw("misses", &CacheInspectionStats::misses)
+      .def_rw("hit_ratio", &CacheInspectionStats::hit_ratio)
+      .def_rw("memory_usage_mb", &CacheInspectionStats::memory_usage_mb)
+      .def_rw("recent_keys", &CacheInspectionStats::recent_keys)
+      .def_rw("key_frequencies", &CacheInspectionStats::key_frequencies);
 
-  py::class_<fastslide::runtime::ITileCache,
-             std::shared_ptr<fastslide::runtime::ITileCache>>(m, "TileCache")
+  nb::class_<fastslide::runtime::ITileCache>(m, "TileCache")
       .def("get_stats", &fastslide::runtime::ITileCache::GetStats,
            "Get cache statistics")
-      .def("get_capacity", &fastslide::runtime::ITileCache::GetCapacity,
-           "Get cache capacity")
+      .def("get_capacity_bytes",
+           &fastslide::runtime::ITileCache::GetCapacityBytes,
+           "Get cache capacity in bytes")
       .def("get_size", &fastslide::runtime::ITileCache::GetSize,
-           "Get cache size")
+           "Get cache size (number of tiles)")
       .def("clear", &fastslide::runtime::ITileCache::Clear, "Clear cache");
 
-  py::class_<CacheManager, std::shared_ptr<CacheManager>>(m, "CacheManager")
+  nb::class_<CacheManager>(m, "CacheManager")
       .def_static(
           "create",
-          [](size_t capacity) -> std::shared_ptr<CacheManager> {
-            auto result = CacheManager::Create(capacity);
+          [](size_t capacity_bytes) -> std::shared_ptr<CacheManager> {
+            auto result = CacheManager::Create(capacity_bytes);
             if (!result.ok()) {
               ThrowPyErrorFromStatus(result.status());
             }
             return std::move(result).value();
           },
-          "Create cache manager", py::arg("capacity") = 1000)
+          "Create cache manager with the given byte capacity",
+          nb::arg("capacity_bytes") =
+              fastslide::python::kDefaultCacheManagerCapacityBytes)
       .def("clear", &CacheManager::Clear, "Clear all cached tiles")
       .def("get_basic_stats", &CacheManager::GetBasicStats,
            "Get basic cache statistics")
@@ -187,85 +213,117 @@ PYBIND11_MODULE(_fastslide, m) {
            "Get detailed cache statistics")
       .def(
           "resize",
-          [](CacheManager& self, size_t new_capacity) {
-            auto status = self.Resize(new_capacity);
+          [](CacheManager& self, size_t new_capacity_bytes) {
+            auto status = self.Resize(new_capacity_bytes);
             if (!status.ok()) {
               ThrowPyErrorFromStatus(status);
             }
           },
-          "Resize cache capacity", py::arg("new_capacity"));
+          "Resize cache capacity (in bytes)", nb::arg("new_capacity_bytes"));
 
   // Expose ITileCache::Stats
-  py::class_<fastslide::runtime::ITileCache::Stats>(m, "RuntimeCacheStats")
-      .def_readwrite("capacity",
-                     &fastslide::runtime::ITileCache::Stats::capacity)
-      .def_readwrite("size", &fastslide::runtime::ITileCache::Stats::size)
-      .def_readwrite("hits", &fastslide::runtime::ITileCache::Stats::hits)
-      .def_readwrite("misses", &fastslide::runtime::ITileCache::Stats::misses)
-      .def_readwrite("hit_ratio",
-                     &fastslide::runtime::ITileCache::Stats::hit_ratio)
-      .def_readwrite(
-          "memory_usage_bytes",
-          &fastslide::runtime::ITileCache::Stats::memory_usage_bytes);
+  nb::class_<fastslide::runtime::ITileCache::Stats>(m, "RuntimeCacheStats")
+      .def_rw("capacity_bytes",
+              &fastslide::runtime::ITileCache::Stats::capacity_bytes)
+      .def_rw("size", &fastslide::runtime::ITileCache::Stats::size)
+      .def_rw("hits", &fastslide::runtime::ITileCache::Stats::hits)
+      .def_rw("misses", &fastslide::runtime::ITileCache::Stats::misses)
+      .def_rw("hit_ratio", &fastslide::runtime::ITileCache::Stats::hit_ratio)
+      .def_rw("memory_usage_bytes",
+              &fastslide::runtime::ITileCache::Stats::memory_usage_bytes);
 
   // Basic cache statistics (for compatibility)
   m.attr("CacheStats") = m.attr("RuntimeCacheStats");
 
+  // Process-wide singleton cache manager. Mirrors the underlying C++ type
+  // name ``fastslide::runtime::GlobalCacheManager``; distinct from the
+  // per-instance ``CacheManager`` exposed above.
+  nb::class_<fastslide::runtime::GlobalCacheManager>(m, "GlobalCacheManager")
+      .def_static(
+          "instance",
+          []() -> fastslide::runtime::GlobalCacheManager* {
+            return &fastslide::runtime::GlobalCacheManager::Instance();
+          },
+          nb::rv_policy::reference,
+          "Return the process-wide singleton instance.")
+      .def(
+          "set_capacity_bytes",
+          [](fastslide::runtime::GlobalCacheManager& self,
+             size_t capacity_bytes) {
+            auto status = self.SetCapacityBytes(capacity_bytes);
+            if (!status.ok()) {
+              ThrowPyErrorFromStatus(status);
+            }
+          },
+          nb::arg("capacity_bytes"),
+          "Replace the global cache with a new LRU cache of the given "
+          "capacity (bytes). Drops all currently cached tiles.")
+      .def("get_capacity_bytes",
+           &fastslide::runtime::GlobalCacheManager::GetCapacityBytes,
+           "Get the current global cache capacity in bytes.")
+      .def("get_size", &fastslide::runtime::GlobalCacheManager::GetSize,
+           "Get the current number of cached tiles.")
+      .def("get_stats", &fastslide::runtime::GlobalCacheManager::GetStats,
+           "Get the global cache statistics.")
+      .def("clear", &fastslide::runtime::GlobalCacheManager::Clear,
+           nb::call_guard<nb::gil_scoped_release>(),
+           "Drop all entries from the global cache (capacity is preserved).");
+
   // Associated images accessor
-  py::class_<AssociatedImages>(m, "AssociatedImages")
+  nb::class_<AssociatedImages>(m, "AssociatedImages")
       .def("__getitem__", &AssociatedImages::GetItem,
-           "Get associated image by name (lazy loaded)", py::arg("name"))
+           "Get associated image by name (lazy loaded)", nb::arg("name"))
       .def("__contains__", &AssociatedImages::Contains,
-           "Check if associated image exists", py::arg("name"))
+           "Check if associated image exists", nb::arg("name"))
       .def("keys", &AssociatedImages::Keys,
            "Get list of associated image names")
       .def("get_dimensions", &AssociatedImages::GetDimensions,
-           "Get dimensions of associated image", py::arg("name"))
+           "Get dimensions of associated image", nb::arg("name"))
       .def("get_cache_size", &AssociatedImages::GetCacheSize,
            "Get number of cached images in memory")
       .def("clear_cache", &AssociatedImages::ClearCache,
            "Clear the associated image cache");
 
   // Associated data accessor (MRXS: XML, binary)
-  py::class_<AssociatedData>(m, "AssociatedData")
+  nb::class_<AssociatedData>(m, "AssociatedData")
       .def("__getitem__", &AssociatedData::GetItem,
            "Get associated data by name (lazy loaded)\n\n"
            "Returns:\n"
            "    str for XML data\n"
            "    bytes for binary data",
-           py::arg("name"))
+           nb::arg("name"))
       .def("__contains__", &AssociatedData::Contains,
-           "Check if associated data exists", py::arg("name"))
+           "Check if associated data exists", nb::arg("name"))
       .def("keys", &AssociatedData::Keys,
            "Get list of associated data names (non-image)")
       .def("get_type", &AssociatedData::GetType,
-           "Get data type without loading", py::arg("name"))
+           "Get data type without loading", nb::arg("name"))
       .def("get_cache_size", &AssociatedData::GetCacheSize,
            "Get number of cached data items in memory")
       .def("clear_cache", &AssociatedData::ClearCache,
            "Clear the associated data cache");
 
   // Main slide reader class with factory methods
-  py::class_<FastSlide>(m, "FastSlide")
+  nb::class_<FastSlide>(m, "FastSlide")
       .def_static(
           "from_file_path",
-          [](const py::object& file_path) {
+          [](const nb::object& file_path) {
             std::string path_str;
-            if (py::isinstance<py::str>(file_path)) {
-              path_str = py::cast<std::string>(file_path);
-            } else if (py::hasattr(file_path, "__fspath__")) {
+            if (nb::isinstance<nb::str>(file_path)) {
+              path_str = nb::cast<std::string>(file_path);
+            } else if (nb::hasattr(file_path, "__fspath__")) {
               // Handle pathlib.Path objects
               auto path_obj = file_path.attr("__fspath__")();
-              path_str = py::cast<std::string>(path_obj);
+              path_str = nb::cast<std::string>(path_obj);
             } else {
-              path_str = py::cast<std::string>(file_path);
+              path_str = nb::cast<std::string>(file_path);
             }
             return FastSlide::FromFilePath(path_str);
           },
           "Create FastSlide from file path (accepts str or pathlib.Path)",
-          py::arg("file_path"))
+          nb::arg("file_path"))
       .def_static("from_uri", &FastSlide::FromUri,
-                  "Create FastSlide from URI (future)", py::arg("uri"))
+                  "Create FastSlide from URI (future)", nb::arg("uri"))
 
       // Main reading method (level-native coordinates)
       .def(
@@ -286,8 +344,12 @@ PYBIND11_MODULE(_fastslide, m) {
           "view.\n\n"
           "Note: Coordinates are in level-native space. To convert from "
           "level-0\n"
-          "coordinates, use convert_level0_to_level_native().",
-          py::arg("location"), py::arg("level"), py::arg("size"))
+          "coordinates, use convert_level0_to_level_native().\n\n"
+          "The GIL is released for the duration of the read so that "
+          "concurrent\n"
+          "Python threads can perform overlapping reads in parallel.",
+          nb::arg("location"), nb::arg("level"), nb::arg("size"),
+          nb::call_guard<nb::gil_scoped_release>())
 
       // Coordinate conversion utilities
       .def("convert_level0_to_level_native",
@@ -299,7 +361,7 @@ PYBIND11_MODULE(_fastslide, m) {
            "    level: Target level\n\n"
            "Returns:\n"
            "    tuple: (level_native_x, level_native_y)",
-           py::arg("x"), py::arg("y"), py::arg("level"))
+           nb::arg("x"), nb::arg("y"), nb::arg("level"))
 
       .def("convert_level_native_to_level0",
            &FastSlide::ConvertLevelNativeToLevel0,
@@ -310,73 +372,77 @@ PYBIND11_MODULE(_fastslide, m) {
            "    level: Source level\n\n"
            "Returns:\n"
            "    tuple: (level_0_x, level_0_y)",
-           py::arg("x"), py::arg("y"), py::arg("level"))
+           nb::arg("x"), nb::arg("y"), nb::arg("level"))
 
       // Properties
-      .def_property_readonly("dimensions", &FastSlide::GetDimensions,
-                             "Slide dimensions (width, height) at level 0")
-      .def_property_readonly("level_dimensions", &FastSlide::GetLevelDimensions,
-                             "Tuple of (width, height) for each level")
-      .def_property_readonly("level_downsamples",
-                             &FastSlide::GetLevelDownsamples,
-                             "Tuple of downsample factors for each level")
-      .def_property_readonly("level_count", &FastSlide::GetLevelCount,
-                             "Number of levels in the slide")
-      .def_property_readonly("properties", &FastSlide::GetProperties,
-                             "Dictionary of slide properties and metadata")
-      .def_property_readonly("mpp", &FastSlide::GetMpp,
-                             "Microns per pixel as (mpp_x, mpp_y) tuple")
-      .def_property_readonly("bounds", &FastSlide::GetBounds,
-                             "Bounding box of non-empty region\n\n"
-                             "Returns tuple with coordinates and size:\n"
-                             "  (x, y) tuple: Top-left coordinates (level 0)\n"
-                             "  (width, height) tuple: Bounding box size")
-      .def_property_readonly("format", &FastSlide::GetFormat,
-                             "File format name")
-      .def_property_readonly(
+      .def_prop_ro("dimensions", &FastSlide::GetDimensions,
+                   "Slide dimensions (width, height) at level 0")
+      .def_prop_ro("level_dimensions", &FastSlide::GetLevelDimensions,
+                   "Tuple of (width, height) for each level")
+      .def_prop_ro("level_downsamples", &FastSlide::GetLevelDownsamples,
+                   "Tuple of downsample factors for each level")
+      .def_prop_ro("level_count", &FastSlide::GetLevelCount,
+                   "Number of levels in the slide")
+      .def_prop_ro("properties", &FastSlide::GetProperties,
+                   "Dictionary of slide properties and metadata")
+      .def_prop_ro("mpp", &FastSlide::GetMpp,
+                   "Microns per pixel as (mpp_x, mpp_y) tuple")
+      .def_prop_ro("bounds", &FastSlide::GetBounds,
+                   "Bounding box of non-empty region\n\n"
+                   "Returns tuple with coordinates and size:\n"
+                   "  (x, y) tuple: Top-left coordinates (level 0)\n"
+                   "  (width, height) tuple: Bounding box size")
+      .def_prop_ro("format", &FastSlide::GetFormat, "File format name")
+      .def_prop_ro("dtype", &FastSlide::GetDtype,
+                   "Pixel data type (e.g. 'uint8', 'uint16')")
+      .def_prop_ro(
           "quickhash", &FastSlide::GetQuickHash,
           "SHA-256 quickhash (unique identifier, OpenSlide-compatible)")
-      .def_property_readonly("channel_metadata", &FastSlide::GetChannelMetadata,
-                             "List of channel metadata dictionaries")
-      .def_property_readonly(
-          "associated_images", &FastSlide::GetAssociatedImages,
-          "Dictionary-like access to associated images (lazy loaded)",
-          py::return_value_policy::reference_internal)
-      .def_property_readonly("associated_data", &FastSlide::GetAssociatedData,
-                             "Dictionary-like access to associated data: XML, "
-                             "binary (lazy loaded, MRXS only)",
-                             py::return_value_policy::reference_internal)
-      .def_property_readonly("closed", &FastSlide::IsClosed,
-                             "True if the slide reader is closed")
-      .def_property_readonly("source_path", &FastSlide::GetSourcePath,
-                             "Source file path")
+      .def_prop_ro("channel_metadata", &FastSlide::GetChannelMetadata,
+                   "List of channel metadata dictionaries")
+      .def_prop_ro("associated_images", &FastSlide::GetAssociatedImages,
+                   "Dictionary-like access to associated images (lazy loaded)",
+                   nb::rv_policy::reference_internal)
+      .def_prop_ro("associated_data", &FastSlide::GetAssociatedData,
+                   "Dictionary-like access to associated data: XML, "
+                   "binary (lazy loaded, MRXS only)",
+                   nb::rv_policy::reference_internal)
+      .def_prop_ro("closed", &FastSlide::IsClosed,
+                   "True if the slide reader is closed")
+      .def_prop_ro("source_path", &FastSlide::GetSourcePath, "Source file path")
 
       // Utility methods
       .def("get_best_level_for_downsample",
            &FastSlide::GetBestLevelForDownsample,
            "Get the best level for a given downsample factor",
-           py::arg("downsample"))
+           nb::arg("downsample"))
 
-      // Cache management
-      .def("set_cache", &FastSlide::SetCache, "Set cache (accepts TileCache)",
-           py::arg("cache"))
-      // Overload for CacheManager for backward compatibility or convenience
+      // Cache management.
+      //
+      // `set_cache` accepts either a `TileCache` or a `CacheManager`. The
+      // single Python entrypoint dispatches on argument type so callers do
+      // not need to unwrap the manager themselves.
       .def(
           "set_cache",
-          [](FastSlide& self, std::shared_ptr<CacheManager> cm) {
-            self.SetCache(cm->GetCache());
+          [](FastSlide& self, const nb::object& cache) {
+            if (cache.is_none()) {
+              self.SetCache(nullptr);
+              return;
+            }
+            if (nb::isinstance<CacheManager>(cache)) {
+              auto manager = nb::cast<std::shared_ptr<CacheManager>>(cache);
+              self.SetCache(manager ? manager->GetCache() : nullptr);
+              return;
+            }
+            self.SetCache(
+                nb::cast<std::shared_ptr<fastslide::runtime::ITileCache>>(
+                    cache));
           },
-          "Set cache using CacheManager", py::arg("cache_manager"))
-      .def(
-          "set_cache_manager",
-          [](FastSlide& self, std::shared_ptr<CacheManager> cm) {
-            self.SetCache(cm->GetCache());
-          },
-          "Set custom cache manager (deprecated, use set_cache)",
-          py::arg("cache_manager"))
+          "Set cache (accepts TileCache, CacheManager, or None to disable).",
+          nb::arg("cache").none())
       .def("get_cache", &FastSlide::GetCache, "Get current cache")
-      .def_property_readonly("cache_enabled", &FastSlide::IsCacheEnabled,
-                             "True if caching is enabled")
+      .def_prop_ro("cache_enabled", &FastSlide::IsCacheEnabled,
+                   "True if caching is enabled")
 
       // Resource management
       .def("close", &FastSlide::Close,
@@ -385,7 +451,7 @@ PYBIND11_MODULE(_fastslide, m) {
       // Channel visibility controls
       .def(
           "set_visible_channels",
-          [](FastSlide& self, const py::object& channels) {
+          [](FastSlide& self, const nb::object& channels) {
             std::vector<size_t> channel_indices;
 
             // Handle None - show all channels
@@ -395,25 +461,27 @@ PYBIND11_MODULE(_fastslide, m) {
             }
 
             // Handle single integer
-            if (py::isinstance<py::int_>(channels)) {
-              int channel = py::cast<int>(channels);
+            if (nb::isinstance<nb::int_>(channels)) {
+              int channel = nb::cast<int>(channels);
               if (channel < 0) {
-                throw py::value_error("Channel index cannot be negative");
+                throw nb::value_error("Channel index cannot be negative");
               }
               channel_indices.push_back(static_cast<size_t>(channel));
-            } else if (py::isinstance<py::sequence>(channels) &&
-                       !py::isinstance<py::str>(channels)) {
+            } else if (nb::isinstance<nb::sequence>(channels) &&
+                       !nb::isinstance<nb::str>(channels)) {
               // Handle sequence (list, tuple, etc.)
-              py::sequence seq = py::cast<py::sequence>(channels);
-              channel_indices.reserve(seq.size());
+              nb::sequence seq = nb::cast<nb::sequence>(channels);
+              const size_t seq_len = nb::len(seq);
+              channel_indices.reserve(seq_len);
 
-              for (size_t i = 0; i < seq.size(); ++i) {
-                if (!py::isinstance<py::int_>(seq[i])) {
-                  throw py::type_error("All channel indices must be integers");
+              for (size_t i = 0; i < seq_len; ++i) {
+                nb::object item = seq[i];
+                if (!nb::isinstance<nb::int_>(item)) {
+                  throw nb::type_error("All channel indices must be integers");
                 }
-                int channel = py::cast<int>(seq[i]);
+                int channel = nb::cast<int>(item);
                 if (channel < 0) {
-                  throw py::value_error("Channel indices cannot be negative");
+                  throw nb::value_error("Channel indices cannot be negative");
                 }
                 channel_indices.push_back(static_cast<size_t>(channel));
               }
@@ -424,7 +492,7 @@ PYBIND11_MODULE(_fastslide, m) {
                   std::unique(channel_indices.begin(), channel_indices.end()),
                   channel_indices.end());
             } else {
-              throw py::type_error(
+              throw nb::type_error(
                   "channels must be an integer, list/tuple of integers, or "
                   "None");
             }
@@ -441,13 +509,13 @@ PYBIND11_MODULE(_fastslide, m) {
           "    slide.set_visible_channels(None)     # Show all channels\n\n"
           "Note: Channel indices are 0-based. Invalid indices will be ignored\n"
           "during read operations.",
-          py::arg("channels"))
+          nb::arg("channels"))
 
       .def("get_visible_channels", &FastSlide::GetVisibleChannels,
            "Get currently visible channel indices\n\n"
            "Returns:\n"
            "    list: List of visible channel indices (empty = all visible)",
-           py::return_value_policy::copy)
+           nb::rv_policy::copy)
 
       .def("show_all_channels", &FastSlide::ShowAllChannels,
            "Reset to show all channels\n\n"
@@ -455,7 +523,7 @@ PYBIND11_MODULE(_fastslide, m) {
 
       // Context manager support
       .def("__enter__", &FastSlide::__enter__,
-           py::return_value_policy::reference_internal)
+           nb::rv_policy::reference_internal)
       .def("__exit__", &FastSlide::__exit__);
 
   // Utility functions
@@ -473,8 +541,8 @@ PYBIND11_MODULE(_fastslide, m) {
             fastslide::runtime::GetGlobalRegistry().CreateReader(filename);
         return reader_or.ok();
       },
-      "Check if file format is supported", py::arg("filename"));
+      "Check if file format is supported", nb::arg("filename"));
 
   // Version and constants
-  m.attr("__version__") = "0.2.2";
+  m.attr("__version__") = "0.5.2";
 }

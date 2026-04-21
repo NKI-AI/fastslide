@@ -39,7 +39,7 @@ aifocore::Result<ZlibDecompressionResult> DecompressZlibImpl(
     const uint8_t* data, size_t compressed_size, size_t expected_size_hint,
     std::optional<size_t> max_output_size_bytes) {
   if (compressed_size > static_cast<size_t>(std::numeric_limits<uInt>::max())) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Compressed zlib payload too large: {} bytes",
                               compressed_size));
@@ -48,7 +48,7 @@ aifocore::Result<ZlibDecompressionResult> DecompressZlibImpl(
   if (max_output_size_bytes.has_value() &&
       *max_output_size_bytes >
           static_cast<size_t>(std::numeric_limits<uInt>::max())) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Max zlib output too large: {} bytes",
                               *max_output_size_bytes));
@@ -59,8 +59,8 @@ aifocore::Result<ZlibDecompressionResult> DecompressZlibImpl(
   strm.avail_in = static_cast<uInt>(compressed_size);
 
   if (inflateInit(&strm) != Z_OK) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Failed to initialize zlib");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to initialize zlib");
   }
 
   // Special case: if the maximum output size is 0, any non-empty decompressed
@@ -78,10 +78,10 @@ aifocore::Result<ZlibDecompressionResult> DecompressZlibImpl(
       return ZlibDecompressionResult{.data = {}, .actual_size_bytes = 0};
     }
     if (ret == Z_OK || ret == Z_STREAM_END || ret == Z_BUF_ERROR) {
-      return aifocore::Status(aifocore::StatusCode::kResourceExhausted,
-                              "Zlib decompression output exceeds limit");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kResourceExhausted,
+                                  "Zlib decompression output exceeds limit");
     }
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInternal,
         aifocore::fmt::format("Zlib decompression failed with error code: {}",
                               ret));
@@ -98,8 +98,8 @@ aifocore::Result<ZlibDecompressionResult> DecompressZlibImpl(
     const size_t already_written = static_cast<size_t>(strm.total_out);
     if (already_written > out.size()) {
       inflateEnd(&strm);
-      return aifocore::Status(aifocore::StatusCode::kInternal,
-                              "Zlib decompressor wrote past output buffer");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                  "Zlib decompressor wrote past output buffer");
     }
 
     if (already_written == out.size()) {
@@ -112,8 +112,9 @@ aifocore::Result<ZlibDecompressionResult> DecompressZlibImpl(
       if (max_output_size_bytes.has_value()) {
         if (out.size() >= *max_output_size_bytes) {
           inflateEnd(&strm);
-          return aifocore::Status(aifocore::StatusCode::kResourceExhausted,
-                                  "Zlib decompression output exceeds limit");
+          return AIFOCORE_MAKE_STATUS(
+              aifocore::StatusCode::kResourceExhausted,
+              "Zlib decompression output exceeds limit");
         }
         new_size = std::min(new_size, *max_output_size_bytes);
       }
@@ -124,7 +125,7 @@ aifocore::Result<ZlibDecompressionResult> DecompressZlibImpl(
     const size_t avail_out = out.size() - already_written;
     if (avail_out > static_cast<size_t>(std::numeric_limits<uInt>::max())) {
       inflateEnd(&strm);
-      return aifocore::Status(
+      return AIFOCORE_MAKE_STATUS(
           aifocore::StatusCode::kInvalidArgument,
           "Zlib decompression output chunk too large for zlib");
     }
@@ -147,7 +148,7 @@ aifocore::Result<ZlibDecompressionResult> DecompressZlibImpl(
     }
 
     inflateEnd(&strm);
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInternal,
         aifocore::fmt::format("Zlib decompression failed with error code: {}",
                               ret));
@@ -157,8 +158,8 @@ aifocore::Result<ZlibDecompressionResult> DecompressZlibImpl(
   inflateEnd(&strm);
 
   if (actual_size > out.size()) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Zlib decompression produced invalid size");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Zlib decompression produced invalid size");
   }
 
   out.resize(actual_size);
@@ -171,8 +172,8 @@ aifocore::Result<ZlibDecompressionResult> DecompressZlibImpl(
 aifocore::Result<int32_t> ReadLeInt32(FILE* file) {
   uint8_t buf[4];
   if (aifocore::portable_fread(buf, sizeof(buf), file) != sizeof(buf)) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Failed to read 4 bytes for int32");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to read 4 bytes for int32");
   }
   // Little-endian byte order
   return static_cast<int32_t>(buf[0] | (buf[1] << 8) | (buf[2] << 16) |
@@ -182,8 +183,8 @@ aifocore::Result<int32_t> ReadLeInt32(FILE* file) {
 aifocore::Result<uint32_t> ReadLeUInt32(FILE* file) {
   uint8_t buf[4];
   if (aifocore::portable_fread(buf, sizeof(buf), file) != sizeof(buf)) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Failed to read 4 bytes for uint32");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to read 4 bytes for uint32");
   }
   // Little-endian byte order
   return static_cast<uint32_t>(buf[0] | (buf[1] << 8) | (buf[2] << 16) |
@@ -193,8 +194,8 @@ aifocore::Result<uint32_t> ReadLeUInt32(FILE* file) {
 aifocore::Result<uint64_t> ReadLeUInt64(FILE* file) {
   uint8_t buf[8];
   if (aifocore::portable_fread(buf, sizeof(buf), file) != sizeof(buf)) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Failed to read 8 bytes for uint64");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to read 8 bytes for uint64");
   }
   uint64_t v = 0;
   for (int i = 0; i < 8; ++i) {

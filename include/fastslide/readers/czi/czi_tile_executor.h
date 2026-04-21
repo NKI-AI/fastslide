@@ -27,7 +27,7 @@ namespace fastslide {
 class CziReader;
 
 namespace runtime {
-class TileWriter;
+class Canvas;
 }  // namespace runtime
 
 /// @brief Tile executor for CZI (two-stage pipeline stage 2).
@@ -35,7 +35,7 @@ class CziTileExecutor : public CachedTileExecutor<CziTileExecutor> {
  public:
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
                                       const CziReader& reader,
-                                      runtime::TileWriter& writer);
+                                      runtime::Canvas& writer);
 
   // CachedTileExecutor hooks.
   static runtime::TileKey MakeCacheKey(const core::TileReadOp& op,
@@ -47,7 +47,7 @@ class CziTileExecutor : public CachedTileExecutor<CziTileExecutor> {
  private:
   static aifocore::Status ExecuteTileOperation(const core::TileReadOp& op,
                                                const CziReader& reader,
-                                               runtime::TileWriter& writer,
+                                               runtime::Canvas& writer,
                                                std::mutex& writer_mutex);
 };
 

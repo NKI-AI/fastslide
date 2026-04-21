@@ -41,6 +41,7 @@ namespace fastslide {
 // Forward-declare ImageFormat to keep this header lightweight and independent
 // of aifocore numeric utilities.
 enum class ImageFormat : int;
+enum class DataType;
 
 namespace core {
 
@@ -140,6 +141,7 @@ struct SlideDescriptor {
   std::vector<ChannelMetadata> channels;       ///< Channel metadata
   SlideProperties properties;                  ///< Physical properties
   fastslide::ImageFormat format;               ///< Image format type
+  fastslide::DataType data_type{};             ///< Pixel data type
   ImageDimensions tile_size;                   ///< Native tile size
   std::vector<std::string> associated_images;  ///< Associated image names
 

@@ -66,6 +66,10 @@ class IsyntaxReader : public SlideReader, public ReaderFactory<IsyntaxReader> {
     return ImageFormat::kRGB;
   }
 
+  [[nodiscard]] DataType GetDataType() const override {
+    return DataType::kUInt8;
+  }
+
   [[nodiscard]] ImageDimensions GetTileSize() const override;
 
   // Two-stage pipeline implementation
@@ -73,7 +77,7 @@ class IsyntaxReader : public SlideReader, public ReaderFactory<IsyntaxReader> {
       const core::TileRequest& request) const override;
 
   [[nodiscard]] aifocore::Status ExecutePlan(
-      const core::TilePlan& plan, runtime::TileWriter& writer) const override;
+      const core::TilePlan& plan, runtime::Canvas& writer) const override;
 
   // Internal accessors
   const isyntax::IsyntaxFile& GetIsyntaxFile() const { return *isyntax_file_; }

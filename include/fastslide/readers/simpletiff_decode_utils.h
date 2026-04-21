@@ -19,10 +19,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string_view>
 #include <vector>
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
+#include "fastslide/image.h"
 #include "simpletiff/index.h"
 #include "simpletiff/reader.h"
 
@@ -62,7 +64,7 @@ inline aifocore::Result<DecodedInterleavedView> ReadTileOrStrip(
     uint32_t tile_or_strip_index, simpletiff::DecodeContext& decode_ctx,
     std::vector<uint8_t>& buffer) {
   if (page_index >= tiff_index.NumPages()) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Page {} out of range ({} pages)", page_index,
                               tiff_index.NumPages()));
@@ -71,8 +73,8 @@ inline aifocore::Result<DecodedInterleavedView> ReadTileOrStrip(
   const auto& page_header = tiff_index.Page(page_index);
 
   if (page_header.samples_per_pixel == 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Invalid SamplesPerPixel=0");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Invalid SamplesPerPixel=0");
   }
 
   const size_t bytes_per_sample =
@@ -243,6 +245,50 @@ inline aifocore::Result<std::span<const uint8_t>> CropInterleavedRoi(
   }
 
   return std::span<const uint8_t>(dst.data(), crop_total_bytes);
+}
+
+/// @brief Decode a full TIFF page into a freshly allocated RGB(A) image.
+///
+/// Used for "associated images" (label/macro/thumbnail) of pyramidal TIFF
+/// formats (Aperio, QPTIFF, GenericTIFF, ...). Validates the page index,
+/// allocates an RGBImage sized to `size`, and dispatches to
+/// `simpletiff::ReadPage`, which handles both tiled and striped pages.
+///
+/// @param tiff_index   TIFF index for the open file.
+/// @param page         TIFF page index to decode.
+/// @param size         Expected image size (width, height) in pixels; used to
+///                     allocate the destination buffer and crop ROI.
+/// @param image_name   Display name used in error messages (e.g. "label").
+/// @return A populated `RGBImage` or an error status.
+inline aifocore::Result<RGBImage> ReadAssociatedTiffPage(
+    const simpletiff::TiffIndex& tiff_index, uint32_t page,
+    ImageDimensions size, std::string_view image_name) {
+  if (page >= tiff_index.NumPages()) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInternal,
+        aifocore::fmt::format("Invalid page {} for associated image '{}'", page,
+                              image_name));
+  }
+
+  const auto& page_header = tiff_index.Page(page);
+  const uint32_t width = size[0];
+  const uint32_t height = size[1];
+  const uint16_t samples_per_pixel = page_header.samples_per_pixel;
+
+  RGBImage rgb_image({width, height}, ImageFormat::kRGB, DataType::kUInt8);
+
+  simpletiff::DecodeContext ctx;
+  simpletiff::Roi roi{0, 0, width, height};
+  const int stride = static_cast<int>(width) * samples_per_pixel;
+  auto result = simpletiff::ReadPage(tiff_index, page, roi, ctx,
+                                     rgb_image.GetData(), stride);
+  if (!result) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInternal,
+        aifocore::fmt::format("Failed to read associated image '{}': {}",
+                              image_name, result.error().message()));
+  }
+  return rgb_image;
 }
 
 }  // namespace simpletiff_decode

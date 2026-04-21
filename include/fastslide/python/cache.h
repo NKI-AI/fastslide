@@ -31,7 +31,7 @@ using fastslide::runtime::LRUTileCache;
 
 /// @brief Enhanced cache statistics for Python inspection
 struct CacheInspectionStats {
-  size_t capacity;
+  size_t capacity_bytes;
   size_t size;
   size_t hits;
   size_t misses;
@@ -41,17 +41,21 @@ struct CacheInspectionStats {
   std::unordered_map<std::string, size_t> key_frequencies;
 };
 
+/// @brief Default capacity for Python-created caches: 1 GiB.
+inline constexpr size_t kDefaultCacheManagerCapacityBytes =
+    static_cast<size_t>(1) << 30;
+
 /// @brief Cache manager with inspection capabilities
 class CacheManager {
  private:
   std::shared_ptr<ITileCache> cache_;
 
  public:
-  /// @brief Create a CacheManager with given capacity
-  /// @param capacity Cache capacity
+  /// @brief Create a CacheManager with given capacity in bytes
+  /// @param capacity_bytes Cache capacity in bytes (default 1 GiB)
   /// @return Result containing the CacheManager
   [[nodiscard]] static aifocore::Result<std::shared_ptr<CacheManager>> Create(
-      size_t capacity = 1000);
+      size_t capacity_bytes = kDefaultCacheManagerCapacityBytes);
 
   /// @brief Set the cache implementation directly (e.g. dependency injection)
   /// @param cache The cache implementation
@@ -65,7 +69,9 @@ class CacheManager {
 
   [[nodiscard]] CacheInspectionStats GetDetailedStats() const;
 
-  [[nodiscard]] aifocore::Status Resize(size_t new_capacity);
+  /// @brief Resize the underlying cache by replacing it with a new LRU cache.
+  /// @param new_capacity_bytes New capacity in bytes
+  [[nodiscard]] aifocore::Status Resize(size_t new_capacity_bytes);
 
  private:
   explicit CacheManager(std::shared_ptr<ITileCache> cache);

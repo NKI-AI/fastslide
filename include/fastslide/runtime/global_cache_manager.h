@@ -52,7 +52,7 @@ namespace runtime {
 /// @code
 /// // Configure global cache at application startup
 /// auto& manager = GlobalCacheManager::Instance();
-/// manager.SetCapacity(5000);  // 5000 tiles
+/// manager.SetCapacityBytes(static_cast<size_t>(2) << 30);  // 2 GiB
 ///
 /// // All readers will automatically use this cache when enabled
 /// auto reader = registry.CreateReader("slide.mrxs");
@@ -62,7 +62,7 @@ class GlobalCacheManager {
   /// @brief Get the singleton instance
   ///
   /// Returns the global singleton instance of the cache manager. The instance
-  /// is created on first access with a default capacity of 1000 tiles.
+  /// is created on first access with a default capacity of 1 GiB.
   ///
   /// @return Reference to the global cache manager
   /// @note Thread-safe
@@ -87,20 +87,20 @@ class GlobalCacheManager {
   /// @note Thread-safe. Clears the existing cache.
   void SetCache(std::shared_ptr<ITileCache> cache);
 
-  /// @brief Set the capacity of the global cache
+  /// @brief Set the capacity of the global cache in bytes
   ///
-  /// Updates the capacity of the current cache. If using the default LRU
-  /// cache, this will clear all cached tiles and set the new capacity.
+  /// Replaces the current cache with a new LRU cache of the requested byte
+  /// capacity. All previously cached tiles are dropped.
   ///
-  /// @param capacity New cache capacity (number of tiles)
+  /// @param capacity_bytes New cache capacity in bytes
   /// @return Status indicating success or failure
-  /// @note Thread-safe. Clears the existing cache.
-  [[nodiscard]] aifocore::Status SetCapacity(size_t capacity);
+  /// @note Thread-safe. Replaces the existing cache (clears all entries).
+  [[nodiscard]] aifocore::Status SetCapacityBytes(size_t capacity_bytes);
 
-  /// @brief Get current cache capacity
-  /// @return Maximum number of tiles that can be cached
+  /// @brief Get current cache capacity in bytes
+  /// @return Maximum cache capacity in bytes
   /// @note Thread-safe
-  [[nodiscard]] size_t GetCapacity() const;
+  [[nodiscard]] size_t GetCapacityBytes() const;
 
   /// @brief Get current cache size
   /// @return Current number of cached tiles

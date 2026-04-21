@@ -21,15 +21,18 @@
 #include <span>
 #include <vector>
 
+#include "aifocore/status/result.h"
+
 namespace simpletiff {
 
-/// Decompress ZSTD compressed data
+/// Decompress ZSTD compressed data.
 ///
 /// @param compressed Compressed data
 /// @param decompressed Output buffer (will be resized)
-/// @return true on success, false on failure
-bool DecompressZstd(std::span<const uint8_t> compressed,
-                    std::vector<uint8_t>& decompressed);
+/// @return Ok status on success; an error status describing the failure
+///         otherwise (empty input, missing frame size, decode error, ...).
+::aifocore::Result<void> DecompressZstd(std::span<const uint8_t> compressed,
+                                        std::vector<uint8_t>& decompressed);
 
 }  // namespace simpletiff
 

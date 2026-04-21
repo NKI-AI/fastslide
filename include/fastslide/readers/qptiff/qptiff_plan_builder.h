@@ -65,15 +65,6 @@ class QptiffPlanBuilder {
       const std::vector<QpTiffLevelInfo>& pyramid,
       PlanarConfig output_planar_config,
       const simpletiff::TiffIndex& tiff_index);
-
- private:
-  /// @brief Validate the request parameters
-  /// @param request The tile request
-  /// @param pyramid Pyramid levels information
-  /// @return Status indicating success or failure
-  static aifocore::Status ValidateRequest(
-      const core::TileRequest& request,
-      const std::vector<QpTiffLevelInfo>& pyramid);
 };
 
 }  // namespace fastslide

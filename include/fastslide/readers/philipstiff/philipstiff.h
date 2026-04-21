@@ -38,7 +38,7 @@ struct PhilipsTiffLevelInfo {
   double downsample_factor = 0.0;  ///< Downsample factor relative to level 0
 };
 
-/// @brief Philips TIFF reader (vendor-specific behavior aligned with OpenSlide)
+/// @brief Philips TIFF reader
 class PhilipsTiffReader : public TiffBasedReader,
                           public TiffReaderFactory<PhilipsTiffReader> {
  public:
@@ -69,13 +69,17 @@ class PhilipsTiffReader : public TiffBasedReader,
     return ImageFormat::kRGB;
   }
 
+  [[nodiscard]] DataType GetDataType() const override {
+    return DataType::kUInt8;
+  }
+
   [[nodiscard]] ImageDimensions GetTileSize() const override;
   [[nodiscard]] aifocore::Result<std::string> GetQuickHash() const override;
 
   [[nodiscard]] aifocore::Result<core::TilePlan> PrepareRequest(
       const core::TileRequest& request) const override;
   [[nodiscard]] aifocore::Status ExecutePlan(
-      const core::TilePlan& plan, runtime::TileWriter& writer) const override;
+      const core::TilePlan& plan, runtime::Canvas& writer) const override;
 
   [[nodiscard]] const std::vector<PhilipsTiffLevelInfo>& GetPyramidLevels()
       const {

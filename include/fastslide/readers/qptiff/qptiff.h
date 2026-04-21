@@ -185,6 +185,8 @@ class QpTiffReader : public TiffBasedReader,
 
   [[nodiscard]] ImageFormat GetImageFormat() const override { return format_; }
 
+  [[nodiscard]] DataType GetDataType() const override { return data_type_; }
+
   [[nodiscard]] ImageDimensions GetTileSize() const override;
 
   // Two-stage pipeline implementation
@@ -192,7 +194,7 @@ class QpTiffReader : public TiffBasedReader,
       const core::TileRequest& request) const override;
 
   [[nodiscard]] aifocore::Status ExecutePlan(
-      const core::TilePlan& plan, runtime::TileWriter& writer) const override;
+      const core::TilePlan& plan, runtime::Canvas& writer) const override;
 
   // Additional QPTIFF-specific methods
   /// @brief Get QPTIFF-specific metadata
@@ -275,7 +277,8 @@ class QpTiffReader : public TiffBasedReader,
   PlanarConfig output_planar_config_ =
       PlanarConfig::kSeparate;  ///< Default to kSeparate for spectral images
   ImageFormat format_ =
-      ImageFormat::kSpectral;  ///< Image format (RGB or Spectral)
+      ImageFormat::kSpectral;              ///< Image format (RGB or Spectral)
+  DataType data_type_ = DataType::kUInt8;  ///< Pixel data type
 
   /// @brief SimpleTiff index for thread-safe TIFF operations
   std::unique_ptr<simpletiff::TiffIndex> tiff_index_;

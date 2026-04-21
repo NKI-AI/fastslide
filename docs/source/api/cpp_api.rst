@@ -235,7 +235,10 @@ Runtime System
 .. doxygenclass:: fastslide::FormatDescriptor
    :members:
 
-.. doxygenclass:: fastslide::runtime::PluginLoader
+.. doxygenclass:: fastslide::runtime::BuiltInPluginsInitializer
+   :members:
+
+.. doxygenclass:: fastslide::runtime::PluginLoadContext
    :members:
 
 Error Handling

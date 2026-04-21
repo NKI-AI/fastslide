@@ -78,17 +78,30 @@ aifocore::Result<std::unique_ptr<SlideReader>> ReaderRegistry::CreateReader(
   std::filesystem::path path(filename);
   std::string extension;
 
-  const std::string filename_str = path.filename().string();
-  std::string filename_lower = filename_str;
-  std::transform(filename_lower.begin(), filename_lower.end(),
-                 filename_lower.begin(),
+  // Normalize the full path, stripping trailing slashes so directory-based
+  // formats (.zarr/, .ome.zarr/) match cleanly.
+  std::string full_lower(filename);
+  while (!full_lower.empty() &&
+         (full_lower.back() == '/' || full_lower.back() == '\\')) {
+    full_lower.pop_back();
+  }
+  std::transform(full_lower.begin(), full_lower.end(), full_lower.begin(),
                  [](unsigned char c) { return std::tolower(c); });
+
+  const std::string filename_str =
+      std::filesystem::path(full_lower).filename().string();
+  std::string filename_lower = filename_str;
 
   if (filename_lower.size() >= 8 && filename_lower.ends_with(".ome.tif")) {
     extension = ".ome.tif";
   } else if (filename_lower.size() >= 9 &&
              filename_lower.ends_with(".ome.tiff")) {
     extension = ".ome.tiff";
+  } else if (filename_lower.size() >= 9 &&
+             filename_lower.ends_with(".ome.zarr")) {
+    extension = ".ome.zarr";
+  } else if (filename_lower.size() >= 5 && filename_lower.ends_with(".zarr")) {
+    extension = ".zarr";
   } else {
     extension = path.extension().string();
   }

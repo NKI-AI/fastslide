@@ -30,7 +30,6 @@
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/ndpitiff/ndpitiff.h"
 #include "fastslide/readers/simpletiff_decode_utils.h"
-#include "fastslide/readers/simpletiff_plan_builder_utils.h"
 #include "fastslide/readers/simpletiff_tile_executor_utils.h"
 #include "simpletiff/index.h"
 #include "simpletiff/io_utils.h"
@@ -106,13 +105,14 @@ void TraceMaybe(const NdpiTileTraceConfig& cfg, std::mutex& log_mutex,
 
 }  // namespace
 
-aifocore::Status NdpiTiffTileExecutor::ExecutePlan(
-    const core::TilePlan& plan, const NdpiTiffReader& reader,
-    runtime::TileWriter& writer) {
+aifocore::Status NdpiTiffTileExecutor::ExecutePlan(const core::TilePlan& plan,
+                                                   const NdpiTiffReader& reader,
+                                                   runtime::Canvas& writer) {
   const int level = plan.request.level;
   if (level < 0 || level >= reader.GetLevelCount()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            aifocore::fmt::format("Invalid level: {}", level));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Invalid level: {}", level));
   }
 
   const auto& tiff_index = reader.GetTiffIndex();
@@ -121,23 +121,19 @@ aifocore::Status NdpiTiffTileExecutor::ExecutePlan(
   std::atomic<uint64_t> completed{0};
   return readers::simpletiff_exec::ExecuteOpsWithThreadPoolStopOnError(
       plan, writer,
-      [&](const core::TileReadOp& operation, runtime::TileWriter& writer_ref,
+      [&](const core::TileReadOp& operation, runtime::Canvas& writer_ref,
           std::mutex& writer_mutex) -> aifocore::Status {
         const auto t0 = std::chrono::steady_clock::now();
         if (operation.source_id >= tiff_index.NumPages()) {
-          return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                                  aifocore::fmt::format("Page {} out of range",
-                                                        operation.source_id));
+          return AIFOCORE_MAKE_STATUS(
+              aifocore::StatusCode::kInvalidArgument,
+              aifocore::fmt::format("Page {} out of range",
+                                    operation.source_id));
         }
 
         const auto& page_header = tiff_index.Page(operation.source_id);
         const uint32_t tile_channels =
             static_cast<uint32_t>(page_header.samples_per_pixel);
-        const size_t bytes_per_sample =
-            static_cast<size_t>(readers::simpletiff_plan::BytesPerSample(
-                page_header.bits_per_sample));
-        const size_t bytes_per_pixel =
-            bytes_per_sample * static_cast<size_t>(tile_channels);
 
         static thread_local simpletiff::DecodeContext decode_ctx;
         static thread_local std::vector<uint8_t> raw_compressed;
@@ -169,7 +165,7 @@ aifocore::Status NdpiTiffTileExecutor::ExecutePlan(
           auto rr = simpletiff::ReadRawTile(tiff_index, operation.source_id,
                                             tile_index, raw_compressed);
           if (!rr.ok()) {
-            return aifocore::Status(
+            return AIFOCORE_MAKE_STATUS(
                 aifocore::StatusCode::kInternal,
                 aifocore::fmt::format(
                     "Failed to read raw tile {} from page {}: {}", tile_index,
@@ -188,8 +184,8 @@ aifocore::Status NdpiTiffTileExecutor::ExecutePlan(
           } else {
             const auto& tiles = tiff_index.Tiles(page_header.payload_id);
             if (tiles.tiles_x == 0 || tiles.tile_w == 0 || tiles.tile_h == 0) {
-              return aifocore::Status(aifocore::StatusCode::kInternal,
-                                      "Invalid NDPI tile geometry");
+              return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                          "Invalid NDPI tile geometry");
             }
             const uint32_t tile_x = tile_index % tiles.tiles_x;
             const uint32_t tile_y = tile_index / tiles.tiles_x;
@@ -202,7 +198,7 @@ aifocore::Status NdpiTiffTileExecutor::ExecutePlan(
             if (actual_w == 0 || actual_h == 0 ||
                 actual_w > std::numeric_limits<uint16_t>::max() ||
                 actual_h > std::numeric_limits<uint16_t>::max()) {
-              return aifocore::Status(
+              return AIFOCORE_MAKE_STATUS(
                   aifocore::StatusCode::kInternal,
                   aifocore::fmt::format("Invalid NDPI edge tile size {}x{}",
                                         actual_w, actual_h));
@@ -240,7 +236,7 @@ aifocore::Status NdpiTiffTileExecutor::ExecutePlan(
           if (!simpletiff::DecodeJpeg(decode_ctx, jpeg_stream_span, decoded_w,
                                       decoded_h, decoded_buffer,
                                       jpeg_options)) {
-            return aifocore::Status(
+            return AIFOCORE_MAKE_STATUS(
                 aifocore::StatusCode::kInternal,
                 aifocore::fmt::format(
                     "NDPI JPEG decode failed (page {} tile {})",
@@ -261,32 +257,9 @@ aifocore::Status NdpiTiffTileExecutor::ExecutePlan(
                                 decode_ctx, decoded_buffer));
         }
 
-        const uint32_t src_x = operation.transform.source.x;
-        const uint32_t src_y = operation.transform.source.y;
-        const uint32_t src_w = operation.transform.source.width;
-        const uint32_t src_h = operation.transform.source.height;
-
-        const size_t crop_bytes =
-            static_cast<size_t>(src_w) * src_h * bytes_per_pixel;
-        uint8_t* cropped_ptr = buffers.GetCropBuffer(crop_bytes);
-        const auto cropped_span = std::span<uint8_t>(cropped_ptr, crop_bytes);
-        AIFOCORE_ASSIGN_OR_RETURN(
-            auto cropped_view,
-            readers::simpletiff_decode::CropInterleavedRoi(
-                decoded_view.data, decoded_view.width, decoded_view.height,
-                readers::simpletiff_decode::RectU32{
-                    .x = src_x, .y = src_y, .width = src_w, .height = src_h},
-                bytes_per_pixel, cropped_span));
-
-        core::TileReadOp modified_op = operation;
-        modified_op.transform.source.x = 0;
-        modified_op.transform.source.y = 0;
-        modified_op.transform.source.width = src_w;
-        modified_op.transform.source.height = src_h;
-
-        aifocore::Status st = readers::simpletiff_exec::WriteTileMaybeLocked(
-            writer_ref, modified_op, cropped_view, src_w, src_h, tile_channels,
-            writer_mutex);
+        aifocore::Status st = readers::simpletiff_exec::PaintTileMaybeLocked(
+            writer_ref, operation, decoded_view.data, decoded_view.width,
+            decoded_view.height, tile_channels, writer_mutex);
         const auto t1 = std::chrono::steady_clock::now();
         const uint64_t done =
             completed.fetch_add(1, std::memory_order_relaxed) + 1;

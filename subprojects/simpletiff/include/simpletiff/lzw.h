@@ -21,15 +21,18 @@
 #include <span>
 #include <vector>
 
+#include "aifocore/status/result.h"
+
 namespace simpletiff {
 
-/// Decompress LZW compressed data (TIFF-style MSB encoding)
+/// Decompress LZW compressed data (TIFF-style MSB encoding).
 ///
 /// @param compressed Compressed data
 /// @param decompressed Output buffer (will be resized)
-/// @return true on success, false on failure
-bool DecompressLzw(std::span<const uint8_t> compressed,
-                   std::vector<uint8_t>& decompressed);
+/// @return Ok status on success; an error status describing the failure
+///         otherwise (truncated stream, invalid header, table overflow, ...).
+::aifocore::Result<void> DecompressLzw(std::span<const uint8_t> compressed,
+                                       std::vector<uint8_t>& decompressed);
 
 }  // namespace simpletiff
 

@@ -26,13 +26,20 @@
 namespace fastslide {
 namespace runtime {
 
+namespace {
+// Default global cache capacity: 1 GiB. Matches LRUTileCache::Create()'s
+// default and is sized so that the typical 256 KiB-1 MiB tiles can fit a
+// few thousand entries.
+constexpr size_t kDefaultGlobalCacheCapacityBytes = static_cast<size_t>(1)
+                                                    << 30;
+}  // namespace
+
 GlobalCacheManager::GlobalCacheManager() {
-  // Create default LRU cache with 1000 tile capacity
-  auto cache_result = LRUTileCache::Create(1000);
+  auto cache_result = LRUTileCache::Create(kDefaultGlobalCacheCapacityBytes);
   if (cache_result.ok()) {
     cache_ = std::move(*cache_result);
   } else {
-    // This should never happen with valid capacity, but handle gracefully
+    // Should not happen with a valid non-zero capacity, but be defensive.
     cache_ = nullptr;
   }
 }
@@ -52,22 +59,17 @@ void GlobalCacheManager::SetCache(std::shared_ptr<ITileCache> cache) {
   cache_ = std::move(cache);
 }
 
-aifocore::Status GlobalCacheManager::SetCapacity(size_t capacity) {
+aifocore::Status GlobalCacheManager::SetCapacityBytes(size_t capacity_bytes) {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  // Create new LRU cache with new capacity
-  auto cache_result = LRUTileCache::Create(capacity);
-  if (!cache_result.ok()) {
-    return cache_result.status();
-  }
-  cache_ = std::move(*cache_result);
+  AIFOCORE_ASSIGN_OR_RETURN(cache_, LRUTileCache::Create(capacity_bytes));
 
   return aifocore::Status::OkStatus();
 }
 
-size_t GlobalCacheManager::GetCapacity() const {
+size_t GlobalCacheManager::GetCapacityBytes() const {
   std::lock_guard<std::mutex> lock(mutex_);
-  return cache_ ? cache_->GetCapacity() : 0;
+  return cache_ ? cache_->GetCapacityBytes() : 0;
 }
 
 size_t GlobalCacheManager::GetSize() const {

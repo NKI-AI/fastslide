@@ -31,10 +31,6 @@ namespace {
 
 aifocore::Result<std::pair<double, double>> ParsePixelSpacing(
     std::string_view spacing_text) {
-  // OpenSlide expects two quoted values separated by space; it interprets them
-  // as:
-  // - row spacing first, column spacing second
-  // and returns w=column, h=row.
   std::string normalized(spacing_text);
   for (char& character : normalized) {
     if (character == '"') {
@@ -54,16 +50,15 @@ aifocore::Result<std::pair<double, double>> ParsePixelSpacing(
   char* end_ptr = nullptr;
   const double first = std::strtod(ptr, &end_ptr);
   if (end_ptr == ptr) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Could not parse pixel spacing");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Could not parse pixel spacing");
   }
   ptr = end_ptr;
   const double second = std::strtod(ptr, &end_ptr);
   if (end_ptr == ptr) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Could not parse pixel spacing");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Could not parse pixel spacing");
   }
-  // Return (w, h) in the OpenSlide order (column, row).
   return std::make_pair(second, first);
 }
 
@@ -74,19 +69,19 @@ aifocore::Result<pugi::xml_document> ParsePhilipsXml(
   const pugi::xml_parse_result parse_result =
       doc.load_string(xml_string.c_str());
   if (!parse_result) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Failed to parse Philips XML ImageDescription");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Failed to parse Philips XML ImageDescription");
   }
   const pugi::xml_node root = doc.document_element();
   if (std::string_view(root.name()) != "DataObject") {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Philips XML root tag is not DataObject");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Philips XML root tag is not DataObject");
   }
   const pugi::xml_attribute root_type = root.attribute("ObjectType");
   if (root_type.empty() ||
       std::string_view(root_type.value()) != "DPUfsImport") {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Philips XML DataObject is not DPUfsImport");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Philips XML DataObject is not DPUfsImport");
   }
   return doc;
 }
@@ -135,13 +130,14 @@ ExtractPixelDataRepresentationSpacings(pugi::xml_node wsi_scanned_image) {
   const pugi::xml_node pixel_data_seq_attr = FindChildAttributeByName(
       wsi_scanned_image, "PIIM_PIXEL_DATA_REPRESENTATION_SEQUENCE");
   if (pixel_data_seq_attr.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "Missing PIIM_PIXEL_DATA_REPRESENTATION_SEQUENCE");
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kNotFound,
+        "Missing PIIM_PIXEL_DATA_REPRESENTATION_SEQUENCE");
   }
   const pugi::xml_node pixel_array = pixel_data_seq_attr.child("Array");
   if (pixel_array.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "Missing PixelDataRepresentation Array");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "Missing PixelDataRepresentation Array");
   }
 
   std::vector<std::pair<double, double>> spacings;
@@ -167,8 +163,8 @@ ExtractPixelDataRepresentationSpacings(pugi::xml_node wsi_scanned_image) {
     }
   }
   if (spacings.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "No Philips DICOM_PIXEL_SPACING entries found");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "No Philips DICOM_PIXEL_SPACING entries found");
   }
   return spacings;
 }
@@ -179,8 +175,8 @@ ExtractLevelPixelSpacingsFromXml(std::string_view xml_text) {
   const pugi::xml_node root = doc.document_element();
   const pugi::xml_node wsi_scanned_image = FindWsiScannedImage(root);
   if (wsi_scanned_image.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "Missing WSI scanned image in XML");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "Missing WSI scanned image in XML");
   }
   return ExtractPixelDataRepresentationSpacings(wsi_scanned_image);
 }
@@ -205,8 +201,9 @@ int PhilipsTiffReader::GetLevelCount() const {
 
 aifocore::Result<LevelInfo> PhilipsTiffReader::GetLevelInfo(int level) const {
   if (level < 0 || level >= static_cast<int>(pyramid_levels_.size())) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            aifocore::fmt::format("Level {} not found", level));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kNotFound,
+        aifocore::fmt::format("Level {} not found", level));
   }
   const auto& tiff_level = pyramid_levels_[level];
   LevelInfo info;
@@ -232,15 +229,15 @@ std::vector<std::string> PhilipsTiffReader::GetAssociatedImageNames() const {
 aifocore::Result<ImageDimensions>
 PhilipsTiffReader::GetAssociatedImageDimensions(std::string_view name) const {
   (void)name;
-  return aifocore::Status(aifocore::StatusCode::kNotFound,
-                          "No associated images");
+  return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                              "No associated images");
 }
 
 aifocore::Result<RGBImage> PhilipsTiffReader::ReadAssociatedImage(
     std::string_view name) const {
   (void)name;
-  return aifocore::Status(aifocore::StatusCode::kNotFound,
-                          "No associated images");
+  return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                              "No associated images");
 }
 
 Metadata PhilipsTiffReader::GetMetadata() const {
@@ -291,8 +288,8 @@ aifocore::Result<core::TilePlan> PhilipsTiffReader::PrepareRequest(
   return PhilipsTiffPlanBuilder::BuildPlan(request, *this);
 }
 
-aifocore::Status PhilipsTiffReader::ExecutePlan(
-    const core::TilePlan& plan, runtime::TileWriter& writer) const {
+aifocore::Status PhilipsTiffReader::ExecutePlan(const core::TilePlan& plan,
+                                                runtime::Canvas& writer) const {
   return PhilipsTiffTileExecutor::ExecutePlan(plan, *this, writer);
 }
 
@@ -307,20 +304,20 @@ void PhilipsTiffReader::PopulateSlideProperties() {
 
 aifocore::Status PhilipsTiffReader::LoadDirectories() {
   if (!tiff_index_) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "TIFF index not initialized");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "TIFF index not initialized");
   }
   if (tiff_index_->NumPages() == 0) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "No TIFF pages found");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "No TIFF pages found");
   }
   if (tiff_index_->Page(0).storage != simpletiff::Storage::kTiles) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Philips TIFF is not tiled");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Philips TIFF is not tiled");
   }
   if (tiff_index_->Page(0).description.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Philips TIFF missing XML ImageDescription");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Philips TIFF missing XML ImageDescription");
   }
 
   std::vector<uint16_t> level_pages;
@@ -333,7 +330,7 @@ aifocore::Status PhilipsTiffReader::LoadDirectories() {
     if (i != 0) {
       const bool is_reduced = (page.new_subfile_type & 0x1U) != 0;
       if (!is_reduced) {
-        return aifocore::Status(
+        return AIFOCORE_MAKE_STATUS(
             aifocore::StatusCode::kInvalidArgument,
             aifocore::fmt::format("Directory {} is not reduced-resolution", i));
       }
@@ -342,15 +339,15 @@ aifocore::Status PhilipsTiffReader::LoadDirectories() {
   }
 
   if (level_pages.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "No tiled levels found");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "No tiled levels found");
   }
 
   AIFOCORE_ASSIGN_OR_RETURN(
       auto spacings,
       ExtractLevelPixelSpacingsFromXml(tiff_index_->Page(0).description));
   if (spacings.size() != level_pages.size()) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         "Philips XML level count does not match TIFF levels");
   }
@@ -361,8 +358,8 @@ aifocore::Status PhilipsTiffReader::LoadDirectories() {
   const double l0_w = spacings[0].first;
   const double l0_h = spacings[0].second;
   if (l0_w <= 0.0 || l0_h <= 0.0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Invalid Philips level 0 pixel spacing");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Invalid Philips level 0 pixel spacing");
   }
 
   pyramid_levels_.clear();
@@ -371,8 +368,8 @@ aifocore::Status PhilipsTiffReader::LoadDirectories() {
     const double spacing_w = spacings[i].first;
     const double spacing_h = spacings[i].second;
     if (spacing_w <= 0.0 || spacing_h <= 0.0) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "Invalid Philips pixel spacing");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "Invalid Philips pixel spacing");
     }
     double downsample = 1.0;
     if (i > 0) {
@@ -410,7 +407,6 @@ void PhilipsTiffReader::PopulateSlidePropertiesFromXml() {
   if (!spacings_or.ok() || spacings_or->empty()) {
     return;
   }
-  // OpenSlide stores spacing in mm and exposes MPP in microns: mpp = 1e3 * mm.
   properties_.mpp[0] = 1e3 * (*spacings_or)[0].first;
   properties_.mpp[1] = 1e3 * (*spacings_or)[0].second;
 }

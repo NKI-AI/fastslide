@@ -44,11 +44,8 @@ namespace {
 aifocore::Result<std::unique_ptr<SlideReader>> CreateMrxsReader(
     std::shared_ptr<ITileCache> cache, std::string_view filename) {
 
-  auto reader_or = MrxsReader::Create(std::string(filename));
-  if (!reader_or.ok()) {
-    return reader_or.status();
-  }
-  std::unique_ptr<MrxsReader> reader = std::move(reader_or).value();
+  AIFOCORE_ASSIGN_OR_RETURN(auto reader,
+                            MrxsReader::Create(std::string(filename)));
 
   // Apply cache if provided
   if (cache) {

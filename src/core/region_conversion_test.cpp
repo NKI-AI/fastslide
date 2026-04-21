@@ -14,19 +14,20 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <limits>
-#include <memory>
-#include <string>
-#include <string_view>
 #include <vector>
 
 #include "aifocore/status/result.h"
 #include "fastslide/slide_reader.h"
+#include "testing/minimal_slide_reader.h"
 
 namespace fastslide {
 
-/// @brief Mock reader for testing RegionToTileRequest conversion
-class MockReaderForConversion : public SlideReader {
+/// @brief Mock reader for testing RegionToTileRequest conversion.
+/// @details Reuses `MinimalSlideReader` defaults; only customizes the level
+///          dimensions/downsample needed by the conversion tests.
+class MockReaderForConversion : public testing::MinimalSlideReader {
  public:
   explicit MockReaderForConversion(
       int num_levels = 3, uint32_t width = std::numeric_limits<uint32_t>::max(),
@@ -49,40 +50,6 @@ class MockReaderForConversion : public SlideReader {
     info.dimensions = {w, h};
     info.downsample_factor = static_cast<double>(1ULL << level);
     return info;
-  }
-
-  [[nodiscard]] const SlideProperties& GetProperties() const override {
-    static SlideProperties props;
-    return props;
-  }
-
-  [[nodiscard]] std::vector<std::string> GetAssociatedImageNames()
-      const override {
-    return {};
-  }
-
-  [[nodiscard]] aifocore::Result<ImageDimensions> GetAssociatedImageDimensions(
-      std::string_view name) const override {
-    return aifocore::Status(aifocore::StatusCode::kNotFound, "Not found");
-  }
-
-  [[nodiscard]] aifocore::Result<Image> ReadAssociatedImage(
-      std::string_view name) const override {
-    return aifocore::Status(aifocore::StatusCode::kNotFound, "Not found");
-  }
-
-  [[nodiscard]] Metadata GetMetadata() const override { return Metadata(); }
-
-  [[nodiscard]] std::string GetFormatName() const override {
-    return "MockFormat";
-  }
-
-  [[nodiscard]] ImageFormat GetImageFormat() const override {
-    return ImageFormat::kRGB;
-  }
-
-  [[nodiscard]] ImageDimensions GetTileSize() const override {
-    return ImageDimensions{256, 256};
   }
 
   [[nodiscard]] std::vector<ChannelMetadata> GetChannelMetadata()

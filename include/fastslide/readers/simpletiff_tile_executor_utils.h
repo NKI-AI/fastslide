@@ -37,21 +37,21 @@ enum class ErrorPolicy : std::uint8_t {
 // Helper for writing a tile from parallel workers:
 // - Direct writers can write disjoint regions without locking.
 // - Blended writers accumulate into shared buffers and must be protected.
-inline aifocore::Status WriteTileMaybeLocked(
-    runtime::TileWriter& writer, const core::TileReadOp& operation,
+inline aifocore::Status PaintTileMaybeLocked(
+    runtime::Canvas& writer, const core::TileReadOp& operation,
     std::span<const uint8_t> pixel_data, uint32_t tile_width,
     uint32_t tile_height, uint32_t tile_channels, std::mutex& writer_mutex) {
   if (writer.IsBlendingEnabled()) {
-    return writer.WriteTile(operation, pixel_data, tile_width, tile_height,
+    return writer.PaintTile(operation, pixel_data, tile_width, tile_height,
                             tile_channels, writer_mutex);
   }
-  return writer.WriteTile(operation, pixel_data, tile_width, tile_height,
+  return writer.PaintTile(operation, pixel_data, tile_width, tile_height,
                           tile_channels);
 }
 
 // Executes `plan.operations` in parallel using the global ThreadPoolManager.
 //
-// - Uses `writer_mutex` when calling into TileWriter to support blended writers
+// - Uses `writer_mutex` when calling into Canvas to support blended writers
 //   safely; direct writers ignore the mutex.
 //
 // `execute_one(op, writer, writer_mutex)` should be thread-safe and must not
@@ -62,7 +62,7 @@ inline aifocore::Status WriteTileMaybeLocked(
 // - kBestEffort: runs all operations and always returns OK.
 template <typename ExecuteOneFn, typename OnErrorFn>
 aifocore::Status ExecuteOpsWithThreadPool(const core::TilePlan& plan,
-                                          runtime::TileWriter& writer,
+                                          runtime::Canvas& writer,
                                           ExecuteOneFn execute_one,
                                           ErrorPolicy policy,
                                           OnErrorFn on_error) {
@@ -107,9 +107,9 @@ aifocore::Status ExecuteOpsWithThreadPool(const core::TilePlan& plan,
 }
 
 template <typename ExecuteOneFn>
-aifocore::Status ExecuteOpsWithThreadPoolStopOnError(
-    const core::TilePlan& plan, runtime::TileWriter& writer,
-    ExecuteOneFn execute_one) {
+aifocore::Status ExecuteOpsWithThreadPoolStopOnError(const core::TilePlan& plan,
+                                                     runtime::Canvas& writer,
+                                                     ExecuteOneFn execute_one) {
   return ExecuteOpsWithThreadPool(
       plan, writer, execute_one, ErrorPolicy::kStopOnFirstError,
       [](const core::TileReadOp&, const aifocore::Status&) {});
@@ -117,7 +117,7 @@ aifocore::Status ExecuteOpsWithThreadPoolStopOnError(
 
 template <typename ExecuteOneFn, typename OnErrorFn>
 aifocore::Status ExecuteOpsWithThreadPoolBestEffort(const core::TilePlan& plan,
-                                                    runtime::TileWriter& writer,
+                                                    runtime::Canvas& writer,
                                                     ExecuteOneFn execute_one,
                                                     OnErrorFn on_error) {
   return ExecuteOpsWithThreadPool(plan, writer, execute_one,

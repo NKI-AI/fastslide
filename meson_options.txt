@@ -9,7 +9,7 @@ option('enable_tests', type: 'boolean', value: true,
        description: 'Enable building and running tests')
 
 option('enable_python_bindings', type: 'boolean', value: true,
-       description: 'Enable Python bindings (requires pybind11)')
+       description: 'Enable Python bindings (requires nanobind)')
 
 option('enable_c_api', type: 'boolean', value: true,
        description: 'Enable C API library')

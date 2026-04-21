@@ -1,10 +1,10 @@
 [build-system]
-requires = ["meson-python>=0.15.0", "ninja"]
+requires = ["meson-python>=0.15.0", "ninja", "nanobind>=2.0.0"]
 build-backend = "mesonpy"
 
 [project]
 name = "fastslide"
-version = "0.2.2"
+version = "0.5.2"
 description = "High-performance whole slide image reader for digital pathology"
 readme = "README.md"
 authors = [

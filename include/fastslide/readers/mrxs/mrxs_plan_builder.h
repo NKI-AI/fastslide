@@ -71,11 +71,14 @@ class MrxsPlanBuilder {
   /// @param y Region Y coordinate
   /// @param width Region width
   /// @param height Region height
+  /// @param emit_blend_metadata When true (8-bit RGB brightfield) populate
+  ///        BlendMetadata with the per-tile gain. 16-bit fluorescence sets
+  ///        this to `false` so the Canvas takes the integer copy path.
   /// @return Vector of tile operations
   static std::vector<core::TileReadOp> CreateTileOperations(
       const core::TileRequest& request,
       const mrxs::MrxsSpatialIndex& spatial_index, double x, double y,
-      uint32_t width, uint32_t height);
+      uint32_t width, uint32_t height, bool emit_blend_metadata);
 
   /// @brief Calculate clipping and transforms for a single tile
   /// @param request The tile request
@@ -84,18 +87,22 @@ class MrxsPlanBuilder {
   /// @param y Region Y coordinate
   /// @param width Region width
   /// @param height Region height
+  /// @param emit_blend_metadata Whether to populate `op.blend_metadata`.
   /// @return Tile operation or nullopt if tile should be skipped
   static std::optional<core::TileReadOp> CreateTileOperation(
       const core::TileRequest& request, const mrxs::SpatialTile& spatial_tile,
-      double x, double y, uint32_t width, uint32_t height);
+      double x, double y, uint32_t width, uint32_t height,
+      bool emit_blend_metadata);
 
   /// @brief Create output specification for the plan
   /// @param width Output width
   /// @param height Output height
   /// @param zoom_level The zoom level info
+  /// @param slide_info  Slide-level metadata (for bit depth + slide type)
   /// @return Output specification
   static core::OutputSpec CreateOutputSpec(
-      uint32_t width, uint32_t height, const mrxs::SlideZoomLevel& zoom_level);
+      uint32_t width, uint32_t height, const mrxs::SlideZoomLevel& zoom_level,
+      const mrxs::SlideDataInfo& slide_info);
 };
 
 }  // namespace fastslide

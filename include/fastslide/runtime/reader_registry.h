@@ -81,11 +81,11 @@ class ReaderRegistry {
   /// @brief Destructor
   ~ReaderRegistry() = default;
 
-  // Non-copyable, movable
+  // Non-copyable and non-movable (mutex member is neither).
   ReaderRegistry(const ReaderRegistry&) = delete;
   ReaderRegistry& operator=(const ReaderRegistry&) = delete;
-  ReaderRegistry(ReaderRegistry&&) = default;
-  ReaderRegistry& operator=(ReaderRegistry&&) = default;
+  ReaderRegistry(ReaderRegistry&&) = delete;
+  ReaderRegistry& operator=(ReaderRegistry&&) = delete;
 
   /// @brief Register a format descriptor
   /// @param descriptor Format descriptor to register

@@ -19,6 +19,7 @@
 #include <filesystem>
 #include <string>
 #include <tuple>
+#include <unordered_map>
 #include <vector>
 
 #include "aifocore/status/result.h"
@@ -133,6 +134,28 @@ class MrxsIndexReader {
   static aifocore::Result<std::tuple<int64_t, int64_t>> ReadHeader(
       const FileReader& file, const SlideDataInfo& slide_info);
 
+  /// @brief Raw record from a single (hierarchy, level) data page.
+  ///
+  /// Mirrors the four int32 fields stored back-to-back in each MRXS index
+  /// page entry. Used as the input to channel-group merging before tiles
+  /// are subdivided into the per-position `MiraxTileRecord` view used by
+  /// the spatial index.
+  struct RawIndexRecord {
+    int64_t image_index;
+    int64_t data_offset;
+    int64_t data_length;
+    int64_t data_file_number;
+  };
+
+  /// @brief Walk one (hierarchy, level) data-page chain and collect records.
+  ///
+  /// Reads the level-data block at `level_pointer_offset_in_root` (an int32
+  /// pointer slot inside the index file's hierarchical root array) and
+  /// returns every record it points at. No subdivision or channel grouping
+  /// is performed here; that happens in `ReadLevelTiles`.
+  aifocore::Result<std::vector<RawIndexRecord>> ReadLevelRecords(
+      int64_t level_pointer_in_root);
+
   /// @brief Subdivide a stored image into multiple logical tiles
   ///
   /// When subtiles_per_stored_image > 1, each stored image contains multiple
@@ -152,7 +175,8 @@ class MrxsIndexReader {
   std::vector<MiraxTileRecord> SubdivideImage(
       int64_t image_index, int32_t image_grid_x, int32_t image_grid_y,
       int64_t data_offset, int64_t data_length, int64_t data_file_number,
-      int level_index, const PyramidLevelParameters& level_params,
+      int32_t channel_group_index, int level_index,
+      const PyramidLevelParameters& level_params,
       const SlideZoomLevel& zoom_level);
 
   FileReader file_;                  ///< Index file handle (RAII)

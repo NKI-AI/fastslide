@@ -30,6 +30,7 @@
 #include "fastslide/readers/aperio/aperio_plan_builder.h"
 #include "fastslide/readers/aperio/aperio_tile_executor.h"
 #include "fastslide/readers/aperio/metadata_parser.h"
+#include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/runtime/tile_writer.h"
 #include "fastslide/utilities/hash.h"
 #include "simpletiff/index.h"
@@ -122,38 +123,13 @@ aifocore::Result<RGBImage> AperioReader::ReadAssociatedImage(
         aifocore::StatusCode::kNotFound,
         aifocore::fmt::format("Associated image '{}' not found", name));
   }
-
-  // Use simpletiff to read the associated image page
-  if (!tiff_index_ || info->page >= tiff_index_->NumPages()) {
+  if (!tiff_index_) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInternal,
-        aifocore::fmt::format("Invalid page {} for associated image '{}'",
-                              info->page, name));
+        aifocore::fmt::format("TIFF index not initialized for '{}'", name));
   }
-
-  const auto& page_header = tiff_index_->Page(info->page);
-  const uint32_t width = info->size[0];
-  const uint32_t height = info->size[1];
-  const uint16_t samples_per_pixel = page_header.samples_per_pixel;
-
-  // Create RGBImage with proper dimensions
-  RGBImage rgb_image({width, height}, ImageFormat::kRGB, DataType::kUInt8);
-
-  // Read the page using simpletiff directly into the image buffer
-  simpletiff::DecodeContext ctx;
-  simpletiff::Roi roi{0, 0, width, height};
-  const int stride = static_cast<int>(width) * samples_per_pixel;
-  auto result = simpletiff::ReadPage(*tiff_index_, info->page, roi, ctx,
-                                     rgb_image.GetData(), stride);
-
-  if (!result) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kInternal,
-        aifocore::fmt::format("Failed to read associated image '{}': {}", name,
-                              result.error().message()));
-  }
-
-  return rgb_image;
+  return readers::simpletiff_decode::ReadAssociatedTiffPage(
+      *tiff_index_, info->page, info->size, name);
 }
 
 // GetBestLevelForDownsample uses the base class implementation
@@ -235,8 +211,7 @@ aifocore::Result<std::string> AperioReader::GetQuickHash() const {
     }
   }
 
-  // Hash TIFF properties from directory 0 (matches OpenSlide's
-  // store_and_hash_properties)
+  // Hash TIFF properties from directory 0
   if (tiff_index_->NumPages() > 0) {
     const auto& page0 = tiff_index_->Page(0);
 
@@ -470,7 +445,7 @@ aifocore::Result<core::TilePlan> AperioReader::PrepareRequest(
 }
 
 aifocore::Status AperioReader::ExecutePlan(const core::TilePlan& plan,
-                                           runtime::TileWriter& writer) const {
+                                           runtime::Canvas& writer) const {
   // Delegate to executor which handles tile reading with handle pool
   return AperioTileExecutor::ExecutePlan(plan, *this, writer, tiff_metadata_);
 }

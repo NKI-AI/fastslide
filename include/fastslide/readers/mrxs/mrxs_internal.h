@@ -23,12 +23,30 @@
 ///
 /// These C++ structures are adapted from Python miraxreader's design.
 
+#include <array>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace fastslide {
 namespace mrxs {
+
+namespace internal {
+
+/// @brief Prefix used by 3DHISTECH for non-hierarchical records that hold
+///        full RGB images (label, macro, thumbnails, …).
+///
+/// `MrxsReader` surfaces those records through the standard
+/// `SlideReader::GetAssociatedImageNames` / `ReadAssociatedImage` API, with
+/// this prefix stripped from the public name. The same prefix is used to
+/// filter the records out of `GetAssociatedDataNames` so that
+/// non-image associated data (XML, binary blobs) and image associated data
+/// stay in distinct namespaces from a Python perspective.
+inline constexpr std::string_view kAssociatedImagePrefix =
+    "ScanDataLayer_Slide";
+
+}  // namespace internal
 
 /// @brief MRXS image format enumeration
 enum class MrxsImageFormat : std::uint8_t {
@@ -36,6 +54,37 @@ enum class MrxsImageFormat : std::uint8_t {
   kJpeg,
   kPng,
   kBmp,
+  kJpegXr,  ///< JPEG-XR (used by 3DHISTECH fluorescence slides, 8/16-bit)
+};
+
+/// @brief High-level MRXS slide modality
+///
+/// Driven by the `SLIDE_TYPE` value in the `[GENERAL]` section of
+/// `Slidedat.ini`. Brightfield is the default; fluorescence triggers
+/// per-channel metadata parsing and 16-bit image handling.
+enum class MrxsSlideType : std::uint8_t {
+  kBrightfield,
+  kFluorescence,
+};
+
+/// @brief Fluorescence filter channel metadata
+///
+/// Parsed from `LAYER_<filter_hier>_LEVEL_<index>_SECTION` entries in
+/// `Slidedat.ini`. For 3DHISTECH fluorescence slides, multiple filters are
+/// typically packed into the R/G/B planes of a single 16-bit RGB tile, with
+/// `storing_channel` selecting the plane (R=0, G=1, B=2).
+struct FilterChannel {
+  int index = 0;                     ///< Filter index within the hierarchy
+  std::string name;                  ///< Human-readable filter name
+  double excitation_wavelength = 0;  ///< Peak excitation wavelength (nm)
+  double emission_wavelength = 0;    ///< Peak emission wavelength (nm)
+  std::array<uint8_t, 3> color_rgb{0, 0, 0};  ///< Display color
+  int storing_channel = 0;        ///< RGB plane index storing this channel
+  std::string data_filter_level;  ///< e.g. "FilterLevel_0"
+  int exposure_time_us = 0;       ///< Exposure time in microseconds
+  int digital_gain = 0;           ///< Digital gain setting
+  bool is_master = false;         ///< Master filter flag
+  bool is_stitching = false;      ///< Stitching filter flag
 };
 
 /// @brief Tile record metadata from MRXS index file
@@ -80,10 +129,6 @@ struct MiraxTileRecord {
   int32_t y = 0;
 
   /// @brief X offset (in pixels) for extracting this tile from the source image
-  ///
-  /// When subtiles_per_stored_image > 1, the stored image contains multiple
-  /// tiles. This offset specifies which horizontal sub-region to extract. Zero
-  /// when subtiles_per_stored_image = 1 (tile = entire image).
   double subregion_x = 0.0;
 
   /// @brief Y offset (in pixels) for extracting this tile from the source image
@@ -97,6 +142,16 @@ struct MiraxTileRecord {
   /// Applied as: linear_output = linear_input * gain (in linear RGB space)
   /// Available in MRXS slides version ≥ 2.2.
   float gain = 1.0f;
+
+  /// @brief Which group of up to 3 channels this stored image carries.
+  ///
+  /// Fluorescence MRXS slides pack at most three filters into the R/G/B
+  /// planes of a single PNG. Slides with more than three channels store
+  /// additional channel-groups as separate PNGs that share the same
+  /// `image_index` (Java `nextCounter`) in the index file. `0` means the
+  /// PNG carries channels [0..min(3, N)-1]; `1` means [3..min(6, N)-1] and
+  /// so on. For 8-bit RGB brightfield slides this is always `0`.
+  int32_t channel_group_index = 0;
 };
 
 /// @brief Slide zoom level information (pyramid level metadata)
@@ -146,14 +201,12 @@ struct PyramidLevelParameters {
   /// @brief Number of logical tiles contained in each stored image
   ///
   /// When > 1, each stored JPEG/PNG/BMP contains multiple tiles that must be
-  /// extracted as separate sub-regions. This happens at lower zoom levels where
-  /// multiple camera positions are combined into single images.
+  /// extracted as separate sub-regions. This value is > 1 only when the slide
+  /// has position data or overlapping tiles.
+  /// When the slide has no overlaps and no position data, this is 1.
   int subtiles_per_stored_image;
 
   /// @brief Number of camera positions represented by each tile
-  ///
-  /// Typically 1 for MRXS (each tile = one camera position), but can be >1
-  /// for slides without position data or with unusual camera configurations.
   int camera_positions_per_tile;
 
   /// @brief Horizontal spacing (in pixels) between tile centers
@@ -237,7 +290,47 @@ struct SlideDataInfo {
   // Non-hierarchical layers (associated images, XML, binary data)
   std::vector<NonHierarchicalLayer>
       nonhier_layers;  ///< Non-hierarchical layer metadata
+
+  // Slide modality and pixel bit depth.
+  MrxsSlideType slide_type = MrxsSlideType::kBrightfield;
+  std::string slide_type_raw;  ///< Verbatim SLIDE_TYPE string
+  int camera_bitdepth = 8;     ///< VIMSLIDE_SLIDE_BITDEPTH (8 or 16)
+
+  // Fluorescence filter channels (empty for brightfield slides).
+  std::vector<FilterChannel> filters;
+
+  /// @brief Per-hierarchy entry count from `[HIERARCHICAL]` (`HIER_<i>_COUNT`).
+  ///
+  /// Kept for diagnostic purposes; the on-disk hierarchical root pointer
+  /// table actually allocates `pyramidDepth` slots per hierarchy
+  /// (regardless of `HIER_<i>_COUNT`), so the index reader uses
+  /// `pyramidDepth * nHierarchies` as the slot count instead.
+  std::vector<int32_t> hier_counts;
+
+  /// @brief Total number of hierarchies declared in `[HIERARCHICAL]`.
+  ///
+  /// Equal to `HIER_COUNT`. Used by the index reader to know how many
+  /// per-pyramid-level hierarchy slots to walk in the hier_root pointer
+  /// table.
+  int32_t nhierarchies = 0;
+
+  /// @brief Index of the `Slide filter level` hierarchy (-1 if none).
+  ///
+  /// 3DHISTECH stores up to 3 fluorophores in the R/G/B planes of each
+  /// stored RGB tile; channel groups beyond the first are stored in
+  /// additional hierarchies (notably `Slide filter level`). The index
+  /// reader walks every hierarchy at the requested pyramid level and uses
+  /// MiraxReader's "skip leading metadata" heuristic to route the right
+  /// records to each channel group, so this index is informational only.
+  int32_t filter_hier_index = -1;
 };
+
+/// @brief Unpack 24-bit 0xRRGGBB (`SlideZoomLevel::background_color_rgb`).
+[[nodiscard]] constexpr std::array<uint8_t, 3> UnpackRgb24(uint32_t rgb) {
+  return {static_cast<uint8_t>((rgb >> 16) & 0xFF),
+          static_cast<uint8_t>((rgb >> 8) & 0xFF),
+          static_cast<uint8_t>(rgb & 0xFF)};
+}
 
 }  // namespace mrxs
 }  // namespace fastslide

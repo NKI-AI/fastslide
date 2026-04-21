@@ -35,7 +35,7 @@ namespace {
 aifocore::Status ValidateRequest(const core::TileRequest& request,
                                  const CziReader& reader) {
   if (request.level < 0 || request.level >= reader.GetLevelCount()) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid level: {}", request.level));
   }
@@ -73,72 +73,31 @@ std::optional<core::TileReadOp> CreateTileOperation(
   const double tile_x_in_level = spatial_tile.bbox.min[0];
   const double tile_y_in_level = spatial_tile.bbox.min[1];
 
-  const double rel_x = tile_x_in_level - region_x;
-  const double rel_y = tile_y_in_level - region_y;
-
-  const int32_t dest_x = static_cast<int32_t>(std::floor(rel_x));
-  const int32_t dest_y = static_cast<int32_t>(std::floor(rel_y));
-  const double frac_x = rel_x - dest_x;
-  const double frac_y = rel_y - dest_y;
+  const double dest_x = tile_x_in_level - region_x;
+  const double dest_y = tile_y_in_level - region_y;
 
   const uint32_t tile_w = spatial_tile.info.width;
   const uint32_t tile_h = spatial_tile.info.height;
 
-  uint32_t src_offset_x = 0;
-  uint32_t src_offset_y = 0;
-  uint32_t final_dest_x = 0;
-  uint32_t final_dest_y = 0;
-  uint32_t final_w = tile_w;
-  uint32_t final_h = tile_h;
-
-  if (dest_x < 0) {
-    const uint32_t clip = static_cast<uint32_t>(-dest_x);
-    src_offset_x += clip;
-    final_w = (clip < tile_w) ? (tile_w - clip) : 0;
-    final_dest_x = 0;
-  } else {
-    final_dest_x = static_cast<uint32_t>(dest_x);
-  }
-
-  if (dest_y < 0) {
-    const uint32_t clip = static_cast<uint32_t>(-dest_y);
-    src_offset_y += clip;
-    final_h = (clip < tile_h) ? (tile_h - clip) : 0;
-    final_dest_y = 0;
-  } else {
-    final_dest_y = static_cast<uint32_t>(dest_y);
-  }
-
-  if (final_dest_x + final_w > region_w) {
-    final_w = (region_w > final_dest_x) ? (region_w - final_dest_x) : 0;
-  }
-  if (final_dest_y + final_h > region_h) {
-    final_h = (region_h > final_dest_y) ? (region_h - final_dest_y) : 0;
-  }
-
-  if (final_w == 0 || final_h == 0) {
+  if (dest_x + tile_w <= 0.0 || dest_y + tile_h <= 0.0 || dest_x >= region_w ||
+      dest_y >= region_h) {
     return std::nullopt;
   }
 
   core::TileReadOp op{};
   op.level = level;
-  // For CZI, tile_coord is not a grid index. We use the subblock index as a
-  // stable unique identifier for caching/debugging.
   op.tile_coord = {subblock_index, 0};
   op.source_id = 0;
   op.byte_offset = 0;
   op.byte_size = 0;
 
-  op.transform.source = {src_offset_x, src_offset_y, final_w, final_h};
-  op.transform.dest = {final_dest_x, final_dest_y, final_w, final_h};
+  op.transform.source = {0.0, 0.0, tile_w, tile_h};
+  op.transform.dest = {dest_x, dest_y, tile_w, tile_h};
 
   core::BlendMetadata blend{};
-  blend.fractional_x = frac_x;
-  blend.fractional_y = frac_y;
   blend.weight = 1.0;
   blend.gain = 1.0f;
   blend.mode = core::BlendMode::kAverage;
-  blend.enable_subpixel_resampling = true;
   op.blend_metadata = blend;
 
   return op;
@@ -187,11 +146,8 @@ aifocore::Result<core::TilePlan> CziPlanBuilder::BuildPlan(
   }
 
   // Get spatial index for this level.
-  const auto index_or = reader.GetSpatialIndex(request.level);
-  if (!index_or.ok()) {
-    return index_or.status();
-  }
-  const auto& index = *index_or;
+  AIFOCORE_ASSIGN_OR_RETURN(const auto& index,
+                            reader.GetSpatialIndex(request.level));
 
   auto tile_indices = index->QueryRegion(x, y, width, height);
   const auto& tiles = index->GetTiles();

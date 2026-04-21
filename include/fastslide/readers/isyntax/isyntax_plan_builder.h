@@ -31,6 +31,18 @@ class IsyntaxPlanBuilder {
   /// @return Result containing the execution plan or error
   static aifocore::Result<core::TilePlan> BuildPlan(
       const core::TileRequest& request, const IsyntaxReader& reader);
+
+  /// @brief Wavelet-origin sub-pixel shift in level pixels.
+  ///
+  /// The iSyntax wavelet decomposition introduces padding that shifts lower
+  /// resolution levels relative to level 0. Returns the fractional correction
+  /// (in the coordinate space of @p level) needed to align the tile grid with
+  /// the API coordinate origin.
+  ///
+  /// @param level Pyramid level (0 = full resolution, no shift).
+  /// @param downsample Downsample factor for the level (2^scale).
+  /// @return Shift in level pixels (0.0 for level 0).
+  static double ComputeOriginShift(int32_t level, double downsample);
 };
 
 }  // namespace fastslide

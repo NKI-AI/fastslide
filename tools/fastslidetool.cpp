@@ -12,9 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <span>
 #include <string>
 #include <utility>
 #include <variant>
@@ -24,7 +27,7 @@
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/fastslide.h"
 #include "fastslide/readers/mrxs/mrxs.h"
-#include "lodepng/lodepng.h"
+#include "fastslide/runtime/decoders/png_decoder.h"
 
 namespace {
 
@@ -94,26 +97,6 @@ void PrintSlideInfo(const fastslide::SlideReader& reader) {
   std::string tile_str =
       std::to_string(tile_size[0]) + " x " + std::to_string(tile_size[1]);
   PrintKeyValue("Tile Size", tile_str);
-
-  // MRXS-specific: Camera position information
-  if (reader.GetFormatName() == "MRXS") {
-    const auto* mrxs_reader =
-        dynamic_cast<const fastslide::MrxsReader*>(&reader);
-    if (mrxs_reader) {
-      const auto& mrxs_info = mrxs_reader->GetMrxsInfo();
-      if (!mrxs_info.using_synthetic_positions) {
-        const int positions_x = mrxs_info.images_x / mrxs_info.image_divisions;
-        const int positions_y = mrxs_info.images_y / mrxs_info.image_divisions;
-        std::string pos_str =
-            std::to_string(mrxs_info.camera_positions.size() / 2) + " (" +
-            std::to_string(positions_x) + " x " + std::to_string(positions_y) +
-            ") [FROM FILE]";
-        PrintKeyValue("Camera Positions", pos_str);
-      } else {
-        PrintKeyValue("Camera Positions", "SYNTHETIC (uniform grid)");
-      }
-    }
-  }
 }
 
 void PrintLevelInfo(const fastslide::SlideReader& reader) {
@@ -295,44 +278,30 @@ void PrintMetadata(const fastslide::SlideReader& reader) {
   }
 }
 
-// PNG image writer using lodepng
 aifocore::Status SaveImagePNG(const fastslide::Image& image,
                               const std::string& filename) {
   if (image.GetFormat() != fastslide::ImageFormat::kRGB &&
       image.GetFormat() != fastslide::ImageFormat::kRGBA) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Only RGB/RGBA images can be saved");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Only RGB/RGBA images can be saved");
   }
 
   if (image.GetDataType() != fastslide::DataType::kUInt8) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Only uint8 images can be saved");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Only uint8 images can be saved");
   }
 
   if (image.GetPlanarConfig() != fastslide::PlanarConfig::kContiguous) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Only contiguous images can be saved");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Only contiguous images can be saved");
   }
 
-  unsigned int error = 0;
-  if (image.GetFormat() == fastslide::ImageFormat::kRGB) {
-    error = lodepng_encode24_file(filename.c_str(), image.GetData(),
-                                  static_cast<unsigned int>(image.GetWidth()),
-                                  static_cast<unsigned int>(image.GetHeight()));
-  } else {
-    error = lodepng_encode32_file(filename.c_str(), image.GetData(),
-                                  static_cast<unsigned int>(image.GetWidth()),
-                                  static_cast<unsigned int>(image.GetHeight()));
-  }
-
-  if (error != 0) {
-    return aifocore::Status(
-        aifocore::StatusCode::kInternal,
-        aifocore::fmt::format("PNG encode error {}: {}", error,
-                              lodepng_error_text(error)));
-  }
-
-  return aifocore::Status::OkStatus();
+  const uint32_t channels = image.GetChannels();
+  const std::size_t pixel_bytes =
+      static_cast<std::size_t>(channels) * image.GetWidth() * image.GetHeight();
+  return fastslide::runtime::decoders::EncodePngToFile(
+      filename, std::span<const uint8_t>(image.GetData(), pixel_bytes),
+      image.GetWidth(), image.GetHeight(), channels);
 }
 
 int InfoCommand(const std::string& input_file, bool verbose) {

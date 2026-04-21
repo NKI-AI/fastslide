@@ -79,9 +79,8 @@ Result<void> ReadTile(const TiffIndex& index, uint32_t page_index,
 
 /// Read raw compressed tile data without decompression
 ///
-/// Used for applications that need raw compressed bytes (e.g.,
-/// OpenSlide-compatible quickhash computation). This function reads the tile
-/// data as-is without any decompression or processing.
+/// Used for applications that need raw compressed bytes. This function reads the
+/// tile data as-is without any decompression or processing.
 ///
 /// Thread-safe as it only performs read operations.
 ///

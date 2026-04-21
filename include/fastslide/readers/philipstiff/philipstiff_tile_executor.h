@@ -24,7 +24,7 @@ namespace fastslide {
 class PhilipsTiffReader;
 
 namespace runtime {
-class TileWriter;
+class Canvas;
 }  // namespace runtime
 
 /// @brief Tile executor for Philips TIFF plans
@@ -33,7 +33,7 @@ class PhilipsTiffTileExecutor
  public:
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
                                       const PhilipsTiffReader& reader,
-                                      runtime::TileWriter& writer);
+                                      runtime::Canvas& writer);
 };
 
 }  // namespace fastslide

@@ -20,6 +20,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "aifocore/status/result.h"
+
 namespace simpletiff {
 
 /// Apply horizontal differencing predictor (TIFF Predictor tag 2)
@@ -34,10 +36,10 @@ namespace simpletiff {
 /// @param bits_per_sample Bits per sample (8, 16, or 32)
 /// @param file_big_endian Whether the TIFF file is big-endian
 /// @param planar_configuration 1 = CONTIG (interleaved), 2 = SEPARATE (planar)
-void ApplyHorizontalPredictor(std::vector<uint8_t>& data, int width, int height,
-                              int samples_per_pixel, int bits_per_sample,
-                              bool file_big_endian,
-                              int planar_configuration = 1);
+/// @return Result<void> indicating success or descriptive error
+::aifocore::Result<void> ApplyHorizontalPredictor(
+    std::vector<uint8_t>& data, int width, int height, int samples_per_pixel,
+    int bits_per_sample, bool file_big_endian, int planar_configuration = 1);
 
 }  // namespace simpletiff
 
