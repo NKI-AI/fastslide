@@ -45,18 +45,18 @@ namespace core {
 /// Describes how to transform a tile from its native coordinates to
 /// the requested output space (e.g., scaling, cropping, rotation).
 struct TileTransform {
-  /// @brief Source region within the tile (pixels)
+  /// @brief Source region within the tile (sub-pixel precision for MRXS overlaps)
   struct SourceRegion {
-    uint32_t x;       ///< X offset within tile
-    uint32_t y;       ///< Y offset within tile
+    double x;         ///< X offset within tile (sub-pixel for MRXS)
+    double y;         ///< Y offset within tile (sub-pixel for MRXS)
     uint32_t width;   ///< Width to read
     uint32_t height;  ///< Height to read
   } source;
 
-  /// @brief Destination region in output image (pixels)
+  /// @brief Destination region in output image
   struct DestRegion {
-    uint32_t x;       ///< X offset in output
-    uint32_t y;       ///< Y offset in output
+    double x = 0.0;   ///< X offset in output (sub-pixel precision)
+    double y = 0.0;   ///< Y offset in output (sub-pixel precision)
     uint32_t width;   ///< Width in output
     uint32_t height;  ///< Height in output
   } dest;
@@ -86,31 +86,23 @@ enum class BlendMode : uint8_t {
 
 /// @brief Blend metadata for weighted tile composition
 ///
-/// Optional metadata for formats requiring weighted blending or fractional
-/// positioning. Used by WeightedTileWriter to handle overlapping tiles and
-/// subpixel placement.
+/// Optional metadata for formats with overlapping tiles (MRXS, CZI).
+/// When present, the Canvas uses CAIRO_OPERATOR_SATURATE for seam blending.
+/// Sub-pixel positioning is handled directly via TileTransform::dest (double
+/// coordinates); Cairo handles the resampling automatically.
 struct BlendMetadata {
-  /// @brief Fractional offset from integer position
-  /// @note For subpixel-accurate placement via resampling kernels
-  double fractional_x = 0.0;
-  double fractional_y = 0.0;
-
   /// @brief Coverage/confidence weight for this tile
   /// @note 1.0 = full confidence, 0.0 = ignore tile
   double weight = 1.0;
 
   /// @brief Intensity gain correction factor
-  /// @note 1.0 = no correction. Applied in linear RGB space.
+  /// @note 1.0 = no correction. Applied in sRGB space before painting.
   /// @note MRXS-specific: corrects illumination variations (typically
   /// 0.97-1.04)
   float gain = 1.0f;
 
   /// @brief Blending mode
   BlendMode mode = BlendMode::kOverwrite;
-
-  /// @brief Enable subpixel resampling (Magic Kernel for MRXS)
-  /// @note Only meaningful if fractional_x or fractional_y is non-zero
-  bool enable_subpixel_resampling = true;
 };
 
 /// @brief Single tile read operation
@@ -140,6 +132,17 @@ struct TileReadOp {
   /// @note Used by formats with overlapping tiles (MRXS) or fractional
   /// positioning
   std::optional<BlendMetadata> blend_metadata;
+
+  /// @brief First output channel index this op writes to.
+  ///
+  /// Defaults to 0, which means "write to channels [0..tile_channels-1]".
+  /// MRXS fluorescence slides with more than 3 channels store every group
+  /// of up to 3 channels in a separate PNG; the executor sets this offset
+  /// to `3 * channel_group_index` so the planar Canvas knows where the
+  /// decoded R/G/B planes go in the multi-channel output. Single-channel
+  /// readers (QPTIFF spectral pages) keep using `tile_coord.x` as the
+  /// target channel for backwards compatibility.
+  uint32_t channel_group_offset = 0;
 };
 
 /// @brief Output specification for tile reading
@@ -169,6 +172,17 @@ struct OutputSpec {
     uint8_t a = 255;
   } background;
 
+  /// @brief Force the output `Image` to use `ImageFormat::kSpectral`.
+  ///
+  /// By default, `Canvas` derives the Image format from `channels`
+  /// (1 -> Gray, 3 -> RGB, 4 -> RGBA, otherwise Spectral). For
+  /// fluorescence slides with 3 filters, the data layout is identical to
+  /// RGB but the channels are independent fluorophores rather than
+  /// color components. Setting this flag to `true` forces the output
+  /// Image to be tagged `kSpectral`, so downstream consumers (FFI,
+  /// viewers) take the multi-channel path even when channels == 3 or 4.
+  bool force_spectral_image = false;
+
   /// @brief Get total output size in bytes
   [[nodiscard]] size_t GetTotalBytes() const {
     size_t bytes_per_pixel = channels;
@@ -180,6 +194,21 @@ struct OutputSpec {
     return static_cast<size_t>(dimensions[0]) * dimensions[1] * bytes_per_pixel;
   }
 };
+
+/// @brief Convert a DataType to the closest OutputSpec::PixelFormat
+/// @param dtype Source data type
+/// @return Matching pixel format (kUInt8, kUInt16, or kFloat32)
+constexpr OutputSpec::PixelFormat ToOutputPixelFormat(
+    fastslide::DataType dtype) {
+  switch (dtype) {
+    case fastslide::DataType::kUInt8:
+      return OutputSpec::PixelFormat::kUInt8;
+    case fastslide::DataType::kUInt16:
+      return OutputSpec::PixelFormat::kUInt16;
+    default:
+      return OutputSpec::PixelFormat::kFloat32;
+  }
+}
 
 /// @brief Complete tile reading plan
 ///

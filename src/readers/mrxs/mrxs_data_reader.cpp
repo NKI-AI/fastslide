@@ -30,7 +30,7 @@ aifocore::Status TileDataValidator::ValidateTileParams(
     const MiraxTileRecord& tile) {
   // Validate offset
   if (tile.offset < 0) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid negative offset {} for tile at ({}, {})",
                               tile.offset, tile.x, tile.y));
@@ -38,7 +38,7 @@ aifocore::Status TileDataValidator::ValidateTileParams(
 
   // Validate length
   if (tile.length <= 0) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid length {} for tile at ({}, {})",
                               tile.length, tile.x, tile.y));
@@ -46,7 +46,7 @@ aifocore::Status TileDataValidator::ValidateTileParams(
 
   // Prevent bad_alloc from unreasonably large allocations
   if (tile.length > constants::kMaxTileSize) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format(
             "Tile length {} exceeds maximum allowed size of {} "
@@ -59,7 +59,7 @@ aifocore::Status TileDataValidator::ValidateTileParams(
       static_cast<int64_t>(tile.offset) + static_cast<int64_t>(tile.length);
   if (end_offset < 0 ||
       end_offset > std::numeric_limits<int64_t>::max() - 1024) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Tile offset {} + length {} causes overflow for "
                               "tile at ({}, {})",
@@ -72,7 +72,7 @@ aifocore::Status TileDataValidator::ValidateTileParams(
 aifocore::Status TileDataValidator::ValidateFileNumber(int32_t file_number,
                                                        size_t num_datafiles) {
   if (file_number < 0 || file_number >= static_cast<int32_t>(num_datafiles)) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid file number: {} (must be 0-{})",
                               file_number, num_datafiles - 1));
@@ -105,7 +105,7 @@ aifocore::Result<std::vector<uint8_t>> MrxsDataReader::ReadTileData(
   const int64_t end_offset =
       static_cast<int64_t>(tile.offset) + static_cast<int64_t>(tile.length);
   if (end_offset > file_size) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format(
             "Tile data extends beyond file size: offset={}, "
@@ -127,14 +127,15 @@ aifocore::Result<std::vector<uint8_t>> MrxsDataReader::ReadData(
     const fs::path& datafile_path, int64_t offset, int64_t size) {
   // Validate parameters
   if (offset < 0) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid negative offset: {}", offset));
   }
 
   if (size <= 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            aifocore::fmt::format("Invalid size: {}", size));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Invalid size: {}", size));
   }
 
   // Open file

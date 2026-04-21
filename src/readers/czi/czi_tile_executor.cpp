@@ -21,7 +21,6 @@
 #include <csetjmp>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <iostream>
 #include <mutex>
 #include <span>
@@ -107,8 +106,8 @@ uint16_t ChooseU16Denom(uint16_t max_val) {
 aifocore::Result<std::vector<uint8_t>> UnpackHiLo16(
     std::span<const uint8_t> in) {
   if ((in.size() % 2) != 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "HiLo unpacking requires even byte count");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "HiLo unpacking requires even byte count");
   }
   const size_t half = in.size() / 2;
   std::vector<uint8_t> out(in.size());
@@ -131,8 +130,8 @@ aifocore::Result<Zstd1ParseResult> ParseZstd1Payload(
   // - if header_size == 3: byte[1] is chunk type (expected 1), byte[2] are
   // flags
   if (in.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "zstd1 payload truncated");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "zstd1 payload truncated");
   }
 
   const uint8_t header_len = in[0];
@@ -142,13 +141,13 @@ aifocore::Result<Zstd1ParseResult> ParseZstd1Payload(
 
   if (header_len == 3) {
     if (in.size() < 3) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "zstd1 payload truncated (header)");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "zstd1 payload truncated (header)");
     }
     const uint8_t chunk_type = in[1];
     const uint8_t flags = in[2];
     if (chunk_type != 1) {
-      return aifocore::Status(
+      return AIFOCORE_MAKE_STATUS(
           aifocore::StatusCode::kInvalidArgument,
           aifocore::fmt::format("Unexpected zstd1 chunk type: {}", chunk_type));
     }
@@ -156,7 +155,7 @@ aifocore::Result<Zstd1ParseResult> ParseZstd1Payload(
                             .do_hilo = (flags & 1u) != 0u};
   }
 
-  return aifocore::Status(
+  return AIFOCORE_MAKE_STATUS(
       aifocore::StatusCode::kInvalidArgument,
       aifocore::fmt::format("Unexpected zstd1 header length: {}", header_len));
 }
@@ -167,12 +166,13 @@ aifocore::Result<std::vector<uint8_t>> DecompressZstd(
   const size_t res =
       ZSTD_decompress(out.data(), out.size(), in.data(), in.size());
   if (ZSTD_isError(res)) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            aifocore::fmt::format("ZSTD_decompress failed: {}",
-                                                  ZSTD_getErrorName(res)));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInternal,
+        aifocore::fmt::format("ZSTD_decompress failed: {}",
+                              ZSTD_getErrorName(res)));
   }
   if (res != expected_size) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("ZSTD size mismatch: got {}, expected {}", res,
                               expected_size));
@@ -188,8 +188,8 @@ aifocore::Result<std::vector<uint8_t>> ConvertRawToRgb8(
   switch (pixel_type) {
     case PixelType::kGray8: {
       if (raw.size() != npx) {
-        return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                                "GRAY8 size mismatch");
+        return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                    "GRAY8 size mismatch");
       }
       std::vector<uint8_t> rgb(npx * 3);
       for (size_t i = 0; i < npx; ++i) {
@@ -202,8 +202,8 @@ aifocore::Result<std::vector<uint8_t>> ConvertRawToRgb8(
     }
     case PixelType::kGray16: {
       if (raw.size() != npx * 2) {
-        return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                                "GRAY16 size mismatch");
+        return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                    "GRAY16 size mismatch");
       }
       const uint16_t* u16 = reinterpret_cast<const uint16_t*>(raw.data());
       uint16_t max_v = 0;
@@ -222,8 +222,8 @@ aifocore::Result<std::vector<uint8_t>> ConvertRawToRgb8(
     }
     case PixelType::kBgr24: {
       if (raw.size() != npx * 3) {
-        return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                                "BGR24 size mismatch");
+        return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                    "BGR24 size mismatch");
       }
       std::vector<uint8_t> rgb(npx * 3);
       for (size_t i = 0; i < npx; ++i) {
@@ -238,8 +238,8 @@ aifocore::Result<std::vector<uint8_t>> ConvertRawToRgb8(
     }
     case PixelType::kBgr48: {
       if (raw.size() != npx * 6) {
-        return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                                "BGR48 size mismatch");
+        return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                    "BGR48 size mismatch");
       }
       const uint16_t* u16 = reinterpret_cast<const uint16_t*>(raw.data());
       uint16_t max_v = 0;
@@ -260,15 +260,15 @@ aifocore::Result<std::vector<uint8_t>> ConvertRawToRgb8(
     }
   }
 
-  return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                          "Unsupported pixel type");
+  return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                              "Unsupported pixel type");
 }
 
 }  // namespace
 
 aifocore::Status CziTileExecutor::ExecutePlan(const core::TilePlan& plan,
                                               const CziReader& reader,
-                                              runtime::TileWriter& writer) {
+                                              runtime::Canvas& writer) {
   if (plan.operations.empty()) {
     const auto& bg = plan.output.background;
     return writer.FillBackground(bg.r, bg.g, bg.b);
@@ -312,7 +312,7 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
   AIFOCORE_RETURN_IF_ERROR(file.Read(sid_raw, sizeof(sid_raw)));
   const std::string sid = ReadFixedAscii(sid_raw, sizeof(sid_raw));
   if (!StartsWithMagic(sid, kSidZisRawSubblock)) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Bad subblock magic: {}", sid));
   }
@@ -327,8 +327,8 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
   AIFOCORE_ASSIGN_OR_RETURN(data_size, ReadLeInt64(file.Get()));
   (void)attach_size;
   if (meta_size < 0 || data_size < 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Invalid subblock header sizes");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Invalid subblock header sizes");
   }
 
   const int64_t data_pos =
@@ -342,8 +342,8 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
 
   const size_t bpp = BytesPerPixel(pt);
   if (bpp == 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Unsupported CZI pixel type");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Unsupported CZI pixel type");
   }
   const size_t expected_raw =
       static_cast<size_t>(sb.w) * static_cast<size_t>(sb.h) * bpp;
@@ -353,7 +353,7 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
   if (comp == Compression::kNone) {
     raw = std::move(payload);
     if (raw.size() != expected_raw) {
-      return aifocore::Status(
+      return AIFOCORE_MAKE_STATUS(
           aifocore::StatusCode::kInvalidArgument,
           aifocore::fmt::format("COMP_NONE size mismatch: got {}, expected {}",
                                 raw.size(), expected_raw));
@@ -390,7 +390,7 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
         std::span<const uint8_t>(tile_buf.data(), tile_buf.size()), sb.w, sb.h,
         3};
   } else {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kUnimplemented,
         aifocore::fmt::format("Unsupported CZI compression: {}",
                               sb.compression));
@@ -407,7 +407,7 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
 
 aifocore::Status CziTileExecutor::ExecuteTileOperation(
     const core::TileReadOp& op, const CziReader& reader,
-    runtime::TileWriter& writer, std::mutex& writer_mutex) {
+    runtime::Canvas& writer, std::mutex& writer_mutex) {
   auto tile_data_or = ReadWithCache(op, reader);
   if (!tile_data_or.ok()) {
     return aifocore::Status::OkStatus();
@@ -418,56 +418,10 @@ aifocore::Status CziTileExecutor::ExecuteTileOperation(
   const uint32_t tile_w = sb.w;
   const uint32_t tile_h = sb.h;
 
-  std::span<const uint8_t> data_to_write = *tile_data_or;
-  uint32_t write_w = tile_w;
-  uint32_t write_h = tile_h;
-  core::TileReadOp write_op = op;
-
-  const bool needs_crop = op.transform.source.x != 0 ||
-                          op.transform.source.y != 0 ||
-                          op.transform.source.width != tile_w ||
-                          op.transform.source.height != tile_h;
-
-  if (needs_crop) {
-    const uint32_t crop_x = op.transform.source.x;
-    const uint32_t crop_y = op.transform.source.y;
-    const uint32_t want_w = op.transform.source.width;
-    const uint32_t want_h = op.transform.source.height;
-
-    if (crop_x >= tile_w || crop_y >= tile_h) {
-      return aifocore::Status::OkStatus();
-    }
-    write_w = std::min(want_w, tile_w - crop_x);
-    write_h = std::min(want_h, tile_h - crop_y);
-    if (write_w == 0 || write_h == 0) {
-      return aifocore::Status::OkStatus();
-    }
-
-    const size_t row_bytes = static_cast<size_t>(write_w) * 3;
-    const size_t out_bytes = row_bytes * write_h;
-    uint8_t* dst = GetBuffers().GetCropBuffer(out_bytes);
-
-    const size_t src_stride = static_cast<size_t>(tile_w) * 3;
-    for (uint32_t y = 0; y < write_h; ++y) {
-      const size_t src_off = (static_cast<size_t>(crop_y + y) * src_stride) +
-                             static_cast<size_t>(crop_x) * 3;
-      std::memcpy(dst + static_cast<size_t>(y) * row_bytes,
-                  data_to_write.data() + src_off, row_bytes);
-    }
-
-    data_to_write = std::span<const uint8_t>(dst, out_bytes);
-    write_op.transform.source.x = 0;
-    write_op.transform.source.y = 0;
-    write_op.transform.source.width = write_w;
-    write_op.transform.source.height = write_h;
-    write_op.transform.dest.width =
-        std::min(write_op.transform.dest.width, write_w);
-    write_op.transform.dest.height =
-        std::min(write_op.transform.dest.height, write_h);
-  }
-
-  auto st = writer.WriteTile(write_op, data_to_write, write_w, write_h, 3,
-                             writer_mutex);
+  const std::span<const uint8_t> tile_data = *tile_data_or;
+  // Canvas extracts sub-regions from full tiles when op.transform.source
+  // specifies one.
+  auto st = writer.PaintTile(op, tile_data, tile_w, tile_h, 3, writer_mutex);
   if (!st.ok()) {
     return aifocore::Status::OkStatus();
   }

@@ -26,6 +26,7 @@
 #include "aifocore/platform/portability.h"
 #include "simpletiff/internal/ndpi_mcu_tiling.h"
 #include "simpletiff/io_utils.h"
+#include "simpletiff/tiff_constants.h"
 
 namespace simpletiff {
 
@@ -63,6 +64,7 @@ constexpr uint16_t kTagImageLength = 257;
 constexpr uint16_t kTagBitsPerSample = 258;
 constexpr uint16_t kTagCompression = 259;
 constexpr uint16_t kTagPhotometric = 262;
+constexpr uint16_t kTagFillOrder = 266;
 constexpr uint16_t kTagImageDescription = 270;
 constexpr uint16_t kTagStripOffsets = 273;
 constexpr uint16_t kTagSamplesPerPixel = 277;
@@ -531,6 +533,12 @@ void ProcessTag(const IfdEntry& entry, int fd, size_t file_size, bool bigtiff,
         ctx.page_header.photometric = static_cast<uint16_t>(values[0]);
       }
       break;
+    case kTagFillOrder:
+      if (ReadTagData(fd, file_size, entry, bigtiff, little_endian, values) &&
+          !values.empty()) {
+        ctx.page_header.fill_order = static_cast<uint16_t>(values[0]);
+      }
+      break;
     case kTagImageDescription:
       ReadTagString(fd, file_size, entry, bigtiff, ctx.page_header.description);
       break;
@@ -793,6 +801,19 @@ void AddStripPageFromContext(IfdContext& ctx, TiffIndex& index) {
 
 void BuildPageFromContext(IfdContext& ctx, int fd, size_t file_size,
                           bool bigtiff, bool little_endian, TiffIndex& index) {
+  // Promote 1-bit CCITT-compressed pages to advertise 8-bit grayscale storage
+  // so the rest of the pipeline (which assumes byte-aligned samples) sees the
+  // post-decode shape. The on-disk width is preserved in
+  // `bits_per_sample_storage` for any caller that cares.
+  if (IsCcittCompression(ctx.page_header.compression) &&
+      ctx.page_header.bits_per_sample == 1) {
+    ctx.page_header.bits_per_sample_storage = 1;
+    ctx.page_header.bits_per_sample = 8;
+    if (ctx.page_header.samples_per_pixel == 0) {
+      ctx.page_header.samples_per_pixel = 1;
+    }
+  }
+
   // Determine storage type and add page
 
   if (ctx.lazy_tile_offsets.count > 0 && ctx.tile_width > 0 &&

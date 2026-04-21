@@ -28,8 +28,8 @@ namespace runtime {
 aifocore::Result<std::shared_ptr<LRUTileCache>> LRUTileCache::Create(
     size_t capacity_bytes) {
   if (capacity_bytes == 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Cache capacity must be greater than 0");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Cache capacity must be greater than 0");
   }
   return std::make_shared<LRUTileCache>(capacity_bytes);
 }
@@ -139,7 +139,7 @@ size_t LRUTileCache::GetSize() const {
   return cache_.size();
 }
 
-size_t LRUTileCache::GetCapacity() const {
+size_t LRUTileCache::GetCapacityBytes() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return capacity_bytes_;
 }
@@ -158,7 +158,7 @@ ITileCache::Stats LRUTileCache::GetStats() const {
     hit_ratio = static_cast<double>(hits_) / total_accesses;
   }
 
-  return Stats{.capacity = capacity_bytes_,
+  return Stats{.capacity_bytes = capacity_bytes_,
                .size = cache_.size(),
                .hits = hits_,
                .misses = misses_,
@@ -166,10 +166,10 @@ ITileCache::Stats LRUTileCache::GetStats() const {
                .memory_usage_bytes = current_size_bytes_};
 }
 
-aifocore::Status LRUTileCache::SetCapacity(size_t capacity_bytes) {
+aifocore::Status LRUTileCache::SetCapacityBytes(size_t capacity_bytes) {
   if (capacity_bytes == 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Cache capacity must be greater than 0");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Cache capacity must be greater than 0");
   }
 
   std::lock_guard<std::mutex> lock(mutex_);

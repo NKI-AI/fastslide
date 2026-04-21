@@ -90,13 +90,15 @@ class OmeTiffReader : public TiffBasedReader,
 
   [[nodiscard]] ImageFormat GetImageFormat() const override { return format_; }
 
+  [[nodiscard]] DataType GetDataType() const override { return data_type_; }
+
   [[nodiscard]] ImageDimensions GetTileSize() const override;
 
   [[nodiscard]] aifocore::Result<core::TilePlan> PrepareRequest(
       const core::TileRequest& request) const override;
 
   [[nodiscard]] aifocore::Status ExecutePlan(
-      const core::TilePlan& plan, runtime::TileWriter& writer) const override;
+      const core::TilePlan& plan, runtime::Canvas& writer) const override;
 
   [[nodiscard]] const std::vector<OmeTiffLevelInfo>& GetPyramid() const {
     return pyramid_;
@@ -120,6 +122,7 @@ class OmeTiffReader : public TiffBasedReader,
   std::map<std::string, uint32_t> associated_images_;
 
   ImageFormat format_ = ImageFormat::kSpectral;
+  DataType data_type_ = DataType::kUInt8;  ///< Pixel data type
   PlanarConfig output_planar_config_ = PlanarConfig::kSeparate;
 
   std::unique_ptr<simpletiff::TiffIndex> tiff_index_;

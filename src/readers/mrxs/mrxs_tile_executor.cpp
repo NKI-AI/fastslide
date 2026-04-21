@@ -14,10 +14,12 @@
 
 #include "fastslide/readers/mrxs/mrxs_tile_executor.h"
 
-#include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <cstring>
+#include <iomanip>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <span>
@@ -52,7 +54,7 @@ aifocore::Status ToAifoStatus(const T& status) {
 
 aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
                                                const MrxsReader& reader,
-                                               runtime::TileWriter& writer) {
+                                               runtime::Canvas& writer) {
 
   if (plan.operations.empty()) {
     // No tiles to read - fill with background color
@@ -62,8 +64,9 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
 
   const int level = plan.request.level;
   if (level < 0 || level >= reader.GetLevelCount()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            aifocore::fmt::format("Invalid level: {}", level));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Invalid level: {}", level));
   }
 
   const auto& slide_info = reader.GetMrxsInfo();
@@ -74,7 +77,6 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
   std::mutex accumulator_mutex;
   std::atomic<int> error_count{0};
 
-  // Submit all tiles to thread pool for parallel processing
   auto futures = pool.submit_sequence(0, plan.operations.size(), [&](size_t i) {
     const auto& op = plan.operations[i];
     auto status =
@@ -99,7 +101,7 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
 
 aifocore::Status MrxsTileExecutor::ExecuteTileOperation(
     const core::TileReadOp& op, const MrxsReader& reader,
-    const mrxs::SlideZoomLevel& zoom_level, runtime::TileWriter& writer,
+    const mrxs::SlideZoomLevel& zoom_level, runtime::Canvas& writer,
     std::mutex& accumulator_mutex) {
 
   // Read and decode the tile (returns span view of thread-local buffer)
@@ -110,104 +112,99 @@ aifocore::Status MrxsTileExecutor::ExecuteTileOperation(
     return aifocore::Status::OkStatus();  // Continue processing other tiles
   }
 
-  // Decode span to get dimensions (we know it's RGB)
   const auto& tile_data = *image_or;
-  // For MRXS, we know the tile size from zoom level or op, but ReadWithCache
-  // returns just data span. We need width/height. In Qptiff/Aperio, we passed
-  // width/height to ReadWithCache/ReadTileFromDisk. Here we pass zoom_level.
-  // ReadTileFromDisk returns DecodedTileData which has dims.
-  // But ReadWithCache returns span.
-  // We need to recover dims.
-  // For MRXS, tiles are usually fixed size per level, EXCEPT for edge tiles or
-  // different camera positions. Wait, MRXS tiles can have overlaps and
-  // different sizes? `zoom_level.image_width`? No, that's full image. The tile
-  // size is implicitly defined by the data size for MRXS if we don't store it?
-  // We know it is 3 channels (RGB).
-  // Area = size / 3.
-  // If square, sqrt(Area).
-  // But tiles might not be square.
-  // We can calculate expected tile size from `op`.
-  // `op.byte_size` is compressed size.
-  // `op.transform.source` is the region IN THE TILE? No, `transform.source` is
-  // the region of the tile to write to output. But `op` does not store full
-  // tile size. MRXS tiles (camera images) have a fixed size defined in
-  // `SlideZoomLevel`? `zoom_level` has `image_width` (total).
-  // `MrxsReader::GetLevelInfo` calculates it.
 
-  // Let's check `MrxsReader::ReadTileData`. It reads `mrxs::MiraxTileRecord`.
-  // The record does not have width/height.
-  // `mrxs::internal::DecodeImage` decodes it and returns `RGBImage` with proper
-  // dims. If we use `CachedTileExecutor`, we lose the explicit dims in the
-  // return value of `ReadWithCache`. This is a limitation of `ReadWithCache`
-  // returning only `span`.
-
-  // QPTIFF/Aperio handled this by passing expected tile size to
-  // `ExecuteTileOperation` and using that. MRXS tiles (camera images) *should*
-  // be uniform size? Slidedat.ini defines `DIGITIZER_WIDTH/HEIGHT` which are
-  // camera image sizes. Let's look at `mrxs.cpp`: `level.image_width` /
-  // `height` in `SlideZoomLevel` ARE the tile sizes (digitizer size)! See
-  // `ParseTiledLayers`: level.image_width = ini.GetInt(section,
-  // kKeyDigitizerWidth);
-
-  // So we can rely on `zoom_level.image_width` / `image_height`.
-
+  const auto& exec_slide_info = reader.GetMrxsInfo();
   const uint32_t tile_w = zoom_level.image_width;
   const uint32_t tile_h = zoom_level.image_height;
+  const bool is_16bit = exec_slide_info.camera_bitdepth >= 16;
+  const uint32_t bytes_per_sample = is_16bit ? 2U : 1U;
 
-  // Verify size matches data
-  if (tile_data.size() != tile_w * tile_h * 3) {
-    // If it doesn't match, it might be because of concatenation or other MRXS
-    // complexity? Or maybe `DecodeImage` returned different size? Let's trust
-    // `tile_w/h` for now, or calculate from size if we assume square? Better to
-    // trust `zoom_level` as that's what we used to setup grid.
+  // 3DHISTECH stores fluorescence JPEG tile components in BGR order: a
+  // channel declared as `STORING_CHANNEL_NUMBER = S` ends up in JPEG
+  // plane `MAX_CHANNELS - 1 - S` after libjpeg/jpgd decode. Mirror the
+  // `channel = MAX_CHANNELS - channel - 1` flip from
+  // `MiraxReader.java::openBytes` so the storing-channel-sorted output
+  // ordering picks the right plane out of the decoded RGB buffer.
+  // Empirically only fluorescence JPEG tiles need this inversion; the
+  // JPEG-XR identity-copy path already produces samples in
+  // storing-channel order.
+  const bool invert_jpeg_planes =
+      exec_slide_info.slide_type == mrxs::MrxsSlideType::kFluorescence &&
+      zoom_level.image_format == mrxs::MrxsImageFormat::kJpeg;
+
+  // For multi-channel (>3) fluorescence the Canvas is configured with
+  // PlanarConfig::kSeparate and N channels, so a single RGB-packed PNG
+  // contributes 3 planes that need to be written to N >= 4 output channels.
+  // We split the decoded buffer into 3 single-channel tiles and paint them
+  // one-by-one. For the common N <= 3 case we keep the existing single
+  // PaintTile call so the contiguous RGB8 bilinear/blending path is
+  // untouched.
+  const uint32_t output_channels = writer.GetChannels();
+  const bool needs_planar_split = output_channels > 3U;
+
+  if (!needs_planar_split) {
+    auto status =
+        writer.PaintTile(op, tile_data, tile_w, tile_h, 3, accumulator_mutex);
+    (void)status;
+    return aifocore::Status::OkStatus();
   }
 
-  // Extract sub-region if needed
-  // We can use ExtractSubRegion which now takes span and returns span
+  // Planar split path: PaintTilePlanar interprets `op.tile_coord.x` as the
+  // output channel index. We feed it 3 single-channel tile buffers per
+  // decoded PNG, one per R/G/B plane, mapped to channels
+  // [channel_group_offset .. channel_group_offset + 2].
+  const size_t pixels = static_cast<size_t>(tile_w) * tile_h;
+  const size_t plane_bytes = pixels * bytes_per_sample;
+  if (tile_data.size() < plane_bytes * 3U) {
+    std::cerr << "Tile buffer too small to split into 3 planes (have "
+              << tile_data.size() << " bytes, need " << (plane_bytes * 3U)
+              << ")\n";
+    return aifocore::Status::OkStatus();
+  }
 
-  const uint32_t expected_w = op.transform.source.width;
-  const uint32_t expected_h = op.transform.source.height;
+  thread_local std::vector<uint8_t> plane_scratch;
+  plane_scratch.resize(plane_bytes);
 
-  std::span<const uint8_t> data_to_write = tile_data;
-  uint32_t write_w = tile_w;
-  uint32_t write_h = tile_h;
-  core::TileReadOp write_op = op;
+  for (uint32_t plane = 0; plane < 3U; ++plane) {
+    // For fluorescence JPEG tiles, JPEG component `plane` actually carries
+    // the channel whose `STORING_CHANNEL_NUMBER` is `2 - plane` (the
+    // 3DHISTECH encoder writes channels in BGR order). Map the plane to
+    // the correct storing-channel slot before computing the output index.
+    const uint32_t storing_channel = invert_jpeg_planes ? (2U - plane) : plane;
+    const uint32_t out_channel = op.channel_group_offset + storing_channel;
 
-  if (NeedsSubRegionExtraction(tile_w, tile_h, expected_w, expected_h)) {
-    data_to_write = ExtractSubRegion(tile_data, tile_w, tile_h, op);
-    // IMPORTANT: ExtractSubRegion() clamps the crop size to the decoded image
-    // bounds. We must propagate the *actual* cropped width/height; otherwise
-    // BlendedStrategy will read past the end of the crop buffer and produce
-    // corrupted output.
-    const uint32_t crop_x = op.transform.source.x;
-    const uint32_t crop_y = op.transform.source.y;
-    if (crop_x >= tile_w || crop_y >= tile_h) {
-      return aifocore::Status::OkStatus();  // Nothing to write
+    // Deinterleave one R/G/B plane out of the RGB-packed tile buffer.
+    uint64_t sum = 0;
+    uint8_t mn = 255, mx = 0;
+    if (bytes_per_sample == 1U) {
+      const uint8_t* src = tile_data.data() + plane;
+      uint8_t* dst = plane_scratch.data();
+      for (size_t i = 0; i < pixels; ++i) {
+        dst[i] = src[i * 3U];
+        sum += dst[i];
+        if (dst[i] < mn)
+          mn = dst[i];
+        if (dst[i] > mx)
+          mx = dst[i];
+      }
+    } else {
+      const uint16_t* src =
+          reinterpret_cast<const uint16_t*>(tile_data.data()) + plane;
+      uint16_t* dst = reinterpret_cast<uint16_t*>(plane_scratch.data());
+      for (size_t i = 0; i < pixels; ++i) {
+        dst[i] = src[i * 3U];
+      }
     }
-    write_w = std::min(expected_w, tile_w - crop_x);
-    write_h = std::min(expected_h, tile_h - crop_y);
+    const uint64_t mean = pixels > 0 ? sum / pixels : 0;
 
-    // Make the operation consistent with the cropped buffer: source starts at
-    // (0,0) and sizes match `write_w/h`.
-    write_op.transform.source.x = 0;
-    write_op.transform.source.y = 0;
-    write_op.transform.source.width = write_w;
-    write_op.transform.source.height = write_h;
-
-    // Keep destination sizes consistent with the amount of data we're writing.
-    write_op.transform.dest.width =
-        std::min(write_op.transform.dest.width, write_w);
-    write_op.transform.dest.height =
-        std::min(write_op.transform.dest.height, write_h);
-  }
-
-  // Write tile to output with mutex for thread-safe accumulation
-  auto status =
-      writer.WriteTile(write_op, data_to_write, write_w, write_h, 3,  // RGB
-                       accumulator_mutex);
-
-  if (!status.ok()) {
-    return aifocore::Status::OkStatus();  // Continue processing other tiles
+    core::TileReadOp plane_op = op;
+    plane_op.tile_coord.x = out_channel;  // PaintTilePlanar reads this
+    auto status = writer.PaintTile(
+        plane_op,
+        std::span<const uint8_t>(plane_scratch.data(), plane_scratch.size()),
+        tile_w, tile_h, /*tile_channels=*/1U, accumulator_mutex);
+    (void)status;
   }
 
   return aifocore::Status::OkStatus();
@@ -251,7 +248,24 @@ aifocore::Result<DecodedTileData> MrxsTileExecutor::ReadTileFromDisk(
     return ToAifoStatus(data_or.status());
   }
 
-  // Decode tile
+  const bool is_16bit = reader.GetMrxsInfo().camera_bitdepth >= 16;
+
+  if (is_16bit) {
+    auto image_or =
+        mrxs::internal::DecodeImage16(*data_or, zoom_level.image_format);
+    if (!image_or.ok()) {
+      return ToAifoStatus(image_or.status());
+    }
+    const auto& image = *image_or;
+    const size_t data_size = static_cast<size_t>(image.GetWidth()) *
+                             image.GetHeight() * 3 * sizeof(uint16_t);
+    uint8_t* buffer = GetBuffers().GetTileBuffer(data_size);
+    std::memcpy(buffer, image.GetData(), data_size);
+    return DecodedTileData{std::span<const uint8_t>(buffer, data_size),
+                           image.GetWidth(), image.GetHeight(), 3};
+  }
+
+  // 8-bit path
   auto image_or =
       mrxs::internal::DecodeImage(*data_or, zoom_level.image_format);
   if (!image_or.ok()) {
@@ -260,11 +274,8 @@ aifocore::Result<DecodedTileData> MrxsTileExecutor::ReadTileFromDisk(
 
   const auto& image = *image_or;
 
-  // Copy to thread-local buffer
-  // This is necessary because RGBImage owns its data and will delete it when it
-  // goes out of scope We need to return a span that stays valid (which
-  // CachedTileExecutor expects to be from thread-local storage or cache)
-  const size_t data_size = image.GetWidth() * image.GetHeight() * 3;
+  const size_t data_size =
+      static_cast<size_t>(image.GetWidth()) * image.GetHeight() * 3;
   uint8_t* buffer = GetBuffers().GetTileBuffer(data_size);
   std::memcpy(buffer, image.GetData(), data_size);
 
@@ -273,40 +284,6 @@ aifocore::Result<DecodedTileData> MrxsTileExecutor::ReadTileFromDisk(
       image.GetHeight(),
       3  // RGB
   };
-}
-
-std::span<const uint8_t> MrxsTileExecutor::ExtractSubRegion(
-    std::span<const uint8_t> image_data, uint32_t img_w, uint32_t img_h,
-    const core::TileReadOp& op) {
-
-  const uint32_t crop_x = op.transform.source.x;
-  const uint32_t crop_y = op.transform.source.y;
-  const uint32_t crop_w = std::min(op.transform.source.width, img_w - crop_x);
-  const uint32_t crop_h = std::min(op.transform.source.height, img_h - crop_y);
-  const size_t crop_size = crop_w * crop_h * 3;
-
-  // Extract sub-region using row-wise memcpy to thread-local crop buffer
-  uint8_t* dst_data = GetBuffers().GetCropBuffer(crop_size);
-  const uint8_t* src_data = image_data.data();
-
-  for (uint32_t cy = 0; cy < crop_h; ++cy) {
-    const uint32_t src_offset = ((crop_y + cy) * img_w + crop_x) * 3;
-    const uint32_t dst_offset = cy * crop_w * 3;
-    // Check bounds to be safe
-    if (src_offset + crop_w * 3 <= image_data.size()) {
-      std::memcpy(dst_data + dst_offset, src_data + src_offset, crop_w * 3);
-    }
-  }
-
-  return std::span<const uint8_t>(dst_data, crop_size);
-}
-
-bool MrxsTileExecutor::NeedsSubRegionExtraction(uint32_t image_width,
-                                                uint32_t image_height,
-                                                uint32_t expected_width,
-                                                uint32_t expected_height) {
-
-  return image_width > expected_width || image_height > expected_height;
 }
 
 }  // namespace fastslide

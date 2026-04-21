@@ -8,15 +8,15 @@
 #include "fastslide/c/image.h"
 
 #include <algorithm>
-#include <cstdio>   // For printf
-#include <cstdlib>  // For getenv
-#include <cstring>  // For strcmp, strncpy, memcpy
+#include <cstdio>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "fastslide/image.h"
+#include "internal/error.h"
 
 // Wrapper struct to hold the C++ Image
 struct FastSlideImage {
@@ -108,11 +108,19 @@ void PopulateImageInfo(const fastslide::Image& image,
   info->data_size = image.SizeBytes();
 }
 
-// Forward declaration
-extern "C" void fastslide_set_last_error(const char* message);
+using ::fastslide::c::internal::SetLastError;
 
-void SetLastError(const char* message) {
-  fastslide_set_last_error(message);
+// Wrap a freshly-constructed C++ Image in a heap-allocated FastSlideImage.
+// All `fastslide_image_create_*` factories funnel through here. The C++
+// `fastslide::Image` API is exception-free (precondition violations abort
+// via AIFOCORE_CHECK), so no try/catch boundary is required.
+template <typename Construct>
+FastSlideImage* MakeImage(Construct construct) {
+  return new FastSlideImage(construct());
+}
+
+inline fastslide::ImageDimensions ToCppDims(FastSlideImageDimensions dims) {
+  return {dims.width, dims.height};
 }
 
 }  // namespace
@@ -121,62 +129,37 @@ void SetLastError(const char* message) {
 
 FastSlideImage* fastslide_image_create_rgb(FastSlideImageDimensions dimensions,
                                            FastSlideDataType data_type) {
-  try {
-    fastslide::ImageDimensions cpp_dims = {dimensions.width, dimensions.height};
-    fastslide::DataType cpp_dtype = CEnumToDataType(data_type);
-
-    auto cpp_image =
-        fastslide::Image(cpp_dims, fastslide::ImageFormat::kRGB, cpp_dtype);
-    return new FastSlideImage(std::move(cpp_image));
-  } catch (const std::exception& e) {
-    SetLastError(e.what());
-    return nullptr;
-  }
+  return MakeImage([&] {
+    return fastslide::Image(ToCppDims(dimensions), fastslide::ImageFormat::kRGB,
+                            CEnumToDataType(data_type));
+  });
 }
 
 FastSlideImage* fastslide_image_create_rgba(FastSlideImageDimensions dimensions,
                                             FastSlideDataType data_type) {
-  try {
-    fastslide::ImageDimensions cpp_dims = {dimensions.width, dimensions.height};
-    fastslide::DataType cpp_dtype = CEnumToDataType(data_type);
-
-    auto cpp_image =
-        fastslide::Image(cpp_dims, fastslide::ImageFormat::kRGBA, cpp_dtype);
-    return new FastSlideImage(std::move(cpp_image));
-  } catch (const std::exception& e) {
-    SetLastError(e.what());
-    return nullptr;
-  }
+  return MakeImage([&] {
+    return fastslide::Image(ToCppDims(dimensions),
+                            fastslide::ImageFormat::kRGBA,
+                            CEnumToDataType(data_type));
+  });
 }
 
 FastSlideImage* fastslide_image_create_grayscale(
     FastSlideImageDimensions dimensions, FastSlideDataType data_type) {
-  try {
-    fastslide::ImageDimensions cpp_dims = {dimensions.width, dimensions.height};
-    fastslide::DataType cpp_dtype = CEnumToDataType(data_type);
-
-    auto cpp_image =
-        fastslide::Image(cpp_dims, fastslide::ImageFormat::kGray, cpp_dtype);
-    return new FastSlideImage(std::move(cpp_image));
-  } catch (const std::exception& e) {
-    SetLastError(e.what());
-    return nullptr;
-  }
+  return MakeImage([&] {
+    return fastslide::Image(ToCppDims(dimensions),
+                            fastslide::ImageFormat::kGray,
+                            CEnumToDataType(data_type));
+  });
 }
 
 FastSlideImage* fastslide_image_create_spectral(
     FastSlideImageDimensions dimensions, uint32_t channels,
     FastSlideDataType data_type) {
-  try {
-    fastslide::ImageDimensions cpp_dims = {dimensions.width, dimensions.height};
-    fastslide::DataType cpp_dtype = CEnumToDataType(data_type);
-
-    auto cpp_image = fastslide::Image(cpp_dims, channels, cpp_dtype);
-    return new FastSlideImage(std::move(cpp_image));
-  } catch (const std::exception& e) {
-    SetLastError(e.what());
-    return nullptr;
-  }
+  return MakeImage([&] {
+    return fastslide::Image(ToCppDims(dimensions), channels,
+                            CEnumToDataType(data_type));
+  });
 }
 
 // Property accessors
@@ -322,197 +305,133 @@ int fastslide_image_copy_data(const FastSlideImage* image, uint8_t* buffer,
 
 // Conversion methods
 
-FastSlideImage* fastslide_image_to_rgb(const FastSlideImage* image) {
-  if (!image) {
+namespace {
+
+// Wrap a `unique_ptr<Image>`-returning conversion with consistent C-API
+// semantics: validate the input handle, run the conversion, surface a typed
+// error message if the C++ side returned nullptr.
+template <typename Convert>
+FastSlideImage* WrapConversion(const FastSlideImage* image,
+                               const char* failure_message, Convert convert) {
+  if (image == nullptr) {
     SetLastError("image cannot be null");
     return nullptr;
   }
-
-  try {
-    auto rgb_image = image->image.ToRGB();
-    if (!rgb_image) {
-      SetLastError("failed to convert image to RGB");
-      return nullptr;
-    }
-    return new FastSlideImage(std::move(*rgb_image));
-  } catch (const std::exception& e) {
-    SetLastError(e.what());
+  auto result = convert(image->image);
+  if (!result) {
+    SetLastError(failure_message);
     return nullptr;
   }
+  return new FastSlideImage(std::move(*result));
+}
+
+}  // namespace
+
+FastSlideImage* fastslide_image_to_rgb(const FastSlideImage* image) {
+  return WrapConversion(
+      image, "failed to convert image to RGB",
+      [](const fastslide::Image& img) { return img.ToRGB(); });
 }
 
 FastSlideImage* fastslide_image_to_grayscale(const FastSlideImage* image) {
-  if (!image) {
-    SetLastError("image cannot be null");
-    return nullptr;
-  }
-
-  try {
-    auto gray_image = image->image.ToGrayscale();
-    if (!gray_image) {
-      SetLastError("failed to convert image to grayscale");
-      return nullptr;
-    }
-    return new FastSlideImage(std::move(*gray_image));
-  } catch (const std::exception& e) {
-    SetLastError(e.what());
-    return nullptr;
-  }
+  return WrapConversion(
+      image, "failed to convert image to grayscale",
+      [](const fastslide::Image& img) { return img.ToGrayscale(); });
 }
 
 FastSlideImage* fastslide_image_to_planar(const FastSlideImage* image) {
-  if (!image) {
-    SetLastError("image cannot be null");
-    return nullptr;
-  }
-
-  try {
-    auto planar_image = image->image.ToPlanar();
-    if (!planar_image) {
-      SetLastError("failed to convert image to planar layout");
-      return nullptr;
-    }
-    return new FastSlideImage(std::move(*planar_image));
-  } catch (const std::exception& e) {
-    SetLastError(e.what());
-    return nullptr;
-  }
+  return WrapConversion(
+      image, "failed to convert image to planar layout",
+      [](const fastslide::Image& img) { return img.ToPlanar(); });
 }
 
 FastSlideImage* fastslide_image_to_interleaved(const FastSlideImage* image) {
-  if (!image) {
-    SetLastError("image cannot be null");
-    return nullptr;
-  }
-
-  try {
-    auto interleaved_image = image->image.ToInterleaved();
-    if (!interleaved_image) {
-      SetLastError("failed to convert image to interleaved layout");
-      return nullptr;
-    }
-    return new FastSlideImage(std::move(*interleaved_image));
-  } catch (const std::exception& e) {
-    SetLastError(e.what());
-    return nullptr;
-  }
+  return WrapConversion(
+      image, "failed to convert image to interleaved layout",
+      [](const fastslide::Image& img) { return img.ToInterleaved(); });
 }
 
 FastSlideImage* fastslide_image_extract_channels(
     const FastSlideImage* image, const uint32_t* channel_indices,
     uint32_t num_channels) {
-  if (!image) {
+  if (image == nullptr) {
     SetLastError("image cannot be null");
     return nullptr;
   }
-
-  if (num_channels > 0 && !channel_indices) {
+  if (num_channels > 0 && channel_indices == nullptr) {
     SetLastError("channel_indices cannot be null when num_channels > 0");
     return nullptr;
   }
 
-  try {
-    std::vector<uint32_t> indices(channel_indices,
-                                  channel_indices + num_channels);
-    auto extracted_image = image->image.ExtractChannels(indices);
-    if (!extracted_image) {
-      SetLastError("failed to extract channels");
-      return nullptr;
-    }
-    return new FastSlideImage(std::move(*extracted_image));
-  } catch (const std::exception& e) {
-    SetLastError(e.what());
+  const std::vector<uint32_t> indices(channel_indices,
+                                      channel_indices + num_channels);
+  auto extracted_image = image->image.ExtractChannels(indices);
+  if (!extracted_image) {
+    SetLastError("failed to extract channels");
     return nullptr;
   }
+  return new FastSlideImage(std::move(*extracted_image));
 }
 
 FastSlideImage* fastslide_image_clone(const FastSlideImage* image) {
-  if (!image) {
+  if (image == nullptr) {
     SetLastError("image cannot be null");
     return nullptr;
   }
-
-  try {
-    auto cloned_image = image->image.Clone();
-    return new FastSlideImage(std::move(*cloned_image));
-  } catch (const std::exception& e) {
-    SetLastError(e.what());
-    return nullptr;
-  }
+  return new FastSlideImage(std::move(*image->image.Clone()));
 }
 
 int fastslide_image_get_description(const FastSlideImage* image, char* buffer,
                                     size_t buffer_size) {
-  if (!image || !buffer) {
+  if (image == nullptr || buffer == nullptr) {
     SetLastError("image and buffer cannot be null");
     return -1;
   }
 
-  try {
-    std::string description = image->image.GetDescription();
-    size_t desc_len = description.length();
-
-    if (buffer_size <= desc_len) {
-      SetLastError("buffer size is too small");
-      return -1;
-    }
-
-    std::strncpy(buffer, description.c_str(), buffer_size - 1);
-    buffer[buffer_size - 1] = '\0';
-    return static_cast<int>(desc_len);
-  } catch (const std::exception& e) {
-    SetLastError(e.what());
+  const std::string description = image->image.GetDescription();
+  const size_t desc_len = description.length();
+  if (buffer_size <= desc_len) {
+    SetLastError("buffer size is too small");
     return -1;
   }
+
+  std::strncpy(buffer, description.c_str(), buffer_size - 1);
+  buffer[buffer_size - 1] = '\0';
+  return static_cast<int>(desc_len);
 }
 
 // Helper functions for other modules
 
 extern "C" FastSlideImage* fastslide_image_create_from_cpp(
     fastslide::Image image) {
-  try {
-    // Check if the image is valid
-    if (image.GetDimensions()[0] == 0 || image.GetDimensions()[1] == 0) {
-      printf(
-          "[FastSlide C] ERROR: Cannot create wrapper for image with zero "
-          "dimensions\n");
-      SetLastError("Cannot create wrapper for image with zero dimensions");
-      return nullptr;
-    }
-
-    // Allow uninitialized images (they may have null data until first paste)
-    if (image.IsInitialized() && image.GetData() == nullptr) {
-      printf(
-          "[FastSlide C] ERROR: Cannot create wrapper for initialized image "
-          "with null "
-          "data\n");
-      SetLastError(
-          "Cannot create wrapper for initialized image with null data");
-      return nullptr;
-    }
-
-    FastSlideImage* result = new FastSlideImage(std::move(image));
-    return result;
-  } catch (const std::exception& e) {
-    printf("[FastSlide C] ERROR: Exception creating image wrapper: %s\n",
-           e.what());
-    SetLastError(e.what());
+  if (image.GetDimensions()[0] == 0 || image.GetDimensions()[1] == 0) {
+    printf(
+        "[FastSlide C] ERROR: Cannot create wrapper for image with zero "
+        "dimensions\n");
+    SetLastError("Cannot create wrapper for image with zero dimensions");
     return nullptr;
   }
+
+  // Uninitialized images are allowed (data is null until first paste).
+  if (image.IsInitialized() && image.GetData() == nullptr) {
+    printf(
+        "[FastSlide C] ERROR: Cannot create wrapper for initialized image "
+        "with null data\n");
+    SetLastError("Cannot create wrapper for initialized image with null data");
+    return nullptr;
+  }
+
+  return new FastSlideImage(std::move(image));
 }
 
 const fastslide::Image& fastslide_image_get_cpp_image(
     const FastSlideImage* image) {
-  if (!image) {
-    throw std::invalid_argument("image cannot be null");
-  }
+  AIFOCORE_CHECK(image != nullptr, "image cannot be null");
   return image->image;
 }
 
 fastslide::Image& fastslide_image_get_cpp_image_mutable(FastSlideImage* image) {
-  if (!image) {
-    throw std::invalid_argument("image cannot be null");
-  }
+  AIFOCORE_CHECK(image != nullptr, "image cannot be null");
   return image->image;
 }
 
@@ -520,91 +439,65 @@ fastslide::Image& fastslide_image_get_cpp_image_mutable(FastSlideImage* image) {
 
 extern "C" FastSlideImage* fastslide_image_create_blank(
     FastSlideImageDimensions dimensions) {
-  try {
-    fastslide::ImageDimensions cpp_dims = {dimensions.width, dimensions.height};
-    auto cpp_image = fastslide::CreateBlankImage(cpp_dims);
-    return fastslide_image_create_from_cpp(std::move(*cpp_image));
-  } catch (const std::exception& e) {
-    printf("[FastSlide C] ERROR: Exception creating blank image: %s\n",
-           e.what());
-    SetLastError(e.what());
-    return nullptr;
-  }
+  return new FastSlideImage(fastslide::Image(ToCppDims(dimensions)));
 }
 
 extern "C" FastSlideImage* fastslide_image_create_solid_color(
     FastSlideImageDimensions dimensions, FastSlideDataType data_type,
     uint32_t red, uint32_t green, uint32_t blue) {
-  try {
-    fastslide::ImageDimensions cpp_dims = {dimensions.width, dimensions.height};
-    fastslide::DataType cpp_dtype = CEnumToDataType(data_type);
+  const fastslide::DataType cpp_dtype = CEnumToDataType(data_type);
+  fastslide::Image rgb_image(ToCppDims(dimensions),
+                             fastslide::ImageFormat::kRGB, cpp_dtype);
 
-    auto rgb_image = fastslide::CreateRGBImage(cpp_dims, cpp_dtype);
-
-    // Fill with color based on data type
-    switch (cpp_dtype) {
-      case fastslide::DataType::kUInt8:
-        rgb_image->FillWithColor(static_cast<uint8_t>(red),
-                                 static_cast<uint8_t>(green),
-                                 static_cast<uint8_t>(blue));
-        break;
-      case fastslide::DataType::kUInt16:
-        rgb_image->FillWithColor(static_cast<uint16_t>(red),
-                                 static_cast<uint16_t>(green),
-                                 static_cast<uint16_t>(blue));
-        break;
-      case fastslide::DataType::kInt16:
-        rgb_image->FillWithColor(static_cast<int16_t>(red),
-                                 static_cast<int16_t>(green),
-                                 static_cast<int16_t>(blue));
-        break;
-      case fastslide::DataType::kUInt32:
-        rgb_image->FillWithColor(static_cast<uint32_t>(red),
-                                 static_cast<uint32_t>(green),
-                                 static_cast<uint32_t>(blue));
-        break;
-      case fastslide::DataType::kInt32:
-        rgb_image->FillWithColor(static_cast<int32_t>(red),
-                                 static_cast<int32_t>(green),
-                                 static_cast<int32_t>(blue));
-        break;
-      case fastslide::DataType::kFloat32:
-        rgb_image->FillWithColor(static_cast<float>(red),
-                                 static_cast<float>(green),
-                                 static_cast<float>(blue));
-        break;
-      case fastslide::DataType::kFloat64:
-        rgb_image->FillWithColor(static_cast<double>(red),
-                                 static_cast<double>(green),
-                                 static_cast<double>(blue));
-        break;
-    }
-
-    return fastslide_image_create_from_cpp(std::move(*rgb_image));
-  } catch (const std::exception& e) {
-    printf("[FastSlide C] ERROR: Exception creating solid color image: %s\n",
-           e.what());
-    SetLastError(e.what());
-    return nullptr;
+  switch (cpp_dtype) {
+    case fastslide::DataType::kUInt8:
+      rgb_image.FillWithColor(static_cast<uint8_t>(red),
+                              static_cast<uint8_t>(green),
+                              static_cast<uint8_t>(blue));
+      break;
+    case fastslide::DataType::kUInt16:
+      rgb_image.FillWithColor(static_cast<uint16_t>(red),
+                              static_cast<uint16_t>(green),
+                              static_cast<uint16_t>(blue));
+      break;
+    case fastslide::DataType::kInt16:
+      rgb_image.FillWithColor(static_cast<int16_t>(red),
+                              static_cast<int16_t>(green),
+                              static_cast<int16_t>(blue));
+      break;
+    case fastslide::DataType::kUInt32:
+      rgb_image.FillWithColor(static_cast<uint32_t>(red),
+                              static_cast<uint32_t>(green),
+                              static_cast<uint32_t>(blue));
+      break;
+    case fastslide::DataType::kInt32:
+      rgb_image.FillWithColor(static_cast<int32_t>(red),
+                              static_cast<int32_t>(green),
+                              static_cast<int32_t>(blue));
+      break;
+    case fastslide::DataType::kFloat32:
+      rgb_image.FillWithColor(static_cast<float>(red),
+                              static_cast<float>(green),
+                              static_cast<float>(blue));
+      break;
+    case fastslide::DataType::kFloat64:
+      rgb_image.FillWithColor(static_cast<double>(red),
+                              static_cast<double>(green),
+                              static_cast<double>(blue));
+      break;
   }
+
+  return fastslide_image_create_from_cpp(std::move(rgb_image));
 }
 
 // Extended property accessors
 
 extern "C" int fastslide_image_is_initialized(const FastSlideImage* image) {
-  if (!image) {
+  if (image == nullptr) {
     SetLastError("image cannot be null");
     return 0;
   }
-
-  try {
-    return image->image.IsInitialized() ? 1 : 0;
-  } catch (const std::exception& e) {
-    printf("[FastSlide C] ERROR: Exception checking initialization: %s\n",
-           e.what());
-    SetLastError(e.what());
-    return 0;
-  }
+  return image->image.IsInitialized() ? 1 : 0;
 }
 
 // Image operations
@@ -615,23 +508,14 @@ extern "C" int fastslide_image_paste(FastSlideImage* dest_image,
                                      uint32_t source_x, uint32_t source_y,
                                      uint32_t source_width,
                                      uint32_t source_height) {
-  if (!dest_image || !source_image) {
+  if (dest_image == nullptr || source_image == nullptr) {
     SetLastError("dest_image and source_image cannot be null");
     return 0;
   }
 
-  try {
-    auto& dest_cpp = fastslide_image_get_cpp_image_mutable(dest_image);
-    const auto& source_cpp = fastslide_image_get_cpp_image(source_image);
-
-    dest_cpp.Paste(source_cpp, dest_x, dest_y, source_x, source_y, source_width,
-                   source_height);
-    return 1;
-  } catch (const std::exception& e) {
-    printf("[FastSlide C] ERROR: Exception during paste: %s\n", e.what());
-    SetLastError(e.what());
-    return 0;
-  }
+  dest_image->image.Paste(source_image->image, dest_x, dest_y, source_x,
+                          source_y, source_width, source_height);
+  return 1;
 }
 
 // Memory management

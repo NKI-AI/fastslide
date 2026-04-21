@@ -15,8 +15,11 @@
 #include "fastslide/readers/mrxs/mrxs_plan_builder.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
+#include <iostream>
 #include <utility>
 #include <vector>
 
@@ -41,18 +44,12 @@ aifocore::Result<core::TilePlan> MrxsPlanBuilder::BuildPlan(
   AIFOCORE_RETURN_IF_ERROR(ValidateRequest(request, reader));
 
   // Get level info
-  auto level_info_or = reader.GetLevelInfo(request.level);
-  if (!level_info_or.ok()) {
-    return level_info_or.status();
-  }
-  const auto& level_info = *level_info_or;
+  AIFOCORE_ASSIGN_OR_RETURN(const auto& level_info,
+                            reader.GetLevelInfo(request.level));
 
   // Get spatial index for this level
-  auto index_or = reader.GetSpatialIndex(request.level);
-  if (!index_or.ok()) {
-    return index_or.status();
-  }
-  const auto& index = *index_or;
+  AIFOCORE_ASSIGN_OR_RETURN(const auto& index,
+                            reader.GetSpatialIndex(request.level));
 
   // Determine region bounds from request
   double x, y;
@@ -68,18 +65,23 @@ aifocore::Result<core::TilePlan> MrxsPlanBuilder::BuildPlan(
 
   if (tile_indices.empty()) {
     // No tiles found - return empty plan
-    plan.output = CreateOutputSpec(width, height, zoom_level);
+    plan.output = CreateOutputSpec(width, height, zoom_level, slide_info);
     plan.actual_region = {
         .top_left = {0, 0}, .size = {width, height}, .level = request.level};
     return plan;
   }
 
-  // Create tile operations
-  auto operations = CreateTileOperations(request, *index, x, y, width, height);
+  // Create tile operations. The 8-bit RGB brightfield path still needs the
+  // sRGB-space `gain` carried in BlendMetadata; the 16-bit fluorescence
+  // path drops it so the Canvas falls into the integer copy-with-coverage
+  // branch instead of the bilinear+gain blender.
+  const bool emit_blend_metadata = slide_info.camera_bitdepth < 16;
+  auto operations = CreateTileOperations(request, *index, x, y, width, height,
+                                         emit_blend_metadata);
   plan.operations = std::move(operations);
 
   // Set output specification
-  plan.output = CreateOutputSpec(width, height, zoom_level);
+  plan.output = CreateOutputSpec(width, height, zoom_level, slide_info);
 
   // Set actual region
   plan.actual_region = {
@@ -94,7 +96,7 @@ aifocore::Status MrxsPlanBuilder::ValidateRequest(
     const core::TileRequest& request, const MrxsReader& reader) {
 
   if (request.level < 0 || request.level >= reader.GetLevelCount()) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid level: {}", request.level));
   }
@@ -125,7 +127,7 @@ void MrxsPlanBuilder::DetermineRegionBounds(const core::TileRequest& request,
 std::vector<core::TileReadOp> MrxsPlanBuilder::CreateTileOperations(
     const core::TileRequest& request,
     const mrxs::MrxsSpatialIndex& spatial_index, double x, double y,
-    uint32_t width, uint32_t height) {
+    uint32_t width, uint32_t height, bool emit_blend_metadata) {
 
   auto tile_indices = spatial_index.QueryRegion(x, y, width, height);
   const auto& spatial_tiles = spatial_index.GetSpatialTiles();
@@ -135,8 +137,8 @@ std::vector<core::TileReadOp> MrxsPlanBuilder::CreateTileOperations(
 
   for (size_t idx : tile_indices) {
     const auto& spatial_tile = spatial_tiles[idx];
-    auto op_opt =
-        CreateTileOperation(request, spatial_tile, x, y, width, height);
+    auto op_opt = CreateTileOperation(request, spatial_tile, x, y, width,
+                                      height, emit_blend_metadata);
     if (op_opt) {
       operations.push_back(*op_opt);
     }
@@ -147,7 +149,8 @@ std::vector<core::TileReadOp> MrxsPlanBuilder::CreateTileOperations(
 
 std::optional<core::TileReadOp> MrxsPlanBuilder::CreateTileOperation(
     const core::TileRequest& request, const mrxs::SpatialTile& spatial_tile,
-    double x, double y, uint32_t width, uint32_t height) {
+    double x, double y, uint32_t width, uint32_t height,
+    bool emit_blend_metadata) {
 
   const auto& tile = spatial_tile.tile_info;
 
@@ -161,93 +164,75 @@ std::optional<core::TileReadOp> MrxsPlanBuilder::CreateTileOperation(
   op.byte_offset = tile.offset;
   op.byte_size = tile.length;
 
-  // Calculate tile position relative to region origin
-  const double tile_x_in_level = spatial_tile.bbox.min[0];
-  const double tile_y_in_level = spatial_tile.bbox.min[1];
-  const double rel_x = tile_x_in_level - x;
-  const double rel_y = tile_y_in_level - y;
+  // Each PNG stores up to 3 channels (R/G/B planes). For >3 channel slides
+  // the channel_group_index tells the executor where to drop those planes
+  // in the multi-channel planar output (channels [3*g .. 3*g + 2]).
+  op.channel_group_offset =
+      static_cast<uint32_t>(tile.channel_group_index) * 3U;
 
-  // Extract integer and fractional components
-  const int32_t dest_x = static_cast<int32_t>(std::floor(rel_x));
-  const int32_t dest_y = static_cast<int32_t>(std::floor(rel_y));
-  const double frac_x = rel_x - dest_x;
-  const double frac_y = rel_y - dest_y;
+  const double dest_x = spatial_tile.bbox.min[0] - x;
+  const double dest_y = spatial_tile.bbox.min[1] - y;
 
-  // Calculate initial source and destination dimensions
-  uint32_t src_offset_x = static_cast<uint32_t>(std::round(tile.subregion_x));
-  uint32_t src_offset_y = static_cast<uint32_t>(std::round(tile.subregion_y));
-  uint32_t src_width =
+  const uint32_t src_width =
       static_cast<uint32_t>(std::ceil(spatial_tile.tile_width));
-  uint32_t src_height =
+  const uint32_t src_height =
       static_cast<uint32_t>(std::ceil(spatial_tile.tile_height));
 
-  uint32_t final_dest_x = 0;
-  uint32_t final_dest_y = 0;
-  uint32_t final_width = src_width;
-  uint32_t final_height = src_height;
-
-  // Clip left/top if tile extends before region origin
-  if (dest_x < 0) {
-    const uint32_t clip_amount = static_cast<uint32_t>(-dest_x);
-    src_offset_x += clip_amount;
-    final_width = (clip_amount < src_width) ? (src_width - clip_amount) : 0;
-    final_dest_x = 0;
-  } else {
-    final_dest_x = static_cast<uint32_t>(dest_x);
-  }
-
-  if (dest_y < 0) {
-    const uint32_t clip_amount = static_cast<uint32_t>(-dest_y);
-    src_offset_y += clip_amount;
-    final_height = (clip_amount < src_height) ? (src_height - clip_amount) : 0;
-    final_dest_y = 0;
-  } else {
-    final_dest_y = static_cast<uint32_t>(dest_y);
-  }
-
-  // Clip right/bottom if tile extends beyond region bounds
-  if (final_dest_x + final_width > width) {
-    final_width = (width > final_dest_x) ? (width - final_dest_x) : 0;
-  }
-  if (final_dest_y + final_height > height) {
-    final_height = (height > final_dest_y) ? (height - final_dest_y) : 0;
-  }
-
-  // Skip tiles that are completely outside the region
-  if (final_width == 0 || final_height == 0) {
+  // Quick reject: tile entirely outside the output region.
+  if (dest_x + src_width <= 0.0 || dest_y + src_height <= 0.0 ||
+      dest_x >= width || dest_y >= height) {
     return std::nullopt;
   }
 
-  // Set transform
-  op.transform.source = {src_offset_x, src_offset_y, final_width, final_height};
-  op.transform.dest = {final_dest_x, final_dest_y, final_width, final_height};
+  op.transform.source = {tile.subregion_x, tile.subregion_y, src_width,
+                         src_height};
+  op.transform.dest = {dest_x, dest_y, src_width, src_height};
 
-  // Populate blend metadata for MRXS (supports fractional positioning +
-  // averaging)
-  core::BlendMetadata blend;
-  blend.fractional_x = frac_x;
-  blend.fractional_y = frac_y;
-  blend.weight = 1.0;                      // Equal weight for all tiles
-  blend.gain = tile.gain;                  // Intensity correction factor
-  blend.mode = core::BlendMode::kAverage;  // MRXS uses averaging for overlaps
-  blend.enable_subpixel_resampling = true;
-  op.blend_metadata = blend;
+  if (emit_blend_metadata) {
+    core::BlendMetadata blend;
+    blend.weight = 1.0;
+    blend.gain = tile.gain;
+    blend.mode = core::BlendMode::kOverwrite;
+    op.blend_metadata = blend;
+  }
 
   return op;
 }
 
 core::OutputSpec MrxsPlanBuilder::CreateOutputSpec(
-    uint32_t width, uint32_t height, const mrxs::SlideZoomLevel& zoom_level) {
+    uint32_t width, uint32_t height, const mrxs::SlideZoomLevel& zoom_level,
+    const mrxs::SlideDataInfo& slide_info) {
+
+  const bool is_fluorescence =
+      slide_info.slide_type == mrxs::MrxsSlideType::kFluorescence &&
+      !slide_info.filters.empty();
+  const size_t n_channels =
+      is_fluorescence ? slide_info.filters.size() : static_cast<size_t>(3);
 
   core::OutputSpec spec;
   spec.dimensions = {width, height};
-  spec.channels = 3;  // RGB
-  spec.pixel_format = core::OutputSpec::PixelFormat::kUInt8;
-  // TODO(jonasteuwen): This seems duplicated
-  spec.background = {
-      static_cast<uint8_t>((zoom_level.background_color_rgb >> 16) & 0xFF),
-      static_cast<uint8_t>((zoom_level.background_color_rgb >> 8) & 0xFF),
-      static_cast<uint8_t>(zoom_level.background_color_rgb & 0xFF), 255};
+  spec.channels = static_cast<uint32_t>(n_channels);
+  spec.planar_config =
+      (n_channels > 3) ? PlanarConfig::kSeparate : PlanarConfig::kContiguous;
+  spec.pixel_format = (slide_info.camera_bitdepth >= 16)
+                          ? core::OutputSpec::PixelFormat::kUInt16
+                          : core::OutputSpec::PixelFormat::kUInt8;
+  // Fluorescence channels are independent fluorophores, not RGB color
+  // components. Tag the output as Spectral so FFI consumers (e.g. the FV
+  // viewer) take the per-channel display path even when N <= 3.
+  spec.force_spectral_image = is_fluorescence;
+
+  if (is_fluorescence) {
+    // For fluorescence, intensity 0 = no signal = black. The slide's
+    // IMAGE_FILL_COLOR_BGR (typically 0x808080 grey) is meaningful only
+    // for brightfield H&E backgrounds; using it here would paint missing
+    // tiles as bright mid-grey on top of the channel display colors,
+    // making sparse regions glow instead of looking empty.
+    spec.background = {0, 0, 0, 0};
+  } else {
+    const auto rgb = mrxs::UnpackRgb24(zoom_level.background_color_rgb);
+    spec.background = {rgb[0], rgb[1], rgb[2], 255};
+  }
 
   return spec;
 }

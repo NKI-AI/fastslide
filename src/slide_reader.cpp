@@ -92,8 +92,8 @@ aifocore::Result<core::TileRequest> SlideReader::RegionToTileRequest(
     const RegionSpec& region) const {
   // Validate region
   if (!region.IsValid()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Invalid region specification");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Invalid region specification");
   }
 
   // Get level info to validate level exists
@@ -103,7 +103,7 @@ aifocore::Result<core::TileRequest> SlideReader::RegionToTileRequest(
   // Check for complete out-of-bounds
   if (region.top_left[0] >= level_info.dimensions[0] ||
       region.top_left[1] >= level_info.dimensions[1]) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kOutOfRange,
         aifocore::fmt::format(
             "Requested region at ({}, {}) is completely outside image "
@@ -137,20 +137,16 @@ aifocore::Result<core::TileRequest> SlideReader::RegionToTileRequest(
   return request;
 }
 
-aifocore::Result<Image> SlideReader::ReadRegionViaPipeline(
+aifocore::Result<Image> SlideReader::ReadRegion(
     const RegionSpec& region) const {
-
-  // Convert RegionSpec to TileRequest
   core::TileRequest request;
   AIFOCORE_ASSIGN_OR_RETURN(request, RegionToTileRequest(region));
 
-  // Call PrepareRequest to get execution plan
   core::TilePlan plan;
   AIFOCORE_ASSIGN_OR_RETURN(plan, PrepareRequest(request));
 
-  // Validate plan before creating TileWriter to prevent bad_array_new_length
   if (plan.output.dimensions[0] == 0 || plan.output.dimensions[1] == 0) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInternal,
         aifocore::fmt::format("PrepareRequest returned invalid plan with zero "
                               "dimensions: [{},{}]",
@@ -158,23 +154,21 @@ aifocore::Result<Image> SlideReader::ReadRegionViaPipeline(
                               plan.output.dimensions[1]));
   }
   if (plan.output.channels == 0 || plan.output.channels > 10000) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInternal,
         aifocore::fmt::format(
             "PrepareRequest returned invalid plan with bad channel count: {}",
             plan.output.channels));
   }
 
-  runtime::TileWriter writer(plan);  // Auto-detects blending, channels, etc.
+  runtime::Canvas canvas(plan);
 
-  // Execute the plan (same interface for all formats)
-  AIFOCORE_RETURN_IF_ERROR(ExecutePlan(plan, writer));
-  AIFOCORE_RETURN_IF_ERROR(writer.Finalize());
+  AIFOCORE_RETURN_IF_ERROR(ExecutePlan(plan, canvas));
+  AIFOCORE_RETURN_IF_ERROR(canvas.Finalize());
 
   Image output;
-  AIFOCORE_ASSIGN_OR_RETURN(output, writer.GetOutput());
+  AIFOCORE_ASSIGN_OR_RETURN(output, canvas.GetOutput());
 
-  // Return the Image directly (unified interface always returns Image)
   return output;
 }
 

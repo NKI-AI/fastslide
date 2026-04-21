@@ -25,6 +25,7 @@
 #include <numbers>
 #include <span>
 #include <stdexcept>
+#include <string>
 #include <tuple>
 #include <vector>
 
@@ -613,46 +614,41 @@ void VerticalPassAVX2<uint16_t>(const float* __restrict intermediate,
 #endif
 
 // Public API functions
-inline std::unique_ptr<Image> LanczosResample(const Image& input, uint32_t w,
-                                              uint32_t h) {
+
+/// @brief Resample @p input to @p (w, h) using the supplied separable Kernel.
+///
+/// Shared body for the public Lanczos / Cosine entrypoints; each is a thin
+/// wrapper that fixes the kernel type and the function name shown in error
+/// messages.
+template <typename Kernel>
+inline std::unique_ptr<Image> ResampleWithKernel(const Image& input, uint32_t w,
+                                                 uint32_t h,
+                                                 const char* function_name) {
   if (input.GetPlanarConfig() != PlanarConfig::kSeparate) {
-    throw std::invalid_argument(
-        "LanczosResample requires separate planar configuration");
+    throw std::invalid_argument(std::string(function_name) +
+                                " requires separate planar configuration");
   }
 
   std::unique_ptr<Image> r;
   DispatchByDataType(input.GetDataType(), [&]<typename T>() {
-    r = ResampleSeparable<T, Lanczos3>(input, w, h);
+    r = ResampleSeparable<T, Kernel>(input, w, h);
   });
   return r;
+}
+
+inline std::unique_ptr<Image> LanczosResample(const Image& input, uint32_t w,
+                                              uint32_t h) {
+  return ResampleWithKernel<Lanczos3>(input, w, h, "LanczosResample");
 }
 
 inline std::unique_ptr<Image> Lanczos2Resample(const Image& input, uint32_t w,
                                                uint32_t h) {
-  if (input.GetPlanarConfig() != PlanarConfig::kSeparate) {
-    throw std::invalid_argument(
-        "Lanczos2Resample requires separate planar configuration");
-  }
-
-  std::unique_ptr<Image> r;
-  DispatchByDataType(input.GetDataType(), [&]<typename T>() {
-    r = ResampleSeparable<T, Lanczos2>(input, w, h);
-  });
-  return r;
+  return ResampleWithKernel<Lanczos2>(input, w, h, "Lanczos2Resample");
 }
 
 inline std::unique_ptr<Image> CosineResample(const Image& input, uint32_t w,
                                              uint32_t h) {
-  if (input.GetPlanarConfig() != PlanarConfig::kSeparate) {
-    throw std::invalid_argument(
-        "CosineResample requires separate planar configuration");
-  }
-
-  std::unique_ptr<Image> r;
-  DispatchByDataType(input.GetDataType(), [&]<typename T>() {
-    r = ResampleSeparable<T, Cosine3>(input, w, h);
-  });
-  return r;
+  return ResampleWithKernel<Cosine3>(input, w, h, "CosineResample");
 }
 
 }  // namespace fastslide::resample

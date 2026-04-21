@@ -106,39 +106,6 @@
 // significant bit first). Requires that at least 7 safety bytes are present at
 // the end of the stream (don't trigger a segmentation fault)!
 
-// Note: open-pipeline geometry + codeblock processing helpers moved to C++20
-// (`open_helpers.cpp`).
-
-// Chunk layout helper moved to C++ (`chunk_layout.h`).
-
-// Dump codeblock info from block header to a .csv file
-static void isyntax_dump_block_header(isyntax_image_t* wsi_image,
-                                      const char* filename) {
-  if (filename == NULL) {
-    filename = "test_block_header.csv";
-  }
-  FILE* test_block_header_fp = fopen(filename, "wb");
-  if (test_block_header_fp) {
-    fprintf(test_block_header_fp,
-            "x_coordinate,y_coordinate,color_component,scale,coefficient,block_"
-            "data_offset,block_data_size,block_header_template_id\n");
-
-    for (int32_t i = 0; i < wsi_image->codeblock_count; i += 1 /*21*3*/) {
-      isyntax_codeblock_t* codeblock = wsi_image->codeblocks + i;
-      fprintf(test_block_header_fp, "%d,%d,%d,%d,%d,%lld,%lld,%d\n",
-              // codeblock->x_adjusted,
-              // codeblock->y_adjusted,
-              codeblock->x_coordinate - wsi_image->offset_x,
-              codeblock->y_coordinate - wsi_image->offset_y,
-              codeblock->color_component, codeblock->scale,
-              codeblock->coefficient, codeblock->block_data_offset,
-              codeblock->block_size, codeblock->block_header_template_id);
-    }
-
-    fclose(test_block_header_fp);
-  }
-}
-
 /**
  * Read and process the seektable to populate codeblock offsets and sizes.
  *

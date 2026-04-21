@@ -27,6 +27,9 @@ namespace simpletiff {
 /// files. See TIFF 6.0 specification and LibTIFF documentation for details.
 enum class Compression : uint16_t {
   kNone = 1,          ///< No compression
+  kCcittRle = 2,      ///< CCITT modified Huffman (1-D, T.4 RLE)
+  kCcittFax3 = 3,     ///< CCITT Group 3 fax (T.4 1-D and 2-D)
+  kCcittFax4 = 4,     ///< CCITT Group 4 fax (T.6 2-D)
   kLzw = 5,           ///< LZW compression (Lempel-Ziv-Welch)
   kJpeg = 7,          ///< JPEG compression
   kAdobeDeflate = 8,  ///< Adobe Deflate (zlib/deflate), common in TIFF
@@ -61,6 +64,19 @@ constexpr bool IsCompression(uint16_t code, Compression expected) {
     return code == 33003u || code == 33005u;
   }
   return code == static_cast<uint16_t>(expected);
+}
+
+/// Check whether a raw compression code is one of the CCITT bilevel codecs
+/// (modified Huffman / T.4 / T.6). These produce 1-bit packed bilevel data
+/// and are decoded by simpletiff::DecompressCcittG4 (Group 4) or
+/// DecompressCcittG3 (Group 3 / RLE), then unpacked to 8-bit grayscale.
+///
+/// @param code Raw compression code from the TIFF page header
+/// @return true if the code is a CCITT bilevel codec (2, 3, or 4)
+constexpr bool IsCcittCompression(uint16_t code) {
+  return code == static_cast<uint16_t>(Compression::kCcittRle) ||
+         code == static_cast<uint16_t>(Compression::kCcittFax3) ||
+         code == static_cast<uint16_t>(Compression::kCcittFax4);
 }
 
 /// Determine whether a JPEG2000 compression code implies YCbCr color space.
@@ -117,9 +133,10 @@ constexpr bool IsPhotometric(uint16_t code, Photometric expected) {
 // BitsPerSample Validation and Conversion
 // =============================================================================
 //
-// SimpleTIFF Design Decision: Byte-Aligned Formats Only
-// -------------------------------------------------------
-// SimpleTIFF supports only byte-aligned sample formats (8, 16, 32 bits/sample).
+// SimpleTIFF Design Decision: Byte-Aligned Formats Only (with one carve-out)
+// ---------------------------------------------------------------------------
+// SimpleTIFF supports only byte-aligned sample formats (8, 16, 32 bits/sample)
+// for the value it returns to callers.
 //
 // Rationale:
 // - Packed formats (1-bit, 4-bit, 12-bit) are valid TIFF but require complex
@@ -127,10 +144,16 @@ constexpr bool IsPhotometric(uint16_t code, Photometric expected) {
 // - Byte-aligned formats cover 95%+ of real-world TIFFs (medical, WSI, photos).
 // - Avoiding bit manipulation keeps the code maintainable and performant.
 //
-// If you need packed formats:
-// - Use LibTIFF or another full-featured TIFF library
-// - Pre-convert files to byte-aligned formats
-// - Contribute unpacking support to SimpleTIFF
+// Carve-out for CCITT bilevel codecs (compression 2, 3, 4):
+// - These codecs are inherently 1-bit and used heavily for binary masks
+//   (e.g. tumor/region annotations stored as Group 4 fax inside TIFF).
+// - We accept BitsPerSample=1 ONLY when paired with a CCITT compression code,
+//   and the decoder unpacks the bilevel rows to 8-bit grayscale (0 or 255)
+//   honoring PhotometricInterpretation. Downstream consumers therefore still
+//   see a byte-aligned format (BitsPerSample=8, SamplesPerPixel=1).
+// - The on-disk storage width is preserved in PageHeader::bits_per_sample_storage
+//   for tools that care; PageHeader::bits_per_sample reflects the *decoded*
+//   width that consumers should use.
 //
 // The functions below explicitly validate and reject non-byte-aligned formats
 // with clear error messages, avoiding silent failures from integer division.
@@ -145,6 +168,23 @@ constexpr bool IsPhotometric(uint16_t code, Photometric expected) {
 /// @return true if supported (8, 16, 32), false otherwise
 constexpr bool IsSupportedBitsPerSample(uint16_t bits_per_sample) {
   return bits_per_sample == 8 || bits_per_sample == 16 || bits_per_sample == 32;
+}
+
+/// Validate that bits_per_sample is supported for a given compression codec.
+///
+/// Mirrors IsSupportedBitsPerSample but allows BitsPerSample=1 when paired
+/// with a CCITT bilevel codec (compression 2, 3, or 4). For all other codecs
+/// the strict byte-aligned rule applies.
+///
+/// @param bits_per_sample Bits per sample value from TIFF
+/// @param compression Raw compression code from the TIFF page header
+/// @return true if the combination is supported
+constexpr bool IsSupportedBitsPerSampleForCompression(uint16_t bits_per_sample,
+                                                      uint16_t compression) {
+  if (bits_per_sample == 1) {
+    return IsCcittCompression(compression);
+  }
+  return IsSupportedBitsPerSample(bits_per_sample);
 }
 
 /// Check if bits_per_sample is byte-aligned

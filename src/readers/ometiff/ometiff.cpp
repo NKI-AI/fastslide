@@ -52,12 +52,13 @@ int OmeTiffReader::GetLevelCount() const {
 
 aifocore::Result<LevelInfo> OmeTiffReader::GetLevelInfo(int level) const {
   if (level < 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Level cannot be negative");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Level cannot be negative");
   }
   if (static_cast<size_t>(level) >= pyramid_.size()) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            aifocore::fmt::format("Level {} not found", level));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kNotFound,
+        aifocore::fmt::format("Level {} not found", level));
   }
 
   const auto& pyr = pyramid_[level];
@@ -109,13 +110,13 @@ aifocore::Result<ImageDimensions> OmeTiffReader::GetAssociatedImageDimensions(
     std::string_view name) const {
   auto it = associated_images_.find(std::string(name));
   if (it == associated_images_.end()) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "Associated image not found");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "Associated image not found");
   }
   const uint32_t page = it->second;
   if (!tiff_index_ || page >= tiff_index_->NumPages()) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Invalid associated image page");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Invalid associated image page");
   }
   const auto& ph = tiff_index_->Page(page);
   return ImageDimensions{ph.width, ph.height};
@@ -124,8 +125,8 @@ aifocore::Result<ImageDimensions> OmeTiffReader::GetAssociatedImageDimensions(
 aifocore::Result<RGBImage> OmeTiffReader::ReadAssociatedImage(
     std::string_view name) const {
   (void)name;
-  return aifocore::Status(aifocore::StatusCode::kNotFound,
-                          "OME-TIFF associated images not implemented");
+  return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                              "OME-TIFF associated images not implemented");
 }
 
 Metadata OmeTiffReader::GetMetadata() const {
@@ -161,7 +162,7 @@ aifocore::Result<core::TilePlan> OmeTiffReader::PrepareRequest(
 }
 
 aifocore::Status OmeTiffReader::ExecutePlan(const core::TilePlan& plan,
-                                            runtime::TileWriter& writer) const {
+                                            runtime::Canvas& writer) const {
   return OmetiffTileExecutor::ExecutePlan(plan, *this, writer);
 }
 
@@ -178,8 +179,8 @@ void OmeTiffReader::PopulateSlideProperties() {
 
 aifocore::Status OmeTiffReader::ProcessMetadata() {
   if (!tiff_index_ || tiff_index_->NumPages() == 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "OME-TIFF: failed to open TIFF");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "OME-TIFF: failed to open TIFF");
   }
 
   AIFOCORE_RETURN_IF_ERROR(OmetiffMetadataLoader::LoadMetadata(
@@ -198,6 +199,7 @@ aifocore::Status OmeTiffReader::ProcessMetadata() {
       format_ = ImageFormat::kSpectral;
       output_planar_config_ = PlanarConfig::kSeparate;
     }
+    data_type_ = DataTypeFromBitsPerSample(ph.bits_per_sample);
   }
 
   PopulateSlideProperties();

@@ -40,8 +40,8 @@ struct TiffStructureMetadata;
 /// optimized memory management:
 /// 1. Uses simpletiff for thread-safe TIFF access
 /// 2. Reads and decodes JPEG-compressed tiles via simpletiff
-/// 3. Extracts sub-regions if needed using thread-local buffers
-/// 4. Writes to the output buffer
+/// 3. Writes decoded pixels to the output buffer (Canvas applies source ROI)
+/// 4. Missing tiles (data loss) are painted as zero-filled full tiles
 ///
 /// Thread-local buffers eliminate per-tile allocations and improve cache
 /// locality, providing performance benefits in both sequential and parallel
@@ -58,7 +58,7 @@ class AperioTileExecutor : public CachedTileExecutor<AperioTileExecutor> {
   /// @note Continues processing even if individual tiles fail (logs warnings)
   static aifocore::Status ExecutePlan(
       const core::TilePlan& plan, const AperioReader& reader,
-      runtime::TileWriter& writer, const TiffStructureMetadata& tiff_metadata);
+      runtime::Canvas& writer, const TiffStructureMetadata& tiff_metadata);
 
   friend class CachedTileExecutor<AperioTileExecutor>;
 
@@ -84,7 +84,7 @@ class AperioTileExecutor : public CachedTileExecutor<AperioTileExecutor> {
   static aifocore::Status ExecuteTileOperation(
       const core::TileReadOp& op, const AperioReader& reader, uint16_t page,
       uint32_t tile_width, uint32_t tile_height, uint16_t samples_per_pixel,
-      bool is_tiled, runtime::TileWriter& writer, std::mutex& writer_mutex);
+      bool is_tiled, runtime::Canvas& writer, std::mutex& writer_mutex);
 
   /// @brief Create cache key for a tile
   static TileKey MakeCacheKey(const core::TileReadOp& op,

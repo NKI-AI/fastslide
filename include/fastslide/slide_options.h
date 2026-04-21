@@ -35,12 +35,6 @@ enum class ColorSpace {
   kAutomatic  ///< Automatically determine from metadata
 };
 
-/// @brief Coordinate system for region specifications
-enum class CoordinateSpace {
-  kLevel0,  ///< Level 0 (full resolution) coordinates
-  kLevel    ///< Level-specific coordinates
-};
-
 /// @brief Bundle of optional dependencies that can be injected into readers
 ///
 /// This struct allows readers to receive shared services without tight coupling.
@@ -132,62 +126,6 @@ struct SlideOpenOptions {
 
   /// @brief Default constructor
   SlideOpenOptions() = default;
-};
-
-/// @brief Options for reading regions from slides
-///
-/// This struct provides a forward-compatible way to pass options when reading
-/// regions. New options can be added without breaking binary compatibility.
-///
-/// Example usage:
-/// @code
-/// RegionSpec region{.top_left = {1000, 2000}, .size = {512, 512}, .level = 0};
-///
-/// RegionReadOptions options;
-/// options.coordinate_space = CoordinateSpace::kLevel0;
-/// options.apply_color_correction = true;
-/// options.background_color = ColorRGB{255, 255, 255};
-///
-/// auto image = reader->ReadRegion(region, options);
-/// @endcode
-struct RegionReadOptions {
-  /// @brief Coordinate system for region specification
-  ///
-  /// Specifies whether coordinates in RegionSpec are in level 0 coordinates
-  /// or level-specific coordinates.
-  CoordinateSpace coordinate_space = CoordinateSpace::kLevel0;
-
-  /// @brief Background color for empty regions
-  ///
-  /// Used when the requested region extends beyond available tile data.
-  /// If not set, uses the reader's default or dependency bundle value.
-  std::optional<ColorRGB> background_color;
-
-  /// @brief Apply color correction
-  ///
-  /// If true, readers should apply any available color correction metadata
-  /// (e.g., white balance, gamma correction).
-  bool apply_color_correction = false;
-
-  /// @brief Requested output color space
-  ///
-  /// Readers should attempt to convert image data to this color space.
-  std::optional<ColorSpace> output_color_space;
-
-  /// @brief Quality hint for lossy formats
-  ///
-  /// Value from 0.0 (lowest quality) to 1.0 (highest quality).
-  /// Readers may use this hint when decoding lossy formats like JPEG.
-  double quality_hint = 1.0;
-
-  /// @brief Enable edge blending for overlapping tiles
-  ///
-  /// For formats with overlapping tiles (e.g., MRXS), enable averaging
-  /// of overlapping regions. If false, use the tile with the highest priority.
-  bool blend_overlapping_tiles = true;
-
-  /// @brief Default constructor
-  RegionReadOptions() = default;
 };
 
 }  // namespace fastslide

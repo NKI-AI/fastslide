@@ -139,7 +139,7 @@ Batch Processing Pipeline
            try:
                with fastslide.FastSlide.from_file_path(slide_path) as slide:
                    # Set cache for performance
-                   slide.set_cache_manager(self.cache_manager)
+                   slide.set_cache(self.cache_manager)
                    
                    logger.info(f"Processing {slide_path.name}: "
                               f"{slide.format} {slide.dimensions}")
@@ -375,7 +375,7 @@ Scientific Analysis Pipeline
        def analyze_slide(self, slide_path, analysis_level=2):
            """Complete tissue analysis pipeline"""
            with fastslide.FastSlide.from_file_path(slide_path) as slide:
-               slide.set_cache_manager(self.cache_manager)
+               slide.set_cache(self.cache_manager)
                
                print(f"Analyzing {Path(slide_path).name}")
                print(f"Format: {slide.format}")
@@ -562,13 +562,13 @@ Deep Learning Integration
            self.stride = int(tile_size * stride_ratio)
            
            # Initialize slides and cache
-           self.cache = fastslide.CacheManager.create(capacity=1000)
+           self.cache = fastslide.CacheManager.create(capacity_bytes=1024 * 1024 * 1024)
            self.slides = []
            self.tile_coordinates = []
            
            for slide_path in slide_paths:
                slide = fastslide.FastSlide.from_file_path(slide_path)
-               slide.set_cache_manager(self.cache)
+               slide.set_cache(self.cache)
                self.slides.append(slide)
                
                # Generate tile coordinates for this slide

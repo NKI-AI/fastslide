@@ -29,7 +29,7 @@ class NdpiTiffTileExecutor
  public:
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
                                       const NdpiTiffReader& reader,
-                                      runtime::TileWriter& writer);
+                                      runtime::Canvas& writer);
 };
 
 }  // namespace fastslide

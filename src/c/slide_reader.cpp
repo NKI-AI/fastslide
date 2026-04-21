@@ -7,47 +7,20 @@
 
 #include "fastslide/c/slide_reader.h"
 
-#include <cstdio>   // For printf
-#include <cstdlib>  // For getenv
+#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
-#include <vector>  // For std::vector
+#include <vector>
 
 #include "fastslide/c/image.h"
 #include "fastslide/slide_reader.h"
+#include "internal/debug.h"
+#include "internal/error.h"
 
-// Forward declarations for external functions
-extern "C" void fastslide_set_last_error(const char* message);
 extern "C" FastSlideImage* fastslide_image_create_from_cpp(
     fastslide::Image image);
-
-// Check if debug logging is enabled via environment variable
-static bool IsDebugEnabled() {
-  static bool checked = false;
-  static bool debug_enabled = false;
-
-  if (!checked) {
-    const char* debug_env = std::getenv("FASTSLIDE_DEBUG");
-    debug_enabled = (debug_env != nullptr && std::strcmp(debug_env, "1") == 0);
-    checked = true;
-  }
-
-  return debug_enabled;
-}
-
-#define FASTSLIDE_DEBUG_PRINT(...) \
-  do {                             \
-    if (IsDebugEnabled()) {        \
-      printf(__VA_ARGS__);         \
-    }                              \
-  } while (0)
-
-#define FASTSLIDE_ERROR_PRINT(...) \
-  do {                             \
-    printf(__VA_ARGS__);           \
-  } while (0)
 
 // Wrapper struct to hold the C++ SlideReader
 struct FastSlideSlideReader {
@@ -73,9 +46,7 @@ extern "C" FastSlideSlideReader* fastslide_slide_reader_create_from_cpp(
 
 namespace {
 
-void SetLastError(const char* message) {
-  fastslide_set_last_error(message);
-}
+using ::fastslide::c::internal::SetLastError;
 
 // Helper function to convert C++ property type to C enum
 FastSlidePropertyType PropertyTypeToCEnum(
@@ -95,20 +66,14 @@ FastSlidePropertyType PropertyTypeToCEnum(
 // Basic slide properties
 
 int fastslide_slide_reader_get_level_count(const FastSlideSlideReader* reader) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return -1;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, -1);
 
   return reader->reader->GetLevelCount();
 }
 
 int fastslide_slide_reader_get_level_info(const FastSlideSlideReader* reader,
                                           int level, FastSlideLevelInfo* info) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return 0;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, 0);
 
   if (!info) {
     SetLastError("info cannot be null");
@@ -132,10 +97,7 @@ int fastslide_slide_reader_get_level_info(const FastSlideSlideReader* reader,
 int fastslide_slide_reader_get_level_dimensions(
     const FastSlideSlideReader* reader, int level,
     FastSlideImageDimensions* dimensions) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return 0;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, 0);
 
   if (!dimensions) {
     SetLastError("dimensions cannot be null");
@@ -162,10 +124,7 @@ int fastslide_slide_reader_get_base_dimensions(
 
 double fastslide_slide_reader_get_level_downsample(
     const FastSlideSlideReader* reader, int level) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return -1.0;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, -1.0);
 
   auto level_info_or = reader->reader->GetLevelInfo(level);
   if (!level_info_or.ok()) {
@@ -178,10 +137,7 @@ double fastslide_slide_reader_get_level_downsample(
 
 int fastslide_slide_reader_get_best_level_for_downsample(
     const FastSlideSlideReader* reader, double downsample) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return -1;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, -1);
 
   return reader->reader->GetBestLevelForDownsample(downsample);
 }
@@ -190,10 +146,7 @@ int fastslide_slide_reader_get_best_level_for_downsample(
 
 int fastslide_slide_reader_get_properties(
     const FastSlideSlideReader* reader, FastSlideSlideProperties* properties) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return 0;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, 0);
 
   if (!properties) {
     SetLastError("properties cannot be null");
@@ -253,10 +206,7 @@ void fastslide_slide_reader_free_properties(
 
 int fastslide_slide_reader_get_bounds(const FastSlideSlideReader* reader,
                                       FastSlideBounds* bounds) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return 0;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, 0);
 
   if (!bounds) {
     SetLastError("bounds cannot be null");
@@ -276,25 +226,23 @@ int fastslide_slide_reader_get_bounds(const FastSlideSlideReader* reader,
 
 const char* fastslide_slide_reader_get_format_name(
     const FastSlideSlideReader* reader) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return nullptr;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, nullptr);
 
   return reader->format_name.c_str();
 }
 
 FastSlideImageFormat fastslide_slide_reader_get_image_format(
     const FastSlideSlideReader* reader) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return FASTSLIDE_IMAGE_FORMAT_RGB;  // Default fallback
-  }
+  FASTSLIDE_REQUIRE_READER(reader, FASTSLIDE_IMAGE_FORMAT_RGB);
 
   auto format = reader->reader->GetImageFormat();
   switch (format) {
+    case fastslide::ImageFormat::kGray:
+      return FASTSLIDE_IMAGE_FORMAT_GRAY;
     case fastslide::ImageFormat::kRGB:
       return FASTSLIDE_IMAGE_FORMAT_RGB;
+    case fastslide::ImageFormat::kRGBA:
+      return FASTSLIDE_IMAGE_FORMAT_RGBA;
     case fastslide::ImageFormat::kSpectral:
       return FASTSLIDE_IMAGE_FORMAT_SPECTRAL;
     default:
@@ -303,12 +251,34 @@ FastSlideImageFormat fastslide_slide_reader_get_image_format(
   }
 }
 
+FastSlideDataType fastslide_slide_reader_get_data_type(
+    const FastSlideSlideReader* reader) {
+  FASTSLIDE_REQUIRE_READER(reader, FASTSLIDE_DATA_TYPE_UINT8);
+
+  auto dtype = reader->reader->GetDataType();
+  switch (dtype) {
+    case fastslide::DataType::kUInt8:
+      return FASTSLIDE_DATA_TYPE_UINT8;
+    case fastslide::DataType::kUInt16:
+      return FASTSLIDE_DATA_TYPE_UINT16;
+    case fastslide::DataType::kInt16:
+      return FASTSLIDE_DATA_TYPE_INT16;
+    case fastslide::DataType::kUInt32:
+      return FASTSLIDE_DATA_TYPE_UINT32;
+    case fastslide::DataType::kInt32:
+      return FASTSLIDE_DATA_TYPE_INT32;
+    case fastslide::DataType::kFloat32:
+      return FASTSLIDE_DATA_TYPE_FLOAT32;
+    case fastslide::DataType::kFloat64:
+      return FASTSLIDE_DATA_TYPE_FLOAT64;
+    default:
+      return FASTSLIDE_DATA_TYPE_UINT8;
+  }
+}
+
 int fastslide_slide_reader_get_tile_size(const FastSlideSlideReader* reader,
                                          FastSlideImageDimensions* tile_size) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return 0;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, 0);
 
   if (!tile_size) {
     SetLastError("tile_size cannot be null");
@@ -327,10 +297,7 @@ int fastslide_slide_reader_get_tile_size(const FastSlideSlideReader* reader,
 int fastslide_slide_reader_get_channel_metadata(
     const FastSlideSlideReader* reader, FastSlideChannelMetadata** metadata,
     int* num_channels) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return 0;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, 0);
 
   if (!metadata || !num_channels) {
     SetLastError("metadata and num_channels cannot be null");
@@ -419,10 +386,7 @@ void fastslide_slide_reader_free_channel_metadata(
 int fastslide_slide_reader_set_visible_channels(FastSlideSlideReader* reader,
                                                 const size_t* channel_indices,
                                                 int num_channels) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return 0;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, 0);
 
   if (num_channels < 0) {
     SetLastError("num_channels cannot be negative");
@@ -446,10 +410,7 @@ int fastslide_slide_reader_set_visible_channels(FastSlideSlideReader* reader,
 int fastslide_slide_reader_get_visible_channels(
     const FastSlideSlideReader* reader, size_t** channel_indices,
     int* num_channels) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return 0;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, 0);
 
   if (!channel_indices || !num_channels) {
     SetLastError("channel_indices and num_channels cannot be null");
@@ -479,10 +440,7 @@ int fastslide_slide_reader_get_visible_channels(
 }
 
 int fastslide_slide_reader_show_all_channels(FastSlideSlideReader* reader) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return 0;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, 0);
 
   reader->reader->ShowAllChannels();
   return 1;
@@ -496,11 +454,7 @@ void fastslide_slide_reader_free_visible_channels(size_t* channel_indices) {
 
 FastSlideImage* fastslide_slide_reader_read_region(
     const FastSlideSlideReader* reader, const FastSlideRegionSpec* region) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    FASTSLIDE_ERROR_PRINT("[FastSlide C] ERROR: Reader is null or closed\n");
-    return nullptr;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, nullptr);
 
   if (!region) {
     SetLastError("region cannot be null");
@@ -605,10 +559,7 @@ FastSlideImage* fastslide_slide_reader_read_region_coords(
 
 int fastslide_slide_reader_get_associated_image_names(
     const FastSlideSlideReader* reader, char*** names, int* num_names) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return 0;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, 0);
 
   if (!names || !num_names) {
     SetLastError("names and num_names cannot be null");
@@ -663,10 +614,7 @@ void fastslide_slide_reader_free_associated_image_names(char** names,
 int fastslide_slide_reader_get_associated_image_dimensions(
     const FastSlideSlideReader* reader, const char* name,
     FastSlideImageDimensions* dimensions) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return 0;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, 0);
 
   if (!name || !dimensions) {
     SetLastError("name and dimensions cannot be null");
@@ -688,10 +636,7 @@ int fastslide_slide_reader_get_associated_image_dimensions(
 
 FastSlideImage* fastslide_slide_reader_read_associated_image(
     const FastSlideSlideReader* reader, const char* name) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return nullptr;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, nullptr);
 
   if (!name) {
     SetLastError("name cannot be null");
@@ -711,10 +656,7 @@ FastSlideImage* fastslide_slide_reader_read_associated_image(
 
 int fastslide_slide_reader_get_metadata_keys(const FastSlideSlideReader* reader,
                                              char*** keys, int* num_keys) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return 0;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, 0);
 
   if (!keys || !num_keys) {
     SetLastError("keys and num_keys cannot be null");
@@ -769,10 +711,7 @@ void fastslide_slide_reader_free_metadata_keys(char** keys, int num_keys) {
 int fastslide_slide_reader_get_metadata_value(
     const FastSlideSlideReader* reader, const char* key,
     FastSlidePropertyValue* value) {
-  if (!reader || !reader->reader) {
-    SetLastError("reader is null or closed");
-    return 0;
-  }
+  FASTSLIDE_REQUIRE_READER(reader, 0);
 
   if (!key || !value) {
     SetLastError("key and value cannot be null");

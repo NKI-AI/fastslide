@@ -32,11 +32,6 @@ class OmetiffPlanBuilder {
       const std::vector<OmeTiffLevelInfo>& pyramid,
       PlanarConfig output_planar_config,
       const simpletiff::TiffIndex& tiff_index);
-
- private:
-  static aifocore::Status ValidateRequest(
-      const core::TileRequest& request,
-      const std::vector<OmeTiffLevelInfo>& pyramid);
 };
 
 }  // namespace fastslide

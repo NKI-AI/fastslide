@@ -31,7 +31,6 @@ namespace runtime {
 // Helper Functions
 // ============================================================================
 
-/// @brief Create a simple RGB tile plan for testing
 core::TilePlan CreateSimpleRGBPlan(uint32_t width, uint32_t height,
                                    bool enable_blending = false) {
   core::TilePlan plan;
@@ -47,7 +46,6 @@ core::TilePlan CreateSimpleRGBPlan(uint32_t width, uint32_t height,
 
   plan.actual_region = {{0, 0}, {width, height}, 0};
 
-  // Add a simple tile operation
   core::TileReadOp op;
   op.level = 0;
   op.tile_coord = {0, 0};
@@ -59,8 +57,6 @@ core::TilePlan CreateSimpleRGBPlan(uint32_t width, uint32_t height,
 
   if (enable_blending) {
     core::BlendMetadata blend;
-    blend.fractional_x = 0.5;
-    blend.fractional_y = 0.5;
     blend.mode = core::BlendMode::kAverage;
     op.blend_metadata = blend;
   }
@@ -71,7 +67,6 @@ core::TilePlan CreateSimpleRGBPlan(uint32_t width, uint32_t height,
   return plan;
 }
 
-/// @brief Create test pixel data (gradient pattern)
 std::vector<uint8_t> CreateTestPixelData(uint32_t width, uint32_t height,
                                          uint32_t channels) {
   std::vector<uint8_t> data(width * height * channels);
@@ -80,12 +75,13 @@ std::vector<uint8_t> CreateTestPixelData(uint32_t width, uint32_t height,
     for (uint32_t x = 0; x < width; ++x) {
       const size_t pixel_idx = (y * width + x) * channels;
 
-      // Create gradient pattern
-      data[pixel_idx + 0] = static_cast<uint8_t>(x % 256);  // R
+      data[pixel_idx + 0] = static_cast<uint8_t>(x % 256);
       if (channels > 1)
-        data[pixel_idx + 1] = static_cast<uint8_t>(y % 256);  // G
+        data[pixel_idx + 1] = static_cast<uint8_t>(y % 256);
       if (channels > 2)
-        data[pixel_idx + 2] = static_cast<uint8_t>((x + y) % 256);  // B
+        data[pixel_idx + 2] = static_cast<uint8_t>((x + y) % 256);
+      if (channels > 3)
+        data[pixel_idx + 3] = 255;
     }
   }
 
@@ -93,90 +89,79 @@ std::vector<uint8_t> CreateTestPixelData(uint32_t width, uint32_t height,
 }
 
 // ============================================================================
-// TileWriter Construction Tests
+// Canvas Construction Tests
 // ============================================================================
 
-TEST(TileWriterTest, ConstructFromPlanRGB) {
+TEST(CanvasTest, ConstructFromPlanRGB) {
   auto plan = CreateSimpleRGBPlan(256, 256);
+  Canvas canvas(plan);
 
-  TileWriter writer(plan);
-
-  EXPECT_EQ(writer.GetDimensions()[0], 256);
-  EXPECT_EQ(writer.GetDimensions()[1], 256);
-  EXPECT_EQ(writer.GetChannels(), 3);
-  EXPECT_FALSE(writer.IsBlendingEnabled());
-  EXPECT_EQ(writer.GetStrategyName(), "NativeDirect");
+  EXPECT_EQ(canvas.GetDimensions()[0], 256);
+  EXPECT_EQ(canvas.GetDimensions()[1], 256);
+  EXPECT_EQ(canvas.GetChannels(), 3);
 }
 
-TEST(TileWriterTest, ConstructFromPlanWithBlending) {
+TEST(CanvasTest, ConstructFromPlanWithBlending) {
   auto plan = CreateSimpleRGBPlan(256, 256, true);
+  Canvas canvas(plan);
 
-  TileWriter writer(plan);
-
-  EXPECT_EQ(writer.GetDimensions()[0], 256);
-  EXPECT_EQ(writer.GetDimensions()[1], 256);
-  EXPECT_EQ(writer.GetChannels(), 3);
-  EXPECT_TRUE(writer.IsBlendingEnabled());
-  EXPECT_EQ(writer.GetStrategyName(), "NativeBlended");
+  EXPECT_EQ(canvas.GetDimensions()[0], 256);
+  EXPECT_EQ(canvas.GetDimensions()[1], 256);
+  EXPECT_EQ(canvas.GetChannels(), 3);
+  EXPECT_TRUE(canvas.IsBlendingEnabled());
 }
 
-TEST(TileWriterTest, ConstructWithConfig) {
-  TileWriter::Config config;
+TEST(CanvasTest, ConstructWithConfig) {
+  Canvas::Config config;
   config.dimensions = {512, 512};
   config.channels = 3;
   config.data_type = DataType::kUInt8;
   config.enable_blending = false;
-  config.background = TileWriter::BackgroundColor(255, 255, 255);
+  config.background = Canvas::BackgroundColor(255, 255, 255);
 
-  TileWriter writer(config);
+  Canvas canvas(config);
 
-  EXPECT_EQ(writer.GetDimensions()[0], 512);
-  EXPECT_EQ(writer.GetDimensions()[1], 512);
-  EXPECT_EQ(writer.GetChannels(), 3);
-  EXPECT_FALSE(writer.IsBlendingEnabled());
+  EXPECT_EQ(canvas.GetDimensions()[0], 512);
+  EXPECT_EQ(canvas.GetDimensions()[1], 512);
+  EXPECT_EQ(canvas.GetChannels(), 3);
 }
 
-TEST(TileWriterTest, ConstructRGBConvenience) {
-  TileWriter writer(ImageDimensions{1024, 768});
+TEST(CanvasTest, ConstructRGBConvenience) {
+  Canvas canvas(ImageDimensions{1024, 768});
 
-  EXPECT_EQ(writer.GetDimensions()[0], 1024);
-  EXPECT_EQ(writer.GetDimensions()[1], 768);
-  EXPECT_EQ(writer.GetChannels(), 3);
-  EXPECT_FALSE(writer.IsBlendingEnabled());
+  EXPECT_EQ(canvas.GetDimensions()[0], 1024);
+  EXPECT_EQ(canvas.GetDimensions()[1], 768);
+  EXPECT_EQ(canvas.GetChannels(), 3);
 }
 
-TEST(TileWriterTest, ConstructRGBWithBlending) {
-  TileWriter writer(ImageDimensions{256, 256},
-                    TileWriter::BackgroundColor(255, 255, 255), true);
+TEST(CanvasTest, ConstructRGBWithBlending) {
+  Canvas canvas(ImageDimensions{256, 256},
+                Canvas::BackgroundColor(255, 255, 255), true);
 
-  EXPECT_EQ(writer.GetDimensions()[0], 256);
-  EXPECT_EQ(writer.GetDimensions()[1], 256);
-  EXPECT_EQ(writer.GetChannels(), 3);
-  EXPECT_TRUE(writer.IsBlendingEnabled());
+  EXPECT_EQ(canvas.GetDimensions()[0], 256);
+  EXPECT_EQ(canvas.GetDimensions()[1], 256);
+  EXPECT_EQ(canvas.GetChannels(), 3);
+  EXPECT_TRUE(canvas.IsBlendingEnabled());
 }
 
 // ============================================================================
-// WriteTile Tests (Direct Strategy)
+// PaintTile Tests
 // ============================================================================
 
-TEST(TileWriterTest, WriteSingleTileRGB) {
+TEST(CanvasTest, PaintSingleTileRGB) {
   auto plan = CreateSimpleRGBPlan(256, 256);
-  TileWriter writer(plan);
+  Canvas canvas(plan);
 
-  // Create test pixel data
   auto pixel_data = CreateTestPixelData(256, 256, 3);
 
-  // Write tile
   const auto& op = plan.operations[0];
-  auto status = writer.WriteTile(op, pixel_data, 256, 256, 3);
+  auto status = canvas.PaintTile(op, pixel_data, 256, 256, 3);
   ASSERT_TRUE(status.ok()) << status.ToString();
 
-  // Finalize
-  status = writer.Finalize();
+  status = canvas.Finalize();
   ASSERT_TRUE(status.ok()) << status.ToString();
 
-  // Get output
-  auto result = writer.GetOutput();
+  auto result = canvas.GetOutput();
   ASSERT_TRUE(result.ok()) << result.status().ToString();
 
   const auto& output = result.value();
@@ -186,110 +171,10 @@ TEST(TileWriterTest, WriteSingleTileRGB) {
   EXPECT_FALSE(output.Empty());
 }
 
-TEST(TileWriterTest, WritePartialTile) {
+TEST(CanvasTest, PaintPartialTile) {
   auto plan = CreateSimpleRGBPlan(512, 512);
-  TileWriter writer(plan);
+  Canvas canvas(plan);
 
-  // Create partial tile that only covers part of the output
-  core::TileReadOp op;
-  op.level = 0;
-  op.tile_coord = {0, 0};
-  op.transform.source = {0, 0, 256, 256};
-  op.transform.dest = {0, 0, 256, 256};  // Top-left quadrant
-  op.source_id = 0;
-  op.byte_offset = 0;
-  op.byte_size = 256 * 256 * 3;
-
-  auto pixel_data = CreateTestPixelData(256, 256, 3);
-
-  auto status = writer.WriteTile(op, pixel_data, 256, 256, 3);
-  ASSERT_TRUE(status.ok()) << status.ToString();
-
-  status = writer.Finalize();
-  ASSERT_TRUE(status.ok()) << status.ToString();
-
-  auto result = writer.GetOutput();
-  ASSERT_TRUE(result.ok()) << result.status().ToString();
-}
-
-TEST(TileWriterTest, WriteMultipleTiles) {
-  auto plan = CreateSimpleRGBPlan(512, 512);
-  TileWriter writer(plan);
-
-  // Write 4 tiles (2x2 grid)
-  for (uint32_t ty = 0; ty < 2; ++ty) {
-    for (uint32_t tx = 0; tx < 2; ++tx) {
-      core::TileReadOp op;
-      op.level = 0;
-      op.tile_coord = {tx, ty};
-      op.transform.source = {0, 0, 256, 256};
-      op.transform.dest = {tx * 256, ty * 256, 256, 256};
-      op.source_id = 0;
-      op.byte_offset = 0;
-      op.byte_size = 256 * 256 * 3;
-
-      auto pixel_data = CreateTestPixelData(256, 256, 3);
-
-      auto status = writer.WriteTile(op, pixel_data, 256, 256, 3);
-      ASSERT_TRUE(status.ok()) << status.ToString();
-    }
-  }
-
-  auto status = writer.Finalize();
-  ASSERT_TRUE(status.ok()) << status.ToString();
-
-  auto result = writer.GetOutput();
-  ASSERT_TRUE(result.ok()) << result.status().ToString();
-
-  const auto& output = result.value();
-  EXPECT_EQ(output.GetDimensions()[0], 512);
-  EXPECT_EQ(output.GetDimensions()[1], 512);
-}
-
-TEST(TileWriterTest, WriteTileWithCropping) {
-  auto plan = CreateSimpleRGBPlan(256, 256);
-  TileWriter writer(plan);
-
-  // Write only part of a tile
-  core::TileReadOp op;
-  op.level = 0;
-  op.tile_coord = {0, 0};
-  op.transform.source = {64, 64, 128, 128};  // Crop from middle
-  op.transform.dest = {0, 0, 128, 128};
-  op.source_id = 0;
-  op.byte_offset = 0;
-  op.byte_size = 256 * 256 * 3;
-
-  auto pixel_data = CreateTestPixelData(256, 256, 3);
-
-  auto status = writer.WriteTile(op, pixel_data, 256, 256, 3);
-  ASSERT_TRUE(status.ok()) << status.ToString();
-
-  status = writer.Finalize();
-  ASSERT_TRUE(status.ok()) << status.ToString();
-
-  auto result = writer.GetOutput();
-  ASSERT_TRUE(result.ok()) << result.status().ToString();
-}
-
-// ============================================================================
-// Blended Strategy Tests
-// ============================================================================
-
-TEST(TileWriterTest, BlendedStrategyDetection) {
-  auto plan = CreateSimpleRGBPlan(256, 256, true);  // Enable blending
-
-  TileWriter writer(plan);
-
-  EXPECT_TRUE(writer.IsBlendingEnabled());
-  EXPECT_EQ(writer.GetStrategyName(), "NativeBlended");
-}
-
-TEST(TileWriterTest, BlendedWriteTile) {
-  auto plan = CreateSimpleRGBPlan(256, 256, true);
-  TileWriter writer(plan);
-
-  // Create tile with blend metadata
   core::TileReadOp op;
   op.level = 0;
   op.tile_coord = {0, 0};
@@ -299,30 +184,129 @@ TEST(TileWriterTest, BlendedWriteTile) {
   op.byte_offset = 0;
   op.byte_size = 256 * 256 * 3;
 
+  auto pixel_data = CreateTestPixelData(256, 256, 3);
+
+  auto status = canvas.PaintTile(op, pixel_data, 256, 256, 3);
+  ASSERT_TRUE(status.ok()) << status.ToString();
+
+  status = canvas.Finalize();
+  ASSERT_TRUE(status.ok()) << status.ToString();
+
+  auto result = canvas.GetOutput();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
+}
+
+TEST(CanvasTest, PaintMultipleTiles) {
+  auto plan = CreateSimpleRGBPlan(512, 512);
+  Canvas canvas(plan);
+
+  for (uint32_t ty = 0; ty < 2; ++ty) {
+    for (uint32_t tx = 0; tx < 2; ++tx) {
+      core::TileReadOp op;
+      op.level = 0;
+      op.tile_coord = {tx, ty};
+      op.transform.source = {0, 0, 256, 256};
+      op.transform.dest = {static_cast<double>(tx * 256),
+                           static_cast<double>(ty * 256), 256, 256};
+      op.source_id = 0;
+      op.byte_offset = 0;
+      op.byte_size = 256 * 256 * 3;
+
+      auto pixel_data = CreateTestPixelData(256, 256, 3);
+      auto status = canvas.PaintTile(op, pixel_data, 256, 256, 3);
+      ASSERT_TRUE(status.ok()) << status.ToString();
+    }
+  }
+
+  auto status = canvas.Finalize();
+  ASSERT_TRUE(status.ok()) << status.ToString();
+
+  auto result = canvas.GetOutput();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
+
+  const auto& output = result.value();
+  EXPECT_EQ(output.GetDimensions()[0], 512);
+  EXPECT_EQ(output.GetDimensions()[1], 512);
+}
+
+TEST(CanvasTest, PaintTileWithCropping) {
+  auto plan = CreateSimpleRGBPlan(256, 256);
+  Canvas canvas(plan);
+
+  core::TileReadOp op;
+  op.level = 0;
+  op.tile_coord = {0, 0};
+  op.transform.source = {64, 64, 128, 128};
+  op.transform.dest = {0, 0, 128, 128};
+  op.source_id = 0;
+  op.byte_offset = 0;
+  op.byte_size = 256 * 256 * 3;
+
+  auto pixel_data = CreateTestPixelData(256, 256, 3);
+
+  auto status = canvas.PaintTile(op, pixel_data, 256, 256, 3);
+  ASSERT_TRUE(status.ok()) << status.ToString();
+
+  status = canvas.Finalize();
+  ASSERT_TRUE(status.ok()) << status.ToString();
+
+  auto result = canvas.GetOutput();
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
+}
+
+// ============================================================================
+// Blended / Overlapping Tile Tests
+// ============================================================================
+
+TEST(CanvasTest, BlendingEnabled) {
+  auto plan = CreateSimpleRGBPlan(256, 256, true);
+  Canvas canvas(plan);
+
+  EXPECT_TRUE(canvas.IsBlendingEnabled());
+}
+
+TEST(CanvasTest, FractionalPositionPaint) {
+  auto plan = CreateSimpleRGBPlan(256, 256, true);
+  Canvas canvas(plan);
+
+  core::TileReadOp op;
+  op.level = 0;
+  op.tile_coord = {0, 0};
+  op.transform.source = {0, 0, 256, 256};
+  op.transform.dest = {0, 0, 256, 256};
+  op.source_id = 0;
+  op.byte_offset = 0;
+  op.byte_size = 256 * 256 * 3;
+
+  // Use fractional dest coordinates for sub-pixel placement.
+  op.transform.dest = {0.25, 0.75, 256, 256};
+
   core::BlendMetadata blend;
-  blend.fractional_x = 0.25;
-  blend.fractional_y = 0.75;
   blend.weight = 1.0;
   blend.mode = core::BlendMode::kAverage;
   op.blend_metadata = blend;
 
   auto pixel_data = CreateTestPixelData(256, 256, 3);
 
-  auto status = writer.WriteTile(op, pixel_data, 256, 256, 3);
+  auto status = canvas.PaintTile(op, pixel_data, 256, 256, 3);
   ASSERT_TRUE(status.ok()) << status.ToString();
 
-  status = writer.Finalize();
+  status = canvas.Finalize();
   ASSERT_TRUE(status.ok()) << status.ToString();
 
-  auto result = writer.GetOutput();
+  auto result = canvas.GetOutput();
   ASSERT_TRUE(result.ok()) << result.status().ToString();
+
+  const auto& output = result.value();
+  EXPECT_EQ(output.GetDimensions()[0], 256);
+  EXPECT_EQ(output.GetDimensions()[1], 256);
+  EXPECT_EQ(output.GetChannels(), 3);
 }
 
-TEST(TileWriterTest, BlendedOverlappingTiles) {
+TEST(CanvasTest, OverlappingTiles) {
   auto plan = CreateSimpleRGBPlan(512, 256, true);
-  TileWriter writer(plan);
+  Canvas canvas(plan);
 
-  // Write two overlapping tiles (simulate MRXS-style overlap)
   core::TileReadOp op1;
   op1.level = 0;
   op1.tile_coord = {0, 0};
@@ -338,15 +322,14 @@ TEST(TileWriterTest, BlendedOverlappingTiles) {
   op1.blend_metadata = blend1;
 
   auto pixel_data1 = CreateTestPixelData(256, 256, 3);
-  auto status = writer.WriteTile(op1, pixel_data1, 256, 256, 3);
+  auto status = canvas.PaintTile(op1, pixel_data1, 256, 256, 3);
   ASSERT_TRUE(status.ok()) << status.ToString();
 
-  // Second tile with 16-pixel overlap
   core::TileReadOp op2;
   op2.level = 0;
   op2.tile_coord = {1, 0};
   op2.transform.source = {0, 0, 256, 256};
-  op2.transform.dest = {240, 0, 256, 256};  // Overlaps at x=240-256
+  op2.transform.dest = {240, 0, 256, 256};
   op2.source_id = 0;
   op2.byte_offset = 0;
   op2.byte_size = 256 * 256 * 3;
@@ -357,13 +340,13 @@ TEST(TileWriterTest, BlendedOverlappingTiles) {
   op2.blend_metadata = blend2;
 
   auto pixel_data2 = CreateTestPixelData(256, 256, 3);
-  status = writer.WriteTile(op2, pixel_data2, 256, 256, 3);
+  status = canvas.PaintTile(op2, pixel_data2, 256, 256, 3);
   ASSERT_TRUE(status.ok()) << status.ToString();
 
-  status = writer.Finalize();
+  status = canvas.Finalize();
   ASSERT_TRUE(status.ok()) << status.ToString();
 
-  auto result = writer.GetOutput();
+  auto result = canvas.GetOutput();
   ASSERT_TRUE(result.ok()) << result.status().ToString();
 }
 
@@ -371,33 +354,31 @@ TEST(TileWriterTest, BlendedOverlappingTiles) {
 // Error Handling Tests
 // ============================================================================
 
-TEST(TileWriterTest, OutOfBoundsWrite) {
+TEST(CanvasTest, OutOfBoundsPaintClips) {
   auto plan = CreateSimpleRGBPlan(256, 256);
-  TileWriter writer(plan);
+  Canvas canvas(plan);
 
-  // Try to write tile beyond image bounds
   core::TileReadOp op;
   op.level = 0;
   op.tile_coord = {0, 0};
   op.transform.source = {0, 0, 256, 256};
-  op.transform.dest = {512, 512, 256, 256};  // Way out of bounds
+  op.transform.dest = {512, 512, 256, 256};
   op.source_id = 0;
   op.byte_offset = 0;
   op.byte_size = 256 * 256 * 3;
 
   auto pixel_data = CreateTestPixelData(256, 256, 3);
 
-  auto status = writer.WriteTile(op, pixel_data, 256, 256, 3);
-  EXPECT_FALSE(status.ok());
-  EXPECT_EQ(status.code(), aifocore::StatusCode::kOutOfRange);
+  // Out-of-bounds paints are silently clipped -- the tile is just invisible.
+  auto status = canvas.PaintTile(op, pixel_data, 256, 256, 3);
+  EXPECT_TRUE(status.ok());
 }
 
-TEST(TileWriterTest, InsufficientPixelData) {
+TEST(CanvasTest, InsufficientPixelData) {
   auto plan = CreateSimpleRGBPlan(256, 256);
-  TileWriter writer(plan);
+  Canvas canvas(plan);
 
-  // Provide insufficient pixel data
-  std::vector<uint8_t> insufficient_data(100);  // Way too small
+  std::vector<uint8_t> insufficient_data(100);
 
   core::TileReadOp op;
   op.level = 0;
@@ -408,19 +389,15 @@ TEST(TileWriterTest, InsufficientPixelData) {
   op.byte_offset = 0;
   op.byte_size = 256 * 256 * 3;
 
-  auto status = writer.WriteTile(op, insufficient_data, 256, 256, 3);
-  // Should handle gracefully (won't crash, may clip or error)
-  // Exact behavior depends on implementation
+  auto status = canvas.PaintTile(op, insufficient_data, 256, 256, 3);
+  EXPECT_FALSE(status.ok());
 }
 
-TEST(TileWriterTest, GetOutputBeforeFinalize) {
+TEST(CanvasTest, GetOutputBeforeFinalize) {
   auto plan = CreateSimpleRGBPlan(256, 256);
-  TileWriter writer(plan);
+  Canvas canvas(plan);
 
-  // Try to get output before finalize
-  auto result = writer.GetOutput();
-
-  // Should either auto-finalize or succeed (depends on strategy)
+  auto result = canvas.GetOutput();
   EXPECT_TRUE(result.ok()) << result.status().ToString();
 }
 
@@ -428,7 +405,7 @@ TEST(TileWriterTest, GetOutputBeforeFinalize) {
 // Multi-Channel Tests
 // ============================================================================
 
-TEST(TileWriterTest, GrayscaleOutput) {
+TEST(CanvasTest, GrayscaleOutput) {
   core::TilePlan plan;
   plan.output.dimensions = {256, 256};
   plan.output.channels = 1;
@@ -442,22 +419,21 @@ TEST(TileWriterTest, GrayscaleOutput) {
   op.byte_size = 256 * 256;
   plan.operations.push_back(op);
 
-  TileWriter writer(plan);
-
-  EXPECT_EQ(writer.GetChannels(), 1);
+  Canvas canvas(plan);
+  EXPECT_EQ(canvas.GetChannels(), 1);
 
   auto pixel_data = CreateTestPixelData(256, 256, 1);
-  auto status = writer.WriteTile(op, pixel_data, 256, 256, 1);
+  auto status = canvas.PaintTile(op, pixel_data, 256, 256, 1);
   ASSERT_TRUE(status.ok()) << status.ToString();
 
-  status = writer.Finalize();
+  status = canvas.Finalize();
   ASSERT_TRUE(status.ok()) << status.ToString();
 
-  auto result = writer.GetOutput();
+  auto result = canvas.GetOutput();
   ASSERT_TRUE(result.ok()) << result.status().ToString();
 }
 
-TEST(TileWriterTest, RGBAOutput) {
+TEST(CanvasTest, RGBAOutput) {
   core::TilePlan plan;
   plan.output.dimensions = {256, 256};
   plan.output.channels = 4;
@@ -471,33 +447,42 @@ TEST(TileWriterTest, RGBAOutput) {
   op.byte_size = 256 * 256 * 4;
   plan.operations.push_back(op);
 
-  TileWriter writer(plan);
-
-  EXPECT_EQ(writer.GetChannels(), 4);
+  Canvas canvas(plan);
+  EXPECT_EQ(canvas.GetChannels(), 4);
 
   auto pixel_data = CreateTestPixelData(256, 256, 4);
-  auto status = writer.WriteTile(op, pixel_data, 256, 256, 4);
+  auto status = canvas.PaintTile(op, pixel_data, 256, 256, 4);
   ASSERT_TRUE(status.ok()) << status.ToString();
 
-  status = writer.Finalize();
+  status = canvas.Finalize();
   ASSERT_TRUE(status.ok()) << status.ToString();
 
-  auto result = writer.GetOutput();
+  auto result = canvas.GetOutput();
   ASSERT_TRUE(result.ok()) << result.status().ToString();
+}
+
+TEST(CanvasTest, SpectralOutput) {
+  Canvas::Config config;
+  config.dimensions = {64, 64};
+  config.channels = 7;
+  config.data_type = DataType::kUInt8;
+  config.background = Canvas::BackgroundColor(std::vector<double>(7, 0.0));
+
+  Canvas canvas(config);
+  EXPECT_EQ(canvas.GetChannels(), 7);
 }
 
 // ============================================================================
 // Performance / Stress Tests
 // ============================================================================
 
-TEST(TileWriterTest, LargeImage) {
+TEST(CanvasTest, LargeImage) {
   auto plan = CreateSimpleRGBPlan(4096, 4096);
-  TileWriter writer(plan);
+  Canvas canvas(plan);
 
-  // Write tiles in 256x256 chunks
   const uint32_t tile_size = 256;
-  const uint32_t tiles_x = 4096 / tile_size;  // 16
-  const uint32_t tiles_y = 4096 / tile_size;  // 16
+  const uint32_t tiles_x = 4096 / tile_size;
+  const uint32_t tiles_y = 4096 / tile_size;
 
   for (uint32_t ty = 0; ty < tiles_y; ++ty) {
     for (uint32_t tx = 0; tx < tiles_x; ++tx) {
@@ -505,7 +490,8 @@ TEST(TileWriterTest, LargeImage) {
       op.level = 0;
       op.tile_coord = {tx, ty};
       op.transform.source = {0, 0, tile_size, tile_size};
-      op.transform.dest = {tx * tile_size, ty * tile_size, tile_size,
+      op.transform.dest = {static_cast<double>(tx * tile_size),
+                           static_cast<double>(ty * tile_size), tile_size,
                            tile_size};
       op.source_id = 0;
       op.byte_offset = 0;
@@ -513,15 +499,15 @@ TEST(TileWriterTest, LargeImage) {
 
       auto pixel_data = CreateTestPixelData(tile_size, tile_size, 3);
 
-      auto status = writer.WriteTile(op, pixel_data, tile_size, tile_size, 3);
+      auto status = canvas.PaintTile(op, pixel_data, tile_size, tile_size, 3);
       ASSERT_TRUE(status.ok()) << status.ToString();
     }
   }
 
-  auto status = writer.Finalize();
+  auto status = canvas.Finalize();
   ASSERT_TRUE(status.ok()) << status.ToString();
 
-  auto result = writer.GetOutput();
+  auto result = canvas.GetOutput();
   ASSERT_TRUE(result.ok()) << result.status().ToString();
 
   const auto& output = result.value();

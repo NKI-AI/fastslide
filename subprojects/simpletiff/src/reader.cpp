@@ -17,31 +17,70 @@
 #include <algorithm>
 #include <atomic>
 #include <cstring>
-#include <exception>
+#include <string>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <vector>
 
 #include "aifocore/platform/portability.h"
 #include "aifocore/status/result.h"
+#include "simpletiff/ccitt.h"
 #include "simpletiff/decompression.h"
 #include "simpletiff/deflate.h"
-#include "simpletiff/errors.h"
 #include "simpletiff/io_utils.h"
 #include "simpletiff/tiff_constants.h"
 #include "simpletiff/tiff_parser.h"
 
 namespace simpletiff {
 
-// using aifocore::Error;
 using aifocore::Result;
-using aifocore::StatusCode;
 
 // =============================================================================
 // Internal JPEG helpers
 // =============================================================================
 
 namespace {
+
+// Message builders that mirror the previous simpletiff::*Error factory
+// methods. Kept as plain string builders so error returns stay routed through
+// AIFOCORE_MAKE_STATUS (which captures file/line/function trace).
+inline std::string UnsupportedCompressionMsg(uint16_t compression_code,
+                                             uint32_t page_index) {
+  return "Unsupported compression scheme " + std::to_string(compression_code) +
+         " on page " + std::to_string(page_index);
+}
+
+inline std::string UnsupportedBitsPerSampleMsg(uint16_t bits_per_sample,
+                                               uint32_t page_index) {
+  return "Unsupported bits_per_sample=" + std::to_string(bits_per_sample) +
+         " on page " + std::to_string(page_index) +
+         ". SimpleTIFF requires byte-aligned formats (8, 16, or 32 bits)";
+}
+
+inline std::string DecompressionFailedMsg(std::string_view codec_name,
+                                          uint32_t page_index,
+                                          uint32_t tile_or_strip_index,
+                                          std::string_view inner_cause = {}) {
+  std::string msg(codec_name);
+  msg += " decompression failed for page ";
+  msg += std::to_string(page_index);
+  msg += " tile/strip ";
+  msg += std::to_string(tile_or_strip_index);
+  if (!inner_cause.empty()) {
+    msg += ": ";
+    msg.append(inner_cause);
+  }
+  return msg;
+}
+
+inline std::string InvalidPageParametersMsg(uint32_t page_index,
+                                            uint32_t samples_per_pixel,
+                                            uint32_t bytes_per_sample) {
+  return "Invalid image parameters for page " + std::to_string(page_index) +
+         " (samples_per_pixel=" + std::to_string(samples_per_pixel) +
+         ", bytes_per_sample=" + std::to_string(bytes_per_sample) + ")";
+}
 
 Result<void> NormalizeDecodedPixels(const TiffIndex& index,
                                     const PageHeader& page, int width,
@@ -78,15 +117,9 @@ Result<void> NormalizeDecodedPixels(const TiffIndex& index,
   // We operate on host-endian values, so file_big_endian=false here.
   if (page.predictor == 2) {
     constexpr int planar_configuration = 1;  // CONTIG
-    try {
-      ApplyHorizontalPredictor(data, width, height, page.samples_per_pixel,
-                               page.bits_per_sample,
-                               /*file_big_endian=*/false, planar_configuration);
-    } catch (const std::exception& e) {
-      return AIFOCORE_MAKE_STATUS(
-          aifocore::StatusCode::kInternal,
-          std::string("Predictor application failed: ") + e.what());
-    }
+    AIFOCORE_RETURN_IF_ERROR(ApplyHorizontalPredictor(
+        data, width, height, page.samples_per_pixel, page.bits_per_sample,
+        /*file_big_endian=*/false, planar_configuration));
   }
 
   return Result<void>();
@@ -192,6 +225,49 @@ Result<std::span<const uint8_t>> LoadJpegTablesFromCache(
   return std::span<const uint8_t>();
 }
 
+/// Decompress a CCITT bilevel tile/strip into 8-bit grayscale bytes.
+///
+/// Selects the right libtiff-derived codec (G3 or G4) based on the page's
+/// compression code, then expands the packed 1-bit output to 8-bit grayscale
+/// honoring the page's PhotometricInterpretation. The resulting buffer has
+/// `width * height * 1` bytes and matches the post-decode layout the rest of
+/// the simpletiff pipeline expects (because BuildPageFromContext already
+/// promoted bits_per_sample from 1 to 8 for CCITT pages).
+///
+/// @param page Page header (provides photometric, fill_order, compression)
+/// @param compressed Compressed CCITT bytes for one tile or strip
+/// @param width Decoded tile/strip width in pixels
+/// @param height Decoded tile/strip height in pixels
+/// @param dst Output buffer (will be sized to width * height bytes)
+/// @return Ok status on success; an error status on decoder failure or when
+///         the page's compression code is not a CCITT bilevel codec.
+Result<void> DecompressCcittToGray(const PageHeader& page,
+                                   std::span<const uint8_t> compressed,
+                                   uint32_t width, uint32_t height,
+                                   std::vector<uint8_t>& dst) {
+  const FillOrder fill_order =
+      (page.fill_order == 2) ? FillOrder::kLsb2Msb : FillOrder::kMsb2Lsb;
+  std::vector<uint8_t> packed;
+  if (page.compression == static_cast<uint16_t>(Compression::kCcittFax4)) {
+    AIFOCORE_RETURN_IF_ERROR(
+        DecompressCcittG4(compressed, width, height, fill_order, packed));
+  } else if (page.compression ==
+                 static_cast<uint16_t>(Compression::kCcittFax3) ||
+             page.compression ==
+                 static_cast<uint16_t>(Compression::kCcittRle)) {
+    AIFOCORE_RETURN_IF_ERROR(
+        DecompressCcittG3(compressed, width, height, fill_order, packed));
+  } else {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "DecompressCcittToGray: page compression " +
+                                    std::to_string(page.compression) +
+                                    " is not a CCITT bilevel codec");
+  }
+  AIFOCORE_RETURN_IF_ERROR(
+      UnpackOneBitToGray(packed, width, height, page.photometric, dst));
+  return Result<void>();
+}
+
 }  // namespace
 
 // =============================================================================
@@ -242,16 +318,30 @@ Result<void> ReadTile(const TiffIndex& index, uint32_t page_index,
                                 "Tile data empty or missing");
   }
 
-  if (IsCompression(page.compression, Compression::kZstd)) {
+  if (IsCcittCompression(page.compression)) {
+    out_width = static_cast<int>(tiles.tile_w);
+    out_height = static_cast<int>(tiles.tile_h);
+    if (auto s = DecompressCcittToGray(page, tile_data_span,
+                                       static_cast<uint32_t>(out_width),
+                                       static_cast<uint32_t>(out_height), dst);
+        !s.ok()) {
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kInternal,
+          DecompressionFailedMsg("CCITT", page_index, tile_index,
+                                 s.status().message()));
+    }
+    AIFOCORE_RETURN_IF_ERROR(
+        NormalizeDecodedPixels(index, page, out_width, out_height, dst));
+    return Result<void>();
+  } else if (IsCompression(page.compression, Compression::kZstd)) {
     // ZSTD compression
-    if (!DecompressZstd(tile_data_span, dst)) {
-      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
-                                  "ZSTD decompression failed for tile " +
-                                      std::to_string(tile_index) + " on page " +
-                                      std::to_string(page_index));
+    if (auto s = DecompressZstd(tile_data_span, dst); !s.ok()) {
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kInternal,
+          DecompressionFailedMsg("ZSTD", page_index, tile_index,
+                                 s.status().message()));
     }
 
-    // Set dimensions from tile metadata
     out_width = static_cast<int>(tiles.tile_w);
     out_height = static_cast<int>(tiles.tile_h);
 
@@ -260,14 +350,13 @@ Result<void> ReadTile(const TiffIndex& index, uint32_t page_index,
     return Result<void>();
   } else if (IsCompression(page.compression, Compression::kLzw)) {
     // LZW compression
-    if (!DecompressLzw(tile_data_span, dst)) {
-      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
-                                  "LZW decompression failed for tile " +
-                                      std::to_string(tile_index) + " on page " +
-                                      std::to_string(page_index));
+    if (auto s = DecompressLzw(tile_data_span, dst); !s.ok()) {
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kInternal,
+          DecompressionFailedMsg("LZW", page_index, tile_index,
+                                 s.status().message()));
     }
 
-    // Set dimensions from tile metadata
     out_width = static_cast<int>(tiles.tile_w);
     out_height = static_cast<int>(tiles.tile_h);
 
@@ -276,11 +365,11 @@ Result<void> ReadTile(const TiffIndex& index, uint32_t page_index,
     return Result<void>();
   } else if (IsCompression(page.compression, Compression::kAdobeDeflate) ||
              IsCompression(page.compression, Compression::kDeflate)) {
-    if (!DecompressDeflate(tile_data_span, dst)) {
-      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
-                                  "Deflate decompression failed for tile " +
-                                      std::to_string(tile_index) + " on page " +
-                                      std::to_string(page_index));
+    if (auto s = DecompressDeflate(tile_data_span, dst); !s.ok()) {
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kInternal,
+          DecompressionFailedMsg("Deflate", page_index, tile_index,
+                                 s.status().message()));
     }
 
     out_width = static_cast<int>(tiles.tile_w);
@@ -320,10 +409,9 @@ Result<void> ReadTile(const TiffIndex& index, uint32_t page_index,
                        out_height, dst));
     return Result<void>();
   } else {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,
-                                std::string(UnsupportedFormatError::Compression(
-                                                page.compression, page_index)
-                                                .what()));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kUnimplemented,
+        UnsupportedCompressionMsg(page.compression, page_index));
   }
 }
 
@@ -416,11 +504,11 @@ Result<void> ReadTiledPage(const TiffIndex& index, uint32_t page_index,
   // Check if compression is supported
   if (!IsCompression(page.compression, Compression::kJpeg) &&
       !IsCompression(page.compression, Compression::kJpeg2000) &&
-      !IsCompression(page.compression, Compression::kZstd)) {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,
-                                std::string(UnsupportedFormatError::Compression(
-                                                page.compression, page_index)
-                                                .what()));
+      !IsCompression(page.compression, Compression::kZstd) &&
+      !IsCcittCompression(page.compression)) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kUnimplemented,
+        UnsupportedCompressionMsg(page.compression, page_index));
   }
 
   const auto& tiles = index.Tiles(page.payload_id);
@@ -504,7 +592,33 @@ Result<void> ReadStripe(const TiffIndex& index, uint32_t page_index,
                                 "Strip data empty or missing");
   }
 
-  if (IsCompression(page.compression, Compression::kJpeg)) {
+  if (IsCcittCompression(page.compression)) {
+    // CCITT bilevel (T.4 / T.6) — decode 1-bit and unpack to 8-bit gray.
+    const uint32_t rows_per_strip =
+        strips.rows_per_strip > 0 ? strips.rows_per_strip : page.height;
+    const uint64_t y_offset =
+        static_cast<uint64_t>(strip_index) * rows_per_strip;
+    if (y_offset >= page.height) {
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kOutOfRange,
+                                  "Strip " + std::to_string(strip_index) +
+                                      " starts past page height on page " +
+                                      std::to_string(page_index));
+    }
+    const uint32_t strip_h_pixels = static_cast<uint32_t>(
+        std::min<uint64_t>(rows_per_strip, page.height - y_offset));
+    if (auto s = DecompressCcittToGray(page, strip_data_span, page.width,
+                                       strip_h_pixels, decompressed);
+        !s.ok()) {
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kInternal,
+          DecompressionFailedMsg("CCITT", page_index, strip_index,
+                                 s.status().message()));
+    }
+    AIFOCORE_RETURN_IF_ERROR(
+        NormalizeDecodedPixels(index, page, static_cast<int>(page.width),
+                               static_cast<int>(strip_h_pixels), decompressed));
+    return Result<void>();
+  } else if (IsCompression(page.compression, Compression::kJpeg)) {
     // JPEG compression - load tables from cache and decompress
     AIFOCORE_ASSIGN_OR_RETURN(auto jpeg_tables_span,
                               LoadJpegTablesFromCache(index, strips));
@@ -522,8 +636,7 @@ Result<void> ReadStripe(const TiffIndex& index, uint32_t page_index,
     if (!decompress_result) {
       return AIFOCORE_MAKE_STATUS(
           aifocore::StatusCode::kInternal,
-          std::string(DecompressionError::Codec("JPEG", page_index, strip_index)
-                          .what()));
+          DecompressionFailedMsg("JPEG", page_index, strip_index));
     }
   } else if (IsCompression(page.compression, Compression::kJpeg2000)) {
     const bool file_big_endian = !index.IsLittleEndian();
@@ -537,43 +650,39 @@ Result<void> ReadStripe(const TiffIndex& index, uint32_t page_index,
     if (!result) {
       return AIFOCORE_MAKE_STATUS(
           aifocore::StatusCode::kInternal,
-          std::string(
-              DecompressionError::Codec("JPEG2000", page_index, strip_index)
-                  .what()));
+          DecompressionFailedMsg("JPEG2000", page_index, strip_index));
     }
   } else if (IsCompression(page.compression, Compression::kLzw)) {
     // LZW compression
-    if (!DecompressLzw(strip_data_span, decompressed)) {
+    if (auto s = DecompressLzw(strip_data_span, decompressed); !s.ok()) {
       return AIFOCORE_MAKE_STATUS(
           aifocore::StatusCode::kInternal,
-          std::string(DecompressionError::Codec("LZW", page_index, strip_index)
-                          .what()));
+          DecompressionFailedMsg("LZW", page_index, strip_index,
+                                 s.status().message()));
     }
   } else if (IsCompression(page.compression, Compression::kZstd)) {
     // ZSTD compression
-    if (!DecompressZstd(strip_data_span, decompressed)) {
+    if (auto s = DecompressZstd(strip_data_span, decompressed); !s.ok()) {
       return AIFOCORE_MAKE_STATUS(
           aifocore::StatusCode::kInternal,
-          std::string(DecompressionError::Codec("ZSTD", page_index, strip_index)
-                          .what()));
+          DecompressionFailedMsg("ZSTD", page_index, strip_index,
+                                 s.status().message()));
     }
   } else if (IsCompression(page.compression, Compression::kAdobeDeflate) ||
              IsCompression(page.compression, Compression::kDeflate)) {
-    if (!DecompressDeflate(strip_data_span, decompressed)) {
+    if (auto s = DecompressDeflate(strip_data_span, decompressed); !s.ok()) {
       return AIFOCORE_MAKE_STATUS(
           aifocore::StatusCode::kInternal,
-          std::string(
-              DecompressionError::Codec("Deflate", page_index, strip_index)
-                  .what()));
+          DecompressionFailedMsg("Deflate", page_index, strip_index,
+                                 s.status().message()));
     }
   } else if (IsCompression(page.compression, Compression::kNone)) {
     // Uncompressed - copy data
     decompressed.assign(strip_data_span.begin(), strip_data_span.end());
   } else {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,
-                                std::string(UnsupportedFormatError::Compression(
-                                                page.compression, page_index)
-                                                .what()));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kUnimplemented,
+        UnsupportedCompressionMsg(page.compression, page_index));
   }
 
   // Normalize decoded bytes (endianness + predictor) per strip.
@@ -581,18 +690,15 @@ Result<void> ReadStripe(const TiffIndex& index, uint32_t page_index,
   if (bytes_per_sample == 0) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kUnimplemented,
-        std::string(UnsupportedFormatError::BitsPerSample(page.bits_per_sample,
-                                                          page_index)
-                        .what()));
+        UnsupportedBitsPerSampleMsg(page.bits_per_sample, page_index));
   }
 
   const uint32_t bytes_per_pixel = bytes_per_sample * page.samples_per_pixel;
   if (bytes_per_pixel == 0) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
-        std::string(InvalidPageError::Parameters(
-                        page_index, page.samples_per_pixel, bytes_per_sample)
-                        .what()));
+        InvalidPageParametersMsg(page_index, page.samples_per_pixel,
+                                 bytes_per_sample));
   }
 
   const uint32_t full_row_bytes = page.width * bytes_per_pixel;
@@ -733,11 +839,11 @@ Result<void> ReadStripedPage(const TiffIndex& index, uint32_t page_index,
       !IsCompression(page.compression, Compression::kJpeg2000) &&
       !IsCompression(page.compression, Compression::kLzw) &&
       !IsCompression(page.compression, Compression::kNone) &&
-      !IsCompression(page.compression, Compression::kZstd)) {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,
-                                std::string(UnsupportedFormatError::Compression(
-                                                page.compression, page_index)
-                                                .what()));
+      !IsCompression(page.compression, Compression::kZstd) &&
+      !IsCcittCompression(page.compression)) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kUnimplemented,
+        UnsupportedCompressionMsg(page.compression, page_index));
   }
 
   // Validate bits per sample
@@ -745,18 +851,15 @@ Result<void> ReadStripedPage(const TiffIndex& index, uint32_t page_index,
   if (bytes_per_sample == 0) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kUnimplemented,
-        std::string(UnsupportedFormatError::BitsPerSample(page.bits_per_sample,
-                                                          page_index)
-                        .what()));
+        UnsupportedBitsPerSampleMsg(page.bits_per_sample, page_index));
   }
 
   const uint32_t bytes_per_pixel = bytes_per_sample * page.samples_per_pixel;
   if (bytes_per_pixel == 0) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
-        std::string(InvalidPageError::Parameters(
-                        page_index, page.samples_per_pixel, bytes_per_sample)
-                        .what()));
+        InvalidPageParametersMsg(page_index, page.samples_per_pixel,
+                                 bytes_per_sample));
   }
 
   // ========================================

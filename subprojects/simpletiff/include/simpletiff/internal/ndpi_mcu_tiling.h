@@ -34,9 +34,6 @@ struct NdpiMcuTileGeometry {
 // determined from the JPEG header:
 // - DRI (restart interval)
 // - SOF sampling factors (MCU size)
-//
-// This mirrors OpenSlide's approach but avoids depending on libjpeg for header
-// parsing.
 [[nodiscard]] bool ComputeNdpiMcuTileGeometryFromJpegHeader(
     int file_descriptor, size_t file_size, uint64_t jpeg_start_offset,
     uint32_t image_width, uint32_t image_height, NdpiMcuTileGeometry& out);

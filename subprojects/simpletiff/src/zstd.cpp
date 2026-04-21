@@ -16,15 +16,21 @@
 
 #include <zstd.h>
 
-#include <cstdio>
+#include <string>
 #include <vector>
+
+#include "aifocore/status/result.h"
 
 namespace simpletiff {
 
-bool DecompressZstd(std::span<const uint8_t> compressed,
-                    std::vector<uint8_t>& decompressed) {
+using ::aifocore::Result;
+using ::aifocore::StatusCode;
+
+Result<void> DecompressZstd(std::span<const uint8_t> compressed,
+                            std::vector<uint8_t>& decompressed) {
   if (compressed.empty()) {
-    return false;
+    return AIFOCORE_MAKE_STATUS(StatusCode::kInvalidArgument,
+                                "ZSTD: empty compressed input");
   }
 
   // Get decompressed size from compressed frame
@@ -32,39 +38,37 @@ bool DecompressZstd(std::span<const uint8_t> compressed,
       ZSTD_getFrameContentSize(compressed.data(), compressed.size());
 
   if (decompressed_size == ZSTD_CONTENTSIZE_ERROR) {
-    std::fprintf(stderr, "Error: ZSTD not compressed by zstd\n");
-    return false;
+    return AIFOCORE_MAKE_STATUS(
+        StatusCode::kInvalidArgument,
+        "ZSTD: input is not a valid zstd-compressed frame");
   }
 
   if (decompressed_size == ZSTD_CONTENTSIZE_UNKNOWN) {
-    std::fprintf(stderr, "Error: ZSTD original size unknown\n");
-    return false;
+    return AIFOCORE_MAKE_STATUS(
+        StatusCode::kInvalidArgument,
+        "ZSTD: original (uncompressed) size is unknown in frame header");
   }
 
-  // Allocate output buffer
   decompressed.resize(static_cast<size_t>(decompressed_size));
 
-  // Decompress using simple API
   const size_t result =
       ZSTD_decompress(decompressed.data(), decompressed.size(),
                       compressed.data(), compressed.size());
 
   if (ZSTD_isError(result)) {
-    std::fprintf(stderr, "Error: ZSTD decompression failed: %s\n",
-                 ZSTD_getErrorName(result));
-    return false;
+    return AIFOCORE_MAKE_STATUS(StatusCode::kDataLoss,
+                                std::string("ZSTD: decompression failed: ") +
+                                    ZSTD_getErrorName(result));
   }
 
-  // Verify size matches
   if (result != decompressed.size()) {
-    std::fprintf(
-        stderr,
-        "Error: ZSTD decompressed size mismatch (expected %zu, got %zu)\n",
-        decompressed.size(), result);
-    return false;
+    return AIFOCORE_MAKE_STATUS(StatusCode::kDataLoss,
+                                "ZSTD: decompressed size mismatch (expected " +
+                                    std::to_string(decompressed.size()) +
+                                    ", got " + std::to_string(result) + ")");
   }
 
-  return true;
+  return Result<void>();
 }
 
 }  // namespace simpletiff

@@ -78,7 +78,7 @@ Cache Operations
      - ``cache.clear()``
      - void
    * - ``reader->SetTileCache(cache)``
-     - ``slide.set_cache_manager(cache)``
+     - ``slide.set_cache(cache)``
      - void
 
 Data Type Conversion

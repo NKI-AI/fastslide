@@ -33,7 +33,7 @@ class IsyntaxTileExecutor : public CachedTileExecutor<IsyntaxTileExecutor> {
   /// @return Status indicating success or failure
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
                                       const IsyntaxReader& reader,
-                                      runtime::TileWriter& writer);
+                                      runtime::Canvas& writer);
 
   friend class CachedTileExecutor<IsyntaxTileExecutor>;
 
@@ -46,7 +46,7 @@ class IsyntaxTileExecutor : public CachedTileExecutor<IsyntaxTileExecutor> {
   /// @return Status indicating success or failure
   static aifocore::Status ExecuteTileOperation(const core::TileReadOp& op,
                                                const IsyntaxReader& reader,
-                                               runtime::TileWriter& writer,
+                                               runtime::Canvas& writer,
                                                std::mutex& accumulator_mutex);
 
   /// @brief Create cache key for a tile

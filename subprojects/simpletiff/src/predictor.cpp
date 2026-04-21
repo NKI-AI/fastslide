@@ -15,21 +15,26 @@
 #include "simpletiff/predictor.h"
 
 #include <cstdint>
-#include <stdexcept>
+#include <string>
 #include <vector>
 
+#include "aifocore/status/result.h"
+
 namespace simpletiff {
+
+using ::aifocore::Result;
+using ::aifocore::StatusCode;
 
 namespace {
 
 // -----------------------------------------------------------
 // Byte swap helpers
 // -----------------------------------------------------------
-static inline uint16_t Bswap16(uint16_t v) {
+inline uint16_t Bswap16(uint16_t v) {
   return static_cast<uint16_t>((v << 8) | (v >> 8));
 }
 
-static inline uint32_t Bswap32(uint32_t v) {
+inline uint32_t Bswap32(uint32_t v) {
   return (v >> 24) | ((v >> 8) & 0x0000FF00u) | ((v << 8) & 0x00FF0000u) |
          (v << 24);
 }
@@ -99,16 +104,21 @@ inline void UndoPredictorRowBytes(void* row_bytes, uint32_t width,
 // -----------------------------------------------------------
 // Apply TIFF horizontal predictor (Predictor = 2)
 // -----------------------------------------------------------
-void ApplyHorizontalPredictor(std::vector<uint8_t>& data, int width, int height,
-                              int samples_per_pixel, int bits_per_sample,
-                              bool file_big_endian,
-                              int planar_configuration /* = 1 */) {
-  // Early validation - fail fast with clear error message
+Result<void> ApplyHorizontalPredictor(std::vector<uint8_t>& data, int width,
+                                      int height, int samples_per_pixel,
+                                      int bits_per_sample, bool file_big_endian,
+                                      int planar_configuration /* = 1 */) {
   if (bits_per_sample != 8 && bits_per_sample != 16 && bits_per_sample != 32) {
-    throw std::runtime_error(
+    return AIFOCORE_MAKE_STATUS(
+        StatusCode::kUnimplemented,
         "Predictor=2: unsupported BitsPerSample=" +
-        std::to_string(bits_per_sample) +
-        ". SimpleTIFF requires byte-aligned formats (8, 16, or 32 bits).");
+            std::to_string(bits_per_sample) +
+            ". SimpleTIFF requires byte-aligned formats (8, 16, or 32 bits).");
+  }
+  if (planar_configuration != 1 && planar_configuration != 2) {
+    return AIFOCORE_MAKE_STATUS(StatusCode::kInvalidArgument,
+                                "Predictor=2: invalid PlanarConfiguration=" +
+                                    std::to_string(planar_configuration));
   }
 
   // CONTIG (1) = interleaved, SEPARATE (2) = planar
@@ -138,11 +148,9 @@ void ApplyHorizontalPredictor(std::vector<uint8_t>& data, int width, int height,
               row_start, static_cast<uint32_t>(width),
               static_cast<uint32_t>(samples_per_pixel), file_big_endian);
           break;
-        default:
-          throw std::runtime_error("Predictor=2: unsupported BitsPerSample");
       }
     }
-  } else if (planar_configuration == 2) {
+  } else {
     // Separate planes: RRR...GGG...BBB...
     // Each plane is processed independently with stride = 1
     const uint32_t plane_row_stride_bytes =
@@ -169,14 +177,12 @@ void ApplyHorizontalPredictor(std::vector<uint8_t>& data, int width, int height,
             UndoPredictorRowBytes<uint32_t>(
                 row_start, static_cast<uint32_t>(width), 1, file_big_endian);
             break;
-          default:
-            throw std::runtime_error("Predictor=2: unsupported BitsPerSample");
         }
       }
     }
-  } else {
-    throw std::runtime_error("Invalid PlanarConfiguration value");
   }
+
+  return Result<void>();
 }
 
 }  // namespace simpletiff

@@ -24,44 +24,12 @@
 #include <vector>
 
 #include "aifocore/status/result.h"
+#include "fastslide/core/metadata.h"
 
 namespace fastslide {
 
-/// @brief Metadata key constants for standardized access
-///
-/// This namespace defines the standardized metadata keys that slide readers
-/// should populate. Keys are categorized as:
-/// - **Mandatory**: All readers MUST provide these keys
-/// - **Optional**: Readers SHOULD provide these if available
-/// - **Format-specific**: Readers MAY provide additional format-specific keys
-namespace MetadataKeys {
-
-// Mandatory keys (all readers must provide)
-inline constexpr std::string_view kFormat =
-    "format";  ///< File format name (e.g., "MRXS", "SVS", "QPTIFF")
-inline constexpr std::string_view kLevels =
-    "levels";  ///< Number of pyramid levels
-
-// Optional keys (provide if available)
-inline constexpr std::string_view kMppX =
-    "mpp_x";  ///< Microns per pixel in X direction
-inline constexpr std::string_view kMppY =
-    "mpp_y";  ///< Microns per pixel in Y direction
-inline constexpr std::string_view kMagnification =
-    "magnification";  ///< Objective magnification
-inline constexpr std::string_view kObjective = "objective";  ///< Objective name
-inline constexpr std::string_view kScannerModel =
-    "scanner_model";  ///< Scanner manufacturer/model
-inline constexpr std::string_view kScannerID = "scanner_id";  ///< Scanner ID
-inline constexpr std::string_view kSlideID = "slide_id";  ///< Slide identifier
-inline constexpr std::string_view kChannels =
-    "channels";  ///< Number of channels
-inline constexpr std::string_view kAssociatedImages =
-    "associated_images";  ///< Number of associated images
-
-// Format-specific keys (readers may add more as needed)
-
-}  // namespace MetadataKeys
+/// @brief Alias for `fastslide::core::MetadataKeys` (single source of truth).
+namespace MetadataKeys = core::MetadataKeys;
 
 /// @brief Enhanced metadata container with printing capabilities
 ///
@@ -338,7 +306,7 @@ class Metadata {
           msg += ", ";
         msg += missing_keys[i];
       }
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument, msg);
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument, msg);
     }
 
     return aifocore::Status::OkStatus();

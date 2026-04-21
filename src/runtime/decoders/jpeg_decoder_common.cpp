@@ -47,12 +47,12 @@ aifocore::Result<ImageDimensions> GetJpegDimensions(
   // Minimal JPEG parser: scan markers until SOF, then read height/width.
   // References: ISO/IEC 10918-1 marker structure.
   if (jpeg_bytes.size() < 4) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "JPEG too small");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "JPEG too small");
   }
   if (jpeg_bytes[0] != 0xFF || jpeg_bytes[1] != 0xD8) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Missing JPEG SOI marker");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Missing JPEG SOI marker");
   }
 
   size_t i = 2;
@@ -79,33 +79,33 @@ aifocore::Result<ImageDimensions> GetJpegDimensions(
     }
 
     if (i + 1 >= jpeg_bytes.size()) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "Truncated JPEG segment length");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "Truncated JPEG segment length");
     }
     const uint16_t seg_len = ReadBeU16(jpeg_bytes.data() + i);
     i += 2;
     if (seg_len < 2) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "Invalid JPEG segment length");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "Invalid JPEG segment length");
     }
     if (i + (seg_len - 2) > jpeg_bytes.size()) {
-      return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                              "Truncated JPEG segment payload");
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                  "Truncated JPEG segment payload");
     }
 
     if (IsSofMarker(marker)) {
       // SOF segment payload:
       // precision(1), height(2), width(2), components(1), ...
       if (seg_len < 2 + 1 + 2 + 2 + 1) {
-        return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                                "Invalid JPEG SOF segment length");
+        return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                    "Invalid JPEG SOF segment length");
       }
       const uint8_t* p = jpeg_bytes.data() + i;
       const uint16_t height = ReadBeU16(p + 1);
       const uint16_t width = ReadBeU16(p + 3);
       if (width == 0 || height == 0) {
-        return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                                "Invalid JPEG dimensions");
+        return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                    "Invalid JPEG dimensions");
       }
       return ImageDimensions{static_cast<uint32_t>(width),
                              static_cast<uint32_t>(height)};
@@ -114,8 +114,8 @@ aifocore::Result<ImageDimensions> GetJpegDimensions(
     i += (seg_len - 2);
   }
 
-  return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                          "JPEG SOF marker not found");
+  return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                              "JPEG SOF marker not found");
 }
 
 }  // namespace fastslide::runtime::decoders

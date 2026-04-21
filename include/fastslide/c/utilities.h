@@ -10,7 +10,6 @@
 
 #include <stddef.h>
 
-#include "fastslide/c/api.h"
 #include "fastslide/c/image.h"
 #include "fastslide/c/slide_reader.h"
 
@@ -27,8 +26,9 @@ extern "C" {
 /// @param output_width Target output width
 /// @param output_height Target output height
 /// @return Resampled image handle or NULL on failure
-FASTSLIDE_API FastSlideImage* fastslide_lanczos_resample(
-    const FastSlideImage* image, uint32_t output_width, uint32_t output_height);
+FastSlideImage* fastslide_lanczos_resample(const FastSlideImage* image,
+                                           uint32_t output_width,
+                                           uint32_t output_height);
 
 /// @brief Resample an image using Lanczos2 algorithm
 ///
@@ -40,8 +40,9 @@ FASTSLIDE_API FastSlideImage* fastslide_lanczos_resample(
 /// @param output_width Target output width
 /// @param output_height Target output height
 /// @return Resampled image handle or NULL on failure
-FASTSLIDE_API FastSlideImage* fastslide_lanczos2_resample(
-    const FastSlideImage* image, uint32_t output_width, uint32_t output_height);
+FastSlideImage* fastslide_lanczos2_resample(const FastSlideImage* image,
+                                            uint32_t output_width,
+                                            uint32_t output_height);
 
 /// @brief Resample an image using Cosine-windowed sinc algorithm
 ///
@@ -53,8 +54,9 @@ FASTSLIDE_API FastSlideImage* fastslide_lanczos2_resample(
 /// @param output_width Target output width
 /// @param output_height Target output height
 /// @return Resampled image handle or NULL on failure
-FASTSLIDE_API FastSlideImage* fastslide_cosine_resample(
-    const FastSlideImage* image, uint32_t output_width, uint32_t output_height);
+FastSlideImage* fastslide_cosine_resample(const FastSlideImage* image,
+                                          uint32_t output_width,
+                                          uint32_t output_height);
 
 /// @brief Resample an image using average downsampling
 ///
@@ -65,8 +67,8 @@ FASTSLIDE_API FastSlideImage* fastslide_cosine_resample(
 /// @param image Input image to resample
 /// @param factor Downsampling factor (must be power of 2)
 /// @return Resampled image handle or NULL on failure
-FASTSLIDE_API FastSlideImage* fastslide_average_resample(
-    const FastSlideImage* image, uint32_t factor);
+FastSlideImage* fastslide_average_resample(const FastSlideImage* image,
+                                           uint32_t factor);
 
 /// @brief Resample an image using 2x2 average downsampling
 ///
@@ -75,8 +77,7 @@ FASTSLIDE_API FastSlideImage* fastslide_average_resample(
 ///
 /// @param image Input image to resample
 /// @return Resampled image handle or NULL on failure
-FASTSLIDE_API FastSlideImage* fastslide_average_2x2_resample(
-    const FastSlideImage* image);
+FastSlideImage* fastslide_average_2x2_resample(const FastSlideImage* image);
 
 /// @brief Resample an image using 4x4 average downsampling
 ///
@@ -85,8 +86,7 @@ FASTSLIDE_API FastSlideImage* fastslide_average_2x2_resample(
 ///
 /// @param image Input image to resample
 /// @return Resampled image handle or NULL on failure
-FASTSLIDE_API FastSlideImage* fastslide_average_4x4_resample(
-    const FastSlideImage* image);
+FastSlideImage* fastslide_average_4x4_resample(const FastSlideImage* image);
 
 /// @brief Resample an image using 8x8 average downsampling
 ///
@@ -95,8 +95,7 @@ FASTSLIDE_API FastSlideImage* fastslide_average_4x4_resample(
 ///
 /// @param image Input image to resample
 /// @return Resampled image handle or NULL on failure
-FASTSLIDE_API FastSlideImage* fastslide_average_8x8_resample(
-    const FastSlideImage* image);
+FastSlideImage* fastslide_average_8x8_resample(const FastSlideImage* image);
 
 // Example utilities for PNG I/O using lodepng
 
@@ -104,15 +103,14 @@ FASTSLIDE_API FastSlideImage* fastslide_average_8x8_resample(
 /// @param image RGB or RGBA image to save (must be uint8 format)
 /// @param filename Output PNG filename
 /// @return 1 on success, 0 on failure
-FASTSLIDE_API int fastslide_examples_save_as_png(const FastSlideImage* image,
-                                                 const char* filename);
+int fastslide_examples_save_as_png(const FastSlideImage* image,
+                                   const char* filename);
 
 /// @brief Load an image from PNG using lodepng
 /// @param filename Input PNG filename
 /// @return Loaded image as RGB uint8, or NULL if failed
 /// @note Returns RGB format (alpha channel is discarded if present)
-FASTSLIDE_API FastSlideImage* fastslide_examples_load_from_png(
-    const char* filename);
+FastSlideImage* fastslide_examples_load_from_png(const char* filename);
 
 #ifdef __cplusplus
 }

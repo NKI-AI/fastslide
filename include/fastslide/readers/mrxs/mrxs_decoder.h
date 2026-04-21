@@ -26,27 +26,31 @@ namespace fastslide {
 namespace mrxs {
 namespace internal {
 
-/// @brief Decode compressed image data into an RGB image
-/// @param data Compressed image data
-/// @param format Image format (JPEG/PNG/BMP)
-/// @return Result containing decoded RGB image or error
-aifocore::Result<RGBImage> DecodeImage(const std::vector<uint8_t>& data,
-                                       MrxsImageFormat format);
+/// @brief Decode a compressed MRXS image into an RGB8 `RGBImage`.
+///
+/// Routes to the appropriate centralized `runtime::decoders` backend based
+/// on `format` (JPEG / PNG / BMP) and repacks the resulting RGB pixels into
+/// an `RGBImage`. The JPEG path forces `no_ycbcr_conversion = true` to
+/// match what 3DHISTECH MRXS slides expect.
+///
+/// @param data Compressed image bitstream.
+/// @param format Image format (JPEG / PNG / BMP).
+/// @return RGB8 `RGBImage` on success, otherwise a status describing the
+///         decode failure.
+[[nodiscard]] aifocore::Result<RGBImage> DecodeImage(
+    const std::vector<uint8_t>& data, MrxsImageFormat format);
 
-/// @brief Decode JPEG image data
-/// @param data JPEG compressed data
-/// @return Result containing decoded RGB image or error
-aifocore::Result<RGBImage> DecodeJpeg(const std::vector<uint8_t>& data);
-
-/// @brief Decode PNG image data (using lodepng)
-/// @param data PNG compressed data
-/// @return Result containing decoded RGB image or error
-aifocore::Result<RGBImage> DecodePng(const std::vector<uint8_t>& data);
-
-/// @brief Decode BMP image data (simple, uncompressed only)
-/// @param data BMP data
-/// @return Result containing decoded RGB image or error
-aifocore::Result<RGBImage> DecodeBmp(const std::vector<uint8_t>& data);
+/// @brief Decode a compressed MRXS image into an RGB16 `Image`.
+///
+/// Used for 16-bit fluorescence slides where each PNG tile carries one
+/// 16-bit sample per RGB plane. Currently only `MrxsImageFormat::kPng` is
+/// supported as 16-bit; other formats fall back to an error.
+///
+/// @param data   Compressed image bitstream.
+/// @param format Image format (only PNG is meaningful for 16-bit).
+/// @return RGB16 `Image` (interleaved, host endianness) on success.
+[[nodiscard]] aifocore::Result<Image> DecodeImage16(
+    const std::vector<uint8_t>& data, MrxsImageFormat format);
 
 }  // namespace internal
 }  // namespace mrxs

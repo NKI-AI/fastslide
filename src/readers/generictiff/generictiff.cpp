@@ -24,11 +24,11 @@
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/generictiff/generictiff_plan_builder.h"
 #include "fastslide/readers/generictiff/generictiff_tile_executor.h"
+#include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/readers/tiff_quickhash.h"
 #include "fastslide/runtime/tile_writer.h"
 #include "fastslide/utilities/hash.h"
 #include "simpletiff/index.h"
-#include "simpletiff/reader.h"
 #include "simpletiff/tiff_parser.h"
 
 namespace fs = std::filesystem;
@@ -123,38 +123,13 @@ aifocore::Result<RGBImage> GenericTiffReader::ReadAssociatedImage(
         aifocore::StatusCode::kNotFound,
         aifocore::fmt::format("Associated image '{}' not found", name));
   }
-
-  // Check valid page
-  if (!tiff_index_ || info->page >= tiff_index_->NumPages()) {
+  if (!tiff_index_) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInternal,
-        aifocore::fmt::format("Invalid page {} for associated image '{}'",
-                              info->page, name));
+        aifocore::fmt::format("TIFF index not initialized for '{}'", name));
   }
-
-  const auto& page_header = tiff_index_->Page(info->page);
-  const uint32_t width = info->size[0];
-  const uint32_t height = info->size[1];
-  const uint16_t samples_per_pixel = page_header.samples_per_pixel;
-
-  RGBImage rgb_image({width, height}, ImageFormat::kRGB, DataType::kUInt8);
-
-  simpletiff::DecodeContext ctx;
-  simpletiff::Roi roi{0, 0, width, height};
-  const int stride = static_cast<int>(width) * samples_per_pixel;
-
-  // Use ReadPage (dispatches to Tiled or Striped)
-  auto result = simpletiff::ReadPage(*tiff_index_, info->page, roi, ctx,
-                                     rgb_image.GetData(), stride);
-
-  if (!result.ok()) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kInternal,
-        aifocore::fmt::format("Failed to read associated image '{}': {}", name,
-                              result.status().message()));
-  }
-
-  return rgb_image;
+  return readers::simpletiff_decode::ReadAssociatedTiffPage(
+      *tiff_index_, info->page, info->size, name);
 }
 
 Metadata GenericTiffReader::GetMetadata() const {
@@ -242,8 +217,8 @@ aifocore::Result<core::TilePlan> GenericTiffReader::PrepareRequest(
   return GenericTiffPlanBuilder::BuildPlan(request, *this);
 }
 
-aifocore::Status GenericTiffReader::ExecutePlan(
-    const core::TilePlan& plan, runtime::TileWriter& writer) const {
+aifocore::Status GenericTiffReader::ExecutePlan(const core::TilePlan& plan,
+                                                runtime::Canvas& writer) const {
   return GenericTiffTileExecutor::ExecutePlan(plan, *this, writer);
 }
 
@@ -262,7 +237,6 @@ aifocore::Status GenericTiffReader::LoadDirectories() {
   associated_images_.clear();
 
   // Candidates for pyramid levels.
-  // OpenSlide generic-tiff behavior:
   // - only tiled directories are levels
   // - include directory 0 and reduced-resolution directories
   // - define downsample from width ratio and report height as
@@ -330,9 +304,6 @@ aifocore::Status GenericTiffReader::LoadDirectories() {
       // OpenSlide computes missing downsamples in openslide.c as:
       //   downsample = (((blh / l->h) + (blw / l->w)) / 2)
       // where blw/blh are level 0 dimensions, and l->w/l->h come from the TIFF.
-      //
-      // Keep the directory-reported dimensions (no "padding clipping" here;
-      // that's vendor-specific behavior in OpenSlide's vendor drivers).
       const double width_ratio =
           static_cast<double>(base_w) /
           static_cast<double>(std::max<uint32_t>(cand.width, 1));
@@ -350,7 +321,6 @@ aifocore::Status GenericTiffReader::LoadDirectories() {
   }
 
   // Fallback: accept non-tiled pyramids or single-page TIFFs.
-  // Preserve previous behavior (area-based downsample).
   std::sort(
       all_candidates.begin(), all_candidates.end(),
       [](const auto& lhs, const auto& rhs) { return lhs.area > rhs.area; });

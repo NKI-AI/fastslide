@@ -101,13 +101,7 @@ TileGeometry QueryTileGeometry(const simpletiff::TiffIndex& tiff_index,
 
 core::OutputSpec::PixelFormat PixelFormatFromBitsPerSample(
     uint16_t bits_per_sample) {
-  if (bits_per_sample <= 8) {
-    return core::OutputSpec::PixelFormat::kUInt8;
-  }
-  if (bits_per_sample <= 16) {
-    return core::OutputSpec::PixelFormat::kUInt16;
-  }
-  return core::OutputSpec::PixelFormat::kFloat32;
+  return core::ToOutputPixelFormat(DataTypeFromBitsPerSample(bits_per_sample));
 }
 
 uint32_t BytesPerSample(uint16_t bits_per_sample) {
@@ -116,17 +110,6 @@ uint32_t BytesPerSample(uint16_t bits_per_sample) {
 
 uint32_t BytesPerPixel(uint16_t bits_per_sample, uint16_t samples_per_pixel) {
   return BytesPerSample(bits_per_sample) * samples_per_pixel;
-}
-
-core::TilePlan::Cost EstimateCosts(std::span<const core::TileReadOp> ops) {
-  core::TilePlan::Cost cost;
-  cost.total_tiles = ops.size();
-  cost.total_bytes_to_read = 0;
-  for (const auto& op : ops) {
-    cost.total_bytes_to_read += op.byte_size;
-  }
-  cost.tiles_to_decode = cost.total_tiles;
-  return cost;
 }
 
 void ForEachIntersectingTile(
@@ -214,8 +197,12 @@ std::vector<core::TileReadOp> BuildTileReadOps(
           const uint32_t dst_x = it.inter_left - region.x;
           const uint32_t dst_y = it.inter_top - region.y;
 
-          op.transform.source = {src_x, src_y, it.inter_width, it.inter_height};
-          op.transform.dest = {dst_x, dst_y, it.inter_width, it.inter_height};
+          op.transform.source = {static_cast<double>(src_x),
+                                 static_cast<double>(src_y), it.inter_width,
+                                 it.inter_height};
+          op.transform.dest = {static_cast<double>(dst_x),
+                               static_cast<double>(dst_y), it.inter_width,
+                               it.inter_height};
           ops.push_back(op);
         });
   }

@@ -39,7 +39,7 @@ Key Features
 
 🐍 **Dual APIs**
    - **C++ API**: Native high-performance interface
-   - **Python API**: NumPy-integrated bindings via pybind11
+   - **Python API**: NumPy-integrated bindings via nanobind
    - OpenSlide-compatible Python interface for easy migration
 
 Supported File Formats

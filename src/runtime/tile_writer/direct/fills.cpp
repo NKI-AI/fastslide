@@ -26,48 +26,9 @@ void ZeroInit(uint8_t* buf, size_t nbytes) {
 }
 
 void FillRGB8(uint8_t* buf, int w, int h, uint8_t r, uint8_t g, uint8_t b) {
-  if (w <= 0 || h <= 0)
-    return;
-  const size_t total_bytes = static_cast<size_t>(w) * h * 3;
-
-  // Fast path for uniform colors (r == g == b)
-  // This handles black (0), white (255), and any gray value
-  if (r == g && g == b) {
-    std::memset(buf, r, total_bytes);
-    return;
-  }
-
-  // Non-uniform color path (rare in medical imaging)
-  // Use exponential doubling for efficiency
-  const size_t row_bytes = static_cast<size_t>(w) * 3;
-  uint8_t* row0 = buf;
-
-  // Build first row via seed + exponential doubling
-  const int seed_px = std::min(w, 64);  // 64 px -> 192 bytes
-  for (int i = 0; i < seed_px; ++i) {
-    row0[3 * i + 0] = r;
-    row0[3 * i + 1] = g;
-    row0[3 * i + 2] = b;
-  }
-  size_t filled = static_cast<size_t>(seed_px) * 3;
-  while (filled < row_bytes) {
-    const size_t chunk = std::min(filled, row_bytes - filled);
-    std::memcpy(row0 + filled, row0, chunk);
-    filled += chunk;
-  }
-
-  if (h == 1)
-    return;
-
-  // Exponential doubling across rows
-  size_t filled_rows = 1;
-  while (filled_rows < static_cast<size_t>(h)) {
-    const size_t block_rows =
-        std::min(filled_rows, static_cast<size_t>(h) - filled_rows);
-    const size_t block_bytes = block_rows * row_bytes;
-    std::memcpy(buf + filled_rows * row_bytes, buf, block_bytes);
-    filled_rows += block_rows;
-  }
+  // Thin wrapper over the templated `FillRGB<uint8_t>` to keep the public
+  // 8-bit symbol unchanged for existing callers.
+  FillRGB<uint8_t>(buf, w, h, r, g, b);
 }
 
 void FillRGBA8(uint8_t* buf, int w, int h, uint8_t r, uint8_t g, uint8_t b,

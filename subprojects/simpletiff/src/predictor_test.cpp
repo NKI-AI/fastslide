@@ -19,7 +19,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -133,7 +132,9 @@ void EncodeHorizontalPredictor(std::vector<uint8_t>& data, int width,
               static_cast<uint32_t>(samples_per_pixel), file_big_endian);
           break;
         default:
-          throw std::runtime_error("Unsupported BitsPerSample for encoding");
+          ADD_FAILURE() << "Unsupported BitsPerSample for encoding: "
+                        << bits_per_sample;
+          return;
       }
     }
   } else if (planar_configuration == 2) {
@@ -163,7 +164,9 @@ void EncodeHorizontalPredictor(std::vector<uint8_t>& data, int width,
                 row_start, static_cast<uint32_t>(width), 1, file_big_endian);
             break;
           default:
-            throw std::runtime_error("Unsupported BitsPerSample for encoding");
+            ADD_FAILURE() << "Unsupported BitsPerSample for encoding: "
+                          << bits_per_sample;
+            return;
         }
       }
     }
@@ -230,8 +233,10 @@ TEST(PredictorTest, Acc8Grayscale) {
   EXPECT_EQ(encoded, expected_diff);
 
   // Decode (apply accumulation) - should get back original
-  ApplyHorizontalPredictor(encoded, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, 1);
+  ASSERT_TRUE(ApplyHorizontalPredictor(encoded, width, height,
+                                       samples_per_pixel, bits_per_sample,
+                                       big_endian, 1)
+                  .ok());
   EXPECT_EQ(encoded, original);
 }
 
@@ -263,8 +268,10 @@ TEST(PredictorTest, Acc8RGB) {
   EXPECT_EQ(encoded, expected_diff);
 
   // Decode - should get back original
-  ApplyHorizontalPredictor(encoded, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, 1);
+  ASSERT_TRUE(ApplyHorizontalPredictor(encoded, width, height,
+                                       samples_per_pixel, bits_per_sample,
+                                       big_endian, 1)
+                  .ok());
   EXPECT_EQ(encoded, original);
 }
 
@@ -286,8 +293,10 @@ TEST(PredictorTest, Acc8RGBA) {
   std::vector<uint8_t> encoded = original;
   EncodeHorizontalPredictor(encoded, width, height, samples_per_pixel,
                             bits_per_sample, big_endian, 1);
-  ApplyHorizontalPredictor(encoded, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, 1);
+  ASSERT_TRUE(ApplyHorizontalPredictor(encoded, width, height,
+                                       samples_per_pixel, bits_per_sample,
+                                       big_endian, 1)
+                  .ok());
   EXPECT_EQ(encoded, original);
 }
 
@@ -311,8 +320,9 @@ TEST(PredictorTest, Acc16Grayscale) {
   std::vector<uint8_t> data = original;
   EncodeHorizontalPredictor(data, width, height, samples_per_pixel,
                             bits_per_sample, big_endian, 1);
-  ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, 1);
+  ASSERT_TRUE(ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
+                                       bits_per_sample, big_endian, 1)
+                  .ok());
   EXPECT_EQ(data, original);
 }
 
@@ -334,8 +344,9 @@ TEST(PredictorTest, Acc16RGB) {
   std::vector<uint8_t> data = original;
   EncodeHorizontalPredictor(data, width, height, samples_per_pixel,
                             bits_per_sample, big_endian, 1);
-  ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, 1);
+  ASSERT_TRUE(ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
+                                       bits_per_sample, big_endian, 1)
+                  .ok());
   EXPECT_EQ(data, original);
 }
 
@@ -358,8 +369,9 @@ TEST(PredictorTest, Acc32Grayscale) {
   std::vector<uint8_t> data = original;
   EncodeHorizontalPredictor(data, width, height, samples_per_pixel,
                             bits_per_sample, big_endian, 1);
-  ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, 1);
+  ASSERT_TRUE(ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
+                                       bits_per_sample, big_endian, 1)
+                  .ok());
   EXPECT_EQ(data, original);
 }
 
@@ -379,8 +391,9 @@ TEST(PredictorTest, Acc32RGB) {
   std::vector<uint8_t> data = original;
   EncodeHorizontalPredictor(data, width, height, samples_per_pixel,
                             bits_per_sample, big_endian, 1);
-  ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, 1);
+  ASSERT_TRUE(ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
+                                       bits_per_sample, big_endian, 1)
+                  .ok());
   EXPECT_EQ(data, original);
 }
 
@@ -406,8 +419,10 @@ TEST(PredictorTest, Acc8RGBPlanar) {
   std::vector<uint8_t> data = original;
   EncodeHorizontalPredictor(data, width, height, samples_per_pixel,
                             bits_per_sample, big_endian, planar_config);
-  ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, planar_config);
+  ASSERT_TRUE(ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
+                                       bits_per_sample, big_endian,
+                                       planar_config)
+                  .ok());
   EXPECT_EQ(data, original);
 }
 
@@ -430,8 +445,10 @@ TEST(PredictorTest, Acc16RGBPlanar) {
   std::vector<uint8_t> data = original;
   EncodeHorizontalPredictor(data, width, height, samples_per_pixel,
                             bits_per_sample, big_endian, planar_config);
-  ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, planar_config);
+  ASSERT_TRUE(ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
+                                       bits_per_sample, big_endian,
+                                       planar_config)
+                  .ok());
   EXPECT_EQ(data, original);
 }
 
@@ -453,8 +470,10 @@ TEST(PredictorTest, Acc32RGBPlanar) {
   std::vector<uint8_t> data = original;
   EncodeHorizontalPredictor(data, width, height, samples_per_pixel,
                             bits_per_sample, big_endian, planar_config);
-  ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, planar_config);
+  ASSERT_TRUE(ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
+                                       bits_per_sample, big_endian,
+                                       planar_config)
+                  .ok());
   EXPECT_EQ(data, original);
 }
 
@@ -481,8 +500,9 @@ TEST(PredictorTest, MultiRow8RGB) {
   std::vector<uint8_t> data = original;
   EncodeHorizontalPredictor(data, width, height, samples_per_pixel,
                             bits_per_sample, big_endian, 1);
-  ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, 1);
+  ASSERT_TRUE(ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
+                                       bits_per_sample, big_endian, 1)
+                  .ok());
   EXPECT_EQ(data, original);
 }
 
@@ -504,8 +524,9 @@ TEST(PredictorTest, MultiRow16RGB) {
   std::vector<uint8_t> data = original;
   EncodeHorizontalPredictor(data, width, height, samples_per_pixel,
                             bits_per_sample, big_endian, 1);
-  ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, 1);
+  ASSERT_TRUE(ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
+                                       bits_per_sample, big_endian, 1)
+                  .ok());
   EXPECT_EQ(data, original);
 }
 
@@ -533,8 +554,9 @@ TEST(PredictorTest, Acc16BigEndian) {
   std::vector<uint8_t> data = original;
   EncodeHorizontalPredictor(data, width, height, samples_per_pixel,
                             bits_per_sample, big_endian, 1);
-  ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, 1);
+  ASSERT_TRUE(ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
+                                       bits_per_sample, big_endian, 1)
+                  .ok());
   EXPECT_EQ(data, original);
 }
 
@@ -558,8 +580,9 @@ TEST(PredictorTest, Acc32BigEndian) {
   std::vector<uint8_t> data = original;
   EncodeHorizontalPredictor(data, width, height, samples_per_pixel,
                             bits_per_sample, big_endian, 1);
-  ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, 1);
+  ASSERT_TRUE(ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
+                                       bits_per_sample, big_endian, 1)
+                  .ok());
   EXPECT_EQ(data, original);
 }
 
@@ -584,8 +607,9 @@ TEST(PredictorTest, RoundTrip8RandomData) {
   std::vector<uint8_t> data = original;
   EncodeHorizontalPredictor(data, width, height, samples_per_pixel,
                             bits_per_sample, big_endian, 1);
-  ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, 1);
+  ASSERT_TRUE(ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
+                                       bits_per_sample, big_endian, 1)
+                  .ok());
   EXPECT_EQ(data, original);
 }
 
@@ -607,8 +631,9 @@ TEST(PredictorTest, RoundTrip16RandomData) {
   std::vector<uint8_t> data = original;
   EncodeHorizontalPredictor(data, width, height, samples_per_pixel,
                             bits_per_sample, big_endian, 1);
-  ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, 1);
+  ASSERT_TRUE(ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
+                                       bits_per_sample, big_endian, 1)
+                  .ok());
   EXPECT_EQ(data, original);
 }
 
@@ -629,8 +654,10 @@ TEST(PredictorTest, RoundTrip8PlanarRandomData) {
   std::vector<uint8_t> data = original;
   EncodeHorizontalPredictor(data, width, height, samples_per_pixel,
                             bits_per_sample, big_endian, planar_config);
-  ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
-                           bits_per_sample, big_endian, planar_config);
+  ASSERT_TRUE(ApplyHorizontalPredictor(data, width, height, samples_per_pixel,
+                                       bits_per_sample, big_endian,
+                                       planar_config)
+                  .ok());
   EXPECT_EQ(data, original);
 }
 

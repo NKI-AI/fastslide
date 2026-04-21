@@ -16,7 +16,7 @@ Architecture Layers
 
    graph TB
        subgraph python_api["Python API Layer"]
-           PyAPI[Python Bindings<br/>pybind11]
+           PyAPI[Python Bindings<br/>nanobind]
            PyCache[Python Cache Wrappers]
            PyUtils[Python Utilities]
        end
@@ -82,10 +82,12 @@ Core Components
       :no-link:
 
 2. **Plugin Architecture**
-   
-   Extensible plugin system for adding new formats.
 
-   .. doxygenclass:: fastslide::runtime::PluginLoader
+   Built-in formats are registered via :class:`fastslide::runtime::BuiltInPluginsInitializer`,
+   filtered through a :class:`fastslide::runtime::PluginLoadContext` describing the
+   environment's available codecs and hardware.
+
+   .. doxygenclass:: fastslide::runtime::BuiltInPluginsInitializer
       :no-link:
 
 3. **Tile Cache System**

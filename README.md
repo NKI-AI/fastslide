@@ -11,7 +11,7 @@ FastSlide is a modern C++20 library for reading whole slide images (WSI) with fi
 ## Features
 
 - 🚀 **High Performance** - Thread-safe design
-- 📁 **Multiple Formats** - SVS (Aperio), QPTIFF, MRXS (3DHISTECH), iSyntax (Philips), Philips TIFF, Generic TIFF CZI (Zeiss), including multiplex (non-RGB) formats. Others coming soon.
+- 📁 **Multiple Formats** - SVS (Aperio), QPTIFF (including mIF), OME-TIFF, OME.ZARR (CXY, XYC only), MRXS (3DHISTECH), iSyntax (Philips), Philips TIFF, Generic TIFF, CZI (Zeiss), DICOM, including multiplex (non-RGB) formats.
 - 🐍 **Python & C++** - Complete APIs for both languages
 - 🔧 **PyTorch Ready** - Works seamlessly with DataLoader multi-worker loading
 
@@ -216,6 +216,11 @@ FastSlide incorporates the following third-party software into its source:
   - Used for: Decoding PNG in file formats and to write png in examples.
 
 - **pugixml**: from [pugixml.org](https://pugixml.org/)
+
+  - Licensed under: MIT License
+  - Used for: Parsing of XML headers
+
+- **yxml**: from [https://dev.yorhel.nl/yxml](https://dev.yorhel.nl/yxml)
 
   - Licensed under: MIT License
   - Used for: Parsing of XML headers

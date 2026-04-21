@@ -521,10 +521,9 @@ class TestCacheIntegration:
     def test_cache_manager_integration(self, slide: fastslide.FastSlide) -> None:
         """Test setting and using a custom cache manager."""
         # Create custom cache manager
-        cache_manager = fastslide.CacheManager.create(capacity=100)
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=100)
 
-        # Set cache manager
-        slide.set_cache_manager(cache_manager)
+        slide.set_cache(cache_manager)
         assert slide.cache_enabled
         assert slide.get_cache_manager() is cache_manager
 
@@ -543,8 +542,8 @@ class TestCacheIntegration:
     def test_cache_with_region_reading(self, slide: fastslide.FastSlide) -> None:
         """Test cache functionality with region reading."""
         # Set up cache
-        cache_manager = fastslide.CacheManager.create(capacity=10)
-        slide.set_cache_manager(cache_manager)
+        cache_manager = fastslide.CacheManager.create(capacity_bytes=10)
+        slide.set_cache(cache_manager)
 
         # Read same region multiple times
         width, height = slide.dimensions

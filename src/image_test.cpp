@@ -17,21 +17,13 @@
 #include <gtest/gtest.h>
 #include <chrono>
 #include <cmath>
-#include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace fastslide {
 
-class ImageTest : public ::testing::Test {
- protected:
-  void SetUp() override {}
-
-  void TearDown() override {}
-};
-
 // Test basic image creation and properties
-TEST_F(ImageTest, BasicImageCreation) {
+TEST(ImageTest, BasicImageCreation) {
   ImageDimensions dims{100, 50};
 
   // Test RGB image creation
@@ -49,7 +41,7 @@ TEST_F(ImageTest, BasicImageCreation) {
 }
 
 // Test different image formats
-TEST_F(ImageTest, DifferentFormats) {
+TEST(ImageTest, DifferentFormats) {
   ImageDimensions dims{10, 10};
 
   // Grayscale
@@ -70,7 +62,7 @@ TEST_F(ImageTest, DifferentFormats) {
 }
 
 // Test different data types
-TEST_F(ImageTest, DifferentDataTypes) {
+TEST(ImageTest, DifferentDataTypes) {
   ImageDimensions dims{10, 10};
 
   // 16-bit unsigned
@@ -90,7 +82,7 @@ TEST_F(ImageTest, DifferentDataTypes) {
 }
 
 // Test pixel access
-TEST_F(ImageTest, PixelAccess) {
+TEST(ImageTest, PixelAccess) {
   ImageDimensions dims{5, 5};
   Image image(dims, ImageFormat::kRGB, DataType::kUInt8);
 
@@ -106,7 +98,7 @@ TEST_F(ImageTest, PixelAccess) {
 }
 
 // Test pixel access with different data types
-TEST_F(ImageTest, PixelAccessDifferentTypes) {
+TEST(ImageTest, PixelAccessDifferentTypes) {
   ImageDimensions dims{3, 3};
 
   // Float32 image
@@ -120,40 +112,22 @@ TEST_F(ImageTest, PixelAccessDifferentTypes) {
   EXPECT_EQ(uint16_image.At<uint16_t>(0, 0, 1), 65535);
 }
 
-// Test bounds checking
-TEST_F(ImageTest, BoundsChecking) {
+// Bounds checking and type-size-mismatch are precondition violations enforced
+// via AIFOCORE_CHECK (abort()). They are programmer errors rather than
+// recoverable runtime errors and are intentionally not exercised here.
+TEST(ImageTest, ValidPixelAccessAndDataAs) {
   ImageDimensions dims{5, 5};
-  Image image(dims, ImageFormat::kRGB, DataType::kUInt8);
+  Image rgb_u8(dims, ImageFormat::kRGB, DataType::kUInt8);
+  rgb_u8.At<uint8_t>(4, 4, 2) = 42;
+  EXPECT_EQ(rgb_u8.At<uint8_t>(4, 4, 2), 42);
 
-  // Valid access should work
-  EXPECT_NO_THROW(image.At<uint8_t>(4, 4, 2));
-
-  // Out of bounds access should throw
-  EXPECT_THROW(image.At<uint8_t>(5, 0, 0),
-               std::out_of_range);  // x out of bounds
-  EXPECT_THROW(image.At<uint8_t>(0, 5, 0),
-               std::out_of_range);  // y out of bounds
-  EXPECT_THROW(image.At<uint8_t>(0, 0, 3),
-               std::out_of_range);  // channel out of bounds
-}
-
-// Test type safety
-TEST_F(ImageTest, TypeSafety) {
-  ImageDimensions dims{3, 3};
-  Image uint8_image(dims, ImageFormat::kRGB, DataType::kUInt8);
-  Image float32_image(dims, ImageFormat::kRGB, DataType::kFloat32);
-
-  // Should work with correct types
-  EXPECT_NO_THROW(uint8_image.GetDataAs<uint8_t>());
-  EXPECT_NO_THROW(float32_image.GetDataAs<float>());
-
-  // Should throw with incorrect types
-  EXPECT_THROW(uint8_image.GetDataAs<float>(), std::runtime_error);
-  EXPECT_THROW(float32_image.GetDataAs<uint8_t>(), std::runtime_error);
+  Image rgb_f32({3, 3}, ImageFormat::kRGB, DataType::kFloat32);
+  EXPECT_NE(rgb_u8.GetDataAs<uint8_t>(), nullptr);
+  EXPECT_NE(rgb_f32.GetDataAs<float>(), nullptr);
 }
 
 // Test image conversions
-TEST_F(ImageTest, ImageConversions) {
+TEST(ImageTest, ImageConversions) {
   ImageDimensions dims{10, 10};
 
   // Create RGB image and convert to grayscale
@@ -178,7 +152,7 @@ TEST_F(ImageTest, ImageConversions) {
 }
 
 // Test channel extraction
-TEST_F(ImageTest, ChannelExtraction) {
+TEST(ImageTest, ChannelExtraction) {
   ImageDimensions dims{5, 5};
 
   // Create 5-channel spectral image
@@ -203,30 +177,30 @@ TEST_F(ImageTest, ChannelExtraction) {
   EXPECT_EQ(extracted_image->At<uint8_t>(2, 2, 2), 200);  // Channel 4 -> Blue
 }
 
-// Test factory functions
-TEST_F(ImageTest, FactoryFunctions) {
+// Test direct constructor flavors covering each ImageFormat / dtype path.
+TEST(ImageTest, ConstructorFlavors) {
   ImageDimensions dims{20, 15};
 
-  auto rgb_image = CreateRGBImage(dims);
-  EXPECT_EQ(rgb_image->GetFormat(), ImageFormat::kRGB);
-  EXPECT_EQ(rgb_image->GetDataType(), DataType::kUInt8);
+  Image rgb_image(dims, ImageFormat::kRGB, DataType::kUInt8);
+  EXPECT_EQ(rgb_image.GetFormat(), ImageFormat::kRGB);
+  EXPECT_EQ(rgb_image.GetDataType(), DataType::kUInt8);
 
-  auto rgba_image = CreateRGBAImage(dims, DataType::kUInt16);
-  EXPECT_EQ(rgba_image->GetFormat(), ImageFormat::kRGBA);
-  EXPECT_EQ(rgba_image->GetDataType(), DataType::kUInt16);
+  Image rgba_image(dims, ImageFormat::kRGBA, DataType::kUInt16);
+  EXPECT_EQ(rgba_image.GetFormat(), ImageFormat::kRGBA);
+  EXPECT_EQ(rgba_image.GetDataType(), DataType::kUInt16);
 
-  auto gray_image = CreateGrayscaleImage(dims, DataType::kFloat32);
-  EXPECT_EQ(gray_image->GetFormat(), ImageFormat::kGray);
-  EXPECT_EQ(gray_image->GetDataType(), DataType::kFloat32);
+  Image gray_image(dims, ImageFormat::kGray, DataType::kFloat32);
+  EXPECT_EQ(gray_image.GetFormat(), ImageFormat::kGray);
+  EXPECT_EQ(gray_image.GetDataType(), DataType::kFloat32);
 
-  auto spectral_image = CreateSpectralImage(dims, 7, DataType::kInt16);
-  EXPECT_EQ(spectral_image->GetFormat(), ImageFormat::kSpectral);
-  EXPECT_EQ(spectral_image->GetChannels(), 7);
-  EXPECT_EQ(spectral_image->GetDataType(), DataType::kInt16);
+  Image spectral_image(dims, /*channels=*/7, DataType::kInt16);
+  EXPECT_EQ(spectral_image.GetFormat(), ImageFormat::kSpectral);
+  EXPECT_EQ(spectral_image.GetChannels(), 7);
+  EXPECT_EQ(spectral_image.GetDataType(), DataType::kInt16);
 }
 
 // Test empty image handling
-TEST_F(ImageTest, EmptyImageHandling) {
+TEST(ImageTest, EmptyImageHandling) {
   Image empty_image;
   EXPECT_TRUE(empty_image.Empty());
   EXPECT_EQ(empty_image.SizeBytes(), 0);
@@ -240,7 +214,7 @@ TEST_F(ImageTest, EmptyImageHandling) {
 }
 
 // Test description string
-TEST_F(ImageTest, DescriptionString) {
+TEST(ImageTest, DescriptionString) {
   ImageDimensions dims{100, 200};
 
   Image rgb_image(dims, ImageFormat::kRGB, DataType::kUInt8);
@@ -252,7 +226,7 @@ TEST_F(ImageTest, DescriptionString) {
 }
 
 // Test that spectral images use interleaved format by default
-TEST_F(ImageTest, SpectralImagePlanarConfig) {
+TEST(ImageTest, SpectralImagePlanarConfig) {
   ImageDimensions dims{10, 10};
   const uint32_t num_channels = 5;
 
@@ -264,10 +238,9 @@ TEST_F(ImageTest, SpectralImagePlanarConfig) {
   EXPECT_EQ(spectral_image.GetFormat(), ImageFormat::kSpectral);
   EXPECT_EQ(spectral_image.GetChannels(), num_channels);
 
-  // Test factory function also defaults to interleaved
-  auto factory_spectral =
-      CreateSpectralImage(dims, num_channels, DataType::kFloat32);
-  EXPECT_EQ(factory_spectral->GetPlanarConfig(), PlanarConfig::kContiguous);
+  // The dedicated spectral constructor also defaults to interleaved.
+  Image factory_spectral(dims, num_channels, DataType::kFloat32);
+  EXPECT_EQ(factory_spectral.GetPlanarConfig(), PlanarConfig::kContiguous);
 
   // Verify pixel access works correctly with interleaved layout
   for (uint32_t ch = 0; ch < num_channels; ++ch) {
@@ -282,7 +255,7 @@ TEST_F(ImageTest, SpectralImagePlanarConfig) {
 }
 
 // Test hyperspectral use case
-TEST_F(ImageTest, HyperspectralUseCase) {
+TEST(ImageTest, HyperspectralUseCase) {
   ImageDimensions dims{256, 256};
   const uint32_t num_bands = 224;  // Typical hyperspectral band count
 
@@ -306,7 +279,7 @@ TEST_F(ImageTest, HyperspectralUseCase) {
 }
 
 // Performance test for large images
-TEST_F(ImageTest, LargeImagePerformance) {
+TEST(ImageTest, LargeImagePerformance) {
   ImageDimensions dims{1024, 1024};
 
   // Create large RGB image
@@ -323,6 +296,14 @@ TEST_F(ImageTest, LargeImagePerformance) {
   // Verify size
   EXPECT_EQ(large_image.SizeBytes(), 1024 * 1024 * 3);
   EXPECT_FALSE(large_image.Empty());
+}
+
+TEST(DataTypeFromBitsPerSampleTest, MapsCommonBitDepths) {
+  EXPECT_EQ(DataTypeFromBitsPerSample(1), DataType::kUInt8);
+  EXPECT_EQ(DataTypeFromBitsPerSample(8), DataType::kUInt8);
+  EXPECT_EQ(DataTypeFromBitsPerSample(12), DataType::kUInt16);
+  EXPECT_EQ(DataTypeFromBitsPerSample(16), DataType::kUInt16);
+  EXPECT_EQ(DataTypeFromBitsPerSample(32), DataType::kFloat32);
 }
 
 }  // namespace fastslide

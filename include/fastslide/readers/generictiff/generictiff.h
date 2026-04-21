@@ -92,6 +92,17 @@ class GenericTiffReader : public TiffBasedReader,
     return ImageFormat::kRGB;
   }
 
+  [[nodiscard]] DataType GetDataType() const override {
+    if (!tiff_index_ || pyramid_levels_.empty()) {
+      return DataType::kUInt8;
+    }
+    const uint16_t page = pyramid_levels_[0].page;
+    if (page >= tiff_index_->NumPages()) {
+      return DataType::kUInt8;
+    }
+    return DataTypeFromBitsPerSample(tiff_index_->Page(page).bits_per_sample);
+  }
+
   [[nodiscard]] ImageDimensions GetTileSize() const override;
 
   [[nodiscard]] aifocore::Result<std::string> GetQuickHash() const override;
@@ -101,7 +112,7 @@ class GenericTiffReader : public TiffBasedReader,
       const core::TileRequest& request) const override;
 
   [[nodiscard]] aifocore::Status ExecutePlan(
-      const core::TilePlan& plan, runtime::TileWriter& writer) const override;
+      const core::TilePlan& plan, runtime::Canvas& writer) const override;
 
   /// @brief Get pyramid levels
   /// @return Reference to pyramid levels

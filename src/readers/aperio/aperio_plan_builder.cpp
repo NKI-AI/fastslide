@@ -42,11 +42,8 @@ aifocore::Result<core::TilePlan> AperioPlanBuilder::BuildPlan(
   AIFOCORE_RETURN_IF_ERROR(ValidateRequest(request, reader));
 
   // Get level info
-  auto level_info_or = reader.GetLevelInfo(request.level);
-  if (!level_info_or.ok()) {
-    return level_info_or.status();
-  }
-  const auto& level_info = *level_info_or;
+  AIFOCORE_ASSIGN_OR_RETURN(const auto& level_info,
+                            reader.GetLevelInfo(request.level));
 
   // Get pyramid level metadata
   const auto& pyramid_levels = reader.GetPyramidLevels();
@@ -105,7 +102,7 @@ aifocore::Status AperioPlanBuilder::ValidateRequest(
     const core::TileRequest& request, const AperioReader& reader) {
 
   if (request.level < 0 || request.level >= reader.GetLevelCount()) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid level: {}", request.level));
   }
@@ -129,55 +126,42 @@ void AperioPlanBuilder::DetermineRegionBounds(const core::TileRequest& request,
 aifocore::Status AperioPlanBuilder::QueryTiffStructure(
     const AperioReader& reader, uint16_t page, const LevelInfo& level_info,
     TiffStructureMetadata& tiff_metadata) {
-
-  // Store page number
-  tiff_metadata.page = page;
-
-  // Get SimpleTiff index to query structure
   const auto& tiff_index = reader.GetTiffIndex();
   if (page >= tiff_index.NumPages()) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Page {} out of range", page));
   }
 
   const auto& page_header = tiff_index.Page(page);
 
-  // Query TIFF channel information
-  // Aperio is typically RGB (3 channels), but we query the actual value
-  // to handle edge cases (associated images, malformed files, etc.)
-  uint16_t samples_per_pixel = page_header.samples_per_pixel;
-
-  // Validate channel count to prevent bad_array_new_length
+  // Aperio is typically RGB (3 channels), but query the actual value to handle
+  // edge cases (associated images, malformed files, etc.) and validate it to
+  // prevent bad_array_new_length downstream.
+  const uint16_t samples_per_pixel = page_header.samples_per_pixel;
   if (samples_per_pixel == 0 || samples_per_pixel > 100) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid samples_per_pixel: {} (expected 1-100)",
                               samples_per_pixel));
   }
-  tiff_metadata.samples_per_pixel = samples_per_pixel;
 
-  // Get TIFF tile/strip dimensions
-  const bool is_tiled = (page_header.storage == simpletiff::Storage::kTiles);
-  tiff_metadata.is_tiled = is_tiled;
-
-  if (is_tiled) {
-    const auto& tiles = tiff_index.Tiles(page_header.payload_id);
-    tiff_metadata.tile_width = tiles.tile_w;
-    tiff_metadata.tile_height = tiles.tile_h;
-  } else if (page_header.storage == simpletiff::Storage::kStrips) {
-    // For strips, tile_width = image width, tile_height = rows per strip
-    tiff_metadata.tile_width = level_info.dimensions[0];
-    const auto& strips = tiff_index.Strips(page_header.payload_id);
-    tiff_metadata.tile_height = strips.rows_per_strip;
-    if (tiff_metadata.tile_height == 0) {
-      tiff_metadata.tile_height = level_info.dimensions[1];  // Single strip
-    }
-  } else {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Unsupported storage type for page");
+  if (page_header.storage != simpletiff::Storage::kTiles &&
+      page_header.storage != simpletiff::Storage::kStrips) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Unsupported storage type for page");
   }
 
+  // Reuse the shared tile/strip geometry helper instead of re-implementing it.
+  const auto geometry = readers::simpletiff_plan::QueryTileGeometry(
+      tiff_index, page,
+      readers::simpletiff_plan::ToDimensions2D(level_info.dimensions));
+
+  tiff_metadata.page = page;
+  tiff_metadata.samples_per_pixel = samples_per_pixel;
+  tiff_metadata.is_tiled = geometry.is_tiled;
+  tiff_metadata.tile_width = geometry.tile_width;
+  tiff_metadata.tile_height = geometry.tile_height;
   return aifocore::Status::OkStatus();
 }
 

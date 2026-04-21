@@ -53,16 +53,17 @@ aifocore::Status OmetiffMetadataLoader::LoadMetadata(
   pyramid.clear();
 
   if (tiff_index.NumPages() == 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "OME-TIFF: empty TIFF index");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "OME-TIFF: empty TIFF index");
   }
 
   // OME-XML is usually stored in ImageDescription on the first page.
   const std::string& xml = tiff_index.Page(0).description;
   if (xml.empty() ||
       !formats::ometiff::OmeMetadataParser::LooksLikeOmeXml(xml)) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "OME-TIFF: missing OME-XML in ImageDescription");
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        "OME-TIFF: missing OME-XML in ImageDescription");
   }
 
   AIFOCORE_ASSIGN_OR_RETURN(const auto ome,
@@ -70,8 +71,8 @@ aifocore::Status OmetiffMetadataLoader::LoadMetadata(
 
   if (ome.pixels.size_c == 0 || ome.pixels.size_x == 0 ||
       ome.pixels.size_y == 0) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "OME-TIFF: invalid Pixels dimensions");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "OME-TIFF: invalid Pixels dimensions");
   }
 
   metadata.mpp_x = ome.pixels.physical_size_x.value_or(0.0);
@@ -80,8 +81,8 @@ aifocore::Status OmetiffMetadataLoader::LoadMetadata(
   // Root pages represent full-resolution planes.
   const std::vector<uint32_t> roots = RootPagesInOrder(tiff_index);
   if (roots.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "OME-TIFF: no root IFDs found");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "OME-TIFF: no root IFDs found");
   }
 
   // OME-TIFF brightfield is commonly represented as SizeC=3 + Interleaved=true,
@@ -97,7 +98,7 @@ aifocore::Status OmetiffMetadataLoader::LoadMetadata(
       is_interleaved_rgb_single_plane ? 1u : ome.pixels.size_c;
 
   if (roots.size() < effective_channels) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format(
             "OME-TIFF: expected at least {} root planes, got {}",
@@ -214,7 +215,7 @@ aifocore::Status OmetiffMetadataLoader::LoadMetadata(
     return aifocore::Status::OkStatus();
   }
 
-  return aifocore::Status(
+  return AIFOCORE_MAKE_STATUS(
       aifocore::StatusCode::kInvalidArgument,
       "OME-TIFF: unable to map pyramid levels to SubIFDs (unsupported layout)");
 }

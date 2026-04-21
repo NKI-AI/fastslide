@@ -19,21 +19,23 @@
 #include <span>
 #include <vector>
 
+#include "aifocore/status/result.h"
+
 namespace simpletiff {
 
-/// Decompress TIFF Deflate / AdobeDeflate payload.
+/// Decompress a Deflate-family payload.
 ///
-/// TIFF uses Deflate-compressed byte streams for tiles/strips. In practice,
-/// files may store either zlib-wrapped deflate (most common) or raw deflate.
-///
-/// This function attempts zlib-wrapped inflate first, and falls back to raw
-/// inflate if needed.
+/// Auto-detects the wrapper format and accepts:
+///   - zlib-wrapped deflate (most common in TIFF Deflate / AdobeDeflate),
+///   - gzip-wrapped deflate (e.g. OME-Zarr V3 `gzip` codec),
+///   - raw deflate streams (headerless).
 ///
 /// @param compressed Compressed byte stream.
 /// @param out Decompressed output buffer (replaced).
-/// @return true on success, false on failure.
-bool DecompressDeflate(std::span<const uint8_t> compressed,
-                       std::vector<uint8_t>& out);
+/// @return Ok status on success; an error status describing the failure
+///         otherwise (zlib init/inflate error for both auto and raw modes).
+::aifocore::Result<void> DecompressDeflate(std::span<const uint8_t> compressed,
+                                           std::vector<uint8_t>& out);
 
 }  // namespace simpletiff
 

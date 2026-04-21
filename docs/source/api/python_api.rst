@@ -57,7 +57,7 @@ Cache Management
    
    Basic tile cache interface.
 
-.. autoclass:: fastslide.RuntimeGlobalCacheManager
+.. autoclass:: fastslide.GlobalCacheManager
    :members:
    :inherited-members:
    
@@ -190,8 +190,8 @@ Cache Performance Optimization
    slide = fastslide.FastSlide.from_file_path("large_slide.mrxs")
    
    # Create cache for better performance
-   cache = fastslide.CacheManager.create(capacity=500)  # 500 tiles
-   slide.set_cache_manager(cache)
+   cache = fastslide.CacheManager.create(capacity_bytes=512 * 1024 * 1024)  # 512 MiB
+   slide.set_cache(cache)
    
    # Read overlapping regions (will benefit from caching)
    regions = []

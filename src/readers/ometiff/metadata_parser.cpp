@@ -48,8 +48,8 @@ aifocore::Result<OmeMetadata> OmeMetadataParser::Parse(std::string_view xml) {
   OmeMetadata out;
   pugi::xml_document doc;
   if (!doc.load_string(std::string(xml).c_str())) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "Failed to parse OME-XML");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Failed to parse OME-XML");
   }
 
   // OME root (namespace-aware documents often have it as "OME" without prefix).
@@ -64,22 +64,22 @@ aifocore::Result<OmeMetadata> OmeMetadataParser::Parse(std::string_view xml) {
     }
   }
   if (ome_root.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "OME-XML: missing <OME> root");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "OME-XML: missing <OME> root");
   }
 
   // Find first Image/Pixels.
   pugi::xml_node image = ome_root.child("Image");
   if (image.empty()) {
     // Some writers nest differently; keep it simple for now.
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "OME-XML: missing <Image>");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "OME-XML: missing <Image>");
   }
 
   pugi::xml_node pixels = image.child("Pixels");
   if (pixels.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "OME-XML: missing <Pixels>");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "OME-XML: missing <Pixels>");
   }
 
   AIFOCORE_RETURN_IF_ERROR(ParsePixels(pixels, out));
@@ -95,7 +95,7 @@ aifocore::Status OmeMetadataParser::ParsePixels(
   auto attr_u32 = [&](const char* name, uint32_t& dst) -> aifocore::Status {
     auto a = pixels_node.attribute(name);
     if (a.empty()) {
-      return aifocore::Status(
+      return AIFOCORE_MAKE_STATUS(
           aifocore::StatusCode::kInvalidArgument,
           aifocore::fmt::format("OME-XML: Pixels missing {}", name));
     }

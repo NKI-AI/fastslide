@@ -617,8 +617,8 @@ aifocore::Result<core::TilePlan> NdpiTiffReader::PrepareRequest(
   return NdpiTiffPlanBuilder::BuildPlan(request, *this);
 }
 
-aifocore::Status NdpiTiffReader::ExecutePlan(
-    const core::TilePlan& plan, runtime::TileWriter& writer) const {
+aifocore::Status NdpiTiffReader::ExecutePlan(const core::TilePlan& plan,
+                                             runtime::Canvas& writer) const {
   return NdpiTiffTileExecutor::ExecutePlan(plan, *this, writer);
 }
 

@@ -20,13 +20,13 @@
 #include <cstring>
 #include <memory>
 #include <ostream>
-#include <stdexcept>
 #include <string>
 #include <type_traits>
 #include <vector>
 
 #include "aifocore/concepts/numeric.h"
 #include "aifocore/math/ndarray.h"
+#include "aifocore/status/result.h"
 
 namespace fastslide {
 
@@ -56,6 +56,19 @@ enum class DataType {
   kFloat32,  ///< 32-bit floating point
   kFloat64   ///< 64-bit floating point
 };
+
+/// @brief Infer DataType from TIFF bits_per_sample (assumes unsigned integer)
+/// @param bits_per_sample Bits per sample from TIFF page header
+/// @return DataType matching the bit depth
+constexpr DataType DataTypeFromBitsPerSample(uint16_t bits_per_sample) {
+  if (bits_per_sample <= 8) {
+    return DataType::kUInt8;
+  }
+  if (bits_per_sample <= 16) {
+    return DataType::kUInt16;
+  }
+  return DataType::kFloat32;
+}
 
 /// @brief Get size in bytes for a given data type
 /// @param dtype Data type
@@ -168,7 +181,7 @@ void DispatchByDataType(DataType dtype, Func&& func) {
       func.template operator()<double>();
       break;
     default:
-      throw std::runtime_error("Unsupported data type");
+      AIFOCORE_CHECK(false, "Unsupported data type");
   }
 }
 
@@ -270,11 +283,8 @@ class Image {
         dtype_(dtype),
         bytes_per_sample_(GetDataTypeSize(dtype)),
         planar_config_(config) {
-
-    if (format == ImageFormat::kSpectral) {
-      throw std::invalid_argument(
-          "Use spectral constructor for spectral images");
-    }
+    AIFOCORE_CHECK(format != ImageFormat::kSpectral,
+                   "Use spectral constructor for spectral images");
 
     channels_ = GetFormatChannels(format);
     size_t total_size =
@@ -340,31 +350,6 @@ class Image {
   /// @brief Move assignment
   Image& operator=(Image&& other) noexcept = default;
 
-  /// @brief RGB color assignment operator for RGB images
-  /// @param rgb_values RGB values as {R, G, B} (0-255 for uint8, scaled for
-  /// other types)
-  /// @return Reference to this image
-  /// @details Fills the entire RGB image with the specified color
-  template <typename T = uint8_t>
-  Image& operator=(std::initializer_list<T> rgb_values) {
-    if (format_ != ImageFormat::kRGB) {
-      throw std::invalid_argument(
-          "Color assignment only supported for RGB images");
-    }
-    if (rgb_values.size() != 3) {
-      throw std::invalid_argument(
-          "RGB color assignment requires exactly 3 values");
-    }
-
-    auto it = rgb_values.begin();
-    T r = *it++;
-    T g = *it++;
-    T b = *it;
-
-    FillWithColor(r, g, b);
-    return *this;
-  }
-
   /// @brief Destructor
   ~Image() = default;
 
@@ -402,6 +387,20 @@ class Image {
     return planar_config_;
   }
 
+  /// @brief True iff the in-memory layout is interleaved (HWC / pixel-packed).
+  ///
+  /// Equivalent to `GetPlanarConfig() == PlanarConfig::kContiguous`. Provided
+  /// as a convenience so callers can cheaply branch without comparing enums
+  /// (and so the Python wrapper can early-exit `to_interleaved()`).
+  [[nodiscard]] bool IsInterleaved() const noexcept {
+    return planar_config_ == PlanarConfig::kContiguous;
+  }
+
+  /// @brief True iff the in-memory layout is planar/band-separate (CHW).
+  [[nodiscard]] bool IsSeparate() const noexcept {
+    return planar_config_ == PlanarConfig::kSeparate;
+  }
+
   /// @brief Get bytes per sample
   /// @return Bytes per sample
   [[nodiscard]] size_t GetBytesPerSample() const noexcept {
@@ -426,23 +425,16 @@ class Image {
   /// @details Initializes a blank image that was created with dimensions only
   void Initialize(ImageFormat format, DataType dtype,
                   PlanarConfig config = PlanarConfig::kContiguous) {
-    if (initialized_) {
-      throw std::runtime_error("Image is already initialized");
-    }
-    if (dimensions_[0] == 0 || dimensions_[1] == 0) {
-      throw std::invalid_argument(
-          "Cannot initialize image with zero dimensions");
-    }
+    AIFOCORE_CHECK(!initialized_, "Image is already initialized");
+    AIFOCORE_CHECK(dimensions_[0] != 0 && dimensions_[1] != 0,
+                   "Cannot initialize image with zero dimensions");
+    AIFOCORE_CHECK(format != ImageFormat::kSpectral,
+                   "Use InitializeSpectral for spectral images");
 
     format_ = format;
     dtype_ = dtype;
     planar_config_ = config;
     bytes_per_sample_ = GetDataTypeSize(dtype);
-
-    if (format == ImageFormat::kSpectral) {
-      throw std::invalid_argument("Use InitializeSpectral for spectral images");
-    }
-
     channels_ = GetFormatChannels(format);
     size_t total_size =
         dimensions_[0] * dimensions_[1] * channels_ * bytes_per_sample_;
@@ -458,16 +450,10 @@ class Image {
   /// @details Initializes a blank image as spectral with custom channel count
   void InitializeSpectral(uint32_t channels, DataType dtype,
                           PlanarConfig config = PlanarConfig::kContiguous) {
-    if (initialized_) {
-      throw std::runtime_error("Image is already initialized");
-    }
-    if (dimensions_[0] == 0 || dimensions_[1] == 0) {
-      throw std::invalid_argument(
-          "Cannot initialize image with zero dimensions");
-    }
-    if (channels == 0) {
-      throw std::invalid_argument("Channel count must be greater than 0");
-    }
+    AIFOCORE_CHECK(!initialized_, "Image is already initialized");
+    AIFOCORE_CHECK(dimensions_[0] != 0 && dimensions_[1] != 0,
+                   "Cannot initialize image with zero dimensions");
+    AIFOCORE_CHECK(channels != 0, "Channel count must be greater than 0");
 
     format_ = ImageFormat::kSpectral;
     dtype_ = dtype;
@@ -489,12 +475,8 @@ class Image {
   /// existing data may be lost. Only use this if you understand the
   /// implications.
   void SetChannels(uint32_t new_channels) {
-    if (!initialized_) {
-      throw std::runtime_error("Cannot set channels on uninitialized image");
-    }
-    if (new_channels == 0) {
-      throw std::invalid_argument("Channel count must be greater than 0");
-    }
+    AIFOCORE_CHECK(initialized_, "Cannot set channels on uninitialized image");
+    AIFOCORE_CHECK(new_channels != 0, "Channel count must be greater than 0");
     if (new_channels == channels_) {
       return;  // No change needed
     }
@@ -523,13 +505,9 @@ class Image {
   /// @details Converts an existing image to spectral format. Existing data
   /// will be lost.
   void ConvertToSpectral(uint32_t new_channels) {
-    if (!initialized_) {
-      throw std::runtime_error(
-          "Cannot convert uninitialized image to spectral");
-    }
-    if (new_channels == 0) {
-      throw std::invalid_argument("Channel count must be greater than 0");
-    }
+    AIFOCORE_CHECK(initialized_,
+                   "Cannot convert uninitialized image to spectral");
+    AIFOCORE_CHECK(new_channels != 0, "Channel count must be greater than 0");
 
     format_ = ImageFormat::kSpectral;
     channels_ = new_channels;
@@ -576,9 +554,8 @@ class Image {
   template <typename T>
   [[nodiscard]] const T* GetDataAs() const {
     static_assert(std::is_arithmetic_v<T>, "T must be an arithmetic type");
-    if (sizeof(T) != bytes_per_sample_) {
-      throw std::runtime_error("Type size mismatch with image data type");
-    }
+    AIFOCORE_CHECK(sizeof(T) == bytes_per_sample_,
+                   "Type size mismatch with image data type");
     return reinterpret_cast<const T*>(data_.data());
   }
 
@@ -588,9 +565,8 @@ class Image {
   template <typename T>
   [[nodiscard]] T* GetDataAs() {
     static_assert(std::is_arithmetic_v<T>, "T must be an arithmetic type");
-    if (sizeof(T) != bytes_per_sample_) {
-      throw std::runtime_error("Type size mismatch with image data type");
-    }
+    AIFOCORE_CHECK(sizeof(T) == bytes_per_sample_,
+                   "Type size mismatch with image data type");
     return reinterpret_cast<T*>(data_.data());
   }
 
@@ -638,23 +614,7 @@ class Image {
   /// @return NDArrayView<T, 3>
   template <typename T>
   [[nodiscard]] aifocore::math::NDArrayView<T, 3> ArrayView() {
-    if (sizeof(T) != bytes_per_sample_) {
-      throw std::runtime_error("Type size mismatch with image data type");
-    }
-
-    std::array<size_t, 3> shape;
-    if (planar_config_ == PlanarConfig::kContiguous) {
-      // H, W, C
-      shape = {static_cast<size_t>(dimensions_[1]),
-               static_cast<size_t>(dimensions_[0]),
-               static_cast<size_t>(channels_)};
-    } else {
-      // C, H, W
-      shape = {static_cast<size_t>(channels_),
-               static_cast<size_t>(dimensions_[1]),
-               static_cast<size_t>(dimensions_[0])};
-    }
-    return aifocore::math::NDArrayView<T, 3>(GetDataAs<T>(), shape);
+    return MakeArrayView<T>(GetDataAs<T>());
   }
 
   /// @brief Get a const view of the image data as an NDArrayView
@@ -662,23 +622,7 @@ class Image {
   /// @return NDArrayView<const T, 3>
   template <typename T>
   [[nodiscard]] aifocore::math::NDArrayView<const T, 3> ArrayView() const {
-    if (sizeof(T) != bytes_per_sample_) {
-      throw std::runtime_error("Type size mismatch with image data type");
-    }
-
-    std::array<size_t, 3> shape;
-    if (planar_config_ == PlanarConfig::kContiguous) {
-      // H, W, C
-      shape = {static_cast<size_t>(dimensions_[1]),
-               static_cast<size_t>(dimensions_[0]),
-               static_cast<size_t>(channels_)};
-    } else {
-      // C, H, W
-      shape = {static_cast<size_t>(channels_),
-               static_cast<size_t>(dimensions_[1]),
-               static_cast<size_t>(dimensions_[0])};
-    }
-    return aifocore::math::NDArrayView<const T, 3>(GetDataAs<const T>(), shape);
+    return MakeArrayView<const T>(GetDataAs<const T>());
   }
 
   // Conversion and utility methods
@@ -712,6 +656,22 @@ class Image {
   [[nodiscard]] std::unique_ptr<Image> ConvertMemoryFormat(
       PlanarConfig target_config) const;
 
+  /// @brief Convert this image's memory layout in place to interleaved.
+  ///
+  /// True no-op (no allocation, no data movement) when already interleaved.
+  /// Otherwise the same conversion path as `ToInterleaved()` runs and the
+  /// result is swapped into `*this`. Peak memory during conversion is 2x the
+  /// image bytes; afterwards it returns to 1x.
+  void MakeInterleaved() {
+    ConvertMemoryFormatInPlace(PlanarConfig::kContiguous);
+  }
+
+  /// @brief Convert this image's memory layout in place to planar/separate.
+  ///
+  /// True no-op when already in planar/separate layout; otherwise behaves like
+  /// `MakeInterleaved()` for the opposite direction.
+  void MakeSeparate() { ConvertMemoryFormatInPlace(PlanarConfig::kSeparate); }
+
   /// @brief Fill entire image with a solid color
   /// @tparam T Color component type (should match image data type)
   /// @param r Red component
@@ -721,56 +681,13 @@ class Image {
   /// data type range.
   template <typename T>
   void FillWithColor(T r, T g, T b) {
-    if (format_ != ImageFormat::kRGB) {
-      throw std::invalid_argument(
-          "FillWithColor only supported for RGB images");
-    }
+    AIFOCORE_CHECK(format_ == ImageFormat::kRGB,
+                   "FillWithColor only supported for RGB images");
 
-    // Handle different data types
-    switch (dtype_) {
-      case DataType::kUInt8: {
-        auto* data = GetDataAs<uint8_t>();
-        FillWithColorTyped(data, static_cast<uint8_t>(r),
-                           static_cast<uint8_t>(g), static_cast<uint8_t>(b));
-        break;
-      }
-      case DataType::kUInt16: {
-        auto* data = GetDataAs<uint16_t>();
-        FillWithColorTyped(data, static_cast<uint16_t>(r),
-                           static_cast<uint16_t>(g), static_cast<uint16_t>(b));
-        break;
-      }
-      case DataType::kInt16: {
-        auto* data = GetDataAs<int16_t>();
-        FillWithColorTyped(data, static_cast<int16_t>(r),
-                           static_cast<int16_t>(g), static_cast<int16_t>(b));
-        break;
-      }
-      case DataType::kUInt32: {
-        auto* data = GetDataAs<uint32_t>();
-        FillWithColorTyped(data, static_cast<uint32_t>(r),
-                           static_cast<uint32_t>(g), static_cast<uint32_t>(b));
-        break;
-      }
-      case DataType::kInt32: {
-        auto* data = GetDataAs<int32_t>();
-        FillWithColorTyped(data, static_cast<int32_t>(r),
-                           static_cast<int32_t>(g), static_cast<int32_t>(b));
-        break;
-      }
-      case DataType::kFloat32: {
-        auto* data = GetDataAs<float>();
-        FillWithColorTyped(data, static_cast<float>(r), static_cast<float>(g),
-                           static_cast<float>(b));
-        break;
-      }
-      case DataType::kFloat64: {
-        auto* data = GetDataAs<double>();
-        FillWithColorTyped(data, static_cast<double>(r), static_cast<double>(g),
-                           static_cast<double>(b));
-        break;
-      }
-    }
+    DispatchByDataType(dtype_, [&]<typename U>() {
+      FillWithColorTyped(GetDataAs<U>(), static_cast<U>(r), static_cast<U>(g),
+                         static_cast<U>(b));
+    });
   }
 
   /// @brief Paste another image onto this image at specified coordinates
@@ -810,6 +727,21 @@ class Image {
   }
 
  private:
+  /// @brief Shared implementation of MakeInterleaved/MakeSeparate.
+  ///
+  /// Returns immediately when `planar_config_ == target_config`, so the
+  /// interleaved-already / separate-already path is a true no-op (no
+  /// allocation, no data movement, no Clone).
+  void ConvertMemoryFormatInPlace(PlanarConfig target_config) {
+    if (planar_config_ == target_config) {
+      return;
+    }
+    auto converted = ConvertMemoryFormat(target_config);
+    if (converted) {
+      *this = std::move(*converted);
+    }
+  }
+
   ImageDimensions dimensions_;  ///< Image dimensions [width, height]
   ImageFormat format_;          ///< Image format
   DataType dtype_;              ///< Data type
@@ -818,6 +750,29 @@ class Image {
   PlanarConfig planar_config_;  ///< Memory layout configuration
   std::vector<uint8_t> data_;   ///< Raw image data
   bool initialized_;  ///< Flag to indicate if the image has been initialized
+
+  /// @brief Build an NDArrayView with the correct shape for current planar
+  /// config.
+  /// @tparam T Element type (may be const-qualified for const views)
+  /// @param data Already-typed pointer to image data
+  template <typename T>
+  [[nodiscard]] aifocore::math::NDArrayView<T, 3> MakeArrayView(T* data) const {
+    AIFOCORE_CHECK(sizeof(T) == bytes_per_sample_,
+                   "Type size mismatch with image data type");
+    std::array<size_t, 3> shape;
+    if (planar_config_ == PlanarConfig::kContiguous) {
+      // H, W, C
+      shape = {static_cast<size_t>(dimensions_[1]),
+               static_cast<size_t>(dimensions_[0]),
+               static_cast<size_t>(channels_)};
+    } else {
+      // C, H, W
+      shape = {static_cast<size_t>(channels_),
+               static_cast<size_t>(dimensions_[1]),
+               static_cast<size_t>(dimensions_[0])};
+    }
+    return aifocore::math::NDArrayView<T, 3>(data, shape);
+  }
 
   /// @brief Helper template for filling with typed data
   template <typename DataT>
@@ -843,10 +798,9 @@ class Image {
   /// @param x Column coordinate
   /// @param channel Channel index
   void ValidateCoordinates(uint32_t y, uint32_t x, uint32_t channel) const {
-    if (x >= dimensions_[0] || y >= dimensions_[1] || channel >= channels_) {
-      throw std::out_of_range(
-          "Pixel coordinates or channel index out of bounds");
-    }
+    AIFOCORE_CHECK(
+        x < dimensions_[0] && y < dimensions_[1] && channel < channels_,
+        "Pixel coordinates or channel index out of bounds");
   }
 
   /// @brief Calculate the pixel index based on planar configuration
@@ -878,92 +832,30 @@ inline std::ostream& operator<<(std::ostream& os, const Image& image) {
   return os;
 }
 
-/// @brief Convenient type aliases for backward compatibility
+/// @brief Convenient type alias for RGB images.
 using RGBImage = Image;  // Can be constructed with ImageFormat::kRGB
 
-/// @brief Factory functions for common image types
-
-/// @brief Create RGB image
-/// @param dimensions Image dimensions
-/// @param dtype Data type
-/// @param config Planar configuration
-/// @return RGB image
-inline std::unique_ptr<Image> CreateRGBImage(
-    const ImageDimensions& dimensions, DataType dtype = DataType::kUInt8,
-    PlanarConfig config = PlanarConfig::kContiguous) {
-  return std::make_unique<Image>(dimensions, ImageFormat::kRGB, dtype, config);
-}
-
-/// @brief Create RGBA image
-/// @param dimensions Image dimensions
-/// @param dtype Data type
-/// @param config Planar configuration
-/// @return RGBA image
-inline std::unique_ptr<Image> CreateRGBAImage(
-    const ImageDimensions& dimensions, DataType dtype = DataType::kUInt8,
-    PlanarConfig config = PlanarConfig::kContiguous) {
-  return std::make_unique<Image>(dimensions, ImageFormat::kRGBA, dtype, config);
-}
-
-/// @brief Create grayscale image
-/// @param dimensions Image dimensions
-/// @param dtype Data type
-/// @param config Planar configuration (usually Contig for single channel)
-/// @return Grayscale image
-inline std::unique_ptr<Image> CreateGrayscaleImage(
-    const ImageDimensions& dimensions, DataType dtype = DataType::kUInt8,
-    PlanarConfig config = PlanarConfig::kContiguous) {
-  return std::make_unique<Image>(dimensions, ImageFormat::kGray, dtype, config);
-}
-
-/// @brief Create spectral/hyperspectral image
-/// @param dimensions Image dimensions
-/// @param channels Number of spectral channels
-/// @param dtype Data type
-/// @param config Planar configuration (default: kContiguous)
-/// @return Spectral image with interleaved channel layout for optimal
-/// performance
-inline std::unique_ptr<Image> CreateSpectralImage(
-    const ImageDimensions& dimensions, uint32_t channels,
-    DataType dtype = DataType::kFloat32,
-    PlanarConfig config = PlanarConfig::kContiguous) {
-  return std::make_unique<Image>(dimensions, channels, dtype, config);
-}
-
-/// @brief Create blank image with properties inherited from reference image
-/// @param reference_image Image to inherit properties from
-/// (format, data type, channels, planar config)
-/// @param dimensions New dimensions for the blank image [width, height]
+/// @brief Create blank image with properties inherited from a reference image.
+/// @param reference_image Image to inherit format, data type, channels and
+///   planar config from.
+/// @param dimensions New dimensions for the blank image.
 /// @return Blank image with same properties as reference but different
-/// dimensions
-/// @details Creates an uninitialized image for performance.
-/// Use Paste() to populate with data.
+///   dimensions.
+/// @details Creates an uninitialized image for performance. Use Paste() to
+/// populate with data.
 inline std::unique_ptr<Image> CreateBlankImage(
     const Image& reference_image, const ImageDimensions& dimensions) {
   return std::make_unique<Image>(reference_image, dimensions);
 }
 
-/// @brief Create truly blank/uninitialized image that adapts to first paste
-/// @param dimensions Image dimensions [width, height]
-/// @return Uninitialized blank image that will adapt to first paste operation
-/// @details Creates a completely uninitialized image. Format, data type, and
-/// channels will be determined by the first paste operation. Use Initialize()
-/// to manually set properties.
+/// @brief Create a truly blank/uninitialized image that adapts to first paste.
+/// @param dimensions Image dimensions.
+/// @return Uninitialized blank image that will adapt to first paste operation.
+/// @details Format, data type, and channels are deferred until the first
+/// Paste() (or explicit Initialize()) call.
 inline std::unique_ptr<Image> CreateBlankImage(
     const ImageDimensions& dimensions) {
   return std::make_unique<Image>(dimensions);
-}
-
-/// @brief Create initialized blank RGB image (for backward compatibility)
-/// @param dimensions Image dimensions [width, height]
-/// @param dtype Data type (default: uint8)
-/// @param config Planar configuration (default: interleaved)
-/// @return Initialized blank RGB image with zeroed memory
-/// @details Creates an initialized RGB image ready for direct pixel access.
-inline std::unique_ptr<Image> CreateInitializedBlankImage(
-    const ImageDimensions& dimensions, DataType dtype = DataType::kUInt8,
-    PlanarConfig config = PlanarConfig::kContiguous) {
-  return std::make_unique<Image>(dimensions, ImageFormat::kRGB, dtype, config);
 }
 
 }  // namespace fastslide

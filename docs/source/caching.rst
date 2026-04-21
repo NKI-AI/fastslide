@@ -128,9 +128,9 @@ The simplest and most efficient approach:
    #include "fastslide/runtime/reader_registry.h"
    #include "fastslide/runtime/reader_dependencies.h"
 
-   // Configure global cache at application startup
+   // Configure global cache at application startup (2 GiB)
    auto& cache_manager = fastslide::GlobalCacheManager::Instance();
-   cache_manager.SetCapacity(5000);  // 5000 tiles
+   cache_manager.SetCapacityBytes(static_cast<size_t>(2) << 30);
 
    // Register formats
    fastslide::ReaderRegistry registry;
@@ -179,8 +179,9 @@ For isolated caching between readers:
 
    #include "fastslide/runtime/lru_tile_cache.h"
 
-   // Create custom cache for this reader
-   auto cache_or = fastslide::LRUTileCache::Create(1000);  // 1000 tiles
+   // Create custom cache for this reader (512 MiB)
+   auto cache_or = fastslide::LRUTileCache::Create(
+       static_cast<size_t>(512) << 20);
    if (!cache_or.ok()) {
      // Handle error
      return cache_or.status();
@@ -223,7 +224,8 @@ Monitor cache effectiveness:
    auto& cache_mgr = fastslide::GlobalCacheManager::Instance();
    auto stats = cache_mgr.GetStats();
 
-   std::cout << "Capacity: " << stats.capacity << " tiles\n";
+   std::cout << "Capacity: "
+             << (stats.capacity_bytes / (1024.0 * 1024.0)) << " MB\n";
    std::cout << "Current size: " << stats.size << " tiles\n";
    std::cout << "Hits: " << stats.hits << "\n";
    std::cout << "Misses: " << stats.misses << "\n";
@@ -241,11 +243,11 @@ Cache Management
    // Clear cache (free memory)
    cache_mgr.Clear();
 
-   // Change capacity (clears existing cache)
-   cache_mgr.SetCapacity(10000);
+   // Change capacity (clears existing cache); here 4 GiB
+   cache_mgr.SetCapacityBytes(static_cast<size_t>(4) << 30);
 
-   // Get current capacity
-   size_t capacity = cache_mgr.GetCapacity();
+   // Get current capacity (bytes)
+   size_t capacity_bytes = cache_mgr.GetCapacityBytes();
 
    // Get current size
    size_t size = cache_mgr.GetSize();
@@ -260,9 +262,9 @@ Global Cache
 
    import fastslide
 
-   # Configure global cache at startup
-   cache_mgr = fastslide.RuntimeGlobalCacheManager.instance()
-   cache_mgr.set_capacity(5000)  # 5000 tiles
+   # Configure global cache at startup (2 GiB)
+   cache_mgr = fastslide.GlobalCacheManager.instance()
+   cache_mgr.set_capacity_bytes(2 * 1024**3)
 
    # Create reader - global cache automatically used
    slide = fastslide.FastSlide.from_file_path("slide.mrxs")
@@ -286,16 +288,16 @@ Cache Management
 
 .. code-block:: python
 
-   cache_mgr = fastslide.RuntimeGlobalCacheManager.instance()
+   cache_mgr = fastslide.GlobalCacheManager.instance()
 
    # Clear cache
    cache_mgr.clear()
 
-   # Change capacity
-   cache_mgr.set_capacity(10000)
+   # Change capacity (4 GiB)
+   cache_mgr.set_capacity_bytes(4 * 1024**3)
 
    # Query current state
-   capacity = cache_mgr.get_capacity()
+   capacity_bytes = cache_mgr.get_capacity_bytes()
    size = cache_mgr.get_size()
    stats = cache_mgr.get_stats()
 
@@ -312,9 +314,9 @@ Configure a large cache for interactive panning and zooming:
    #include "fastslide/runtime/global_cache_manager.h"
    #include "fastslide/runtime/reader_registry.h"
 
-   // Large cache for interactive viewing
+   // Large cache for interactive viewing (~8 GiB)
    auto& cache = fastslide::GlobalCacheManager::Instance();
-   cache.SetCapacity(10000);  // 10K tiles (~7.5 GB for 512×512 RGB)
+   cache.SetCapacityBytes(static_cast<size_t>(8) << 30);
 
    // Setup registry
    fastslide::ReaderRegistry registry;
@@ -343,13 +345,15 @@ Separate caches for training and validation:
 
    #include "fastslide/runtime/lru_tile_cache.h"
 
-   // Training cache (larger)
-   auto train_cache = fastslide::LRUTileCache::Create(5000).value();
+   // Training cache (~4 GiB)
+   auto train_cache =
+       fastslide::LRUTileCache::Create(static_cast<size_t>(4) << 30).value();
    fastslide::ReaderDependencies train_deps;
    train_deps.tile_cache = train_cache;
 
-   // Validation cache (smaller)
-   auto val_cache = fastslide::LRUTileCache::Create(2000).value();
+   // Validation cache (~1 GiB)
+   auto val_cache =
+       fastslide::LRUTileCache::Create(static_cast<size_t>(1) << 30).value();
    fastslide::ReaderDependencies val_deps;
    val_deps.tile_cache = val_cache;
 
@@ -392,9 +396,9 @@ Python batch processing with monitoring:
    import fastslide
    from pathlib import Path
 
-   # Configure reasonable cache
-   cache_mgr = fastslide.RuntimeGlobalCacheManager.instance()
-   cache_mgr.set_capacity(2000)  # ~1.5 GB
+   # Configure reasonable cache (~1.5 GiB)
+   cache_mgr = fastslide.GlobalCacheManager.instance()
+   cache_mgr.set_capacity_bytes(int(1.5 * 1024**3))
 
    # Process multiple slides
    slide_paths = list(Path("slides/").glob("*.mrxs"))
@@ -438,32 +442,34 @@ The optimal cache size depends on your workload:
      - Recommended Size
      - Rationale
    * - Random access
-     - 5000-10000 tiles
+     - 4-8 GiB
      - Large working set
    * - Sequential scan
-     - 1000-2000 tiles
+     - 512 MiB - 2 GiB
      - Small working set
    * - Memory constrained
-     - 500-1000 tiles
+     - 256-512 MiB
      - Limited resources
    * - Interactive viewer
-     - 5000-15000 tiles
+     - 4-12 GiB
      - User panning/zooming
 
 Memory Footprint
 ----------------
 
-Calculate memory usage for a given cache size:
+Cache capacity is a byte budget. The cache stops admitting new tiles
+when the total stored tile bytes would exceed the configured capacity:
 
 .. code-block:: none
 
-   Memory (bytes) = tiles × width × height × channels
-   
-   Example: 512×512 RGB tiles
-   - Per tile: 512 × 512 × 3 = 786,432 bytes (~768 KB)
-   - 1000 tiles: ~768 MB
-   - 5000 tiles: ~3.75 GB
-   - 10000 tiles: ~7.5 GB
+   Per tile (512x512 RGB) ~ 512 * 512 * 3 = 786,432 bytes (~768 KiB)
+
+   Capacity   Approx. tiles cached
+   --------   --------------------
+   512 MiB    ~ 680
+   1 GiB      ~ 1,360
+   4 GiB      ~ 5,460
+   8 GiB      ~ 10,920
 
 .. warning::
 
@@ -521,17 +527,17 @@ Dynamically adjust cache size based on hit ratio:
 
    void AdaptCacheSize(fastslide::GlobalCacheManager& cache_mgr) {
      auto stats = cache_mgr.GetStats();
-     
-     if (stats.hit_ratio < 0.5 && stats.capacity < 10000) {
-       // Increase capacity for low hit ratio
-       size_t new_capacity = std::min(stats.capacity * 2, 10000ul);
-       cache_mgr.SetCapacity(new_capacity);
-       std::cout << "Increased cache to " << new_capacity << " tiles\n";
-     } else if (stats.hit_ratio > 0.9 && stats.capacity > 1000) {
-       // Decrease capacity if very high hit ratio
-       size_t new_capacity = std::max(stats.capacity / 2, 1000ul);
-       cache_mgr.SetCapacity(new_capacity);
-       std::cout << "Decreased cache to " << new_capacity << " tiles\n";
+     constexpr size_t kMaxBytes = static_cast<size_t>(8) << 30;  // 8 GiB
+     constexpr size_t kMinBytes = static_cast<size_t>(256) << 20;  // 256 MiB
+
+     if (stats.hit_ratio < 0.5 && stats.capacity_bytes < kMaxBytes) {
+       size_t new_capacity_bytes =
+           std::min(stats.capacity_bytes * 2, kMaxBytes);
+       cache_mgr.SetCapacityBytes(new_capacity_bytes);
+     } else if (stats.hit_ratio > 0.9 && stats.capacity_bytes > kMinBytes) {
+       size_t new_capacity_bytes =
+           std::max(stats.capacity_bytes / 2, kMinBytes);
+       cache_mgr.SetCapacityBytes(new_capacity_bytes);
      }
    }
 
@@ -543,7 +549,7 @@ The cache is thread-safe and can be accessed from multiple threads:
 .. code-block:: cpp
 
    auto& cache_mgr = fastslide::GlobalCacheManager::Instance();
-   cache_mgr.SetCapacity(10000);
+   cache_mgr.SetCapacityBytes(static_cast<size_t>(8) << 30);  // 8 GiB
 
    auto deps = fastslide::ReaderDependencies::WithGlobalCache();
 
@@ -598,7 +604,7 @@ If hitting memory limits:
                << memory_mb << " MB\n";
      
      // Reduce capacity
-     cache_mgr.SetCapacity(cache_mgr.GetCapacity() / 2);
+     cache_mgr.SetCapacityBytes(cache_mgr.GetCapacityBytes() / 2);
      
      // Or disable caching
      // cache_mgr.Clear();
@@ -613,7 +619,7 @@ If hit ratio is low (<30%):
 
    .. code-block:: cpp
 
-      cache_mgr.SetCapacity(cache_mgr.GetCapacity() * 2);
+      cache_mgr.SetCapacityBytes(cache_mgr.GetCapacityBytes() * 2);
 
 2. **Check access patterns**
 
@@ -636,9 +642,9 @@ Best Practices
 
    .. code-block:: cpp
 
-      // At application initialization
+      // At application initialization (2 GiB)
       auto& cache = fastslide::GlobalCacheManager::Instance();
-      cache.SetCapacity(5000);
+      cache.SetCapacityBytes(static_cast<size_t>(2) << 30);
 
 2. **Use Global Cache by Default**
 
@@ -676,7 +682,7 @@ Best Practices
       auto stats = cache_mgr.GetStats();
       double memory_gb = stats.memory_usage_bytes / 1e9;
       if (memory_gb > available_ram_gb * 0.8) {
-        cache_mgr.SetCapacity(cache_mgr.GetCapacity() / 2);
+        cache_mgr.SetCapacityBytes(cache_mgr.GetCapacityBytes() / 2);
       }
 
 Advanced Topics
@@ -764,32 +770,34 @@ C++ Classes
 -----------
 
 ``GlobalCacheManager``
-   Singleton manager for application-wide caching.
+   Singleton manager for application-wide caching. All capacities are in
+   bytes.
 
    .. code-block:: cpp
 
       static GlobalCacheManager& Instance();
       std::shared_ptr<ITileCache> GetCache();
       void SetCache(std::shared_ptr<ITileCache> cache);
-      absl::Status SetCapacity(size_t capacity);
-      size_t GetCapacity() const;
+      aifocore::Status SetCapacityBytes(size_t capacity_bytes);
+      size_t GetCapacityBytes() const;
       size_t GetSize() const;
       ITileCache::Stats GetStats() const;
       void Clear();
 
 ``LRUTileCache``
-   Default LRU cache implementation.
+   Default LRU cache implementation. Capacity is expressed in bytes.
 
    .. code-block:: cpp
 
-      static absl::StatusOr<std::shared_ptr<LRUTileCache>> 
-          Create(size_t capacity = 1000);
-      
+      static aifocore::Result<std::shared_ptr<LRUTileCache>>
+          Create(size_t capacity_bytes = 1024 * 1024 * 1024);  // 1 GiB
+
       std::shared_ptr<CachedTileData> Get(const TileKey& key) override;
-      void Put(const TileKey& key, 
+      void Put(const TileKey& key,
                std::shared_ptr<CachedTileData> tile) override;
       void Clear() override;
       Stats GetStats() const override;
+      aifocore::Status SetCapacityBytes(size_t capacity_bytes);
 
 ``ReaderDependencies``
    Dependency injection container.
@@ -807,16 +815,16 @@ C++ Classes
 Python Classes
 --------------
 
-``RuntimeGlobalCacheManager``
-   Global cache manager for Python.
+``GlobalCacheManager``
+   Global cache manager for Python. Capacities are in bytes.
 
    .. code-block:: python
 
       @staticmethod
-      def instance() -> RuntimeGlobalCacheManager
-      
-      def set_capacity(capacity: int) -> None
-      def get_capacity() -> int
+      def instance() -> GlobalCacheManager
+
+      def set_capacity_bytes(capacity_bytes: int) -> None
+      def get_capacity_bytes() -> int
       def get_size() -> int
       def get_stats() -> RuntimeCacheStats
       def clear() -> None
@@ -826,8 +834,8 @@ Python Classes
 
    .. code-block:: python
 
-      capacity: int
-      size: int
+      capacity_bytes: int
+      size: int                # number of cached tiles
       hits: int
       misses: int
       hit_ratio: float

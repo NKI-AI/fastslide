@@ -198,10 +198,23 @@ struct PageHeader {
   uint32_t width = 0;   ///< Image width
   uint32_t height = 0;  ///< Image height
   uint16_t samples_per_pixel = 0;  ///< Samples per pixel (e.g., 3 for RGB)
-  uint16_t bits_per_sample = 8;    ///< Bits per sample (8, 16, 32, etc.)
+  uint16_t bits_per_sample = 8;    ///< Bits per sample as seen by consumers
+                                   ///< after decoding (always byte-aligned:
+                                   ///< 8, 16, or 32). For CCITT bilevel pages
+                                   ///< this is 8 (after 1-bit unpacking) while
+                                   ///< bits_per_sample_storage holds the
+                                   ///< on-disk width (1).
+  uint16_t bits_per_sample_storage = 0;  ///< On-disk bits per sample. 0 means
+                                         ///< "same as bits_per_sample" (the
+                                         ///< common case). Set to 1 for CCITT
+                                         ///< bilevel pages so callers can
+                                         ///< distinguish the original storage
+                                         ///< width from the decoded width.
   uint16_t photometric = 0;  ///< Photometric interpretation (2=RGB, 6=YCbCr)
   uint16_t compression = 0;  ///< Compression type (7=OJPEG, etc.)
   uint16_t predictor = 1;    ///< Predictor (1=none, 2=horizontal differencing)
+  uint16_t fill_order = 1;   ///< FillOrder (1=MSB2LSB default, 2=LSB2MSB).
+                             ///< Only meaningful for CCITT bilevel codecs.
   uint32_t new_subfile_type = 0;        ///< New subfile type tag
   Storage storage = Storage::kUnknown;  ///< Storage type
   uint32_t payload_id = 0;              ///< Index into appropriate pool

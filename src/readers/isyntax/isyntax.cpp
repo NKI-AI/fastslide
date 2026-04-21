@@ -50,12 +50,12 @@ aifocore::Status IsyntaxReader::ValidateInput(
   // case insensitive check?
   // For now simple check
   if (ext != ".isyntax") {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid extension for iSyntax: {}", ext));
   }
   if (!std::filesystem::exists(filename)) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kNotFound,
         aifocore::fmt::format("File not found: {}", filename.string()));
   }
@@ -76,11 +76,8 @@ aifocore::Status IsyntaxReader::Initialize() {
   const char* dump_xml = std::getenv("ISYNTAX_DUMP_XML");
   const bool dump_xml_header = (dump_xml && strcmp(dump_xml, "1") == 0);
 
-  auto isyntax_or = isyntax::IsyntaxFile::Open(filename_, dump_xml_header);
-  if (!isyntax_or.ok()) {
-    return isyntax_or.status();
-  }
-  isyntax_file_ = std::move(*isyntax_or);
+  AIFOCORE_ASSIGN_OR_RETURN(
+      isyntax_file_, isyntax::IsyntaxFile::Open(filename_, dump_xml_header));
 
   PopulateSlideProperties();
   return aifocore::Status::OkStatus();
@@ -134,23 +131,26 @@ int IsyntaxReader::GetLevelCount() const {
 
 aifocore::Result<LevelInfo> IsyntaxReader::GetLevelInfo(int level) const {
   if (!isyntax_file_ || isyntax_file_->handle() == nullptr) {
-    return aifocore::Status(aifocore::StatusCode::kInternal, "No WSI image");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "No WSI image");
   }
   const isyntax_t* isx = isyntax_file_->handle();
   const isyntax_image_t* wsi = isx->images + isx->wsi_image_index;
   if (!wsi) {
-    return aifocore::Status(aifocore::StatusCode::kInternal, "No WSI image");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "No WSI image");
   }
 
   if (level < 0 || level >= GetLevelCount()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            aifocore::fmt::format("Invalid level: {}", level));
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Invalid level: {}", level));
   }
 
   const isyntax_level_t* lvl = &wsi->levels[level];
   if (!lvl) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Failed to get level");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to get level");
   }
 
   LevelInfo info;
@@ -192,7 +192,8 @@ std::vector<std::string> IsyntaxReader::GetAssociatedImageNames() const {
 aifocore::Result<ImageDimensions> IsyntaxReader::GetAssociatedImageDimensions(
     std::string_view name) const {
   if (!isyntax_file_ || isyntax_file_->handle() == nullptr) {
-    return aifocore::Status(aifocore::StatusCode::kInternal, "No iSyntax file");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "No iSyntax file");
   }
   const isyntax_t* isx = isyntax_file_->handle();
   const isyntax_image_t* img = nullptr;
@@ -203,15 +204,15 @@ aifocore::Result<ImageDimensions> IsyntaxReader::GetAssociatedImageDimensions(
   }
 
   if (!img) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kNotFound,
         aifocore::fmt::format("Associated image not found: {}", name));
   }
 
   const isyntax_level_t* lvl = &img->levels[0];
   if (!lvl) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Failed to get level 0 of associated image");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to get level 0 of associated image");
   }
 
   return ImageDimensions{static_cast<uint32_t>(lvl->width),
@@ -221,18 +222,17 @@ aifocore::Result<ImageDimensions> IsyntaxReader::GetAssociatedImageDimensions(
 aifocore::Result<RGBImage> IsyntaxReader::ReadAssociatedImage(
     std::string_view name) const {
   if (!isyntax_file_) {
-    return aifocore::Status(aifocore::StatusCode::kInternal, "No iSyntax file");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "No iSyntax file");
   }
-  aifocore::Result<isyntax::RgbaImage> rgba_or = aifocore::Status(
+  aifocore::Result<isyntax::RgbaImage> rgba_or = AIFOCORE_MAKE_STATUS(
       aifocore::StatusCode::kNotFound, "Unknown associated image");
   if (name == "label") {
     rgba_or = isyntax_file_->ReadLabelImage(isyntax::PixelFormat::kRgba);
   } else if (name == "macro") {
     rgba_or = isyntax_file_->ReadMacroImage(isyntax::PixelFormat::kRgba);
   }
-  if (!rgba_or.ok()) {
-    return rgba_or.status();
-  }
+  AIFOCORE_RETURN_IF_ERROR(rgba_or);
   const isyntax::RgbaImage& rgba = *rgba_or;
 
   // Create RGBImage
@@ -283,7 +283,7 @@ aifocore::Result<core::TilePlan> IsyntaxReader::PrepareRequest(
 }
 
 aifocore::Status IsyntaxReader::ExecutePlan(const core::TilePlan& plan,
-                                            runtime::TileWriter& writer) const {
+                                            runtime::Canvas& writer) const {
   return IsyntaxTileExecutor::ExecutePlan(plan, *this, writer);
 }
 

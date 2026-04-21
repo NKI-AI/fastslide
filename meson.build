@@ -1,7 +1,7 @@
 # FastSlide Meson Build File
 
 project('fastslide', 'cpp', 'c',
-  version: '0.2.2',
+  version: '0.5.2',
   license: 'Apache-2.0',
   default_options: [
     'cpp_std=c++20',
@@ -39,14 +39,14 @@ if is_wasm
   meson.override_dependency('threads', declare_dependency())
 endif
 
-# Add warning suppressions for third-party libraries (pybind11, etc.)
+# Add warning suppressions for third-party libraries (nanobind, etc.)
 if cpp.get_id() == 'clang' or cpp.get_id() == 'appleclang'
   add_project_arguments([
     '-Wno-gnu-zero-variadic-macro-arguments',  # GNU variadic macro warnings
   ], language: 'cpp')
 endif
 
-# Suppress pybind11 and other third-party library warnings
+# Suppress nanobind and other third-party library warnings
 add_project_arguments([
   '-Wno-deprecated-declarations',
   '-Wno-unused-parameter',
@@ -77,6 +77,10 @@ endif
 
 # Include directories
 incdir = include_directories('include')
+
+# Test-only include path that exposes shared test helpers under
+# `src/testing/` (e.g. `testing/minimal_slide_reader.h`).
+test_incdir = include_directories('src')
 
 # ============================================================================
 # External Dependencies
@@ -160,11 +164,7 @@ simpletiff_dep = simpletiff_proj.get_variable('simpletiff_dep')
 
 # Python dependencies (for bindings)
 python3 = import('python').find_installation('python3', required: false)
-pybind11_proj = subproject('pybind11', default_options: [
-  'default_library=static',
-  'warning_level=0'
-], required: false)
-pybind11_dep = dependency('pybind11', fallback: ['pybind11'], required: false)
+nanobind_dep = dependency('nanobind', required: false)
 
 # Testing dependencies (from wrap, statically linked)
 gtest_proj = subproject('gtest', default_options: [
@@ -316,6 +316,8 @@ fastslide_sources = [
   src_prefix + 'runtime/tile_writer.cpp',
   src_prefix + 'runtime/decoders/jpeg_decoder_common.cpp',
   src_prefix + 'runtime/decoders/jpeg_xr_decoder.cpp',
+  src_prefix + 'runtime/decoders/png_decoder.cpp',
+  src_prefix + 'runtime/decoders/bmp_decoder.cpp',
   
   # Runtime tile writer strategies
   src_prefix + 'runtime/tile_writer/direct/direct_strategy.cpp',
@@ -346,21 +348,23 @@ fastslide_sources = [
   src_prefix + 'readers/qptiff/qptiff.cpp',
   src_prefix + 'readers/qptiff/qptiff_metadata_loader.cpp',
   src_prefix + 'readers/qptiff/qptiff_plan_builder.cpp',
-  src_prefix + 'readers/qptiff/qptiff_tile_executor.cpp',
   
-  # MRXS format - conditional JPEG decoder
+  # MRXS format
   src_prefix + 'readers/mrxs/mrxs_format_plugin.cpp',
   src_prefix + 'readers/mrxs/mrxs_ini_parser.cpp',
+  src_prefix + 'readers/mrxs/mrxs_layer_parser.cpp',
   src_prefix + 'readers/mrxs/mrxs.cpp',
   src_prefix + 'readers/mrxs/spatial_index.cpp',
   src_prefix + 'readers/mrxs/mrxs_plan_builder.cpp',
   src_prefix + 'readers/mrxs/mrxs_tile_executor.cpp',
   src_prefix + 'readers/mrxs/mrxs_data_reader.cpp',
+  src_prefix + 'readers/mrxs/mrxs_decoder.cpp',
   src_prefix + 'readers/mrxs/mrxs_index_reader.cpp',
 
   # CZI format
   src_prefix + 'readers/czi/czi_format_plugin.cpp',
   src_prefix + 'readers/czi/czi.cpp',
+  src_prefix + 'readers/czi/czi_embedded.cpp',
   src_prefix + 'readers/czi/czi_plan_builder.cpp',
   src_prefix + 'readers/czi/czi_tile_executor.cpp',
   src_prefix + 'readers/czi/czi_spatial_index.cpp',
@@ -403,7 +407,6 @@ fastslide_sources = [
   src_prefix + 'readers/ometiff/metadata_parser.cpp',
   src_prefix + 'readers/ometiff/ometiff.cpp',
   src_prefix + 'readers/ometiff/ometiff_plan_builder.cpp',
-  src_prefix + 'readers/ometiff/ometiff_tile_executor.cpp',
   src_prefix + 'readers/ometiff/ometiff_metadata_loader.cpp',
 
   # Philips TIFF format
@@ -418,12 +421,12 @@ fastslide_sources = [
   src_prefix + 'readers/ndpitiff/ndpitiff_tile_executor.cpp',
 ]
 
-# Add conditional JPEG decoder implementation
+# Add conditional JPEG decoder backend (jpgd vs libjpeg-turbo).
+# The MRXS-side mrxs_decoder.cpp is backend-agnostic and delegates to
+# runtime::decoders::DecodeJpegToRgb, which itself is the swappable layer.
 if use_jpgd
-  fastslide_sources += src_prefix + 'readers/mrxs/mrxs_decoder_jpgd.cpp'
   fastslide_sources += src_prefix + 'runtime/decoders/jpeg_decoder_jpgd.cpp'
 else
-  fastslide_sources += src_prefix + 'readers/mrxs/mrxs_decoder.cpp'
   fastslide_sources += src_prefix + 'runtime/decoders/jpeg_decoder_libjpeg.cpp'
 endif
 
@@ -495,6 +498,10 @@ fastslide_headers = [
   'include/fastslide/runtime/reader_registry.h',
   'include/fastslide/runtime/tile_writer.h',
   'include/fastslide/runtime/io/binary_utils.h',
+  'include/fastslide/runtime/decoders/jpeg_decoder.h',
+  'include/fastslide/runtime/decoders/jpeg_xr_decoder.h',
+  'include/fastslide/runtime/decoders/png_decoder.h',
+  'include/fastslide/runtime/decoders/bmp_decoder.h',
   'include/fastslide/utilities/cache.h',
   'include/fastslide/utilities/colors.h',
   'include/fastslide/utilities/hash.h',
@@ -513,9 +520,11 @@ fastslide_headers = [
   'include/fastslide/readers/mrxs/mrxs_decoder.h',
   'include/fastslide/readers/mrxs/mrxs_format_plugin.h',
   'include/fastslide/readers/mrxs/mrxs_ini_parser.h',
+  'include/fastslide/readers/mrxs/mrxs_layer_parser.h',
   'include/fastslide/readers/reader_factory.h',
   'include/fastslide/readers/tiff_based_reader.h',
   'include/fastslide/readers/tiff_reader_factory.h',
+  'include/fastslide/readers/multi_channel_tiff_tile_executor.h',
   'include/fastslide/readers/aperio/aperio.h',
   'include/fastslide/readers/qptiff/qptiff.h',
   'include/fastslide/readers/qptiff/qptiff_metadata_loader.h',
@@ -707,11 +716,11 @@ python_headers = [
 ]
 
 # Python extension module (statically linked)
-if not is_wasm and python3.found() and pybind11_dep.found()
+if not is_wasm and python3.found() and nanobind_dep.found()
   # Use shared_module for Python extensions
   # Note: Python extensions need explicit dependencies and includes since they don't get them from link_with
   # On macOS, we need to explicitly export the PyInit symbol
-  # The module name is _fastslide' per PYBIND11_MODULE
+  # The module name is `_fastslide` per NB_MODULE.
   python_link_args = []
   if host_machine.system() == 'darwin'
     python_link_args = ['-Wl,-exported_symbol,_PyInit__fastslide', '-Wl,-rpath,@loader_path']
@@ -719,12 +728,12 @@ if not is_wasm and python3.found() and pybind11_dep.found()
     # On Linux, set rpath to look in the same directory as the extension module
     python_link_args = ['-Wl,-rpath,$ORIGIN']
   endif
-  
+
   fastslide_python_ext = python3.extension_module('_fastslide',
     python_sources,
     include_directories: [incdir],
   dependencies: [
-      pybind11_dep,
+      nanobind_dep,
       aifocore_dep,
       fmt_dep,
       cereal_dep,
@@ -741,7 +750,7 @@ if not is_wasm and python3.found() and pybind11_dep.found()
     install_rpath: '$ORIGIN',
     subdir: 'fastslide'
   )
-  
+
   # Install Python __init__.py
   python3.install_sources(
     'python/fastslide/__init__.py',
@@ -845,7 +854,7 @@ if not is_wasm and gtest_dep.found() and gtest_main_dep.found()
 
   slide_reader_test = executable('slide_reader_test',
     src_prefix + 'slide_reader_test.cpp',
-    include_directories: [incdir],
+    include_directories: [incdir, test_incdir],
     dependencies: test_deps,
     link_with: fastslide_lib
   )
@@ -853,7 +862,7 @@ if not is_wasm and gtest_dep.found() and gtest_main_dep.found()
 
   channel_selection_test = executable('channel_selection_test',
     src_prefix + 'channel_selection_test.cpp',
-    include_directories: [incdir],
+    include_directories: [incdir, test_incdir],
     dependencies: test_deps,
     link_with: fastslide_lib
   )
@@ -878,7 +887,7 @@ if not is_wasm and gtest_dep.found() and gtest_main_dep.found()
 
   region_conversion_test = executable('region_conversion_test',
     src_prefix + 'core/region_conversion_test.cpp',
-    include_directories: [incdir],
+    include_directories: [incdir, test_incdir],
     dependencies: test_deps,
     link_with: fastslide_lib
   )
@@ -909,13 +918,21 @@ if not is_wasm and gtest_dep.found() and gtest_main_dep.found()
   )
   test('lru_tile_cache_test', lru_tile_cache_test)
 
-  cache_types_test = executable('cache_types_test',
-    src_prefix + 'runtime/cache_types_test.cpp',
+  cache_interface_test = executable('cache_interface_test',
+    src_prefix + 'runtime/cache_interface_test.cpp',
     include_directories: [incdir],
     dependencies: test_deps,
     link_with: fastslide_lib
   )
-  test('cache_types_test', cache_types_test)
+  test('cache_interface_test', cache_interface_test)
+
+  binary_utils_test = executable('binary_utils_test',
+    src_prefix + 'runtime/io/binary_utils_test.cpp',
+    include_directories: [incdir],
+    dependencies: test_deps,
+    link_with: fastslide_lib
+  )
+  test('binary_utils_test', binary_utils_test)
 
   # Format tests
   aperio_metadata_parser_test = executable('aperio_metadata_parser_test',

@@ -30,7 +30,7 @@ aifocore::Result<FileReader> FileReader::Open(const fs::path& path,
                                               const char* mode) {
   FILE* file = aifocore::portable_fopen(path, mode);
   if (!file) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kNotFound,
         aifocore::fmt::format("Cannot open file: {}", path.string()));
   }
@@ -39,7 +39,7 @@ aifocore::Result<FileReader> FileReader::Open(const fs::path& path,
 
 aifocore::Status FileReader::Seek(int64_t offset, int whence) const {
   if (aifocore::portable_fseek(file_.get(), offset, whence) != 0) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInternal,
         aifocore::fmt::format("Failed to seek to offset {}", offset));
   }
@@ -49,25 +49,25 @@ aifocore::Status FileReader::Seek(int64_t offset, int whence) const {
 aifocore::Result<int64_t> FileReader::GetSize() const {
   const int64_t current_pos = aifocore::portable_ftell(file_.get());
   if (current_pos < 0) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Failed to get current file position");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to get current file position");
   }
 
   if (aifocore::portable_fseek(file_.get(), 0, SEEK_END) != 0) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Failed to seek to end of file");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to seek to end of file");
   }
 
   const int64_t size = aifocore::portable_ftell(file_.get());
   if (size < 0) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Failed to determine file size");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to determine file size");
   }
 
   // Restore original position
   if (aifocore::portable_fseek(file_.get(), current_pos, SEEK_SET) != 0) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Failed to restore file position");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to restore file position");
   }
 
   return size;
@@ -75,7 +75,7 @@ aifocore::Result<int64_t> FileReader::GetSize() const {
 
 aifocore::Status FileReader::Read(void* buffer, size_t size) const {
   if (aifocore::portable_fread(buffer, size, file_.get()) != size) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInternal,
         aifocore::fmt::format("Failed to read {} bytes", size));
   }
@@ -92,8 +92,8 @@ aifocore::Result<std::vector<uint8_t>> FileReader::ReadBytes(
 aifocore::Result<int64_t> FileReader::Tell() const {
   const int64_t pos = aifocore::portable_ftell(file_.get());
   if (pos < 0) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "Failed to get file position");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "Failed to get file position");
   }
   return pos;
 }

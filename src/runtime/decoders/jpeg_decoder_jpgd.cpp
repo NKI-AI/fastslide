@@ -24,8 +24,8 @@ namespace fastslide::runtime::decoders {
 aifocore::Result<DecodedRgb> DecodeJpegToRgb(
     std::span<const uint8_t> jpeg_bytes, const JpegDecodeOptions& options) {
   if (jpeg_bytes.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "JPEG input is empty");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "JPEG input is empty");
   }
 
   int actual_comps = 0;
@@ -42,8 +42,8 @@ aifocore::Result<DecodedRgb> DecodeJpegToRgb(
       jpeg_bytes.data(), static_cast<int>(jpeg_bytes.size()), &width, &height,
       &actual_comps, 3, flags);
   if (decoded == nullptr || width <= 0 || height <= 0) {
-    return aifocore::Status(aifocore::StatusCode::kInternal,
-                            "jpgd JPEG decompression failed");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                "jpgd JPEG decompression failed");
   }
 
   DecodedRgb out{};

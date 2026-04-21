@@ -44,8 +44,8 @@ aifocore::Status HashPageRawCompressedBytes(
     int64_t max_total_compressed_bytes) {
   (void)filename;
   if (page >= tiff_index.NumPages()) {
-    return aifocore::Status(aifocore::StatusCode::kOutOfRange,
-                            "Page out of range");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kOutOfRange,
+                                "Page out of range");
   }
 
   const auto& page_header = tiff_index.Page(page);
@@ -58,13 +58,14 @@ aifocore::Status HashPageRawCompressedBytes(
     for (uint32_t i = 0; i < total_tiles; ++i) {
       auto read_or = simpletiff::ReadRawTile(tiff_index, page, i, raw_tile);
       if (!read_or.ok()) {
-        return aifocore::Status(aifocore::StatusCode::kInternal,
-                                read_or.error().message());
+        return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                    read_or.error().message());
       }
       total_bytes += static_cast<int64_t>(raw_tile.size());
       if (total_bytes > max_total_compressed_bytes) {
-        return aifocore::Status(aifocore::StatusCode::kOutOfRange,
-                                "Lowest resolution level too large to hash");
+        return AIFOCORE_MAKE_STATUS(
+            aifocore::StatusCode::kOutOfRange,
+            "Lowest resolution level too large to hash");
       }
       AIFOCORE_RETURN_IF_ERROR(hasher.HashData(raw_tile));
     }
@@ -84,20 +85,21 @@ aifocore::Status HashPageRawCompressedBytes(
     for (uint32_t i = 0; i < total_strips; ++i) {
       auto read_or = simpletiff::ReadRawTile(tiff_index, page, i, raw_strip);
       if (!read_or.ok()) {
-        return aifocore::Status(aifocore::StatusCode::kInternal,
-                                read_or.error().message());
+        return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                    read_or.error().message());
       }
       total_bytes += static_cast<int64_t>(raw_strip.size());
       if (total_bytes > max_total_compressed_bytes) {
-        return aifocore::Status(aifocore::StatusCode::kOutOfRange,
-                                "Lowest resolution level too large to hash");
+        return AIFOCORE_MAKE_STATUS(
+            aifocore::StatusCode::kOutOfRange,
+            "Lowest resolution level too large to hash");
       }
       AIFOCORE_RETURN_IF_ERROR(hasher.HashData(raw_strip));
     }
     return aifocore::Status::OkStatus();
   }
-  return aifocore::Status(aifocore::StatusCode::kUnimplemented,
-                          "Unsupported TIFF storage for quickhash");
+  return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,
+                              "Unsupported TIFF storage for quickhash");
 }
 
 void HashTiffProperties(const simpletiff::TiffIndex& tiff_index,

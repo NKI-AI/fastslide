@@ -122,6 +122,10 @@ class AperioReader : public TiffBasedReader,
     return ImageFormat::kRGB;
   }
 
+  [[nodiscard]] DataType GetDataType() const override {
+    return DataType::kUInt8;
+  }
+
   [[nodiscard]] ImageDimensions GetTileSize() const override;
 
   [[nodiscard]] aifocore::Result<std::string> GetQuickHash() const override;
@@ -131,7 +135,7 @@ class AperioReader : public TiffBasedReader,
       const core::TileRequest& request) const override;
 
   [[nodiscard]] aifocore::Status ExecutePlan(
-      const core::TilePlan& plan, runtime::TileWriter& writer) const override;
+      const core::TilePlan& plan, runtime::Canvas& writer) const override;
 
   /// @brief Get Aperio metadata (format-specific)
   /// @return Reference to Aperio metadata

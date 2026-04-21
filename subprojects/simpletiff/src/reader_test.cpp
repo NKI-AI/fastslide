@@ -30,7 +30,6 @@
 #include <vector>
 
 #include "aifocore/platform/portability.h"
-#include "simpletiff/errors.h"
 #include "simpletiff/index.h"
 #include "simpletiff/io_utils.h"
 #include "simpletiff/tiff_constants.h"

@@ -31,72 +31,26 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/runtime/tile_writer.h"
+#include "testing/minimal_slide_reader.h"
 
 namespace fastslide {
 
-/// @brief Test helper class to access protected SlideReader methods
-class TestSlideReader : public SlideReader {
+/// @brief Test helper exposing the protected `ClampRegion` static.
+/// @details All abstract-method defaults come from `MinimalSlideReader`.
+class TestSlideReader : public testing::MinimalSlideReader {
  public:
-  TestSlideReader() = default;
-
-  // Expose protected method for testing
+  // Expose protected static method for testing.
   static RegionSpec TestClampRegion(const RegionSpec& region,
                                     const ImageDimensions& image_dims) {
     return ClampRegion(region, image_dims);
   }
-
-  // Minimal implementation to satisfy abstract base class
-  [[nodiscard]] int GetLevelCount() const override { return 0; }
-
-  [[nodiscard]] aifocore::Result<LevelInfo> GetLevelInfo(
-      int level) const override {
-    return aifocore::Status(aifocore::StatusCode::kUnimplemented, "Test class");
-  }
-
-  [[nodiscard]] const SlideProperties& GetProperties() const override {
-    static SlideProperties props;
-    return props;
-  }
-
-  [[nodiscard]] std::vector<std::string> GetAssociatedImageNames()
-      const override {
-    return {};
-  }
-
-  [[nodiscard]] aifocore::Result<ImageDimensions> GetAssociatedImageDimensions(
-      std::string_view name) const override {
-    return aifocore::Status(aifocore::StatusCode::kUnimplemented, "Test class");
-  }
-
-  // Don't override ReadRegion - it's final
-
-  [[nodiscard]] aifocore::Result<Image> ReadAssociatedImage(
-      std::string_view name) const override {
-    return aifocore::Status(aifocore::StatusCode::kUnimplemented, "Test class");
-  }
-
-  [[nodiscard]] int GetBestLevelForDownsample(
-      double downsample) const override {
-    return 0;
-  }
-
-  [[nodiscard]] ImageDimensions GetTileSize() const override {
-    return ImageDimensions{256, 256};  // Default tile size
-  }
-
-  [[nodiscard]] Metadata GetMetadata() const override { return Metadata(); }
-
-  [[nodiscard]] std::string GetFormatName() const override {
-    return "TestFormat";
-  }
-
-  [[nodiscard]] ImageFormat GetImageFormat() const override {
-    return ImageFormat::kRGB;
-  }
 };
 
-/// @brief Mock slide reader implementation for testing
-class MockSlideReader : public SlideReader {
+/// @brief Mock slide reader implementation for testing.
+/// @details Inherits safe defaults from `MinimalSlideReader` and overrides
+///          only what the tests actually inspect (level info, properties,
+///          two-stage pipeline, associated images, channel metadata).
+class MockSlideReader : public testing::MinimalSlideReader {
  public:
   explicit MockSlideReader(std::string_view filename) : filename_(filename) {}
 
@@ -140,8 +94,7 @@ class MockSlideReader : public SlideReader {
                             "Associated image not found");
   }
 
-  // Implement two-stage pipeline instead of overriding
-  // ReadRegion (which is final)
+  // Implement two-stage pipeline instead of overriding ReadRegion (final).
   [[nodiscard]] aifocore::Result<core::TilePlan> PrepareRequest(
       const core::TileRequest& request) const override {
     if (!request.IsValid()) {
@@ -175,23 +128,15 @@ class MockSlideReader : public SlideReader {
   }
 
   [[nodiscard]] aifocore::Status ExecutePlan(
-      const core::TilePlan& plan, runtime::TileWriter& writer) const override {
-    // Simple mock implementation - finalize with empty data
+      const core::TilePlan& /*plan*/, runtime::Canvas& writer) const override {
     return writer.Finalize();
   }
 
   [[nodiscard]] aifocore::Result<Image> ReadAssociatedImage(
       std::string_view name) const override {
-    auto dims_result = GetAssociatedImageDimensions(name);
-    if (!dims_result.ok()) {
-      return dims_result.status();
-    }
-    return Image(dims_result.value(), ImageFormat::kRGB, DataType::kUInt8);
-  }
-
-  [[nodiscard]] int GetBestLevelForDownsample(
-      double downsample) const override {
-    return 0;  // Only one level
+    ImageDimensions dims;
+    AIFOCORE_ASSIGN_OR_RETURN(dims, GetAssociatedImageDimensions(name));
+    return Image(dims, ImageFormat::kRGB, DataType::kUInt8);
   }
 
   [[nodiscard]] Metadata GetMetadata() const override {
@@ -208,14 +153,6 @@ class MockSlideReader : public SlideReader {
     return "MockFormat";
   }
 
-  [[nodiscard]] ImageFormat GetImageFormat() const override {
-    return ImageFormat::kRGB;
-  }
-
-  [[nodiscard]] ImageDimensions GetTileSize() const override {
-    return ImageDimensions{256, 256};  // Default tile size
-  }
-
   [[nodiscard]] std::vector<ChannelMetadata> GetChannelMetadata()
       const override {
     std::vector<ChannelMetadata> channels;
@@ -227,67 +164,43 @@ class MockSlideReader : public SlideReader {
   std::string filename_;
 };
 
-/// @brief Failing mock slide reader for testing error propagation
-class FailingMockSlideReader : public SlideReader {
+/// @brief Failing mock slide reader for testing error propagation.
+/// @details Inherits `MinimalSlideReader` defaults; overrides level/region
+///          paths to return `kInternal` "Mock failure" so callers can verify
+///          error propagation through `ReadRegion`.
+class FailingMockSlideReader : public testing::MinimalSlideReader {
  public:
   explicit FailingMockSlideReader(std::string_view filename)
       : filename_(filename) {}
 
-  [[nodiscard]] int GetLevelCount() const override { return 0; }
-
   [[nodiscard]] aifocore::Result<LevelInfo> GetLevelInfo(
-      int level) const override {
+      int /*level*/) const override {
     return aifocore::Status(aifocore::StatusCode::kInternal, "Mock failure");
-  }
-
-  [[nodiscard]] const SlideProperties& GetProperties() const override {
-    static SlideProperties props;
-    return props;
-  }
-
-  [[nodiscard]] std::vector<std::string> GetAssociatedImageNames()
-      const override {
-    return {};
   }
 
   [[nodiscard]] aifocore::Result<ImageDimensions> GetAssociatedImageDimensions(
-      std::string_view name) const override {
+      std::string_view /*name*/) const override {
     return aifocore::Status(aifocore::StatusCode::kInternal, "Mock failure");
   }
 
-  // Failing implementation via two-stage pipeline
   [[nodiscard]] aifocore::Result<core::TilePlan> PrepareRequest(
-      const core::TileRequest& request) const override {
+      const core::TileRequest& /*request*/) const override {
     return aifocore::Status(aifocore::StatusCode::kInternal, "Mock failure");
   }
 
   [[nodiscard]] aifocore::Status ExecutePlan(
-      const core::TilePlan& plan, runtime::TileWriter& writer) const override {
+      const core::TilePlan& /*plan*/,
+      runtime::Canvas& /*writer*/) const override {
     return aifocore::Status(aifocore::StatusCode::kInternal, "Mock failure");
   }
 
   [[nodiscard]] aifocore::Result<Image> ReadAssociatedImage(
-      std::string_view name) const override {
+      std::string_view /*name*/) const override {
     return aifocore::Status(aifocore::StatusCode::kInternal, "Mock failure");
   }
 
-  [[nodiscard]] int GetBestLevelForDownsample(
-      double downsample) const override {
-    return 0;
-  }
-
-  [[nodiscard]] Metadata GetMetadata() const override { return Metadata(); }
-
   [[nodiscard]] std::string GetFormatName() const override {
     return "FailingMockFormat";
-  }
-
-  [[nodiscard]] ImageFormat GetImageFormat() const override {
-    return ImageFormat::kRGB;
-  }
-
-  [[nodiscard]] ImageDimensions GetTileSize() const override {
-    return ImageDimensions{256, 256};  // Default tile size
   }
 
  private:

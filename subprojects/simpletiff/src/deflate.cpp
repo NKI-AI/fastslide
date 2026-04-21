@@ -18,16 +18,23 @@
 
 #include <cstdint>
 #include <span>
+#include <string>
 #include <vector>
 
+#include "aifocore/status/result.h"
+
 namespace simpletiff {
+
+using ::aifocore::Result;
+using ::aifocore::StatusCode;
+
 namespace {
 
-bool InflateToVector(std::span<const uint8_t> compressed, int window_bits,
-                     std::vector<uint8_t>& out) {
+Result<void> InflateToVector(std::span<const uint8_t> compressed,
+                             int window_bits, std::vector<uint8_t>& out) {
   out.clear();
   if (compressed.empty()) {
-    return true;
+    return Result<void>();
   }
 
   z_stream strm{};
@@ -35,7 +42,9 @@ bool InflateToVector(std::span<const uint8_t> compressed, int window_bits,
   strm.avail_in = static_cast<uInt>(compressed.size());
 
   if (inflateInit2(&strm, window_bits) != Z_OK) {
-    return false;
+    return AIFOCORE_MAKE_STATUS(StatusCode::kInternal,
+                                "Deflate: inflateInit2 failed (window_bits=" +
+                                    std::to_string(window_bits) + ")");
   }
 
   constexpr size_t kChunk = 256 * 1024;
@@ -53,20 +62,47 @@ bool InflateToVector(std::span<const uint8_t> compressed, int window_bits,
     }
   }
 
+  const std::string zlib_msg = (strm.msg != nullptr) ? strm.msg : "";
   inflateEnd(&strm);
-  return ret == Z_STREAM_END;
+
+  if (ret != Z_STREAM_END) {
+    std::string msg =
+        "Deflate: inflate failed (window_bits=" + std::to_string(window_bits) +
+        ", zret=" + std::to_string(ret);
+    if (!zlib_msg.empty()) {
+      msg += ", zlib_msg=";
+      msg += zlib_msg;
+    }
+    msg += ")";
+    return AIFOCORE_MAKE_STATUS(StatusCode::kDataLoss, std::move(msg));
+  }
+  return Result<void>();
 }
 
 }  // namespace
 
-bool DecompressDeflate(std::span<const uint8_t> compressed,
-                       std::vector<uint8_t>& out) {
-  // 15 = zlib header/trailer.
-  if (InflateToVector(compressed, /*window_bits=*/15, out)) {
-    return true;
+Result<void> DecompressDeflate(std::span<const uint8_t> compressed,
+                               std::vector<uint8_t>& out) {
+  // 15 + 32 enables zlib's automatic header detection: it accepts both
+  // zlib-wrapped (most common for TIFF Deflate/AdobeDeflate) and gzip-wrapped
+  // streams (used by, e.g., Zarr V3's `gzip` codec).
+  Result<void> auto_detect =
+      InflateToVector(compressed, /*window_bits=*/15 + 32, out);
+  if (auto_detect.ok()) {
+    return Result<void>();
   }
-  // Fallback: raw deflate stream (negative window bits).
-  return InflateToVector(compressed, /*window_bits=*/-15, out);
+
+  // Fallback: raw deflate stream (negative window bits) for headerless input.
+  Result<void> raw = InflateToVector(compressed, /*window_bits=*/-15, out);
+  if (raw.ok()) {
+    return Result<void>();
+  }
+
+  return AIFOCORE_MAKE_STATUS(
+      StatusCode::kDataLoss,
+      "Deflate: failed in both auto (zlib/gzip) and raw modes [" +
+          auto_detect.status().message() + "] [" + raw.status().message() +
+          "]");
 }
 
 }  // namespace simpletiff

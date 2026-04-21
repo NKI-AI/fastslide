@@ -123,9 +123,10 @@ class ITileCache {
   /// @return Current number of cached tiles
   [[nodiscard]] virtual size_t GetSize() const = 0;
 
-  /// @brief Get cache capacity (maximum number of tiles)
-  /// @return Maximum number of tiles that can be cached
-  [[nodiscard]] virtual size_t GetCapacity() const = 0;
+  /// @brief Get cache capacity in bytes (maximum total tile bytes the cache
+  ///        will hold before evicting)
+  /// @return Maximum cache capacity in bytes
+  [[nodiscard]] virtual size_t GetCapacityBytes() const = 0;
 
   /// @brief Get total memory usage in bytes
   /// @return Total memory usage of all cached tiles
@@ -133,7 +134,7 @@ class ITileCache {
 
   /// @brief Get cache statistics
   struct Stats {
-    size_t capacity;            ///< Maximum cache capacity
+    size_t capacity_bytes;      ///< Maximum cache capacity in bytes
     size_t size;                ///< Current number of cached tiles
     size_t hits;                ///< Number of cache hits
     size_t misses;              ///< Number of cache misses

@@ -14,9 +14,11 @@
 
 #pragma once
 
-#include <pybind11/numpy.h>
-#include <pybind11/pybind11.h>
-#include <pybind11/stl.h>
+#include <nanobind/nanobind.h>
+#include <nanobind/stl/optional.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/unordered_map.h>
+#include <nanobind/stl/vector.h>
 
 #include <memory>
 #include <optional>
@@ -29,7 +31,7 @@
 #include "fastslide/python/cache.h"
 #include "fastslide/slide_reader.h"
 
-namespace py = pybind11;
+namespace nb = nanobind;
 
 namespace fastslide::python {
 
@@ -61,7 +63,7 @@ class AssociatedImages {
   [[nodiscard]] std::vector<std::string> Keys() const;
 
   /// @brief Get dimensions of associated image without loading it
-  [[nodiscard]] py::tuple GetDimensions(const std::string& name) const;
+  [[nodiscard]] nb::tuple GetDimensions(const std::string& name) const;
 
   /// @brief Get number of cached images
   [[nodiscard]] size_t GetCacheSize() const;
@@ -75,7 +77,7 @@ class AssociatedImages {
 class AssociatedData {
  private:
   std::weak_ptr<SlideReader> reader_;
-  mutable std::unordered_map<std::string, std::optional<py::object>> cache_;
+  mutable std::unordered_map<std::string, std::optional<nb::object>> cache_;
   mutable std::vector<std::string> available_names_;
   mutable bool names_loaded_ = false;
 
@@ -86,7 +88,7 @@ class AssociatedData {
   explicit AssociatedData(std::shared_ptr<SlideReader> reader);
 
   /// @brief Get associated data by name (lazy loading)
-  [[nodiscard]] py::object GetItem(const std::string& name) const;
+  [[nodiscard]] nb::object GetItem(const std::string& name) const;
 
   /// @brief Check if associated data exists
   [[nodiscard]] bool Contains(const std::string& name) const;
@@ -135,8 +137,8 @@ class FastSlide {
 
   /// @brief Context manager support
   FastSlide& __enter__();
-  bool __exit__(py::object exc_type, py::object exc_value,
-                py::object traceback);
+  bool __exit__(nb::object exc_type, nb::object exc_value,
+                nb::object traceback);
 
   /// @brief Read a region from the slide using level-native coordinates
   [[nodiscard]] std::shared_ptr<fastslide::Image> ReadRegion(
@@ -149,16 +151,17 @@ class FastSlide {
   [[nodiscard]] AssociatedData& GetAssociatedData();
 
   // Properties (pythonic getters)
-  [[nodiscard]] py::tuple GetDimensions() const;
-  [[nodiscard]] py::tuple GetLevelDimensions() const;
-  [[nodiscard]] py::tuple GetLevelDownsamples() const;
+  [[nodiscard]] nb::tuple GetDimensions() const;
+  [[nodiscard]] nb::tuple GetLevelDimensions() const;
+  [[nodiscard]] nb::tuple GetLevelDownsamples() const;
   [[nodiscard]] int GetLevelCount() const;
-  [[nodiscard]] py::dict GetProperties() const;
-  [[nodiscard]] py::tuple GetMpp() const;
-  [[nodiscard]] py::tuple GetBounds() const;
+  [[nodiscard]] nb::dict GetProperties() const;
+  [[nodiscard]] nb::tuple GetMpp() const;
+  [[nodiscard]] nb::tuple GetBounds() const;
   [[nodiscard]] std::string GetFormat() const;
+  [[nodiscard]] std::string GetDtype() const;
   [[nodiscard]] std::string GetQuickHash() const;
-  [[nodiscard]] py::list GetChannelMetadata() const;
+  [[nodiscard]] nb::list GetChannelMetadata() const;
   [[nodiscard]] int GetBestLevelForDownsample(double downsample) const;
 
   // Cache management
@@ -169,9 +172,9 @@ class FastSlide {
 
   // Utility methods
   [[nodiscard]] std::string GetSourcePath() const;
-  [[nodiscard]] py::tuple ConvertLevel0ToLevelNative(int64_t x, int64_t y,
+  [[nodiscard]] nb::tuple ConvertLevel0ToLevelNative(int64_t x, int64_t y,
                                                      int level) const;
-  [[nodiscard]] py::tuple ConvertLevelNativeToLevel0(uint32_t x, uint32_t y,
+  [[nodiscard]] nb::tuple ConvertLevelNativeToLevel0(uint32_t x, uint32_t y,
                                                      int level) const;
 
   // Channel visibility controls

@@ -11,14 +11,14 @@ Example:
     >>> print(slide.dimensions)
 """
 
-__version__ = "0.2.2"
+__version__ = "0.5.2"
 from fastslide._fastslide import *
 
 __all__ = [
     "FastSlide",
     "CacheManager",
     "TileCache",
-    "RuntimeGlobalCacheManager",
+    "GlobalCacheManager",
     "CacheInspectionStats",
     "CacheStats",
     "RuntimeCacheStats",

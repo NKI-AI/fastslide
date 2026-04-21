@@ -44,7 +44,7 @@ aifocore::Status QptiffMetadataLoader::LoadMetadata(
   uint16_t total_pages = static_cast<uint16_t>(tiff_index.NumPages());
 
   if (total_pages < 4) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         "QPTIFF file has too few pages: " + std::to_string(total_pages));
   }
@@ -57,8 +57,8 @@ aifocore::Status QptiffMetadataLoader::LoadMetadata(
                                     format));
 
   if (channels.empty()) {
-    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
-                            "No full resolution channels found");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "No full resolution channels found");
   }
 
   // Build level 0 from channels
@@ -109,14 +109,14 @@ aifocore::Result<uint16_t> QptiffMetadataLoader::ProcessFullResolutionChannels(
     // Parse XML
     pugi::xml_document doc;
     if (!doc.load_string(desc_result.c_str())) {
-      return aifocore::Status(
+      return AIFOCORE_MAKE_STATUS(
           aifocore::StatusCode::kInvalidArgument,
           "Failed to parse XML metadata on page " + std::to_string(page));
     }
 
     auto root = doc.child("PerkinElmer-QPI-ImageDescription");
     if (root.empty()) {
-      return aifocore::Status(
+      return AIFOCORE_MAKE_STATUS(
           aifocore::StatusCode::kInvalidArgument,
           "Invalid XML structure on page " + std::to_string(page));
     }
@@ -158,13 +158,10 @@ aifocore::Result<uint16_t> QptiffMetadataLoader::ProcessFullResolutionChannels(
         // Skip additional RGB pages
       } else {
         // This is a spectral/fluorescence channel
-        auto channel_result =
+        AIFOCORE_ASSIGN_OR_RETURN(
+            auto new_channel_info,
             formats::qptiff::QpTiffMetadataParser::ParseChannelInfo(
-                desc_result, static_cast<int>(channels.size()));
-        if (!channel_result.ok()) {
-          return channel_result.status();
-        }
-        auto new_channel_info = channel_result.value();
+                desc_result, static_cast<int>(channels.size())));
 
         QpTiffChannelInfo channel;
         channel.name = new_channel_info.name;
@@ -322,8 +319,8 @@ aifocore::Status QptiffMetadataLoader::ExtractResolutionMetadata(
   uint16_t res_unit = page_header.resolution_unit.value_or(3);
 
   if (!x_res.has_value() || !y_res.has_value()) {
-    return aifocore::Status(aifocore::StatusCode::kNotFound,
-                            "Missing resolution information in TIFF tags");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "Missing resolution information in TIFF tags");
   }
 
   // Convert resolution to microns per pixel
@@ -339,7 +336,7 @@ aifocore::Status QptiffMetadataLoader::ExtractResolutionMetadata(
       mpp_y = 10000.0 / y_res.value();
       break;
     default:
-      return aifocore::Status(
+      return AIFOCORE_MAKE_STATUS(
           aifocore::StatusCode::kInvalidArgument,
           "Unsupported resolution unit: " + std::to_string(res_unit));
   }
@@ -347,7 +344,7 @@ aifocore::Status QptiffMetadataLoader::ExtractResolutionMetadata(
   // Validate isotropic resolution
   if (std::abs(mpp_x - mpp_y) / std::max(mpp_x, mpp_y) > 0.01 || mpp_x <= 0.0 ||
       mpp_y <= 0.0) {
-    return aifocore::Status(
+    return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         "Computed MPP values are not isotropic enough or not positive: " +
             std::to_string(mpp_x) + ", " + std::to_string(mpp_y) + " µm/px");

@@ -756,7 +756,7 @@ Integration Issues
 ~~~~~~~~~~~~~~~~~~
 
 **Issue**: Python bindings not working
-   **Solution**: Ensure reader is properly registered and exported in pybind11 module
+   **Solution**: Ensure reader is properly registered and exported in the nanobind module
 
 **Issue**: Format not detected automatically
    **Solution**: Check file extension registration and format validation logic
