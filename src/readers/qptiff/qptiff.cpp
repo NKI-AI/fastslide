@@ -33,8 +33,10 @@
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/qptiff/metadata_parser.h"
+#include "fastslide/readers/qptiff/qptiff_exec_context.h"
 #include "fastslide/readers/qptiff/qptiff_metadata_loader.h"
 #include "fastslide/readers/qptiff/qptiff_plan_builder.h"
+#include "fastslide/readers/qptiff/qptiff_plan_context.h"
 #include "fastslide/readers/qptiff/qptiff_tile_executor.h"
 #include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/runtime/tile_writer.h"
@@ -229,14 +231,20 @@ Metadata QpTiffReader::GetMetadata() const {
 aifocore::Result<core::TilePlan> QpTiffReader::PrepareRequest(
     const core::TileRequest& request) const {
   // Use the plan builder helper to create the plan with tiff_index_
-  return QptiffPlanBuilder::BuildPlan(request, pyramid_, output_planar_config_,
-                                      *tiff_index_);
+  const QptiffPlanContext context{
+      .pyramid = pyramid_,
+      .output_planar_config = output_planar_config_,
+      .tiff_index = *tiff_index_,
+  };
+  return QptiffPlanBuilder::BuildPlan(request, context);
 }
 
 aifocore::Status QpTiffReader::ExecutePlan(const core::TilePlan& plan,
                                            runtime::Canvas& writer) const {
   // Use the tile executor helper to execute the plan with tiff_index_
-  return QptiffTileExecutor::ExecutePlan(plan, *this, writer);
+  const QptiffExecContext context(GetFilename(), pyramid_, *tiff_index_,
+                                  GetCache());
+  return QptiffTileExecutor::ExecutePlan(plan, context, writer);
 }
 
 void QpTiffReader::PopulateSlideProperties() {

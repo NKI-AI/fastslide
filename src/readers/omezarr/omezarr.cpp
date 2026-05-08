@@ -31,6 +31,7 @@
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/omezarr/omezarr_codec.h"
+#include "fastslide/readers/omezarr/omezarr_exec_context.h"
 #include "fastslide/readers/omezarr/omezarr_metadata.h"
 #include "fastslide/readers/omezarr/omezarr_plan_builder.h"
 #include "fastslide/readers/omezarr/omezarr_tile_executor.h"
@@ -390,7 +391,12 @@ aifocore::Result<core::TilePlan> OmeZarrReader::PrepareRequest(
 
 aifocore::Status OmeZarrReader::ExecutePlan(const core::TilePlan& plan,
                                             runtime::Canvas& canvas) const {
-  return OmeZarrTileExecutor::ExecutePlan(plan, *this, canvas);
+  const OmeZarrExecContext context{
+      .pyramid = pyramid_,
+      .cache = GetCache(),
+      .filename = filename_,
+  };
+  return OmeZarrTileExecutor::ExecutePlan(plan, context, canvas);
 }
 
 }  // namespace fastslide

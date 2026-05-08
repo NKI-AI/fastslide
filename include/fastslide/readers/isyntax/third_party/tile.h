@@ -27,10 +27,12 @@
 
 #pragma once
 
-#include "fastslide/readers/isyntax/third_party/isyntax.h"
 #include "fastslide/readers/isyntax/third_party/isyntax_types.h"
-#include "fastslide/readers/isyntax/third_party/platform/common.h"
-#include "fastslide/readers/isyntax/third_party/utils/block_allocator.h"
+
+typedef struct block_allocator_t block_allocator_t;
+typedef struct isyntax_image_t isyntax_image_t;
+typedef struct isyntax_level_t isyntax_level_t;
+typedef struct isyntax_t isyntax_t;
 
 namespace aifocore {
 class Status;

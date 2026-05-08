@@ -77,10 +77,12 @@
 #include "fastslide/readers/mrxs/mrxs_constants.h"
 #include "fastslide/readers/mrxs/mrxs_data_reader.h"
 #include "fastslide/readers/mrxs/mrxs_decoder.h"
+#include "fastslide/readers/mrxs/mrxs_exec_context.h"
 #include "fastslide/readers/mrxs/mrxs_index_reader.h"
 #include "fastslide/readers/mrxs/mrxs_ini_parser.h"
 #include "fastslide/readers/mrxs/mrxs_layer_parser.h"
 #include "fastslide/readers/mrxs/mrxs_plan_builder.h"
+#include "fastslide/readers/mrxs/mrxs_plan_context.h"
 #include "fastslide/readers/mrxs/mrxs_tile_executor.h"
 #include "fastslide/readers/mrxs/spatial_index.h"
 #include "fastslide/runtime/io/binary_utils.h"
@@ -1635,7 +1637,15 @@ aifocore::Result<std::vector<uint8_t>> MrxsReader::ReadTileData(
 aifocore::Result<core::TilePlan> MrxsReader::PrepareRequest(
     const core::TileRequest& request) const {
   // Use the plan builder helper to create the plan
-  return MrxsPlanBuilder::BuildPlan(request, *this);
+  AIFOCORE_ASSIGN_OR_RETURN(const auto level_info, GetLevelInfo(request.level));
+  AIFOCORE_ASSIGN_OR_RETURN(const auto spatial_index,
+                            GetSpatialIndex(request.level));
+  const MrxsPlanContext context{
+      .slide_info = slide_info_,
+      .level_info = level_info,
+      .spatial_index = spatial_index,
+  };
+  return MrxsPlanBuilder::BuildPlan(request, context);
 }
 
 /// @brief Execute a prepared tile plan (two-stage pipeline)
@@ -1655,7 +1665,8 @@ aifocore::Result<core::TilePlan> MrxsReader::PrepareRequest(
 aifocore::Status MrxsReader::ExecutePlan(const core::TilePlan& plan,
                                          runtime::Canvas& writer) const {
   // Use the tile executor helper to execute the plan
-  return MrxsTileExecutor::ExecutePlan(plan, *this, writer);
+  const MrxsExecContext context(dirname_, slide_info_, GetCache());
+  return MrxsTileExecutor::ExecutePlan(plan, context, writer);
 }
 
 }  // namespace fastslide

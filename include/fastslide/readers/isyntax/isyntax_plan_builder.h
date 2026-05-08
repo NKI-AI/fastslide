@@ -18,7 +18,7 @@
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
-#include "fastslide/readers/isyntax/isyntax.h"
+#include "fastslide/readers/isyntax/isyntax_plan_context.h"
 
 namespace fastslide {
 
@@ -27,10 +27,10 @@ class IsyntaxPlanBuilder {
  public:
   /// @brief Build a plan for the given request
   /// @param request Tile request specifying region and level
-  /// @param reader IsyntaxReader instance to access slide properties
+  /// @param context Read-only planning context
   /// @return Result containing the execution plan or error
   static aifocore::Result<core::TilePlan> BuildPlan(
-      const core::TileRequest& request, const IsyntaxReader& reader);
+      const core::TileRequest& request, const IsyntaxPlanContext& context);
 
   /// @brief Wavelet-origin sub-pixel shift in level pixels.
   ///

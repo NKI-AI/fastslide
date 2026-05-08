@@ -44,6 +44,7 @@
 /// fastslide_slide_reader_free(reader);
 /// ```
 
+#include "fastslide/c/api.h"
 #include "fastslide/c/image.h"
 #include "fastslide/c/registry.h"
 #include "fastslide/c/slide_reader.h"
@@ -60,19 +61,19 @@ extern "C" {
 
 /// @brief Get C API version string
 /// @return Version string in format "major.minor.patch"
-const char* fastslide_c_api_get_version(void);
+FASTSLIDE_API const char* fastslide_c_api_get_version(void);
 
 /// @brief Initialize FastSlide library
 /// @details This function initializes the slide readers registry and sets up
 ///          error handling. It should be called before using any other
 ///          FastSlide functions.
 /// @return 1 on success, 0 on failure
-int fastslide_initialize(void);
+FASTSLIDE_API int fastslide_initialize(void);
 
 /// @brief Cleanup FastSlide library
 /// @details This function cleans up global resources. Call this when done
 ///          with the FastSlide library.
-void fastslide_cleanup(void);
+FASTSLIDE_API void fastslide_cleanup(void);
 
 #ifdef __cplusplus
 }

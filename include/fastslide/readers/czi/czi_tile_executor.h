@@ -21,10 +21,9 @@
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/readers/cached_tile_executor.h"
+#include "fastslide/readers/czi/czi_exec_context.h"
 
 namespace fastslide {
-
-class CziReader;
 
 namespace runtime {
 class Canvas;
@@ -34,19 +33,19 @@ class Canvas;
 class CziTileExecutor : public CachedTileExecutor<CziTileExecutor> {
  public:
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
-                                      const CziReader& reader,
+                                      const CziExecContext& context,
                                       runtime::Canvas& writer);
 
   // CachedTileExecutor hooks.
   static runtime::TileKey MakeCacheKey(const core::TileReadOp& op,
-                                       const CziReader& reader);
+                                       const CziExecContext& context);
 
   static aifocore::Result<DecodedTileData> ReadTileFromDisk(
-      const core::TileReadOp& op, const CziReader& reader);
+      const core::TileReadOp& op, const CziExecContext& context);
 
  private:
   static aifocore::Status ExecuteTileOperation(const core::TileReadOp& op,
-                                               const CziReader& reader,
+                                               const CziExecContext& context,
                                                runtime::Canvas& writer,
                                                std::mutex& writer_mutex);
 };

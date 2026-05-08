@@ -88,8 +88,6 @@ class IsyntaxReader : public SlideReader, public ReaderFactory<IsyntaxReader> {
 
  private:
   friend class ReaderFactory<IsyntaxReader>;
-  friend class IsyntaxPlanBuilder;
-  friend class IsyntaxTileExecutor;
 
   explicit IsyntaxReader(std::string filename);
 

@@ -14,23 +14,16 @@
 
 #include "fastslide/readers/qptiff/qptiff_plan_builder.h"
 
-#include <span>
-#include <vector>
-
 #include "aifocore/status/result.h"
 #include "fastslide/readers/simpletiff_plan_builder_utils.h"
-#include "simpletiff/index.h"
 
 namespace fastslide {
 
 aifocore::Result<core::TilePlan> QptiffPlanBuilder::BuildPlan(
-    const core::TileRequest& request,
-    const std::vector<QpTiffLevelInfo>& pyramid,
-    PlanarConfig output_planar_config,
-    const simpletiff::TiffIndex& tiff_index) {
+    const core::TileRequest& request, const QptiffPlanContext& context) {
   return readers::simpletiff_plan::BuildMultiChannelPlan<QpTiffLevelInfo>(
-      request, std::span<const QpTiffLevelInfo>(pyramid), output_planar_config,
-      tiff_index);
+      request, context.pyramid, context.output_planar_config,
+      context.tiff_index);
 }
 
 }  // namespace fastslide

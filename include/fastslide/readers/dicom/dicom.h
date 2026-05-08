@@ -24,98 +24,18 @@
 #include <string_view>
 #include <vector>
 
-extern "C" {
-#include <dicom/dicom.h>
-}
-
 #include "aifocore/status/result.h"
 #include "fastslide/core/slide_descriptor.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
 #include "fastslide/image.h"
+#include "fastslide/readers/dicom/dicom_level_info.h"
 #include "fastslide/readers/reader_factory.h"
 #include "fastslide/slide_reader.h"
 
 namespace fastslide {
 
 namespace fs = std::filesystem;
-
-/// @brief Supported DICOM transfer syntaxes for pixel data decoding.
-enum class DicomTransferSyntax {
-  kUnsupported,
-  kExplicitVRLittleEndian,  // 1.2.840.10008.1.2.1 (uncompressed)
-  kJpegBaseline,            // 1.2.840.10008.1.2.4.50
-  kJpeg2000Lossless,        // 1.2.840.10008.1.2.4.90
-  kJpeg2000,                // 1.2.840.10008.1.2.4.91
-};
-
-/// @brief RAII wrapper for DcmFilehandle.
-struct DcmFilehandleDeleter {
-  void operator()(DcmFilehandle* fh) const {
-    if (fh)
-      dcm_filehandle_destroy(fh);
-  }
-};
-
-using UniqueDcmFilehandle =
-    std::unique_ptr<DcmFilehandle, DcmFilehandleDeleter>;
-
-/// @brief RAII wrapper for DcmFrame.
-struct DcmFrameDeleter {
-  void operator()(DcmFrame* frame) const {
-    if (frame)
-      dcm_frame_destroy(frame);
-  }
-};
-
-using UniqueDcmFrame = std::unique_ptr<DcmFrame, DcmFrameDeleter>;
-
-/// @brief Validated photometric interpretation for this file.
-enum class DicomPhotometric {
-  kRgb,         // RGB color model
-  kYbrFull422,  // YCbCr 4:2:2 (JPEG baseline)
-  kYbrIct,      // Irreversible Color Transform (JPEG 2000 lossy)
-};
-
-/// @brief One parsed DICOM file (one SOP instance).
-///
-/// Wraps a libdicom filehandle plus cached metadata needed for reading.
-struct DicomFile {
-  UniqueDcmFilehandle filehandle;
-  DicomTransferSyntax transfer_syntax = DicomTransferSyntax::kUnsupported;
-  DicomPhotometric photometric = DicomPhotometric::kRgb;
-  std::string slide_id;  // SeriesInstanceUID
-  std::string sop_instance_uid;
-  std::string filepath;
-
-  uint32_t total_pixel_matrix_columns = 0;
-  uint32_t total_pixel_matrix_rows = 0;
-  uint32_t columns = 0;  // Per-frame (tile) width.
-  uint32_t rows = 0;     // Per-frame (tile) height.
-
-  mutable std::mutex mutex;
-};
-
-/// @brief One pyramid level backed by a DicomFile.
-struct DicomLevel {
-  std::shared_ptr<DicomFile> file;
-  uint32_t width = 0;   // TotalPixelMatrixColumns
-  uint32_t height = 0;  // TotalPixelMatrixRows
-  uint32_t tile_w = 0;  // Columns (per frame)
-  uint32_t tile_h = 0;  // Rows (per frame)
-  double downsample = 1.0;
-  std::optional<double> pixel_spacing_x;
-  std::optional<double> pixel_spacing_y;
-  std::optional<double> objective_lens_power;
-};
-
-/// @brief One associated image (label, overview, thumbnail).
-struct DicomAssociated {
-  std::shared_ptr<DicomFile> file;
-  std::string name;
-  uint32_t width = 0;
-  uint32_t height = 0;
-};
 
 /// @brief DICOM Whole-Slide Image reader.
 ///

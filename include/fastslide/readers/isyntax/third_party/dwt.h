@@ -48,7 +48,13 @@
  */
 // End of OpenJPEG copyright notice.
 
-#include "fastslide/readers/isyntax/third_party/isyntax.h"
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <span>
+
+#include "fastslide/readers/isyntax/third_party/isyntax_types.h"
+#include "fastslide/readers/isyntax/third_party/platform/common.h"
 
 // The OpenJPEG DWT implementation below uses SSE2/AVX2 intrinsics when
 // available. GCC/Clang only define types like `__m128i`/`__m256i` after
@@ -58,6 +64,17 @@
 #include <immintrin.h>
 #endif
 #endif
+
+namespace isyntax {
+namespace dwt {
+
+// Inverse DWT (5/3) for a 2*quadrant_width x 2*quadrant_height coefficient
+// tile.
+void Idwt53(std::span<icoeff_t> idwt, int32_t quadrant_width,
+            int32_t quadrant_height);
+
+}  // namespace dwt
+}  // namespace isyntax
 
 #if (DWT_COEFF_BITS == 16)
 #ifdef __AVX2__

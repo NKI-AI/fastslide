@@ -24,25 +24,12 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/image.h"
+#include "fastslide/readers/ndpitiff/ndpitiff_level_info.h"
 #include "fastslide/readers/tiff_based_reader.h"
 #include "fastslide/readers/tiff_reader_factory.h"
 #include "simpletiff/index.h"
 
 namespace fastslide {
-
-/// @brief Pyramid level metadata for NDPI.
-struct NdpiTiffLevelInfo {
-  uint16_t page = 0;
-  ImageDimensions size = {0, 0};
-  double downsample_factor = 0.0;
-};
-
-/// @brief NDPI-associated image metadata (macro/map).
-struct NdpiTiffAssociatedInfo {
-  uint16_t page = 0;
-  ImageDimensions size = {0, 0};
-  std::string name;
-};
 
 /// @brief NDPI reader (Hamamatsu) implemented on top of simpletiff.
 class NdpiTiffReader : public TiffBasedReader,

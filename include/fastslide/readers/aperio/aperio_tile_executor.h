@@ -22,16 +22,11 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
+#include "fastslide/readers/aperio/aperio_exec_context.h"
 #include "fastslide/readers/cached_tile_executor.h"
 #include "fastslide/runtime/tile_writer.h"
 
 namespace fastslide {
-
-// Forward declaration
-class AperioReader;
-
-// Forward declaration of TIFF structure metadata
-struct TiffStructureMetadata;
 
 /// @brief Tile executor for Aperio SVS slides with thread-local buffer
 /// optimization
@@ -51,18 +46,19 @@ class AperioTileExecutor : public CachedTileExecutor<AperioTileExecutor> {
   /// @brief Execute a tile plan sequentially with thread-local buffer
   /// optimization
   /// @param plan Pre-computed tile plan from PrepareRequest
-  /// @param reader Aperio reader instance for data access
+  /// @param context Aperio execution context for data access
   /// @param writer Tile writer for output buffer management
-  /// @param tiff_metadata TIFF structure metadata from plan builder
   /// @return Status indicating success or failure
-  /// @note Continues processing even if individual tiles fail (logs warnings)
-  static aifocore::Status ExecutePlan(
-      const core::TilePlan& plan, const AperioReader& reader,
-      runtime::Canvas& writer, const TiffStructureMetadata& tiff_metadata);
+  /// @note Continues processing even if individual tiles fail (logs warnings).
+  /// @note Per-op TIFF page geometry is derived from `op.source_id` and the
+  ///       read-only `TiffIndex`, so concurrent ReadRegion calls on the same
+  ///       reader are safe (no shared mutable per-request metadata).
+  static aifocore::Status ExecutePlan(const core::TilePlan& plan,
+                                      const AperioExecContext& context,
+                                      runtime::Canvas& writer);
 
-  friend class CachedTileExecutor<AperioTileExecutor>;
-
- private:
+  /// @brief Per-op TIFF access parameters resolved from the read-only TIFF
+  /// index.
   struct TiffAccessParams {
     uint16_t page = 0;
     uint32_t tile_width = 0;
@@ -71,29 +67,40 @@ class AperioTileExecutor : public CachedTileExecutor<AperioTileExecutor> {
     bool is_tiled = false;
   };
 
+  /// @brief Resolve per-op TIFF geometry from the read-only TIFF index.
+  ///
+  /// Each `TileReadOp` carries its own page in `source_id`. The remaining
+  /// geometry fields (tile size, samples_per_pixel, storage type) are
+  /// immutable properties of that page. Looking them up on demand keeps the
+  /// executor stateless and concurrent-safe.
+  ///
+  /// Exposed for regression testing of the no-shared-state invariant.
+  static aifocore::Result<TiffAccessParams> ResolveAccessParams(
+      const core::TileReadOp& op, const AperioExecContext& context);
+
+  friend class CachedTileExecutor<AperioTileExecutor>;
+
+ private:
   /// @brief Execute a single tile operation (called sequentially)
   /// @param op Tile operation descriptor
-  /// @param reader Aperio reader instance
-  /// @param page TIFF page/directory number for this level
-  /// @param tile_width Tile width in pixels
-  /// @param tile_height Tile height in pixels
-  /// @param samples_per_pixel Number of samples per pixel (typically 3 for RGB)
-  /// @param is_tiled Whether TIFF is tiled or stripped
+  /// @param context Aperio execution context
+  /// @param params Per-op TIFF access parameters (page + geometry)
   /// @param writer Tile writer for output
   /// @return Status indicating success or failure
-  static aifocore::Status ExecuteTileOperation(
-      const core::TileReadOp& op, const AperioReader& reader, uint16_t page,
-      uint32_t tile_width, uint32_t tile_height, uint16_t samples_per_pixel,
-      bool is_tiled, runtime::Canvas& writer, std::mutex& writer_mutex);
+  static aifocore::Status ExecuteTileOperation(const core::TileReadOp& op,
+                                               const AperioExecContext& context,
+                                               const TiffAccessParams& params,
+                                               runtime::Canvas& writer,
+                                               std::mutex& writer_mutex);
 
   /// @brief Create cache key for a tile
   static TileKey MakeCacheKey(const core::TileReadOp& op,
-                              const AperioReader& reader,
+                              const AperioExecContext& context,
                               const TiffAccessParams& params);
 
   /// @brief Read and decode a single TIFF tile/strip (called on cache miss)
   static aifocore::Result<DecodedTileData> ReadTileFromDisk(
-      const core::TileReadOp& op, const AperioReader& reader,
+      const core::TileReadOp& op, const AperioExecContext& context,
       const TiffAccessParams& params);
 };
 

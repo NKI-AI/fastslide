@@ -23,6 +23,7 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/image.h"
+#include "fastslide/readers/philipstiff/philipstiff_level_info.h"
 #include "fastslide/readers/tiff_based_reader.h"
 #include "fastslide/readers/tiff_reader_factory.h"
 #include "simpletiff/index.h"
@@ -30,13 +31,6 @@
 namespace fs = std::filesystem;
 
 namespace fastslide {
-
-/// @brief Pyramid level metadata for Philips TIFF
-struct PhilipsTiffLevelInfo {
-  uint16_t page = 0;               ///< TIFF page number
-  ImageDimensions size = {0, 0};   ///< Level dimensions (width, height)
-  double downsample_factor = 0.0;  ///< Downsample factor relative to level 0
-};
 
 /// @brief Philips TIFF reader
 class PhilipsTiffReader : public TiffBasedReader,

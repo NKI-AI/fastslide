@@ -23,9 +23,27 @@
 
 namespace fastslide::runtime::decoders {
 
-/// @brief Decode a JPEG 2000 codestream (J2K or JP2) to RGB8 using OpenJPEG.
+/// @brief Source colour space of a JPEG 2000 codestream.
+///
+/// JPEG 2000 itself only encodes signal samples; the interpretation comes from
+/// the container (e.g. DICOM `PhotometricInterpretation`). When the source is
+/// `YBR_ICT`/`YBR_RCT`, the OpenJPEG decoder returns raw Y/Cb/Cr samples with a
+/// neutral chroma value of 128, which the caller must convert to RGB.
+enum class J2kColorspace {
+  kRgb,    ///< Components are R, G, B in display order.
+  kYCbCr,  ///< Components are Y, Cb, Cr (e.g. DICOM `YBR_ICT`/`YBR_RCT`).
+};
+
+struct J2kDecodeOptions {
+  J2kColorspace colorspace = J2kColorspace::kRgb;
+};
+
+/// @brief Decode a JPEG 2000 codestream (J2K or JP2) to packed RGB8.
+///
+/// Handles arbitrary horizontal/vertical chroma subsampling; for YCbCr input
+/// the conversion uses the JPEG/ITU-R BT.601 coefficients
 [[nodiscard]] aifocore::Result<DecodedRgb> DecodeJ2kToRgb(
-    std::span<const uint8_t> j2k_bytes);
+    std::span<const uint8_t> j2k_bytes, const J2kDecodeOptions& options = {});
 
 }  // namespace fastslide::runtime::decoders
 

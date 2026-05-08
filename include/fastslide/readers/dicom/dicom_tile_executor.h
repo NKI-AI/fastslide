@@ -21,10 +21,9 @@
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/readers/cached_tile_executor.h"
+#include "fastslide/readers/dicom/dicom_exec_context.h"
 
 namespace fastslide {
-
-class DicomReader;
 
 namespace runtime {
 class Canvas;
@@ -37,18 +36,18 @@ class Canvas;
 class DicomTileExecutor : public CachedTileExecutor<DicomTileExecutor> {
  public:
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
-                                      const DicomReader& reader,
+                                      const DicomExecContext& context,
                                       runtime::Canvas& writer);
 
   static runtime::TileKey MakeCacheKey(const core::TileReadOp& op,
-                                       const DicomReader& reader);
+                                       const DicomExecContext& context);
 
   static aifocore::Result<DecodedTileData> ReadTileFromDisk(
-      const core::TileReadOp& op, const DicomReader& reader);
+      const core::TileReadOp& op, const DicomExecContext& context);
 
  private:
   static aifocore::Status ExecuteTileOperation(const core::TileReadOp& op,
-                                               const DicomReader& reader,
+                                               const DicomExecContext& context,
                                                runtime::Canvas& writer,
                                                std::mutex& writer_mutex);
 };

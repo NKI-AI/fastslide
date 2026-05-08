@@ -29,7 +29,8 @@ namespace internal {
 
 aifocore::Result<std::vector<uint8_t>> DecodeDicomFrameBytes(
     std::span<const uint8_t> frame_bytes, DicomTransferSyntax syntax,
-    uint32_t expected_width, uint32_t expected_height) {
+    DicomPhotometric photometric, uint32_t expected_width,
+    uint32_t expected_height) {
   switch (syntax) {
     case DicomTransferSyntax::kExplicitVRLittleEndian: {
       const size_t expected =
@@ -42,6 +43,8 @@ aifocore::Result<std::vector<uint8_t>> DecodeDicomFrameBytes(
     }
 
     case DicomTransferSyntax::kJpegBaseline: {
+      // jpgd auto-converts YCbCr to RGB via JCS_YCbCr; the photometric tag is
+      // therefore informational only for this branch.
       AIFOCORE_ASSIGN_OR_RETURN(
           auto decoded, runtime::decoders::DecodeJpegToRgb(frame_bytes));
       return std::move(decoded.rgb);
@@ -49,8 +52,12 @@ aifocore::Result<std::vector<uint8_t>> DecodeDicomFrameBytes(
 
     case DicomTransferSyntax::kJpeg2000:
     case DicomTransferSyntax::kJpeg2000Lossless: {
-      AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
-                                runtime::decoders::DecodeJ2kToRgb(frame_bytes));
+      runtime::decoders::J2kDecodeOptions opts;
+      opts.colorspace = (photometric == DicomPhotometric::kYbrIct)
+                            ? runtime::decoders::J2kColorspace::kYCbCr
+                            : runtime::decoders::J2kColorspace::kRgb;
+      AIFOCORE_ASSIGN_OR_RETURN(
+          auto decoded, runtime::decoders::DecodeJ2kToRgb(frame_bytes, opts));
       return std::move(decoded.rgb);
     }
 

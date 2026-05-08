@@ -15,23 +15,17 @@
 #ifndef AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_OMETIFF_OMETIFF_PLAN_BUILDER_H_
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_OMETIFF_OMETIFF_PLAN_BUILDER_H_
 
-#include <vector>
-
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
-#include "fastslide/readers/ometiff/ometiff.h"
-#include "simpletiff/index.h"
+#include "fastslide/readers/ometiff/ometiff_plan_context.h"
 
 namespace fastslide {
 
 class OmetiffPlanBuilder {
  public:
   static aifocore::Result<core::TilePlan> BuildPlan(
-      const core::TileRequest& request,
-      const std::vector<OmeTiffLevelInfo>& pyramid,
-      PlanarConfig output_planar_config,
-      const simpletiff::TiffIndex& tiff_index);
+      const core::TileRequest& request, const OmetiffPlanContext& context);
 };
 
 }  // namespace fastslide

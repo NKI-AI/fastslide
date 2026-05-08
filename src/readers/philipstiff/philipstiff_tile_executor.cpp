@@ -5,7 +5,6 @@
 #include <mutex>
 
 #include "aifocore/utilities/fmt.h"
-#include "fastslide/readers/philipstiff/philipstiff.h"
 #include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/readers/simpletiff_tile_executor_utils.h"
 #include "fastslide/readers/tiff_based_tile_executor.h"
@@ -16,16 +15,16 @@
 namespace fastslide {
 
 aifocore::Status PhilipsTiffTileExecutor::ExecutePlan(
-    const core::TilePlan& plan, const PhilipsTiffReader& reader,
+    const core::TilePlan& plan, const PhilipsTiffExecContext& context,
     runtime::Canvas& writer) {
   const int level = plan.request.level;
-  if (level < 0 || level >= reader.GetLevelCount()) {
+  if (level < 0 || level >= context.level_count) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid level: {}", level));
   }
 
-  const auto& tiff_index = reader.GetTiffIndex();
+  const auto& tiff_index = context.tiff_index;
   return readers::simpletiff_exec::ExecuteOpsWithThreadPoolStopOnError(
       plan, writer,
       [&](const core::TileReadOp& operation, runtime::Canvas& writer_ref,

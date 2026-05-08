@@ -55,9 +55,9 @@ void CopyRgbaToRgb(const uint32_t* src, uint8_t* dst, int width, int height) {
 
 }  // namespace
 
-aifocore::Status IsyntaxTileExecutor::ExecutePlan(const core::TilePlan& plan,
-                                                  const IsyntaxReader& reader,
-                                                  runtime::Canvas& writer) {
+aifocore::Status IsyntaxTileExecutor::ExecutePlan(
+    const core::TilePlan& plan, const IsyntaxExecContext& context,
+    runtime::Canvas& writer) {
   if (plan.operations.empty()) {
     // No tiles to read - fill with background color (white)
     return writer.FillBackground(255, 255, 255);
@@ -71,7 +71,7 @@ aifocore::Status IsyntaxTileExecutor::ExecutePlan(const core::TilePlan& plan,
   // Submit sequence of tile operations
   auto futures = pool.submit_sequence(0, plan.operations.size(), [&](size_t i) {
     const auto& op = plan.operations[i];
-    auto status = ExecuteTileOperation(op, reader, writer, accumulator_mutex);
+    auto status = ExecuteTileOperation(op, context, writer, accumulator_mutex);
 
     if (!status.ok()) {
       error_count++;
@@ -94,15 +94,15 @@ aifocore::Status IsyntaxTileExecutor::ExecutePlan(const core::TilePlan& plan,
 }
 
 aifocore::Status IsyntaxTileExecutor::ExecuteTileOperation(
-    const core::TileReadOp& op, const IsyntaxReader& reader,
+    const core::TileReadOp& op, const IsyntaxExecContext& context,
     runtime::Canvas& writer, std::mutex& accumulator_mutex) {
   // Get tile size from reader
-  ImageDimensions tile_dims = reader.GetTileSize();
+  ImageDimensions tile_dims = context.GetTileSize();
   const uint32_t tile_w = static_cast<uint32_t>(tile_dims[0]);
   const uint32_t tile_h = static_cast<uint32_t>(tile_dims[1]);
 
   // Read and decode the tile (returns span view of thread-local buffer)
-  auto tile_data_or = ReadWithCache(op, reader);
+  auto tile_data_or = ReadWithCache(op, context);
   if (!tile_data_or.ok()) {
     std::cerr << "Failed to read/decode tile at (" << op.tile_coord.x << ", "
               << op.tile_coord.y << "): " << tile_data_or.status().ToString();
@@ -124,15 +124,15 @@ aifocore::Status IsyntaxTileExecutor::ExecuteTileOperation(
 }
 
 runtime::TileKey IsyntaxTileExecutor::MakeCacheKey(
-    const core::TileReadOp& op, const IsyntaxReader& reader) {
-  return runtime::TileKey(std::string(reader.GetFilename()),
+    const core::TileReadOp& op, const IsyntaxExecContext& context) {
+  return runtime::TileKey(std::string(context.GetFilename()),
                           static_cast<uint16_t>(op.level),
                           static_cast<uint32_t>(op.tile_coord.x),
                           static_cast<uint32_t>(op.tile_coord.y));
 }
 
 aifocore::Result<DecodedTileData> IsyntaxTileExecutor::ReadTileFromDisk(
-    const core::TileReadOp& op, const IsyntaxReader& reader) {
+    const core::TileReadOp& op, const IsyntaxExecContext& context) {
   // CRITICAL: Ensure thread-local memory is initialized for this worker thread
   // The iSyntax decode pipeline uses thread-local storage that must be
   // initialized before any tile operations. This is safe to call multiple
@@ -140,7 +140,7 @@ aifocore::Result<DecodedTileData> IsyntaxTileExecutor::ReadTileFromDisk(
   isyntax::IsyntaxFile::EnsureThreadInit();
 
   // Get tile size from reader
-  ImageDimensions tile_dims = reader.GetTileSize();
+  ImageDimensions tile_dims = context.GetTileSize();
   const int32_t tile_w = static_cast<int32_t>(tile_dims[0]);
   const int32_t tile_h = static_cast<int32_t>(tile_dims[1]);
 
@@ -158,9 +158,9 @@ aifocore::Result<DecodedTileData> IsyntaxTileExecutor::ReadTileFromDisk(
 
   // Lock mutex for libisyntax call (thread-safety for shared isyntax/cache)
   {
-    std::lock_guard<std::mutex> lock(reader.GetMutex());
+    std::lock_guard<std::mutex> lock(context.GetMutex());
 
-    AIFOCORE_RETURN_IF_ERROR(reader.GetIsyntaxFile().ReadTile(
+    AIFOCORE_RETURN_IF_ERROR(context.GetIsyntaxFile().ReadTile(
         op.level, op.tile_coord.x, op.tile_coord.y,
         std::span<uint32_t>(rgba_buffer, tile_w * tile_h),
         isyntax::PixelFormat::kRgba));

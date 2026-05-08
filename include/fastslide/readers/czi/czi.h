@@ -30,6 +30,7 @@
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
 #include "fastslide/image.h"
+#include "fastslide/readers/czi/czi_level_info.h"
 #include "fastslide/readers/czi/czi_spatial_index.h"
 #include "fastslide/readers/reader_factory.h"
 #include "fastslide/runtime/io/file_reader.h"
@@ -51,21 +52,7 @@ namespace fs = std::filesystem;
 class CziReader : public SlideReader, public ReaderFactory<CziReader> {
  public:
   /// @brief Public, stable view of a parsed subblock (tile).
-  ///
-  /// CZI subblocks are located in the file by `file_pos` and decoded based on
-  /// `compression` and `pixel_type`. Coordinates are in level-0 pixels.
-  struct SubblockInfo {
-    uint32_t index = 0;
-    int64_t file_pos = 0;
-    int32_t pixel_type = 0;
-    int32_t compression = 0;
-    int32_t pyramid_type = 0;
-    int32_t x = 0;
-    int32_t y = 0;
-    uint32_t w = 0;
-    uint32_t h = 0;
-    int32_t downsample = 1;
-  };
+  using SubblockInfo = CziSubblockInfo;
 
   static aifocore::Result<std::unique_ptr<CziReader>> Create(
       std::string_view filename) {
@@ -121,23 +108,7 @@ class CziReader : public SlideReader, public ReaderFactory<CziReader> {
  private:
   friend class ReaderFactory<CziReader>;
 
-  struct Subblock {
-    uint32_t index = 0;
-    int64_t file_pos = 0;  // Segment start (file-relative).
-    int32_t pixel_type = 0;
-    int32_t compression = 0;
-    int32_t pyramid_type = 0;
-
-    int32_t x = 0;  // Level-0 pixel coordinates after origin normalization.
-    int32_t y = 0;
-    uint32_t w = 0;  // Stored pixel size for this subblock.
-    uint32_t h = 0;
-
-    int32_t scene = 0;
-    int32_t channel = 0;
-    int32_t z_index = 0;
-    int32_t downsample = 1;
-  };
+  using Subblock = CziSubblockInfo;
 
   struct AttachmentInfo {
     std::string name;          // e.g. "Label"

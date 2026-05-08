@@ -23,15 +23,15 @@
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
-#include "fastslide/readers/dicom/dicom.h"
 
 namespace fastslide {
 
 namespace {
 
 aifocore::Status ValidateRequest(const core::TileRequest& request,
-                                 const DicomReader& reader) {
-  if (request.level < 0 || request.level >= reader.GetLevelCount()) {
+                                 const DicomPlanContext& context) {
+  if (request.level < 0 ||
+      request.level >= static_cast<int>(context.levels.size())) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid level: {}", request.level));
@@ -67,13 +67,12 @@ core::OutputSpec CreateOutputSpec(uint32_t width, uint32_t height) {
 }  // namespace
 
 aifocore::Result<core::TilePlan> DicomPlanBuilder::BuildPlan(
-    const core::TileRequest& request, const DicomReader& reader) {
+    const core::TileRequest& request, const DicomPlanContext& context) {
   core::TilePlan plan;
   plan.request = request;
 
-  AIFOCORE_RETURN_IF_ERROR(ValidateRequest(request, reader));
-  AIFOCORE_ASSIGN_OR_RETURN(const auto level_info,
-                            reader.GetLevelInfo(request.level));
+  AIFOCORE_RETURN_IF_ERROR(ValidateRequest(request, context));
+  const auto& level_info = context.level_info;
 
   double x = 0.0;
   double y = 0.0;
@@ -105,7 +104,7 @@ aifocore::Result<core::TilePlan> DicomPlanBuilder::BuildPlan(
     height = level_info.dimensions[1] - static_cast<uint32_t>(y);
   }
 
-  const auto& level = reader.GetLevel(request.level);
+  const auto& level = context.levels[static_cast<size_t>(request.level)];
   const uint32_t tile_w = level.tile_w;
   const uint32_t tile_h = level.tile_h;
 

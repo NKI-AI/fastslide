@@ -22,6 +22,7 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/image.h"
+#include "fastslide/readers/generictiff/generictiff_level_info.h"
 #include "fastslide/readers/tiff_based_reader.h"
 #include "fastslide/readers/tiff_reader_factory.h"
 #include "simpletiff/index.h"
@@ -29,20 +30,6 @@
 namespace fs = std::filesystem;
 
 namespace fastslide {
-
-/// @brief Pyramid level metadata for Generic TIFF
-struct GenericTiffLevelInfo {
-  uint16_t page = 0;               ///< TIFF page number
-  ImageDimensions size = {0, 0};   ///< Level dimensions (width, height)
-  double downsample_factor = 0.0;  ///< Downsample factor relative to level 0
-};
-
-/// @brief Associated image metadata for Generic TIFF
-struct GenericTiffAssociatedInfo {
-  uint16_t page;                  ///< TIFF page number
-  ImageDimensions size = {0, 0};  ///< Image dimensions (width, height)
-  std::string name;               ///< Image name (e.g., "thumbnail", "macro")
-};
 
 /// @brief Generic TIFF reader class implementing the SlideReader interface
 class GenericTiffReader : public TiffBasedReader,

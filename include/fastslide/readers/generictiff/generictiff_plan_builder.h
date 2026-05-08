@@ -5,16 +5,15 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
+#include "fastslide/readers/generictiff/generictiff_plan_context.h"
 
 namespace fastslide {
-
-class GenericTiffReader;
 
 class GenericTiffPlanBuilder {
  public:
   /// @brief Build a tile plan for a generic TIFF request.
   static aifocore::Result<core::TilePlan> BuildPlan(
-      const core::TileRequest& request, const GenericTiffReader& reader);
+      const core::TileRequest& request, const GenericTiffPlanContext& context);
 };
 
 }  // namespace fastslide

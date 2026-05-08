@@ -587,5 +587,92 @@ TEST(ReaderRegistryTest, FilenameWithMultipleDots) {
   EXPECT_NE(result.status().code(), aifocore::StatusCode::kNotFound);
 }
 
+// ============================================================================
+// Content-based fallback (extensionless / unknown extension)
+// ============================================================================
+
+namespace {
+
+/// @brief Make a descriptor whose `matches_content` claims any path whose
+/// basename starts with @p prefix.
+FormatDescriptor MakeContentMatchingDescriptor(std::string format_name,
+                                               std::string extension,
+                                               std::string prefix) {
+  FormatDescriptor desc;
+  desc.format_name = format_name;
+  desc.primary_extension = std::move(extension);
+  desc.capabilities = 0;
+  desc.factory = [name = format_name](std::shared_ptr<ITileCache> /*cache*/,
+                                      std::string_view filename)
+      -> aifocore::Result<std::unique_ptr<SlideReader>> {
+    return aifocore::Status(
+        aifocore::StatusCode::kInternal,
+        name + " factory called for: " + std::string(filename));
+  };
+  desc.matches_content =
+      [prefix = std::move(prefix)](std::string_view filename) -> bool {
+    auto pos = filename.find_last_of("/\\");
+    auto base =
+        (pos == std::string_view::npos) ? filename : filename.substr(pos + 1);
+    return base.substr(0, prefix.size()) == prefix;
+  };
+  return desc;
+}
+
+}  // namespace
+
+TEST(ReaderRegistryTest, ContentFallbackForExtensionlessFile) {
+  ReaderRegistry registry;
+  registry.RegisterFormat(
+      MakeContentMatchingDescriptor("FauxDicom", ".dcm", "DCM_"));
+
+  auto result = registry.CreateReader("/some/dir/DCM_42");
+
+  // Factory must run (we get its sentinel error message).
+  ASSERT_FALSE(result.ok());
+  EXPECT_EQ(result.status().code(), aifocore::StatusCode::kInternal);
+  EXPECT_NE(result.status().message().find("FauxDicom factory called"),
+            std::string::npos);
+}
+
+TEST(ReaderRegistryTest, ContentFallbackPicksFirstMatchingDescriptor) {
+  ReaderRegistry registry;
+  registry.RegisterFormat(
+      MakeContentMatchingDescriptor("FormatA", ".aaa", "match_"));
+  registry.RegisterFormat(
+      MakeContentMatchingDescriptor("FormatB", ".bbb", "other_"));
+
+  auto result = registry.CreateReader("match_001");
+  ASSERT_FALSE(result.ok());
+  EXPECT_NE(result.status().message().find("FormatA factory called"),
+            std::string::npos);
+  EXPECT_EQ(result.status().message().find("FormatB factory called"),
+            std::string::npos);
+}
+
+TEST(ReaderRegistryTest, ContentFallbackNoMatch) {
+  ReaderRegistry registry;
+  registry.RegisterFormat(
+      MakeContentMatchingDescriptor("FormatA", ".aaa", "match_"));
+
+  auto result = registry.CreateReader("/path/no_extension_here");
+  ASSERT_FALSE(result.ok());
+  EXPECT_EQ(result.status().code(), aifocore::StatusCode::kNotFound);
+  EXPECT_NE(result.status().message().find("Could not detect"),
+            std::string::npos);
+}
+
+TEST(ReaderRegistryTest, ContentFallbackUsedForUnknownExtension) {
+  ReaderRegistry registry;
+  registry.RegisterFormat(
+      MakeContentMatchingDescriptor("FormatA", ".aaa", "magic_"));
+
+  // Extension does not match anything registered, but content matcher does.
+  auto result = registry.CreateReader("magic_blob.unknownext");
+  ASSERT_FALSE(result.ok());
+  EXPECT_NE(result.status().message().find("FormatA factory called"),
+            std::string::npos);
+}
+
 }  // namespace runtime
 }  // namespace fastslide

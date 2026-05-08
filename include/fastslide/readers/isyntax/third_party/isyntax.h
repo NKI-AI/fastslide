@@ -36,27 +36,6 @@ typedef struct isyntax_xml_cpp_state_t isyntax_xml_cpp_state_t;
 
 #include "fastslide/readers/isyntax/third_party/third_party/yxml.h"
 
-#define DWT_COEFF_BITS 16
-#if (DWT_COEFF_BITS == 16)
-typedef int16_t icoeff_t;
-#else
-typedef int32_t icoeff_t;
-#endif
-
-#define ISYNTAX_IDWT_PAD_L 4
-#define ISYNTAX_IDWT_PAD_R 4
-#define ISYNTAX_IDWT_FIRST_VALID_PIXEL 7
-
-#define ISYNTAX_ADJ_TILE_TOP_LEFT 0x100
-#define ISYNTAX_ADJ_TILE_TOP_CENTER 0x80
-#define ISYNTAX_ADJ_TILE_TOP_RIGHT 0x40
-#define ISYNTAX_ADJ_TILE_CENTER_LEFT 0x20
-#define ISYNTAX_ADJ_TILE_CENTER 0x10
-#define ISYNTAX_ADJ_TILE_CENTER_RIGHT 8
-#define ISYNTAX_ADJ_TILE_BOTTOM_LEFT 4
-#define ISYNTAX_ADJ_TILE_BOTTOM_CENTER 2
-#define ISYNTAX_ADJ_TILE_BOTTOM_RIGHT 1
-
 enum isyntax_image_type_enum {
   ISYNTAX_IMAGE_TYPE_NONE = 0,
   ISYNTAX_IMAGE_TYPE_MACROIMAGE = 1,
@@ -439,38 +418,3 @@ typedef struct isyntax_t {
 
 // function prototypes
 // void isyntax_set_work_queue(isyntax_t *isyntax, work_queue_t *work_queue);
-
-#ifdef __cplusplus
-
-#include <cstddef>
-#include <span>
-
-namespace isyntax {
-
-namespace dwt {
-
-// Inverse DWT (5/3) for a 2*quadrant_width x 2*quadrant_height coefficient
-// tile.
-void Idwt53(std::span<icoeff_t> idwt, int32_t quadrant_width,
-            int32_t quadrant_height);
-
-}  // namespace dwt
-
-// C++ convenience constants mirroring the legacy C macros.
-inline constexpr int kIdwtPadL = ISYNTAX_IDWT_PAD_L;
-inline constexpr int kIdwtPadR = ISYNTAX_IDWT_PAD_R;
-inline constexpr int kIdwtFirstValidPixel = ISYNTAX_IDWT_FIRST_VALID_PIXEL;
-
-// Span helpers for coefficient blocks.
-inline std::span<icoeff_t> CoeffSpan(icoeff_t* ptr, std::size_t count) {
-  return std::span<icoeff_t>(ptr, count);
-}
-
-inline std::span<const icoeff_t> CoeffSpan(const icoeff_t* ptr,
-                                           std::size_t count) {
-  return std::span<const icoeff_t>(ptr, count);
-}
-
-}  // namespace isyntax
-
-#endif  // __cplusplus

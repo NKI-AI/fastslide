@@ -16,7 +16,8 @@
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_QPTIFF_QPTIFF_TILE_EXECUTOR_H_
 
 #include "fastslide/readers/multi_channel_tiff_tile_executor.h"
-#include "fastslide/readers/qptiff/qptiff.h"
+#include "fastslide/readers/qptiff/qptiff_exec_context.h"
+#include "fastslide/readers/qptiff/qptiff_level_info.h"
 
 /**
  * @file qptiff_tile_executor.h
@@ -35,7 +36,7 @@
 namespace fastslide {
 
 using QptiffTileExecutor =
-    MultiChannelTiffTileExecutor<QpTiffReader, QpTiffLevelInfo>;
+    MultiChannelTiffTileExecutor<QptiffExecContext, QpTiffLevelInfo>;
 
 }  // namespace fastslide
 

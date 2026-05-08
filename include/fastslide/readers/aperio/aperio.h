@@ -24,8 +24,10 @@
 #include <vector>
 
 #include "aifocore/status/result.h"
+#include "fastslide/core/tile_plan.h"
+#include "fastslide/core/tile_request.h"
 #include "fastslide/image.h"
-#include "fastslide/readers/aperio/aperio_plan_builder.h"
+#include "fastslide/readers/aperio/aperio_level_info.h"
 #include "fastslide/readers/aperio/metadata_parser.h"
 #include "fastslide/readers/tiff_based_reader.h"
 #include "fastslide/readers/tiff_reader_factory.h"
@@ -72,20 +74,6 @@
 namespace fs = std::filesystem;
 
 namespace fastslide {
-
-/// @brief Pyramid level metadata for Aperio
-struct AperioLevelInfo {
-  uint16_t page = 0;               ///< TIFF page number
-  ImageDimensions size = {0, 0};   ///< Level dimensions (width, height)
-  double downsample_factor = 0.0;  ///< Downsample factor relative to level 0
-};
-
-/// @brief Associated image metadata for Aperio
-struct AperioAssociatedInfo {
-  uint16_t page;                  ///< TIFF page number
-  ImageDimensions size = {0, 0};  ///< Image dimensions (width, height)
-  std::string name;               ///< Image name (e.g., "thumbnail", "macro")
-};
 
 /// @brief Aperio reader class implementing the SlideReader interface
 class AperioReader : public TiffBasedReader,
@@ -178,10 +166,6 @@ class AperioReader : public TiffBasedReader,
 
   /// @brief SimpleTiff index for thread-safe TIFF operations
   std::unique_ptr<simpletiff::TiffIndex> tiff_index_;
-
-  /// @brief Cached TIFF structure metadata from most recent PrepareRequest call
-  /// @note Mutable to allow caching in const PrepareRequest method
-  mutable TiffStructureMetadata tiff_metadata_;
 
   /// @brief Process Aperio metadata and build pyramid structure
   /// @return Status indicating success or failure

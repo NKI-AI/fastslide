@@ -18,16 +18,15 @@
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
+#include "fastslide/readers/czi/czi_plan_context.h"
 
 namespace fastslide {
-
-class CziReader;
 
 /// @brief Plan builder for CZI (two-stage pipeline stage 1).
 class CziPlanBuilder {
  public:
   static aifocore::Result<core::TilePlan> BuildPlan(
-      const core::TileRequest& request, const CziReader& reader);
+      const core::TileRequest& request, const CziPlanContext& context);
 };
 
 }  // namespace fastslide

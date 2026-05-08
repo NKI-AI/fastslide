@@ -29,7 +29,10 @@
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
+#include "fastslide/readers/ndpitiff/ndpitiff_exec_context.h"
+#include "fastslide/readers/ndpitiff/ndpitiff_jpeg_header.h"
 #include "fastslide/readers/ndpitiff/ndpitiff_plan_builder.h"
+#include "fastslide/readers/ndpitiff/ndpitiff_plan_context.h"
 #include "fastslide/readers/ndpitiff/ndpitiff_tile_executor.h"
 #include "simpletiff/index.h"
 #include "simpletiff/io_utils.h"
@@ -103,6 +106,34 @@ constexpr uint16_t kPhotometricYCbCr = 6;
     default:
       return "unknown";
   }
+}
+
+// Validates that an NDPI associated image page (macro/map) has plausible
+// parameters and can be decoded by ReadAssociatedImage.
+//
+// Some NDPI files contain map pages that omit required TIFF tags such as
+// SamplesPerPixel. Such pages cannot be decoded through the generic simpletiff
+// path (which requires samples_per_pixel * bytes_per_sample > 0). For
+// JPEG-compressed pages the actual sample count is recovered from the JPEG SOF
+// marker by the NDPI reader, so a missing SamplesPerPixel tag is tolerated.
+[[nodiscard]] bool IsAssociatedImagePageDecodable(
+    const simpletiff::TiffIndex& tiff_index, uint16_t page_index) {
+  if (page_index >= tiff_index.NumPages()) {
+    return false;
+  }
+  const auto& page = tiff_index.Page(page_index);
+  if (page.width == 0 || page.height == 0) {
+    return false;
+  }
+  if (page.storage == simpletiff::Storage::kUnknown) {
+    return false;
+  }
+  if (page.compression == kCompressionJpeg &&
+      (page.storage == simpletiff::Storage::kTiles ||
+       page.storage == simpletiff::Storage::kStrips)) {
+    return true;
+  }
+  return page.samples_per_pixel > 0 && page.bits_per_sample > 0;
 }
 
 void MaybeDumpJpegStreamOnce(std::span<const uint8_t> jpeg_stream) {
@@ -614,12 +645,23 @@ ImageDimensions NdpiTiffReader::GetTileSize() const {
 
 aifocore::Result<core::TilePlan> NdpiTiffReader::PrepareRequest(
     const core::TileRequest& request) const {
-  return NdpiTiffPlanBuilder::BuildPlan(request, *this);
+  const NdpiTiffPlanContext context{
+      .pyramid_levels = pyramid_levels_,
+      .tiff_index = GetTiffIndex(),
+  };
+  return NdpiTiffPlanBuilder::BuildPlan(request, context);
 }
 
 aifocore::Status NdpiTiffReader::ExecutePlan(const core::TilePlan& plan,
                                              runtime::Canvas& writer) const {
-  return NdpiTiffTileExecutor::ExecutePlan(plan, *this, writer);
+  const NdpiTiffExecContext context{
+      .tiff_index = GetTiffIndex(),
+      .level_count = GetLevelCount(),
+      .jpeg_header_template = jpeg_header_template_,
+      .sof_height_offsets = sof_height_offsets_,
+      .sof_width_offsets = sof_width_offsets_,
+  };
+  return NdpiTiffTileExecutor::ExecutePlan(plan, context, writer);
 }
 
 uint16_t NdpiTiffReader::GetLevel0Page() const {
@@ -831,14 +873,40 @@ aifocore::Status NdpiTiffReader::LoadDirectories() {
   }
 
   if (macro_page.has_value()) {
-    const auto& p = tiff_index_->Page(*macro_page);
-    associated_images_.push_back(
-        {.page = *macro_page, .size = {p.width, p.height}, .name = "macro"});
+    if (IsAssociatedImagePageDecodable(*tiff_index_, *macro_page)) {
+      const auto& p = tiff_index_->Page(*macro_page);
+      associated_images_.push_back(
+          {.page = *macro_page, .size = {p.width, p.height}, .name = "macro"});
+    } else if (IsNdpiDebugEnabled()) {
+      const auto& p = tiff_index_->Page(*macro_page);
+      std::fprintf(stderr,
+                   "[NDPI] Skipping macro page %u: undecodable parameters "
+                   "(samples_per_pixel=%u bits_per_sample=%u storage=%s "
+                   "compression=%u)\n",
+                   static_cast<unsigned>(*macro_page),
+                   static_cast<unsigned>(p.samples_per_pixel),
+                   static_cast<unsigned>(p.bits_per_sample),
+                   StorageName(p.storage),
+                   static_cast<unsigned>(p.compression));
+    }
   }
   if (map_page.has_value()) {
-    const auto& p = tiff_index_->Page(*map_page);
-    associated_images_.push_back(
-        {.page = *map_page, .size = {p.width, p.height}, .name = "map"});
+    if (IsAssociatedImagePageDecodable(*tiff_index_, *map_page)) {
+      const auto& p = tiff_index_->Page(*map_page);
+      associated_images_.push_back(
+          {.page = *map_page, .size = {p.width, p.height}, .name = "map"});
+    } else if (IsNdpiDebugEnabled()) {
+      const auto& p = tiff_index_->Page(*map_page);
+      std::fprintf(stderr,
+                   "[NDPI] Skipping map page %u: undecodable parameters "
+                   "(samples_per_pixel=%u bits_per_sample=%u storage=%s "
+                   "compression=%u)\n",
+                   static_cast<unsigned>(*map_page),
+                   static_cast<unsigned>(p.samples_per_pixel),
+                   static_cast<unsigned>(p.bits_per_sample),
+                   StorageName(p.storage),
+                   static_cast<unsigned>(p.compression));
+    }
   }
 
   return aifocore::Status::OkStatus();
@@ -935,25 +1003,9 @@ aifocore::Status NdpiTiffReader::LoadJpegHeaderTemplate() {
 aifocore::Status NdpiTiffReader::BuildPatchedJpegHeader(
     uint16_t tile_width, uint16_t tile_height,
     std::vector<uint8_t>& out) const {
-  if (jpeg_header_template_.empty() || sof_height_offsets_.empty() ||
-      sof_height_offsets_.size() != sof_width_offsets_.size()) {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
-                                "NDPI JPEG header template is not initialized");
-  }
-  out = jpeg_header_template_;
-  for (size_t i = 0; i < sof_height_offsets_.size(); ++i) {
-    const size_t h_off = sof_height_offsets_[i];
-    const size_t w_off = sof_width_offsets_[i];
-    if (h_off + 1 >= out.size() || w_off + 1 >= out.size()) {
-      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
-                                  "SOF offsets out of bounds");
-    }
-    out[h_off + 0] = static_cast<uint8_t>((tile_height >> 8U) & 0xFF);
-    out[h_off + 1] = static_cast<uint8_t>(tile_height & 0xFF);
-    out[w_off + 0] = static_cast<uint8_t>((tile_width >> 8U) & 0xFF);
-    out[w_off + 1] = static_cast<uint8_t>(tile_width & 0xFF);
-  }
-  return aifocore::Status::OkStatus();
+  return BuildPatchedNdpiJpegHeader(jpeg_header_template_, sof_height_offsets_,
+                                    sof_width_offsets_, tile_width, tile_height,
+                                    out);
 }
 
 }  // namespace fastslide

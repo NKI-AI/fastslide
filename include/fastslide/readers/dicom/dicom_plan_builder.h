@@ -18,16 +18,15 @@
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
+#include "fastslide/readers/dicom/dicom_plan_context.h"
 
 namespace fastslide {
-
-class DicomReader;
 
 /// @brief Plan builder for DICOM WSI (two-stage pipeline stage 1).
 class DicomPlanBuilder {
  public:
   static aifocore::Result<core::TilePlan> BuildPlan(
-      const core::TileRequest& request, const DicomReader& reader);
+      const core::TileRequest& request, const DicomPlanContext& context);
 };
 
 }  // namespace fastslide

@@ -25,7 +25,6 @@
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
-#include "fastslide/readers/czi/czi.h"
 #include "fastslide/readers/czi/czi_spatial_index.h"
 
 namespace fastslide {
@@ -33,8 +32,8 @@ namespace fastslide {
 namespace {
 
 aifocore::Status ValidateRequest(const core::TileRequest& request,
-                                 const CziReader& reader) {
-  if (request.level < 0 || request.level >= reader.GetLevelCount()) {
+                                 const CziPlanContext& context) {
+  if (request.level < 0 || request.level >= context.level_count) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid level: {}", request.level));
@@ -106,13 +105,12 @@ std::optional<core::TileReadOp> CreateTileOperation(
 }  // namespace
 
 aifocore::Result<core::TilePlan> CziPlanBuilder::BuildPlan(
-    const core::TileRequest& request, const CziReader& reader) {
+    const core::TileRequest& request, const CziPlanContext& context) {
   core::TilePlan plan;
   plan.request = request;
 
-  AIFOCORE_RETURN_IF_ERROR(ValidateRequest(request, reader));
-  AIFOCORE_ASSIGN_OR_RETURN(const auto level_info,
-                            reader.GetLevelInfo(request.level));
+  AIFOCORE_RETURN_IF_ERROR(ValidateRequest(request, context));
+  const auto& level_info = context.level_info;
 
   double x = 0.0;
   double y = 0.0;
@@ -146,8 +144,7 @@ aifocore::Result<core::TilePlan> CziPlanBuilder::BuildPlan(
   }
 
   // Get spatial index for this level.
-  AIFOCORE_ASSIGN_OR_RETURN(const auto& index,
-                            reader.GetSpatialIndex(request.level));
+  const auto& index = context.spatial_index;
 
   auto tile_indices = index->QueryRegion(x, y, width, height);
   const auto& tiles = index->GetTiles();

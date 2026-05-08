@@ -26,6 +26,7 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/image.h"
+#include "fastslide/readers/ometiff/ometiff_level_info.h"
 #include "fastslide/readers/tiff_based_reader.h"
 #include "fastslide/readers/tiff_reader_factory.h"
 #include "fastslide/utilities/colors.h"
@@ -41,16 +42,6 @@ struct OmeTiffChannelInfo {
   std::string name;       ///< Channel name (e.g. "DAPI")
   std::string biomarker;  ///< Biomarker (often same as name)
   ColorRGB color;         ///< Display color (OME Channel@Color)
-};
-
-/// @brief Pyramid level mapping: one page per channel for this level
-struct OmeTiffLevelInfo {
-  std::vector<uint32_t> pages;    ///< TIFF page indices (size = num_channels)
-  ImageDimensions size = {0, 0};  ///< Level dimensions
-  bool tiled = false;
-  bool allow_random_access = false;
-
-  void Reserve(size_t n) { pages.reserve(n); }
 };
 
 /// @brief Minimal slide-level metadata for OME-TIFF

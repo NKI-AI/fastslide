@@ -25,9 +25,12 @@ namespace fastslide::runtime::decoders {
 
 /// @brief Decode an uncompressed 24-bit BMP bitstream to 8-bit RGB pixels.
 ///
-/// Supports both top-down and bottom-up BMP variants and converts the BGR
-/// channel order found on disk to RGB. Compressed BMPs (RLE, BITFIELDS, …)
-/// and bit depths other than 24 are reported as `kUnimplemented`.
+/// Targeted at the `BMP24` (Windows V3+ `BITMAPINFOHEADER`, `biCompression =
+/// BI_RGB`, `biPlanes = 1`, `biBitCount = 24`) variant produced by 3DHISTECH
+/// MRXS slides. Both top-down and bottom-up row orderings are supported, and
+/// the on-disk BGR channel order is converted to RGB. Anything else
+/// (compressed BMPs such as RLE/BITFIELDS, 1/4/8/16/32-bit depths, multiple
+/// planes, embedded JPEG/PNG, ...) is reported as `kUnimplemented`.
 ///
 /// @param bmp_bytes In-memory BMP bitstream.
 /// @return DecodedRgb on success, otherwise a status describing the failure.

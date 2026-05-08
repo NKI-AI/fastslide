@@ -22,7 +22,9 @@
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
+#include "fastslide/readers/generictiff/generictiff_exec_context.h"
 #include "fastslide/readers/generictiff/generictiff_plan_builder.h"
+#include "fastslide/readers/generictiff/generictiff_plan_context.h"
 #include "fastslide/readers/generictiff/generictiff_tile_executor.h"
 #include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/readers/tiff_quickhash.h"
@@ -214,12 +216,20 @@ uint16_t GenericTiffReader::GetLevel0Page() const {
 
 aifocore::Result<core::TilePlan> GenericTiffReader::PrepareRequest(
     const core::TileRequest& request) const {
-  return GenericTiffPlanBuilder::BuildPlan(request, *this);
+  const GenericTiffPlanContext context{
+      .pyramid_levels = pyramid_levels_,
+      .tiff_index = GetTiffIndex(),
+  };
+  return GenericTiffPlanBuilder::BuildPlan(request, context);
 }
 
 aifocore::Status GenericTiffReader::ExecutePlan(const core::TilePlan& plan,
                                                 runtime::Canvas& writer) const {
-  return GenericTiffTileExecutor::ExecutePlan(plan, *this, writer);
+  const GenericTiffExecContext context{
+      .tiff_index = GetTiffIndex(),
+      .level_count = GetLevelCount(),
+  };
+  return GenericTiffTileExecutor::ExecutePlan(plan, context, writer);
 }
 
 aifocore::Status GenericTiffReader::ProcessMetadata() {
