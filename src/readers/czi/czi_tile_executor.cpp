@@ -34,7 +34,6 @@
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "aifocore/utilities/thread_pool_singleton.h"
-#include "fastslide/readers/czi/czi.h"
 #include "fastslide/runtime/decoders/jpeg_decoder.h"
 #include "fastslide/runtime/decoders/jpeg_xr_decoder.h"
 #include "fastslide/runtime/io/ascii_utils.h"
@@ -267,7 +266,7 @@ aifocore::Result<std::vector<uint8_t>> ConvertRawToRgb8(
 }  // namespace
 
 aifocore::Status CziTileExecutor::ExecutePlan(const core::TilePlan& plan,
-                                              const CziReader& reader,
+                                              const CziExecContext& context,
                                               runtime::Canvas& writer) {
   if (plan.operations.empty()) {
     const auto& bg = plan.output.background;
@@ -280,7 +279,7 @@ aifocore::Status CziTileExecutor::ExecutePlan(const core::TilePlan& plan,
 
   auto futures = pool.submit_sequence(0, plan.operations.size(), [&](size_t i) {
     const auto& op = plan.operations[i];
-    auto st = ExecuteTileOperation(op, reader, writer, writer_mutex);
+    auto st = ExecuteTileOperation(op, context, writer, writer_mutex);
     if (!st.ok()) {
       const int n = ++error_count;
       if (n <= 10) {
@@ -294,18 +293,20 @@ aifocore::Status CziTileExecutor::ExecutePlan(const core::TilePlan& plan,
 }
 
 runtime::TileKey CziTileExecutor::MakeCacheKey(const core::TileReadOp& op,
-                                               const CziReader& reader) {
-  return runtime::TileKey(reader.GetFilename(), static_cast<uint16_t>(op.level),
-                          op.tile_coord.x, op.tile_coord.y);
+                                               const CziExecContext& context) {
+  return runtime::TileKey(std::string(context.GetFilename()),
+                          static_cast<uint16_t>(op.level), op.tile_coord.x,
+                          op.tile_coord.y);
 }
 
 aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
-    const core::TileReadOp& op, const CziReader& reader) {
+    const core::TileReadOp& op, const CziExecContext& context) {
   const uint32_t subblock_index = op.tile_coord.x;
-  const auto sb = reader.GetSubblockInfo(subblock_index);
+  const auto& sb = context.GetSubblockInfo(subblock_index);
 
   FileReader file;
-  AIFOCORE_ASSIGN_OR_RETURN(file, FileReader::Open(reader.GetFilename(), "rb"));
+  AIFOCORE_ASSIGN_OR_RETURN(
+      file, FileReader::Open(std::string(context.GetFilename()), "rb"));
   AIFOCORE_RETURN_IF_ERROR(file.Seek(sb.file_pos));
 
   char sid_raw[16] = {};
@@ -406,15 +407,15 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
 }
 
 aifocore::Status CziTileExecutor::ExecuteTileOperation(
-    const core::TileReadOp& op, const CziReader& reader,
+    const core::TileReadOp& op, const CziExecContext& context,
     runtime::Canvas& writer, std::mutex& writer_mutex) {
-  auto tile_data_or = ReadWithCache(op, reader);
+  auto tile_data_or = ReadWithCache(op, context);
   if (!tile_data_or.ok()) {
     return aifocore::Status::OkStatus();
   }
 
   const uint32_t subblock_index = op.tile_coord.x;
-  const auto sb = reader.GetSubblockInfo(subblock_index);
+  const auto& sb = context.GetSubblockInfo(subblock_index);
   const uint32_t tile_w = sb.w;
   const uint32_t tile_h = sb.h;
 

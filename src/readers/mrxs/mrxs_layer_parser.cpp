@@ -85,10 +85,12 @@ constexpr std::string_view kKeyImageConcatFactor = "IMAGE_CONCAT_FACTOR";
 /// @brief Parse image format string from INI file
 ///
 /// Converts a string representation of image format (from Slidedat.ini) to
-/// the corresponding `MrxsImageFormat` enum value.
+/// the corresponding `MrxsImageFormat` enum value. 3DHISTECH writes the
+/// 24-bit RGB (BGR-on-disk) variant as `"BMP24"`; older third-party samples
+/// occasionally use the bare `"BMP"`. Both are mapped to `kBmp`.
 ///
-/// @param format_str Format string from INI file ("JPEG", "PNG", "BMP", or
-///                   "JPEGXR")
+/// @param format_str Format string from INI file ("JPEG", "PNG", "BMP",
+///                   "BMP24", or "JPEGXR")
 /// @return Result containing parsed format or error
 /// @retval InvalidArgument if format string is unknown
 aifocore::Result<MrxsImageFormat> ParseImageFormat(
@@ -99,7 +101,7 @@ aifocore::Result<MrxsImageFormat> ParseImageFormat(
   if (format_str == "PNG") {
     return MrxsImageFormat::kPng;
   }
-  if (format_str == "BMP") {
+  if (format_str == "BMP" || format_str == "BMP24") {
     return MrxsImageFormat::kBmp;
   }
   if (format_str == "JPEGXR" || format_str == "JPEG-XR" ||

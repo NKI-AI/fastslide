@@ -113,6 +113,18 @@ struct FormatDescriptor {
       std::shared_ptr<ITileCache>, std::string_view filename)>
       factory;
 
+  /// @brief Optional content-based matcher for extensionless inputs.
+  ///
+  /// Some formats (notably DICOM WSI exports) ship files without any
+  /// extension. When the registry cannot resolve a file by extension it
+  /// falls back to calling this matcher on every registered descriptor in
+  /// turn; the first one to return @c true wins.
+  ///
+  /// Implementations should be cheap (typically a small magic-byte read) and
+  /// must tolerate both regular files and directories. They should never
+  /// throw — return @c false on any I/O error.
+  std::function<bool(std::string_view filename)> matches_content;
+
   /// @brief Default constructor
   FormatDescriptor() : capabilities(0) {}
 

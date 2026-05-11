@@ -37,7 +37,9 @@
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/czi/czi_embedded.h"
+#include "fastslide/readers/czi/czi_exec_context.h"
 #include "fastslide/readers/czi/czi_plan_builder.h"
+#include "fastslide/readers/czi/czi_plan_context.h"
 #include "fastslide/readers/czi/czi_tile_executor.h"
 #include "fastslide/runtime/decoders/jpeg_decoder.h"
 #include "fastslide/runtime/io/ascii_utils.h"
@@ -865,12 +867,21 @@ ImageDimensions CziReader::GetTileSize() const {
 
 aifocore::Result<core::TilePlan> CziReader::PrepareRequest(
     const core::TileRequest& request) const {
-  return CziPlanBuilder::BuildPlan(request, *this);
+  AIFOCORE_ASSIGN_OR_RETURN(const auto level_info, GetLevelInfo(request.level));
+  AIFOCORE_ASSIGN_OR_RETURN(const auto spatial_index,
+                            GetSpatialIndex(request.level));
+  const CziPlanContext context{
+      .level_count = GetLevelCount(),
+      .level_info = level_info,
+      .spatial_index = spatial_index,
+  };
+  return CziPlanBuilder::BuildPlan(request, context);
 }
 
 aifocore::Status CziReader::ExecutePlan(const core::TilePlan& plan,
                                         runtime::Canvas& writer) const {
-  return CziTileExecutor::ExecutePlan(plan, *this, writer);
+  const CziExecContext context(filename_, subblocks_, GetCache());
+  return CziTileExecutor::ExecutePlan(plan, context, writer);
 }
 
 aifocore::Result<std::shared_ptr<czi::CziSpatialIndex>>
@@ -922,19 +933,7 @@ CziReader::GetSpatialIndex(int level) const {
 
 fastslide::CziReader::SubblockInfo CziReader::GetSubblockInfo(
     uint32_t index) const {
-  const auto& sb = subblocks_.at(index);
-  SubblockInfo out{};
-  out.index = sb.index;
-  out.file_pos = sb.file_pos;
-  out.pixel_type = sb.pixel_type;
-  out.compression = sb.compression;
-  out.pyramid_type = sb.pyramid_type;
-  out.x = sb.x;
-  out.y = sb.y;
-  out.w = sb.w;
-  out.h = sb.h;
-  out.downsample = sb.downsample;
-  return out;
+  return subblocks_.at(index);
 }
 
 }  // namespace fastslide

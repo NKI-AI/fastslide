@@ -66,16 +66,20 @@ aifocore::Result<std::tuple<int64_t, int64_t>> MrxsIndexReader::ReadHeader(
   std::vector<char> uuid_buffer(uuid_length);
   AIFOCORE_RETURN_IF_ERROR(file.Read(uuid_buffer.data(), uuid_length));
 
-  // Read hierarchical root pointer
-  int32_t hier_root_32;
-  AIFOCORE_ASSIGN_OR_RETURN(hier_root_32, ReadLeInt32(file.Get()));
-  int64_t hierarchical_root = hier_root_32;
+  // The header layout is:
+  //   [version][uuid][hier_root_ptr][nonhier_root_ptr]
+  // where each *_root_ptr is a 32-bit little-endian file offset pointing
+  // at the start of the corresponding pointer array. Both arrays are then
+  // indexed via `array_start + 4 * index`.
+  int32_t hier_root_value_32;
+  AIFOCORE_ASSIGN_OR_RETURN(hier_root_value_32, ReadLeInt32(file.Get()));
+  int64_t hier_root_array_start = hier_root_value_32;
 
-  // Calculate non-hierarchical root
-  // Format: [version][uuid][hier_root][nonhier_root_offset]
-  const int64_t nonhier_root = hierarchical_root + 4;
+  int32_t nonhier_root_value_32;
+  AIFOCORE_ASSIGN_OR_RETURN(nonhier_root_value_32, ReadLeInt32(file.Get()));
+  int64_t nonhier_root_array_start = nonhier_root_value_32;
 
-  return std::make_tuple(hierarchical_root, nonhier_root);
+  return std::make_tuple(hier_root_array_start, nonhier_root_array_start);
 }
 
 MrxsIndexReader::MrxsIndexReader(FileReader file,
@@ -427,16 +431,10 @@ std::vector<MiraxTileRecord> MrxsIndexReader::SubdivideImage(
 
 aifocore::Result<NonHierRecordData> MrxsIndexReader::ReadNonHierRecord(
     int record_index) {
-  // Navigate to non-hierarchical root
-  AIFOCORE_RETURN_IF_ERROR(file_.Seek(nonhier_root_));
-
-  // Read pointer to record pointer array
-  int32_t record_array_pointer_32;
-  AIFOCORE_ASSIGN_OR_RETURN(record_array_pointer_32, ReadLeInt32(file_.Get()));
-  int64_t record_array_pointer = record_array_pointer_32;
-
-  // Navigate to the specific record's pointer
-  const int64_t record_pointer_offset = record_array_pointer + 4 * record_index;
+  // `nonhier_root_` is the file offset of the start of the non-hierarchical
+  // record-pointer array (see ReadHeader). Each entry is a 32-bit pointer
+  // to that record's header.
+  const int64_t record_pointer_offset = nonhier_root_ + 4 * record_index;
   AIFOCORE_RETURN_IF_ERROR(file_.Seek(record_pointer_offset));
 
   // Read pointer to record header

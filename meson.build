@@ -1,7 +1,7 @@
 # FastSlide Meson Build File
 
 project('fastslide', 'cpp', 'c',
-  version: '0.5.2',
+  version: '0.5.4',
   license: 'Apache-2.0',
   default_options: [
     'cpp_std=c++20',
@@ -314,6 +314,12 @@ fastslide_sources = [
   src_prefix + 'runtime/reader_registry.cpp',
   src_prefix + 'runtime/register_builtin_formats.cpp',
   src_prefix + 'runtime/tile_writer.cpp',
+  src_prefix + 'runtime/tile_writer/bilinear_blit_hwy.cpp',
+  src_prefix + 'runtime/tile_writer/canvas_config.cpp',
+  src_prefix + 'runtime/tile_writer/paint_direct.cpp',
+  src_prefix + 'runtime/tile_writer/paint_dispatch.cpp',
+  src_prefix + 'runtime/tile_writer/paint_rgb.cpp',
+  src_prefix + 'runtime/tile_writer/rgb_blit.cpp',
   src_prefix + 'runtime/decoders/jpeg_decoder_common.cpp',
   src_prefix + 'runtime/decoders/jpeg_xr_decoder.cpp',
   src_prefix + 'runtime/decoders/png_decoder.cpp',
@@ -497,6 +503,7 @@ fastslide_headers = [
   'include/fastslide/runtime/reader_dependencies.h',
   'include/fastslide/runtime/reader_registry.h',
   'include/fastslide/runtime/tile_writer.h',
+  'include/fastslide/runtime/tile_writer/clip_region.h',
   'include/fastslide/runtime/io/binary_utils.h',
   'include/fastslide/runtime/decoders/jpeg_decoder.h',
   'include/fastslide/runtime/decoders/jpeg_xr_decoder.h',

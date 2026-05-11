@@ -26,6 +26,7 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/image.h"
+#include "fastslide/readers/qptiff/qptiff_level_info.h"
 #include "fastslide/readers/tiff_based_reader.h"
 #include "fastslide/readers/tiff_reader_factory.h"
 #include "fastslide/utilities/colors.h"
@@ -121,24 +122,6 @@ struct QpTiffMetadata {
 
   /// @brief Default constructor
   QpTiffMetadata() : bit_depth(0), binning(0), gain(0), offset_counts(0) {}
-};
-
-/// @brief Pyramid level metadata for QPTIFF
-struct QpTiffLevelInfo {
-  std::vector<uint16_t> pages;    ///< TIFF pages for this level
-  ImageDimensions size = {0, 0};  ///< Level dimensions (width, height)
-  bool tiled;                     ///< Whether all pages in this level are tiled
-  bool allow_random_access;       ///< Whether this level allows random access
-
-  /// @brief Reserve space for vectors
-  /// @param n Number of elements to reserve
-  void Reserve(size_t n) { pages.reserve(n); }
-};
-
-/// @brief Associated image metadata for QPTIFF
-struct QpTiffAssociatedInfo {
-  uint16_t page;                  ///< TIFF page number
-  ImageDimensions size = {0, 0};  ///< Image dimensions (width, height)
 };
 
 /// @brief Slide metadata structure

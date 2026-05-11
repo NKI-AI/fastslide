@@ -24,7 +24,6 @@
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
-#include "fastslide/readers/aperio/aperio.h"
 #include "fastslide/readers/simpletiff_plan_builder_utils.h"
 #include "fastslide/slide_reader.h"
 #include "simpletiff/index.h"
@@ -32,27 +31,32 @@
 namespace fastslide {
 
 aifocore::Result<core::TilePlan> AperioPlanBuilder::BuildPlan(
-    const core::TileRequest& request, const AperioReader& reader,
-    TiffStructureMetadata& tiff_metadata) {
+    const core::TileRequest& request, const AperioPlanContext& context) {
 
   core::TilePlan plan;
   plan.request = request;
 
   // Validate request
-  AIFOCORE_RETURN_IF_ERROR(ValidateRequest(request, reader));
+  AIFOCORE_RETURN_IF_ERROR(ValidateRequest(request, context));
 
   // Get level info
-  AIFOCORE_ASSIGN_OR_RETURN(const auto& level_info,
-                            reader.GetLevelInfo(request.level));
+  const auto& aperio_level = context.pyramid_levels[request.level];
+  LevelInfo level_info;
+  level_info.dimensions = {aperio_level.size[0], aperio_level.size[1]};
+  level_info.downsample_factor = aperio_level.downsample_factor;
 
   // Get pyramid level metadata
-  const auto& pyramid_levels = reader.GetPyramidLevels();
-  const auto& aperio_level = pyramid_levels[request.level];
   const uint16_t page = aperio_level.page;
 
-  // Query TIFF structure
+  // Query TIFF structure into a *local* metadata snapshot. We deliberately do
+  // not stash this on the reader: each `TileReadOp` already carries its own
+  // page in `source_id`, and the executor re-derives per-page geometry from
+  // the read-only `TiffIndex`. Sharing a mutable cross-request snapshot
+  // previously caused tile_index/page mismatches when ReadRegion was invoked
+  // concurrently for different pyramid levels (see regression test).
+  TiffStructureMetadata tiff_metadata;
   AIFOCORE_RETURN_IF_ERROR(
-      QueryTiffStructure(reader, page, level_info, tiff_metadata));
+      QueryTiffStructure(context, page, level_info, tiff_metadata));
 
   // Determine region bounds from request
   double x, y;
@@ -99,9 +103,10 @@ aifocore::Result<core::TilePlan> AperioPlanBuilder::BuildPlan(
 }
 
 aifocore::Status AperioPlanBuilder::ValidateRequest(
-    const core::TileRequest& request, const AperioReader& reader) {
+    const core::TileRequest& request, const AperioPlanContext& context) {
 
-  if (request.level < 0 || request.level >= reader.GetLevelCount()) {
+  if (request.level < 0 ||
+      request.level >= static_cast<int>(context.pyramid_levels.size())) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid level: {}", request.level));
@@ -124,9 +129,9 @@ void AperioPlanBuilder::DetermineRegionBounds(const core::TileRequest& request,
 }
 
 aifocore::Status AperioPlanBuilder::QueryTiffStructure(
-    const AperioReader& reader, uint16_t page, const LevelInfo& level_info,
-    TiffStructureMetadata& tiff_metadata) {
-  const auto& tiff_index = reader.GetTiffIndex();
+    const AperioPlanContext& context, uint16_t page,
+    const LevelInfo& level_info, TiffStructureMetadata& tiff_metadata) {
+  const auto& tiff_index = context.tiff_index;
   if (page >= tiff_index.NumPages()) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,

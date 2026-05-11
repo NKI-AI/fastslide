@@ -22,23 +22,10 @@
 #include "fastslide/core/slide_descriptor.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
+#include "fastslide/readers/aperio/aperio_plan_context.h"
+#include "fastslide/readers/aperio/aperio_tiff_metadata.h"
 
 namespace fastslide {
-
-// Forward declarations
-class AperioReader;
-
-/// @brief TIFF structure metadata needed for tile execution
-///
-/// This struct captures TIFF file structure information queried during
-/// planning that is needed by the executor for tile reading.
-struct TiffStructureMetadata {
-  uint16_t page = 0;               ///< TIFF page/directory number
-  uint32_t tile_width = 0;         ///< Tile width in pixels
-  uint32_t tile_height = 0;        ///< Tile height (or rows per strip)
-  uint16_t samples_per_pixel = 3;  ///< Number of channels (typically 3 for RGB)
-  bool is_tiled = true;            ///< Whether TIFF uses tiles (vs strips)
-};
 
 /// @brief Helper class for building Aperio SVS tile plans
 ///
@@ -63,23 +50,25 @@ class AperioPlanBuilder {
  public:
   /// @brief Build a tile plan for an Aperio SVS request
   /// @param request The tile request specifying region and level
-  /// @param reader The Aperio reader instance (for accessing slide metadata)
-  /// @param[out] tiff_metadata Output parameter for TIFF structure info
+  /// @param context Read-only planning context
   /// @return Tile plan or error status
   ///
-  /// @note This method queries TIFF structure once and stores metadata
-  ///       for use by the executor, avoiding redundant queries.
+  /// @note Each `TileReadOp` carries its own TIFF page in `source_id`, so the
+  ///       executor does not need a separate TiffStructureMetadata snapshot.
+  ///       Per-page geometry (tile size, samples_per_pixel, storage) is
+  ///       re-derived at execution time from the read-only `TiffIndex`, which
+  ///       avoids any shared mutable state between Prepare and Execute and
+  ///       keeps concurrent ReadRegion calls correct.
   static aifocore::Result<core::TilePlan> BuildPlan(
-      const core::TileRequest& request, const AperioReader& reader,
-      TiffStructureMetadata& tiff_metadata);
+      const core::TileRequest& request, const AperioPlanContext& context);
 
  private:
   /// @brief Validate the request parameters
   /// @param request The tile request
-  /// @param reader The Aperio reader instance
+  /// @param context Read-only planning context
   /// @return Status indicating success or failure
   static aifocore::Status ValidateRequest(const core::TileRequest& request,
-                                          const AperioReader& reader);
+                                          const AperioPlanContext& context);
 
   /// @brief Determine region bounds from request
   /// @param request The tile request
@@ -94,14 +83,14 @@ class AperioPlanBuilder {
                                     uint32_t& height);
 
   /// @brief Query TIFF structure from file
-  /// @param reader Aperio reader with handle pool access
+  /// @param context Read-only planning context
   /// @param page TIFF page/directory to query
   /// @param level_info Level dimensions for strip fallback
   /// @param[out] tiff_metadata Output structure metadata
   /// @return Status indicating success or failure
   static aifocore::Status QueryTiffStructure(
-      const AperioReader& reader, uint16_t page, const LevelInfo& level_info,
-      TiffStructureMetadata& tiff_metadata);
+      const AperioPlanContext& context, uint16_t page,
+      const LevelInfo& level_info, TiffStructureMetadata& tiff_metadata);
 
   /// @brief Create tile operations for intersecting tiles
   /// @param request The tile request

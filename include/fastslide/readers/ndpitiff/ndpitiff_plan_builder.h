@@ -17,15 +17,14 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
+#include "fastslide/readers/ndpitiff/ndpitiff_plan_context.h"
 
 namespace fastslide {
-
-class NdpiTiffReader;
 
 class NdpiTiffPlanBuilder {
  public:
   static aifocore::Result<core::TilePlan> BuildPlan(
-      const core::TileRequest& request, const NdpiTiffReader& reader);
+      const core::TileRequest& request, const NdpiTiffPlanContext& context);
 };
 
 }  // namespace fastslide

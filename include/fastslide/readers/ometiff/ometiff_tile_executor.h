@@ -16,12 +16,13 @@
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_OMETIFF_OMETIFF_TILE_EXECUTOR_H_
 
 #include "fastslide/readers/multi_channel_tiff_tile_executor.h"
-#include "fastslide/readers/ometiff/ometiff.h"
+#include "fastslide/readers/ometiff/ometiff_exec_context.h"
+#include "fastslide/readers/ometiff/ometiff_level_info.h"
 
 namespace fastslide {
 
 using OmetiffTileExecutor =
-    MultiChannelTiffTileExecutor<OmeTiffReader, OmeTiffLevelInfo>;
+    MultiChannelTiffTileExecutor<OmetiffExecContext, OmeTiffLevelInfo>;
 
 }  // namespace fastslide
 

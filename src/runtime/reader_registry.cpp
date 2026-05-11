@@ -106,35 +106,62 @@ aifocore::Result<std::unique_ptr<SlideReader>> ReaderRegistry::CreateReader(
     extension = path.extension().string();
   }
 
-  if (extension.empty()) {
-    return aifocore::Status(
-        aifocore::StatusCode::kInvalidArgument,
-        aifocore::fmt::format("File has no extension: {}", filename));
-  }
-
-  // Normalize and find format
-  std::string normalized = NormalizeExtension(extension);
-
   std::lock_guard<std::mutex> lock(mutex_);
 
-  auto it = formats_.find(normalized);
-  if (it == formats_.end()) {
+  // First try extension-based lookup (fast path).
+  if (!extension.empty()) {
+    std::string normalized = NormalizeExtension(extension);
+    auto it = formats_.find(normalized);
+    if (it != formats_.end()) {
+      const auto& descriptor = it->second;
+      if (!descriptor.factory) {
+        return aifocore::Status(
+            aifocore::StatusCode::kInternal,
+            aifocore::fmt::format(
+                "Format descriptor for {} has no factory function", extension));
+      }
+      return descriptor.factory(cache, filename);
+    }
+  }
+
+  // Fall back to content-based matching for files without an extension or
+  // with an unrecognised one. Iterate unique descriptors (the formats_ map
+  // contains aliases that point at the same descriptor, so dedupe by the
+  // primary extension before invoking the matcher).
+  std::vector<const FormatDescriptor*> seen;
+  for (const auto& [ext, desc] : formats_) {
+    if (!desc.matches_content || !desc.factory) {
+      continue;
+    }
+    bool already_tried = false;
+    for (const auto* existing : seen) {
+      if (existing->primary_extension == desc.primary_extension) {
+        already_tried = true;
+        break;
+      }
+    }
+    if (already_tried) {
+      continue;
+    }
+    seen.push_back(&desc);
+
+    if (desc.matches_content(filename)) {
+      return desc.factory(cache, filename);
+    }
+  }
+
+  if (extension.empty()) {
     return aifocore::Status(
         aifocore::StatusCode::kNotFound,
-        aifocore::fmt::format("No reader registered for extension: {}",
-                              extension));
-  }
-
-  // Create reader using factory
-  const auto& descriptor = it->second;
-  if (!descriptor.factory) {
-    return aifocore::Status(
-        aifocore::StatusCode::kInternal,
         aifocore::fmt::format(
-            "Format descriptor for {} has no factory function", extension));
+            "Could not detect a slide format for '{}': file has no extension "
+            "and no registered format claimed its contents",
+            filename));
   }
-
-  return descriptor.factory(cache, filename);
+  return aifocore::Status(
+      aifocore::StatusCode::kNotFound,
+      aifocore::fmt::format("No reader registered for extension: {}",
+                            extension));
 }
 
 std::vector<std::string> ReaderRegistry::ListFormats() const {

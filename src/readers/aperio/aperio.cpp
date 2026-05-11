@@ -27,7 +27,9 @@
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 
+#include "fastslide/readers/aperio/aperio_exec_context.h"
 #include "fastslide/readers/aperio/aperio_plan_builder.h"
+#include "fastslide/readers/aperio/aperio_plan_context.h"
 #include "fastslide/readers/aperio/aperio_tile_executor.h"
 #include "fastslide/readers/aperio/metadata_parser.h"
 #include "fastslide/readers/simpletiff_decode_utils.h"
@@ -440,14 +442,23 @@ void AperioReader::PopulateSlideProperties() {
 
 aifocore::Result<core::TilePlan> AperioReader::PrepareRequest(
     const core::TileRequest& request) const {
-  // Delegate to plan builder which handles all planning logic
-  return AperioPlanBuilder::BuildPlan(request, *this, tiff_metadata_);
+  // Delegate to plan builder which handles all planning logic. The plan is
+  // self-contained: each `TileReadOp` carries its own page in `source_id`,
+  // and per-page geometry is re-derived at execute time from the read-only
+  // TiffIndex. Avoiding a cross-request mutable cache here is what keeps
+  // concurrent ReadRegion calls correct.
+  const AperioPlanContext context{
+      .pyramid_levels = pyramid_levels_,
+      .tiff_index = GetTiffIndex(),
+  };
+  return AperioPlanBuilder::BuildPlan(request, context);
 }
 
 aifocore::Status AperioReader::ExecutePlan(const core::TilePlan& plan,
                                            runtime::Canvas& writer) const {
   // Delegate to executor which handles tile reading with handle pool
-  return AperioTileExecutor::ExecutePlan(plan, *this, writer, tiff_metadata_);
+  const AperioExecContext context(GetFilename(), GetCache(), GetTiffIndex());
+  return AperioTileExecutor::ExecutePlan(plan, context, writer);
 }
 
 }  // namespace fastslide

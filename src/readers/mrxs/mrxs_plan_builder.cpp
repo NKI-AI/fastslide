@@ -27,7 +27,6 @@
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
-#include "fastslide/readers/mrxs/mrxs.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
 #include "fastslide/readers/mrxs/spatial_index.h"
 #include "fastslide/slide_reader.h"
@@ -35,21 +34,19 @@
 namespace fastslide {
 
 aifocore::Result<core::TilePlan> MrxsPlanBuilder::BuildPlan(
-    const core::TileRequest& request, const MrxsReader& reader) {
+    const core::TileRequest& request, const MrxsPlanContext& context) {
 
   core::TilePlan plan;
   plan.request = request;
 
   // Validate request
-  AIFOCORE_RETURN_IF_ERROR(ValidateRequest(request, reader));
+  AIFOCORE_RETURN_IF_ERROR(ValidateRequest(request, context));
 
   // Get level info
-  AIFOCORE_ASSIGN_OR_RETURN(const auto& level_info,
-                            reader.GetLevelInfo(request.level));
+  const auto& level_info = context.level_info;
 
   // Get spatial index for this level
-  AIFOCORE_ASSIGN_OR_RETURN(const auto& index,
-                            reader.GetSpatialIndex(request.level));
+  const auto& index = context.spatial_index;
 
   // Determine region bounds from request
   double x, y;
@@ -60,7 +57,7 @@ aifocore::Result<core::TilePlan> MrxsPlanBuilder::BuildPlan(
   auto tile_indices = index->QueryRegion(x, y, width, height);
 
   // Get slide info for output specification
-  const auto& slide_info = reader.GetMrxsInfo();
+  const auto& slide_info = context.slide_info;
   const auto& zoom_level = slide_info.zoom_levels[request.level];
 
   if (tile_indices.empty()) {
@@ -93,9 +90,11 @@ aifocore::Result<core::TilePlan> MrxsPlanBuilder::BuildPlan(
 }
 
 aifocore::Status MrxsPlanBuilder::ValidateRequest(
-    const core::TileRequest& request, const MrxsReader& reader) {
+    const core::TileRequest& request, const MrxsPlanContext& context) {
 
-  if (request.level < 0 || request.level >= reader.GetLevelCount()) {
+  if (request.level < 0 ||
+      request.level >=
+          static_cast<int>(context.slide_info.zoom_levels.size())) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid level: {}", request.level));

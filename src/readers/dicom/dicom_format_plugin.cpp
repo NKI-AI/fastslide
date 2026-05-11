@@ -14,12 +14,16 @@
 
 #include "fastslide/readers/dicom/dicom_format_plugin.h"
 
+#include <cstddef>
+#include <filesystem>
 #include <memory>
 #include <string_view>
+#include <system_error>
 #include <utility>
 
 #include "aifocore/status/result.h"
 #include "fastslide/readers/dicom/dicom.h"
+#include "fastslide/readers/dicom/dicom_magic.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/format_descriptor.h"
 #include "fastslide/slide_reader.h"
@@ -37,6 +41,44 @@ aifocore::Result<std::unique_ptr<SlideReader>> CreateDicomReader(
     reader->SetCache(cache);
   }
   return std::unique_ptr<SlideReader>(std::move(reader));
+}
+
+bool MatchesDicomContent(std::string_view filename) {
+  namespace fs = std::filesystem;
+  std::error_code ec;
+  fs::path path(filename);
+
+  auto status = fs::status(path, ec);
+  if (ec) {
+    return false;
+  }
+
+  if (fs::is_regular_file(status)) {
+    return ::fastslide::dicom::HasDicomMagic(path);
+  }
+
+  if (fs::is_directory(status)) {
+    // Scan a small number of entries for a DICOM file. Limit the work so
+    // that misidentifying a huge directory is cheap.
+    constexpr std::size_t kMaxScanned = 64;
+    std::size_t scanned = 0;
+    for (const auto& entry : fs::directory_iterator(path, ec)) {
+      if (ec) {
+        return false;
+      }
+      if (++scanned > kMaxScanned) {
+        break;
+      }
+      if (!entry.is_regular_file(ec) || ec) {
+        continue;
+      }
+      if (::fastslide::dicom::HasDicomMagic(entry.path())) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 }  // namespace
@@ -59,6 +101,7 @@ FormatDescriptor CreateDicomFormatDescriptor() {
       SetCapability(desc.capabilities, FormatCapability::kRandomAccess);
 
   desc.factory = CreateDicomReader;
+  desc.matches_content = MatchesDicomContent;
   return desc;
 }
 

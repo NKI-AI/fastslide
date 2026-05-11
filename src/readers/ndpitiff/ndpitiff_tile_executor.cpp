@@ -28,7 +28,7 @@
 #include <vector>
 
 #include "aifocore/utilities/fmt.h"
-#include "fastslide/readers/ndpitiff/ndpitiff.h"
+#include "fastslide/readers/ndpitiff/ndpitiff_jpeg_header.h"
 #include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/readers/simpletiff_tile_executor_utils.h"
 #include "simpletiff/index.h"
@@ -105,17 +105,17 @@ void TraceMaybe(const NdpiTileTraceConfig& cfg, std::mutex& log_mutex,
 
 }  // namespace
 
-aifocore::Status NdpiTiffTileExecutor::ExecutePlan(const core::TilePlan& plan,
-                                                   const NdpiTiffReader& reader,
-                                                   runtime::Canvas& writer) {
+aifocore::Status NdpiTiffTileExecutor::ExecutePlan(
+    const core::TilePlan& plan, const NdpiTiffExecContext& context,
+    runtime::Canvas& writer) {
   const int level = plan.request.level;
-  if (level < 0 || level >= reader.GetLevelCount()) {
+  if (level < 0 || level >= context.level_count) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid level: {}", level));
   }
 
-  const auto& tiff_index = reader.GetTiffIndex();
+  const auto& tiff_index = context.tiff_index;
   const NdpiTileTraceConfig trace_cfg = GetTraceConfig();
   std::mutex log_mutex;
   std::atomic<uint64_t> completed{0};
@@ -204,8 +204,9 @@ aifocore::Status NdpiTiffTileExecutor::ExecutePlan(const core::TilePlan& plan,
                                         actual_w, actual_h));
             }
 
-            AIFOCORE_RETURN_IF_ERROR(reader.BuildPatchedJpegHeader(
-                static_cast<uint16_t>(actual_w),
+            AIFOCORE_RETURN_IF_ERROR(BuildPatchedNdpiJpegHeader(
+                context.jpeg_header_template, context.sof_height_offsets,
+                context.sof_width_offsets, static_cast<uint16_t>(actual_w),
                 static_cast<uint16_t>(actual_h), patched_header));
 
             decode_ctx.jpeg_stream_buffer.resize(patched_header.size() +

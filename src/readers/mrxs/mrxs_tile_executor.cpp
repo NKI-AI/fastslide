@@ -32,7 +32,6 @@
 #include "aifocore/utilities/thread_pool_singleton.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/image.h"
-#include "fastslide/readers/mrxs/mrxs.h"
 #include "fastslide/readers/mrxs/mrxs_decoder.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
 #include "fastslide/runtime/cache_interface.h"
@@ -53,7 +52,7 @@ aifocore::Status ToAifoStatus(const T& status) {
 }  // namespace
 
 aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
-                                               const MrxsReader& reader,
+                                               const MrxsExecContext& context,
                                                runtime::Canvas& writer) {
 
   if (plan.operations.empty()) {
@@ -63,13 +62,13 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
   }
 
   const int level = plan.request.level;
-  if (level < 0 || level >= reader.GetLevelCount()) {
+  const auto& slide_info = context.GetMrxsInfo();
+  if (level < 0 || level >= static_cast<int>(slide_info.zoom_levels.size())) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid level: {}", level));
   }
 
-  const auto& slide_info = reader.GetMrxsInfo();
   const auto& zoom_level = slide_info.zoom_levels[level];
 
   // Get global thread pool for parallel tile processing
@@ -79,8 +78,8 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
 
   auto futures = pool.submit_sequence(0, plan.operations.size(), [&](size_t i) {
     const auto& op = plan.operations[i];
-    auto status =
-        ExecuteTileOperation(op, reader, zoom_level, writer, accumulator_mutex);
+    auto status = ExecuteTileOperation(op, context, zoom_level, writer,
+                                       accumulator_mutex);
     if (!status.ok()) {
       error_count++;
       std::cerr << "Tile at (" << op.tile_coord.x << ", " << op.tile_coord.y
@@ -100,12 +99,12 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
 }
 
 aifocore::Status MrxsTileExecutor::ExecuteTileOperation(
-    const core::TileReadOp& op, const MrxsReader& reader,
+    const core::TileReadOp& op, const MrxsExecContext& context,
     const mrxs::SlideZoomLevel& zoom_level, runtime::Canvas& writer,
     std::mutex& accumulator_mutex) {
 
   // Read and decode the tile (returns span view of thread-local buffer)
-  auto image_or = ReadWithCache(op, reader, zoom_level);
+  auto image_or = ReadWithCache(op, context, zoom_level);
   if (!image_or.ok()) {
     std::cerr << "Failed to read/decode tile at (" << op.tile_coord.x << ", "
               << op.tile_coord.y << "): " << image_or.status().ToString();
@@ -114,7 +113,7 @@ aifocore::Status MrxsTileExecutor::ExecuteTileOperation(
 
   const auto& tile_data = *image_or;
 
-  const auto& exec_slide_info = reader.GetMrxsInfo();
+  const auto& exec_slide_info = context.GetMrxsInfo();
   const uint32_t tile_w = zoom_level.image_width;
   const uint32_t tile_h = zoom_level.image_height;
   const bool is_16bit = exec_slide_info.camera_bitdepth >= 16;
@@ -211,20 +210,21 @@ aifocore::Status MrxsTileExecutor::ExecuteTileOperation(
 }
 
 runtime::TileKey MrxsTileExecutor::MakeCacheKey(
-    const core::TileReadOp& op, const MrxsReader& reader,
+    const core::TileReadOp& op, const MrxsExecContext& context,
     const mrxs::SlideZoomLevel& zoom_level) {
+  (void)zoom_level;
   // Use dirname from slide info as unique identifier
   // Use data_file_number (source_id) as tile_x and offset as tile_y for
   // uniqueness
   return runtime::TileKey(
-      reader.GetMrxsInfo().dirname, op.level,
+      context.GetMrxsInfo().dirname, op.level,
       static_cast<uint32_t>(op.source_id),   // Use data_file_number as tile_x
       static_cast<uint32_t>(op.byte_offset)  // Use offset as tile_y
   );
 }
 
 aifocore::Result<DecodedTileData> MrxsTileExecutor::ReadTileFromDisk(
-    const core::TileReadOp& op, const MrxsReader& reader,
+    const core::TileReadOp& op, const MrxsExecContext& context,
     const mrxs::SlideZoomLevel& zoom_level) {
 
   // Reconstruct tile info from operation
@@ -243,12 +243,12 @@ aifocore::Result<DecodedTileData> MrxsTileExecutor::ReadTileFromDisk(
   }
 
   // Read compressed tile data from disk
-  auto data_or = reader.ReadTileData(tile);
+  auto data_or = context.ReadTileData(tile);
   if (!data_or.ok()) {
     return ToAifoStatus(data_or.status());
   }
 
-  const bool is_16bit = reader.GetMrxsInfo().camera_bitdepth >= 16;
+  const bool is_16bit = context.GetMrxsInfo().camera_bitdepth >= 16;
 
   if (is_16bit) {
     auto image_or =

@@ -24,28 +24,33 @@
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/core/tile_plan.h"
-#include "fastslide/readers/aperio/aperio.h"
-#include "fastslide/readers/aperio/aperio_plan_builder.h"
 #include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/readers/simpletiff_tile_executor_utils.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/tile_writer.h"
+#include "simpletiff/index.h"
 #include "simpletiff/reader.h"
 
 namespace fastslide {
 
 aifocore::Status AperioTileExecutor::ExecutePlan(
-    const core::TilePlan& plan, const AperioReader& reader,
-    runtime::Canvas& writer, const TiffStructureMetadata& tiff_metadata) {
+    const core::TilePlan& plan, const AperioExecContext& context,
+    runtime::Canvas& writer) {
   std::atomic<int> error_count{0};
   return readers::simpletiff_exec::ExecuteOpsWithThreadPoolBestEffort(
       plan, writer,
       [&](const core::TileReadOp& operation, runtime::Canvas& writer_ref,
           std::mutex& writer_mutex) -> aifocore::Status {
-        return ExecuteTileOperation(
-            operation, reader, tiff_metadata.page, tiff_metadata.tile_width,
-            tiff_metadata.tile_height, tiff_metadata.samples_per_pixel,
-            tiff_metadata.is_tiled, writer_ref, writer_mutex);
+        // Resolve the per-op TIFF geometry from the read-only TiffIndex on
+        // every tile. This intentionally avoids any cross-request mutable
+        // metadata cache, which previously caused page/tile_index mismatches
+        // when ReadRegion was called concurrently for different levels.
+        auto params_or = ResolveAccessParams(operation, context);
+        if (!params_or.ok()) {
+          return params_or.status();
+        }
+        return ExecuteTileOperation(operation, context, *params_or, writer_ref,
+                                    writer_mutex);
       },
       [&](const core::TileReadOp& operation, const aifocore::Status& status) {
         const int count =
@@ -58,30 +63,61 @@ aifocore::Status AperioTileExecutor::ExecutePlan(
       });
 }
 
-aifocore::Status AperioTileExecutor::ExecuteTileOperation(
-    const core::TileReadOp& operation, const AperioReader& reader,
-    uint16_t page, uint32_t tile_width, uint32_t tile_height,
-    uint16_t samples_per_pixel, bool is_tiled, runtime::Canvas& writer,
-    std::mutex& writer_mutex) {
-  const TiffAccessParams tiff_params = {
-      .page = page,
-      .tile_width = tile_width,
-      .tile_height = tile_height,
-      .samples_per_pixel = samples_per_pixel,
-      .is_tiled = is_tiled,
-  };
+aifocore::Result<AperioTileExecutor::TiffAccessParams>
+AperioTileExecutor::ResolveAccessParams(const core::TileReadOp& op,
+                                        const AperioExecContext& context) {
+  const auto& tiff_index = context.GetTiffIndex();
+  const uint32_t page_index = op.source_id;
+  if (page_index >= tiff_index.NumPages()) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("AperioTileExecutor: op.source_id={} out of "
+                              "range (file has {} pages)",
+                              page_index, tiff_index.NumPages()));
+  }
 
-  auto decoded_or = ReadWithCacheDecoded(operation, reader, tiff_params);
+  const auto& page = tiff_index.Page(page_index);
+  TiffAccessParams params;
+  params.page = static_cast<uint16_t>(page_index);
+  params.samples_per_pixel = page.samples_per_pixel;
+  params.is_tiled = (page.storage == simpletiff::Storage::kTiles);
+
+  if (params.is_tiled) {
+    const auto& tiles = tiff_index.Tiles(page.payload_id);
+    params.tile_width = tiles.tile_w;
+    params.tile_height = tiles.tile_h;
+  } else if (page.storage == simpletiff::Storage::kStrips) {
+    const auto& strips = tiff_index.Strips(page.payload_id);
+    params.tile_width = page.width;
+    params.tile_height =
+        (strips.rows_per_strip == 0) ? page.height : strips.rows_per_strip;
+  } else {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format(
+            "AperioTileExecutor: page {} uses unsupported storage type {}",
+            page_index, static_cast<int>(page.storage)));
+  }
+
+  return params;
+}
+
+aifocore::Status AperioTileExecutor::ExecuteTileOperation(
+    const core::TileReadOp& operation, const AperioExecContext& context,
+    const TiffAccessParams& params, runtime::Canvas& writer,
+    std::mutex& writer_mutex) {
+  auto decoded_or = ReadWithCacheDecoded(operation, context, params);
 
   std::span<const uint8_t> pixel_data;
-  uint32_t paint_w = tile_width;
-  uint32_t paint_h = tile_height;
-  uint32_t paint_channels = static_cast<uint32_t>(samples_per_pixel);
+  uint32_t paint_w = params.tile_width;
+  uint32_t paint_h = params.tile_height;
+  uint32_t paint_channels = static_cast<uint32_t>(params.samples_per_pixel);
 
   if (!decoded_or.ok()) {
     if (decoded_or.status().code() == aifocore::StatusCode::kDataLoss) {
-      const size_t full_tile_bytes =
-          static_cast<size_t>(tile_width) * tile_height * samples_per_pixel;
+      const size_t full_tile_bytes = static_cast<size_t>(params.tile_width) *
+                                     params.tile_height *
+                                     params.samples_per_pixel;
       uint8_t* zeros =
           TiffBasedTileExecutor<AperioTileExecutor>::GetBuffers().GetCropBuffer(
               full_tile_bytes);
@@ -90,7 +126,7 @@ aifocore::Status AperioTileExecutor::ExecuteTileOperation(
     } else {
       std::cerr << aifocore::fmt::format(
           "Failed to read/decode tile at ({}, {}) in {}: {}\n",
-          operation.tile_coord.x, operation.tile_coord.y, reader.GetFilename(),
+          operation.tile_coord.x, operation.tile_coord.y, context.GetFilename(),
           decoded_or.status().ToString());
       return aifocore::Status::OkStatus();  // Continue processing other tiles
     }
@@ -115,24 +151,24 @@ aifocore::Status AperioTileExecutor::ExecuteTileOperation(
 }
 
 runtime::TileKey AperioTileExecutor::MakeCacheKey(
-    const core::TileReadOp& operation, const AperioReader& reader,
+    const core::TileReadOp& operation, const AperioExecContext& context,
     const TiffAccessParams& params) {
   (void)params;
   // Use tile grid coordinates for key (unique per level)
-  return runtime::TileKey(reader.GetFilename(),
+  return runtime::TileKey(context.GetFilename(),
                           static_cast<uint16_t>(operation.level),
                           operation.tile_coord.x, operation.tile_coord.y);
 }
 
 aifocore::Result<DecodedTileData> AperioTileExecutor::ReadTileFromDisk(
-    const core::TileReadOp& operation, const AperioReader& reader,
+    const core::TileReadOp& operation, const AperioExecContext& context,
     const TiffAccessParams& params) {
   // Each worker thread uses its own DecodeContext for decompression. This is
   // thread-safe and avoids per-tile allocations.
   static thread_local simpletiff::DecodeContext decode_ctx;
   auto& tile_buffer = GetBuffers().tile_buffer;
 
-  const auto& tiff_index = reader.GetTiffIndex();
+  const auto& tiff_index = context.GetTiffIndex();
   // operation.byte_offset is the linear tile index for tiled TIFFs and the
   // strip index for striped TIFFs (e.g. some SVS associated images / fallback
   // pyramids). The shared helper picks the right code path based on the page

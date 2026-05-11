@@ -82,6 +82,68 @@ inline std::string InvalidPageParametersMsg(uint32_t page_index,
          ", bytes_per_sample=" + std::to_string(bytes_per_sample) + ")";
 }
 
+// Produces a diagnostic error message for a failed tile/strip metadata load.
+// Includes the tile/strip count and grid layout so callers can immediately
+// see whether an index is out of range vs. an actual I/O failure.
+inline std::string TileLoadFailedMsg(const TiffIndex& index,
+                                     const PageHeader& page,
+                                     uint32_t tile_or_strip_index) {
+  const char* unit = (page.storage == Storage::kStrips) ? "strip" : "tile";
+  std::string msg = "Failed to load ";
+  msg += unit;
+  msg += " ";
+  msg += std::to_string(tile_or_strip_index);
+  msg += " on page ";
+  msg += std::to_string(page.ifd_index);
+  msg += " (image=";
+  msg += std::to_string(page.width);
+  msg += "x";
+  msg += std::to_string(page.height);
+  msg += ", ";
+
+  if (page.storage == Storage::kTiles) {
+    const auto& tiles = index.Tiles(page.payload_id);
+    const uint64_t total = static_cast<uint64_t>(tiles.tiles_x) *
+                           static_cast<uint64_t>(tiles.tiles_y);
+    msg += "tiles=";
+    msg += std::to_string(tiles.tiles_x);
+    msg += "x";
+    msg += std::to_string(tiles.tiles_y);
+    msg += "=";
+    msg += std::to_string(total);
+    msg += ", tile_size=";
+    msg += std::to_string(tiles.tile_w);
+    msg += "x";
+    msg += std::to_string(tiles.tile_h);
+    msg += ", offsets_count=";
+    msg += std::to_string(tiles.lazy_offsets.count);
+    msg += ", bytecounts_count=";
+    msg += std::to_string(tiles.lazy_bytecounts.count);
+    if (tile_or_strip_index >= total) {
+      msg += " [OUT OF RANGE: index >= ";
+      msg += std::to_string(total);
+      msg += "]";
+    } else if (tile_or_strip_index >= tiles.lazy_offsets.count) {
+      msg += " [OUT OF RANGE: index >= offsets_count]";
+    }
+  } else if (page.storage == Storage::kStrips) {
+    const auto& strips = index.Strips(page.payload_id);
+    msg += "rows_per_strip=";
+    msg += std::to_string(strips.rows_per_strip);
+    msg += ", offsets_count=";
+    msg += std::to_string(strips.lazy_offsets.count);
+    msg += ", bytecounts_count=";
+    msg += std::to_string(strips.lazy_bytecounts.count);
+    if (tile_or_strip_index >= strips.lazy_offsets.count) {
+      msg += " [OUT OF RANGE: index >= offsets_count]";
+    }
+  } else {
+    msg += "storage=unknown";
+  }
+  msg += ")";
+  return msg;
+}
+
 Result<void> NormalizeDecodedPixels(const TiffIndex& index,
                                     const PageHeader& page, int width,
                                     int height, std::vector<uint8_t>& data) {
@@ -301,9 +363,7 @@ Result<void> ReadTile(const TiffIndex& index, uint32_t page_index,
   uint64_t bytecount = 0;
   if (!EnsureTileLoaded(index, page_index, tile_index, offset, bytecount)) {
     return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
-                                "Failed to load tile " +
-                                    std::to_string(tile_index) + " on page " +
-                                    std::to_string(page_index));
+                                TileLoadFailedMsg(index, page, tile_index));
   }
 
   // Read tile data using pread
@@ -435,17 +495,13 @@ Result<void> ReadRawTile(const TiffIndex& index, uint32_t page_index,
     // Use optimized single-tile loader
     if (!EnsureTileLoaded(index, page_index, tile_index, offset, bytecount)) {
       return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
-                                  "Failed to load tile " +
-                                      std::to_string(tile_index) + " on page " +
-                                      std::to_string(page_index));
+                                  TileLoadFailedMsg(index, page, tile_index));
     }
   } else if (page.storage == Storage::kStrips) {
     // Use optimized single-strip loader
     if (!EnsureTileLoaded(index, page_index, tile_index, offset, bytecount)) {
       return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
-                                  "Failed to load strip " +
-                                      std::to_string(tile_index) + " on page " +
-                                      std::to_string(page_index));
+                                  TileLoadFailedMsg(index, page, tile_index));
     }
   } else {
     return AIFOCORE_MAKE_STATUS(

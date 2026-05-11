@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <limits>
 #include <mutex>
+#include <string>
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
@@ -52,21 +53,20 @@ namespace fastslide {
 ///      using thread-local buffers from `TiffBasedTileExecutor`.
 ///   3. Paints the tile into the output canvas (with optional blend lock).
 ///
-/// `Reader` must satisfy:
-///   - `int GetLevelCount() const`
-///   - `const std::vector<LevelInfo>& GetPyramid() const`
+/// `ExecContext` must satisfy:
+///   - `std::span<const LevelInfo> GetPyramid() const`
 ///   - `const simpletiff::TiffIndex& GetTiffIndex() const`
-///   - `std::string GetFilename() const`
+///   - `std::string_view GetFilename() const`
 ///   - the `SlideReader` cache interface (`IsCacheEnabled`, `GetCache`).
 ///
 /// `LevelInfo` must expose a `.size` (`ImageDimensions`) member; its `.pages`
 /// are consulted during plan building, not here.
-template <typename Reader, typename LevelInfo>
+template <typename ExecContext, typename LevelInfo>
 class MultiChannelTiffTileExecutor
     : public CachedTileExecutor<
-          MultiChannelTiffTileExecutor<Reader, LevelInfo>> {
+          MultiChannelTiffTileExecutor<ExecContext, LevelInfo>> {
  public:
-  using Self = MultiChannelTiffTileExecutor<Reader, LevelInfo>;
+  using Self = MultiChannelTiffTileExecutor<ExecContext, LevelInfo>;
   using Base = CachedTileExecutor<Self>;
   friend Base;
 
@@ -84,17 +84,17 @@ class MultiChannelTiffTileExecutor
 
   /// @brief Execute a fully-built `TilePlan` against `writer`.
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
-                                      const Reader& reader,
+                                      const ExecContext& context,
                                       runtime::Canvas& writer) {
     const int level = plan.request.level;
-    if (level < 0 || level >= reader.GetLevelCount()) {
+    const auto pyramid = context.GetPyramid();
+    if (level < 0 || level >= static_cast<int>(pyramid.size())) {
       return AIFOCORE_MAKE_STATUS(
           aifocore::StatusCode::kInvalidArgument,
           aifocore::fmt::format("Invalid level: {}", level));
     }
 
-    const auto& pyramid = reader.GetPyramid();
-    const auto& tiff_index = reader.GetTiffIndex();
+    const auto& tiff_index = context.GetTiffIndex();
     const LevelInfo& level_info = pyramid[level];
 
     return readers::simpletiff_exec::ExecuteOpsWithThreadPoolStopOnError(
@@ -106,27 +106,29 @@ class MultiChannelTiffTileExecutor
             page_state = PageState{};
             page_state.index_identity = &tiff_index;
           }
-          return ExecuteTileOperation(operation, reader, level_info, tiff_index,
-                                      writer_ref, writer_mutex, page_state);
+          return ExecuteTileOperation(operation, context, level_info,
+                                      tiff_index, writer_ref, writer_mutex,
+                                      page_state);
         });
   }
 
   // ---- CachedTileExecutor CRTP hooks (must be public for the base) ----
 
   static runtime::TileKey MakeCacheKey(const core::TileReadOp& operation,
-                                       const Reader& reader,
+                                       const ExecContext& context,
                                        const simpletiff::TiffIndex& tiff_index,
                                        const PageState& page_state) {
     (void)tiff_index;
     (void)page_state;
-    return runtime::TileKey(reader.GetFilename(), operation.source_id,
+    return runtime::TileKey(std::string(context.GetFilename()),
+                            operation.source_id,
                             static_cast<uint32_t>(operation.byte_offset), 0);
   }
 
   static aifocore::Result<DecodedTileData> ReadTileFromDisk(
-      const core::TileReadOp& operation, const Reader& reader,
+      const core::TileReadOp& operation, const ExecContext& context,
       const simpletiff::TiffIndex& tiff_index, const PageState& page_state) {
-    (void)reader;
+    (void)context;
     auto& tile_buffer = Base::GetBuffers().tile_buffer;
     static thread_local simpletiff::DecodeContext decode_ctx;
 
@@ -144,7 +146,7 @@ class MultiChannelTiffTileExecutor
 
  private:
   static aifocore::Status ExecuteTileOperation(
-      const core::TileReadOp& operation, const Reader& reader,
+      const core::TileReadOp& operation, const ExecContext& context,
       const LevelInfo& level_info, const simpletiff::TiffIndex& tiff_index,
       runtime::Canvas& writer, std::mutex& writer_mutex,
       PageState& page_state) {
@@ -155,7 +157,7 @@ class MultiChannelTiffTileExecutor
 
     AIFOCORE_ASSIGN_OR_RETURN(
         const auto decoded_tile,
-        Base::ReadWithCacheDecoded(operation, reader, tiff_index, page_state));
+        Base::ReadWithCacheDecoded(operation, context, tiff_index, page_state));
     return readers::simpletiff_exec::PaintTileMaybeLocked(
         writer, operation, decoded_tile.data, decoded_tile.width,
         decoded_tile.height, decoded_tile.channels, writer_mutex);

@@ -15,13 +15,10 @@
 #ifndef AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_QPTIFF_QPTIFF_PLAN_BUILDER_H_
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_QPTIFF_QPTIFF_PLAN_BUILDER_H_
 
-#include <vector>
-
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
-#include "fastslide/readers/qptiff/qptiff.h"
-#include "simpletiff/index.h"
+#include "fastslide/readers/qptiff/qptiff_plan_context.h"
 
 /**
  * @file qptiff_plan_builder.h
@@ -61,10 +58,7 @@ class QptiffPlanBuilder {
   /// @param tiff_index SimpleTiff index for querying tile structure
   /// @return Tile plan or error status
   static aifocore::Result<core::TilePlan> BuildPlan(
-      const core::TileRequest& request,
-      const std::vector<QpTiffLevelInfo>& pyramid,
-      PlanarConfig output_planar_config,
-      const simpletiff::TiffIndex& tiff_index);
+      const core::TileRequest& request, const QptiffPlanContext& context);
 };
 
 }  // namespace fastslide

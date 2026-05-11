@@ -17,11 +17,10 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
+#include "fastslide/readers/philipstiff/philipstiff_exec_context.h"
 #include "fastslide/readers/tiff_based_tile_executor.h"
 
 namespace fastslide {
-
-class PhilipsTiffReader;
 
 namespace runtime {
 class Canvas;
@@ -32,7 +31,7 @@ class PhilipsTiffTileExecutor
     : public TiffBasedTileExecutor<PhilipsTiffTileExecutor> {
  public:
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
-                                      const PhilipsTiffReader& reader,
+                                      const PhilipsTiffExecContext& context,
                                       runtime::Canvas& writer);
 };
 

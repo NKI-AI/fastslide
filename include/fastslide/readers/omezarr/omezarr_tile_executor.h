@@ -17,7 +17,7 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
-#include "fastslide/readers/omezarr/omezarr.h"
+#include "fastslide/readers/omezarr/omezarr_exec_context.h"
 #include "fastslide/runtime/tile_writer.h"
 
 namespace fastslide {
@@ -30,7 +30,7 @@ namespace fastslide {
 class OmeZarrTileExecutor {
  public:
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
-                                      const OmeZarrReader& reader,
+                                      const OmeZarrExecContext& context,
                                       runtime::Canvas& canvas);
 };
 

@@ -18,16 +18,15 @@
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
+#include "fastslide/readers/philipstiff/philipstiff_plan_context.h"
 
 namespace fastslide {
-
-class PhilipsTiffReader;
 
 /// @brief Tile plan builder for Philips TIFF
 class PhilipsTiffPlanBuilder {
  public:
   static aifocore::Result<core::TilePlan> BuildPlan(
-      const core::TileRequest& request, const PhilipsTiffReader& reader);
+      const core::TileRequest& request, const PhilipsTiffPlanContext& context);
 };
 
 }  // namespace fastslide

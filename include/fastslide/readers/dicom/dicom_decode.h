@@ -42,12 +42,14 @@ namespace internal {
 ///
 /// @param frame_bytes Raw frame payload as returned by libdicom.
 /// @param syntax Transfer syntax used to encode the frame.
+/// @param photometric Photometric interpretation (controls YCbCr conversion).
 /// @param expected_width Frame width in pixels (Columns).
 /// @param expected_height Frame height in pixels (Rows).
 /// @return Decoded RGB8 buffer (width * height * 3 bytes) or an error status.
 aifocore::Result<std::vector<uint8_t>> DecodeDicomFrameBytes(
     std::span<const uint8_t> frame_bytes, DicomTransferSyntax syntax,
-    uint32_t expected_width, uint32_t expected_height);
+    DicomPhotometric photometric, uint32_t expected_width,
+    uint32_t expected_height);
 
 }  // namespace internal
 }  // namespace dicom

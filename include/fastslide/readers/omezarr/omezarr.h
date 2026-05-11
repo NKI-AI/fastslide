@@ -24,51 +24,12 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/image.h"
-#include "fastslide/readers/omezarr/omezarr_codec.h"
+#include "fastslide/readers/omezarr/omezarr_level_info.h"
 #include "fastslide/readers/omezarr/omezarr_metadata.h"
 #include "fastslide/slide_reader.h"
 #include "fastslide/utilities/colors.h"
 
 namespace fastslide {
-
-/// @brief Per-level OME-Zarr metadata, prepared for tile reads.
-struct OmeZarrLevelInfo {
-  std::string array_dir;  ///< Absolute path to the level directory
-  formats::omezarr::ZarrArrayMetadata
-      array_metadata;  ///< Parsed Zarr V3 array metadata
-  formats::omezarr::ZarrCodecChain codec_chain;
-
-  /// @brief Axis indices into the Zarr `shape` and `chunk_shape` arrays.
-  /// `c_axis` is `SIZE_MAX` when the array has no channel axis.
-  size_t y_axis = 0;
-  size_t x_axis = 0;
-  size_t c_axis = static_cast<size_t>(-1);
-
-  uint64_t y_size = 0;
-  uint64_t x_size = 0;
-  uint64_t c_size = 1;
-  uint64_t chunk_y = 0;
-  uint64_t chunk_x = 0;
-  uint64_t chunk_c = 1;
-
-  /// @brief Level dimensions (X, Y).
-  ImageDimensions size = {0, 0};
-
-  /// @brief Bytes per scalar pixel for this level.
-  [[nodiscard]] uint32_t BytesPerSample() const {
-    return array_metadata.dtype.BytesPerElement();
-  }
-
-  /// @brief Bytes for one (channel, y, x) plane within a chunk.
-  [[nodiscard]] uint64_t ChunkSliceBytes() const {
-    return chunk_y * chunk_x * BytesPerSample();
-  }
-
-  /// @brief Total decompressed bytes of one on-disk chunk (all channels).
-  [[nodiscard]] uint64_t BytesPerChunk() const {
-    return ChunkSliceBytes() * (chunk_c == 0 ? 1 : chunk_c);
-  }
-};
 
 /// @brief OME-Zarr v0.4 / v0.5 (Zarr V3) pyramidal reader.
 ///

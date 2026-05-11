@@ -25,8 +25,10 @@
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
+#include "fastslide/readers/ometiff/ometiff_exec_context.h"
 #include "fastslide/readers/ometiff/ometiff_metadata_loader.h"
 #include "fastslide/readers/ometiff/ometiff_plan_builder.h"
+#include "fastslide/readers/ometiff/ometiff_plan_context.h"
 #include "fastslide/readers/ometiff/ometiff_tile_executor.h"
 #include "simpletiff/tiff_parser.h"
 
@@ -157,13 +159,19 @@ ImageDimensions OmeTiffReader::GetTileSize() const {
 
 aifocore::Result<core::TilePlan> OmeTiffReader::PrepareRequest(
     const core::TileRequest& request) const {
-  return OmetiffPlanBuilder::BuildPlan(request, pyramid_, output_planar_config_,
-                                       *tiff_index_);
+  const OmetiffPlanContext context{
+      .pyramid = pyramid_,
+      .output_planar_config = output_planar_config_,
+      .tiff_index = *tiff_index_,
+  };
+  return OmetiffPlanBuilder::BuildPlan(request, context);
 }
 
 aifocore::Status OmeTiffReader::ExecutePlan(const core::TilePlan& plan,
                                             runtime::Canvas& writer) const {
-  return OmetiffTileExecutor::ExecutePlan(plan, *this, writer);
+  const OmetiffExecContext context(GetFilename(), pyramid_, *tiff_index_,
+                                   GetCache());
+  return OmetiffTileExecutor::ExecutePlan(plan, context, writer);
 }
 
 void OmeTiffReader::PopulateSlideProperties() {

@@ -20,6 +20,7 @@
 #include <iostream>
 #include <mutex>
 #include <span>
+#include <string>
 #include <vector>
 
 extern "C" {
@@ -30,7 +31,6 @@ extern "C" {
 #include "aifocore/utilities/fmt.h"
 #include "aifocore/utilities/thread_pool_singleton.h"
 #include "fastslide/core/tile_plan.h"
-#include "fastslide/readers/dicom/dicom.h"
 #include "fastslide/readers/dicom/dicom_decode.h"
 #include "fastslide/runtime/tile_writer.h"
 
@@ -45,6 +45,7 @@ namespace {
 struct RawFrame {
   std::vector<uint8_t> bytes;
   DicomTransferSyntax syntax;
+  DicomPhotometric photometric;
 };
 
 aifocore::Result<RawFrame> ReadRawFrame(DicomFile& file, uint32_t col,
@@ -76,8 +77,8 @@ aifocore::Result<RawFrame> ReadRawFrame(DicomFile& file, uint32_t col,
       reinterpret_cast<const uint8_t*>(dcm_frame_get_value(frame.get()));
   uint32_t length = dcm_frame_get_length(frame.get());
 
-  return RawFrame{std::vector<uint8_t>(raw, raw + length),
-                  file.transfer_syntax};
+  return RawFrame{std::vector<uint8_t>(raw, raw + length), file.transfer_syntax,
+                  file.photometric};
 }
 
 aifocore::Result<std::vector<uint8_t>> DecodeFrame(DicomFile& file,
@@ -86,13 +87,14 @@ aifocore::Result<std::vector<uint8_t>> DecodeFrame(DicomFile& file,
                                                    uint32_t expected_h) {
   AIFOCORE_ASSIGN_OR_RETURN(auto raw_frame, ReadRawFrame(file, col, row));
   return dicom::internal::DecodeDicomFrameBytes(
-      raw_frame.bytes, raw_frame.syntax, expected_w, expected_h);
+      raw_frame.bytes, raw_frame.syntax, raw_frame.photometric, expected_w,
+      expected_h);
 }
 
 }  // namespace
 
 aifocore::Status DicomTileExecutor::ExecutePlan(const core::TilePlan& plan,
-                                                const DicomReader& reader,
+                                                const DicomExecContext& context,
                                                 runtime::Canvas& writer) {
   if (plan.operations.empty()) {
     const auto& bg = plan.output.background;
@@ -105,7 +107,7 @@ aifocore::Status DicomTileExecutor::ExecutePlan(const core::TilePlan& plan,
 
   auto futures = pool.submit_sequence(0, plan.operations.size(), [&](size_t i) {
     const auto& op = plan.operations[i];
-    auto st = ExecuteTileOperation(op, reader, writer, writer_mutex);
+    auto st = ExecuteTileOperation(op, context, writer, writer_mutex);
     if (!st.ok()) {
       const int n = ++error_count;
       if (n <= 10) {
@@ -118,22 +120,45 @@ aifocore::Status DicomTileExecutor::ExecutePlan(const core::TilePlan& plan,
   return aifocore::Status::OkStatus();
 }
 
-runtime::TileKey DicomTileExecutor::MakeCacheKey(const core::TileReadOp& op,
-                                                 const DicomReader& reader) {
-  return runtime::TileKey(reader.GetFilename(), static_cast<uint16_t>(op.level),
-                          op.tile_coord.x, op.tile_coord.y);
+runtime::TileKey DicomTileExecutor::MakeCacheKey(
+    const core::TileReadOp& op, const DicomExecContext& context) {
+  return runtime::TileKey(std::string(context.GetFilename()),
+                          static_cast<uint16_t>(op.level), op.tile_coord.x,
+                          op.tile_coord.y);
 }
 
 aifocore::Result<DecodedTileData> DicomTileExecutor::ReadTileFromDisk(
-    const core::TileReadOp& op, const DicomReader& reader) {
-  const auto& level = reader.GetLevel(op.level);
-  auto& file = *level.file;
+    const core::TileReadOp& op, const DicomExecContext& context) {
+  const auto& level = context.GetLevel(op.level);
 
   const uint32_t col = op.tile_coord.x;
   const uint32_t row = op.tile_coord.y;
 
-  AIFOCORE_ASSIGN_OR_RETURN(
-      auto rgb, DecodeFrame(file, col, row, level.tile_w, level.tile_h));
+  // Locate the concatenation part holding this tile. We cannot derive it
+  // from `concatenation_frame_offset` alone because the offset partitions
+  // the *frame stream*, while (col, row) addresses the *tile grid*. In
+  // TILED_SPARSE layouts the two indices are unrelated. Instead probe the
+  // parts in order: libdicom returns MISSING_FRAME for tiles owned by a
+  // sibling, which is cheap (no pixel I/O) once the basic-offset table is
+  // cached. For unsegmented levels there is exactly one part.
+  std::vector<uint8_t> rgb;
+  bool decoded = false;
+  for (const auto& part : level.parts) {
+    auto rgb_or = DecodeFrame(*part.file, col, row, level.tile_w, level.tile_h);
+    if (rgb_or.ok()) {
+      rgb = std::move(*rgb_or);
+      decoded = true;
+      break;
+    }
+    if (rgb_or.status().code() != aifocore::StatusCode::kNotFound) {
+      return rgb_or.status();
+    }
+  }
+  if (!decoded) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kNotFound,
+        "Missing DICOM frame in all concatenation parts");
+  }
 
   const uint32_t actual_w =
       std::min(level.tile_w, level.width - col * level.tile_w);
@@ -162,15 +187,15 @@ aifocore::Result<DecodedTileData> DicomTileExecutor::ReadTileFromDisk(
 }
 
 aifocore::Status DicomTileExecutor::ExecuteTileOperation(
-    const core::TileReadOp& op, const DicomReader& reader,
+    const core::TileReadOp& op, const DicomExecContext& context,
     runtime::Canvas& writer, std::mutex& writer_mutex) {
-  auto tile_data_or = ReadWithCache(op, reader);
+  auto tile_data_or = ReadWithCache(op, context);
   if (!tile_data_or.ok()) {
     // Missing frame — leave the background fill (sparse tile grids are valid).
     return aifocore::Status::OkStatus();
   }
 
-  const auto& level = reader.GetLevel(op.level);
+  const auto& level = context.GetLevel(op.level);
   const uint32_t col = op.tile_coord.x;
   const uint32_t row = op.tile_coord.y;
   const uint32_t tile_w =

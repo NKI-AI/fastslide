@@ -18,7 +18,7 @@
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/readers/cached_tile_executor.h"
-#include "fastslide/readers/isyntax/isyntax.h"
+#include "fastslide/readers/isyntax/isyntax_exec_context.h"
 #include "fastslide/runtime/tile_writer.h"
 
 namespace fastslide {
@@ -28,11 +28,11 @@ class IsyntaxTileExecutor : public CachedTileExecutor<IsyntaxTileExecutor> {
  public:
   /// @brief Execute the plan
   /// @param plan The execution plan
-  /// @param reader The reader instance (holds the libisyntax handle)
+  /// @param context The execution context (holds the libisyntax handle)
   /// @param writer The tile writer for output
   /// @return Status indicating success or failure
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
-                                      const IsyntaxReader& reader,
+                                      const IsyntaxExecContext& context,
                                       runtime::Canvas& writer);
 
   friend class CachedTileExecutor<IsyntaxTileExecutor>;
@@ -40,28 +40,27 @@ class IsyntaxTileExecutor : public CachedTileExecutor<IsyntaxTileExecutor> {
  private:
   /// @brief Execute a single tile operation
   /// @param op The tile operation
-  /// @param reader The reader instance
+  /// @param context The execution context
   /// @param writer The tile writer for output
   /// @param accumulator_mutex Mutex for thread-safe tile writing
   /// @return Status indicating success or failure
-  static aifocore::Status ExecuteTileOperation(const core::TileReadOp& op,
-                                               const IsyntaxReader& reader,
-                                               runtime::Canvas& writer,
-                                               std::mutex& accumulator_mutex);
+  static aifocore::Status ExecuteTileOperation(
+      const core::TileReadOp& op, const IsyntaxExecContext& context,
+      runtime::Canvas& writer, std::mutex& accumulator_mutex);
 
   /// @brief Create cache key for a tile
   /// @param op The tile operation
-  /// @param reader The reader instance
+  /// @param context The execution context
   /// @return TileKey for cache lookup
   static runtime::TileKey MakeCacheKey(const core::TileReadOp& op,
-                                       const IsyntaxReader& reader);
+                                       const IsyntaxExecContext& context);
 
   /// @brief Read and decode a single tile (called on cache miss)
   /// @param op The tile operation
-  /// @param reader The reader instance
+  /// @param context The execution context
   /// @return Decoded RGB tile data or error status
   static aifocore::Result<DecodedTileData> ReadTileFromDisk(
-      const core::TileReadOp& op, const IsyntaxReader& reader);
+      const core::TileReadOp& op, const IsyntaxExecContext& context);
 };
 
 }  // namespace fastslide

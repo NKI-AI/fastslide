@@ -9,7 +9,6 @@
 #include <mutex>
 
 #include "aifocore/utilities/fmt.h"
-#include "fastslide/readers/generictiff/generictiff.h"
 #include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/readers/simpletiff_tile_executor_utils.h"
 #include "simpletiff/reader.h"
@@ -32,16 +31,16 @@ namespace {
 }  // namespace
 
 aifocore::Status GenericTiffTileExecutor::ExecutePlan(
-    const core::TilePlan& plan, const GenericTiffReader& reader,
+    const core::TilePlan& plan, const GenericTiffExecContext& context,
     runtime::Canvas& writer) {
   const int level = plan.request.level;
-  if (level < 0 || level >= reader.GetLevelCount()) {
+  if (level < 0 || level >= context.level_count) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid level: {}", level));
   }
 
-  const auto& tiff_index = reader.GetTiffIndex();
+  const auto& tiff_index = context.tiff_index;
   if (IsFastSlideDebugEnabled()) {
     std::cerr << "[GenericTIFF] ExecutePlan: ops=" << plan.operations.size()
               << " level=" << level << " out=(" << plan.output.dimensions[0]

@@ -17,18 +17,17 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
+#include "fastslide/readers/ndpitiff/ndpitiff_exec_context.h"
 #include "fastslide/readers/tiff_based_tile_executor.h"
 #include "fastslide/runtime/tile_writer.h"
 
 namespace fastslide {
 
-class NdpiTiffReader;
-
 class NdpiTiffTileExecutor
     : public TiffBasedTileExecutor<NdpiTiffTileExecutor> {
  public:
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
-                                      const NdpiTiffReader& reader,
+                                      const NdpiTiffExecContext& context,
                                       runtime::Canvas& writer);
 };
 

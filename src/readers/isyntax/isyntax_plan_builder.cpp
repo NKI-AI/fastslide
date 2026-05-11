@@ -36,7 +36,7 @@ double IsyntaxPlanBuilder::ComputeOriginShift(int32_t level,
 }
 
 aifocore::Result<core::TilePlan> IsyntaxPlanBuilder::BuildPlan(
-    const core::TileRequest& request, const IsyntaxReader& reader) {
+    const core::TileRequest& request, const IsyntaxPlanContext& context) {
   core::TilePlan plan;
   plan.request = request;
 
@@ -60,7 +60,7 @@ aifocore::Result<core::TilePlan> IsyntaxPlanBuilder::BuildPlan(
                                     : request.channel_indices;
 
   // 2. Get geometry information
-  ImageDimensions tile_size = reader.GetTileSize();
+  ImageDimensions tile_size = context.tile_size;
   int32_t tile_w = static_cast<int32_t>(tile_size[0]);
   int32_t tile_h = static_cast<int32_t>(tile_size[1]);
 
@@ -70,8 +70,7 @@ aifocore::Result<core::TilePlan> IsyntaxPlanBuilder::BuildPlan(
   }
 
   // Get level dimensions
-  AIFOCORE_ASSIGN_OR_RETURN(const auto& level_info,
-                            reader.GetLevelInfo(request.level));
+  const auto& level_info = context.level_info;
   int64_t level_w = level_info.dimensions[0];
   int64_t level_h = level_info.dimensions[1];
 

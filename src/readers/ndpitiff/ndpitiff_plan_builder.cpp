@@ -16,17 +16,14 @@
 
 #include <span>
 
-#include "fastslide/readers/ndpitiff/ndpitiff.h"
 #include "fastslide/readers/simpletiff_plan_builder_utils.h"
 
 namespace fastslide {
 
 aifocore::Result<core::TilePlan> NdpiTiffPlanBuilder::BuildPlan(
-    const core::TileRequest& request, const NdpiTiffReader& reader) {
-  const auto& pyramid = reader.GetPyramidLevels();
+    const core::TileRequest& request, const NdpiTiffPlanContext& context) {
   return readers::simpletiff_plan::BuildSinglePagePlan<NdpiTiffLevelInfo>(
-      request, std::span<const NdpiTiffLevelInfo>(pyramid),
-      reader.GetTiffIndex(), "NDPI");
+      request, context.pyramid_levels, context.tiff_index, "NDPI");
 }
 
 }  // namespace fastslide

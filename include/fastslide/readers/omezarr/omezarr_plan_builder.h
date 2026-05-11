@@ -22,7 +22,7 @@
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
 #include "fastslide/image.h"
-#include "fastslide/readers/omezarr/omezarr.h"
+#include "fastslide/readers/omezarr/omezarr_level_info.h"
 
 namespace fastslide {
 

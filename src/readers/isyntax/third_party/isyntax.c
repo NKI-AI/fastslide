@@ -50,7 +50,6 @@
 #include "fastslide/readers/isyntax/third_party/platform/common.h"
 #include "fastslide/readers/isyntax/third_party/platform/intrinsics.h"
 
-#include "fastslide/readers/isyntax/third_party/tile.h"
 #include "fastslide/readers/isyntax/third_party/utils/mathutils.h"
 
 // JPEG decoding library for macro/label images

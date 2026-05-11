@@ -14,7 +14,9 @@
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
+#include "fastslide/readers/philipstiff/philipstiff_exec_context.h"
 #include "fastslide/readers/philipstiff/philipstiff_plan_builder.h"
+#include "fastslide/readers/philipstiff/philipstiff_plan_context.h"
 #include "fastslide/readers/philipstiff/philipstiff_tile_executor.h"
 #include "fastslide/readers/tiff_quickhash.h"
 #include "fastslide/runtime/tile_writer.h"
@@ -285,12 +287,20 @@ aifocore::Result<std::string> PhilipsTiffReader::GetQuickHash() const {
 
 aifocore::Result<core::TilePlan> PhilipsTiffReader::PrepareRequest(
     const core::TileRequest& request) const {
-  return PhilipsTiffPlanBuilder::BuildPlan(request, *this);
+  const PhilipsTiffPlanContext context{
+      .pyramid_levels = pyramid_levels_,
+      .tiff_index = GetTiffIndex(),
+  };
+  return PhilipsTiffPlanBuilder::BuildPlan(request, context);
 }
 
 aifocore::Status PhilipsTiffReader::ExecutePlan(const core::TilePlan& plan,
                                                 runtime::Canvas& writer) const {
-  return PhilipsTiffTileExecutor::ExecutePlan(plan, *this, writer);
+  const PhilipsTiffExecContext context{
+      .tiff_index = GetTiffIndex(),
+      .level_count = GetLevelCount(),
+  };
+  return PhilipsTiffTileExecutor::ExecutePlan(plan, context, writer);
 }
 
 aifocore::Status PhilipsTiffReader::ProcessMetadata() {

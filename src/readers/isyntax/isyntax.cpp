@@ -24,7 +24,9 @@
 #include <vector>
 
 #include "aifocore/utilities/fmt.h"
+#include "fastslide/readers/isyntax/isyntax_exec_context.h"
 #include "fastslide/readers/isyntax/isyntax_plan_builder.h"
+#include "fastslide/readers/isyntax/isyntax_plan_context.h"
 #include "fastslide/readers/isyntax/isyntax_tile_executor.h"
 #include "fastslide/readers/isyntax/third_party/file.h"
 #include "fastslide/readers/isyntax/third_party/isyntax.h"
@@ -279,12 +281,19 @@ ImageDimensions IsyntaxReader::GetTileSize() const {
 
 aifocore::Result<core::TilePlan> IsyntaxReader::PrepareRequest(
     const core::TileRequest& request) const {
-  return IsyntaxPlanBuilder::BuildPlan(request, *this);
+  AIFOCORE_ASSIGN_OR_RETURN(const auto level_info, GetLevelInfo(request.level));
+  const IsyntaxPlanContext context{
+      .tile_size = GetTileSize(),
+      .level_info = level_info,
+  };
+  return IsyntaxPlanBuilder::BuildPlan(request, context);
 }
 
 aifocore::Status IsyntaxReader::ExecutePlan(const core::TilePlan& plan,
                                             runtime::Canvas& writer) const {
-  return IsyntaxTileExecutor::ExecutePlan(plan, *this, writer);
+  const IsyntaxExecContext context(GetFilename(), GetIsyntaxFile(), GetMutex(),
+                                   GetTileSize(), GetCache());
+  return IsyntaxTileExecutor::ExecutePlan(plan, context, writer);
 }
 
 }  // namespace fastslide

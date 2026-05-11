@@ -23,12 +23,10 @@
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
+#include "fastslide/readers/mrxs/mrxs_plan_context.h"
 #include "fastslide/readers/mrxs/spatial_index.h"
 
 namespace fastslide {
-
-// Forward declarations
-class MrxsReader;
 
 namespace mrxs {
 class MrxsSpatialIndex;
@@ -39,18 +37,18 @@ class MrxsPlanBuilder {
  public:
   /// @brief Build a tile plan for an MRXS request
   /// @param request The tile request
-  /// @param reader The MRXS reader instance (for accessing slide info and spatial index)
+  /// @param context Read-only planning context
   /// @return Tile plan or error status
   static aifocore::Result<core::TilePlan> BuildPlan(
-      const core::TileRequest& request, const MrxsReader& reader);
+      const core::TileRequest& request, const MrxsPlanContext& context);
 
  private:
   /// @brief Validate the request parameters
   /// @param request The tile request
-  /// @param reader The MRXS reader instance
+  /// @param context Read-only planning context
   /// @return Status indicating success or failure
   static aifocore::Status ValidateRequest(const core::TileRequest& request,
-                                          const MrxsReader& reader);
+                                          const MrxsPlanContext& context);
 
   /// @brief Determine region bounds from request
   /// @param request The tile request

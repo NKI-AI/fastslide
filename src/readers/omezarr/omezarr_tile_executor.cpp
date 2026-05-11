@@ -30,7 +30,6 @@
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
-#include "fastslide/readers/omezarr/omezarr.h"
 #include "fastslide/readers/simpletiff_tile_executor_utils.h"
 #include "fastslide/runtime/cache_interface.h"
 
@@ -195,8 +194,7 @@ void ComputeStrides(const OmeZarrLevelInfo& level, DecodedChunk* chunk) {
 /// If the chunk file does not exist on disk, returns a buffer pre-filled with
 /// the array's `fill_value` per the Zarr V3 spec. Other I/O or decode errors
 /// propagate as failures.
-aifocore::Status ReadAndDecodeChunk(const OmeZarrReader& reader,
-                                    const OmeZarrLevelInfo& level, uint64_t cy,
+aifocore::Status ReadAndDecodeChunk(const OmeZarrLevelInfo& level, uint64_t cy,
                                     uint64_t cx, uint64_t cc,
                                     DecodedChunk* out) {
   const fs::path chunk_path =
@@ -252,19 +250,19 @@ void ExtractChannelPlane(const DecodedChunk& chunk,
 
 }  // namespace
 
-aifocore::Status OmeZarrTileExecutor::ExecutePlan(const core::TilePlan& plan,
-                                                  const OmeZarrReader& reader,
-                                                  runtime::Canvas& canvas) {
+aifocore::Status OmeZarrTileExecutor::ExecutePlan(
+    const core::TilePlan& plan, const OmeZarrExecContext& context,
+    runtime::Canvas& canvas) {
   const int level_index = plan.request.level;
-  const auto& pyramid = reader.GetPyramid();
+  const auto pyramid = context.pyramid;
   if (level_index < 0 || static_cast<size_t>(level_index) >= pyramid.size()) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("OME-Zarr: invalid level {}", level_index));
   }
   const OmeZarrLevelInfo& level = pyramid[level_index];
-  const auto cache = reader.GetCache();
-  const std::string filename = reader.GetFilename();
+  const auto cache = context.cache;
+  const std::string filename(context.filename);
   const auto& source_channels = plan.output.channel_indices;
 
   // Pre-compute (output_slot, in_chunk_channel) groupings keyed by
@@ -323,7 +321,7 @@ aifocore::Status OmeZarrTileExecutor::ExecutePlan(const core::TilePlan& plan,
           ComputeStrides(level, &chunk);
         } else {
           AIFOCORE_RETURN_IF_ERROR(
-              ReadAndDecodeChunk(reader, level, cy, cx, cc, &chunk));
+              ReadAndDecodeChunk(level, cy, cx, cc, &chunk));
           if (cache) {
             auto entry = std::make_shared<runtime::CachedTileData>(
                 chunk.data,

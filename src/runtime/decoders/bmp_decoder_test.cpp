@@ -153,5 +153,94 @@ TEST(BmpDecoderTest, RejectsTruncatedPixelData) {
   EXPECT_EQ(out_or.status().code(), aifocore::StatusCode::kInvalidArgument);
 }
 
+TEST(BmpDecoderTest, RejectsCompressedBmp) {
+  std::vector<uint8_t> bmp = BuildBmp24(
+      2, 2, false, {{0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0}});
+  // Patch biCompression (offset 30) to BITFIELDS (3); BMP must be BI_RGB (0).
+  const uint32_t compression = 3;
+  std::memcpy(&bmp[30], &compression, 4);
+  const auto out_or = DecodeBmpToRgb(bmp);
+  ASSERT_FALSE(out_or.ok());
+  EXPECT_EQ(out_or.status().code(), aifocore::StatusCode::kUnimplemented);
+}
+
+TEST(BmpDecoderTest, RejectsMultiplePlanes) {
+  std::vector<uint8_t> bmp = BuildBmp24(
+      2, 2, false, {{0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0}});
+  // Patch biPlanes (offset 26) to 2; only 1 is legal.
+  const uint16_t planes = 2;
+  std::memcpy(&bmp[26], &planes, 2);
+  const auto out_or = DecodeBmpToRgb(bmp);
+  ASSERT_FALSE(out_or.ok());
+  EXPECT_EQ(out_or.status().code(), aifocore::StatusCode::kUnimplemented);
+}
+
+TEST(BmpDecoderTest, RejectsTooSmallInfoHeader) {
+  std::vector<uint8_t> bmp = BuildBmp24(
+      2, 2, false, {{0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0}});
+  // Patch biSize (offset 14) to 12 (OS/2 1.x BITMAPCOREHEADER, unsupported).
+  const uint32_t info_size = 12;
+  std::memcpy(&bmp[14], &info_size, 4);
+  const auto out_or = DecodeBmpToRgb(bmp);
+  ASSERT_FALSE(out_or.ok());
+  EXPECT_EQ(out_or.status().code(), aifocore::StatusCode::kUnimplemented);
+}
+
+TEST(BmpDecoderTest, DecodesUnpaddedSingleColumnRow) {
+  // width=1 already needs 3 bytes, padded to 4. Verifies stride math when the
+  // unpadded row size and the aligned row stride differ.
+  const std::vector<uint8_t> row0 = {/*B*/ 30, /*G*/ 20, /*R*/ 10, /*pad*/ 0};
+  const std::vector<uint8_t> row1 = {/*B*/ 60, /*G*/ 50, /*R*/ 40, /*pad*/ 0};
+  // Bottom-up: file row 0 is the bottom of the image.
+  const auto bmp = BuildBmp24(1, 2, /*top_down=*/false, {row0, row1});
+
+  const auto out_or = DecodeBmpToRgb(bmp);
+  ASSERT_TRUE(out_or.ok()) << out_or.status().message();
+  const auto& out = out_or.value();
+  EXPECT_EQ(out.width, 1U);
+  EXPECT_EQ(out.height, 2U);
+  // Top-down RGB: top row was file row 1 = (40,50,60); bottom = (10,20,30).
+  const std::vector<uint8_t> expected = {40, 50, 60, 10, 20, 30};
+  EXPECT_EQ(out.rgb, expected);
+}
+
+TEST(BmpDecoderTest, DecodesLargerImage) {
+  // 16x4 image with deterministic gradient. Exercises the row loop more than
+  // the trivial 2x2 cases above and acts as a regression for stride math.
+  constexpr int32_t kW = 16;
+  constexpr int32_t kH = 4;
+  const uint32_t row_stride = ((static_cast<uint32_t>(kW) * 3U) + 3U) & ~3U;
+  std::vector<std::vector<uint8_t>> file_rows(kH,
+                                              std::vector<uint8_t>(row_stride));
+  for (int32_t y = 0; y < kH; ++y) {
+    for (int32_t x = 0; x < kW; ++x) {
+      // file_rows[y] holds the bottom-up row, so image_y = (kH-1-y).
+      const int32_t image_y = (kH - 1 - y);
+      file_rows[y][x * 3 + 0] = static_cast<uint8_t>(image_y * 17);  // B
+      file_rows[y][x * 3 + 1] = static_cast<uint8_t>(x * 5);         // G
+      file_rows[y][x * 3 + 2] = static_cast<uint8_t>(image_y + x);   // R
+    }
+  }
+
+  const auto bmp = BuildBmp24(kW, kH, /*top_down=*/false, file_rows);
+  const auto out_or = DecodeBmpToRgb(bmp);
+  ASSERT_TRUE(out_or.ok()) << out_or.status().message();
+  const auto& out = out_or.value();
+  ASSERT_EQ(out.rgb.size(),
+            static_cast<std::size_t>(kW) * static_cast<std::size_t>(kH) * 3U);
+
+  for (int32_t y = 0; y < kH; ++y) {
+    for (int32_t x = 0; x < kW; ++x) {
+      const std::size_t idx =
+          (static_cast<std::size_t>(y) * static_cast<std::size_t>(kW) +
+           static_cast<std::size_t>(x)) *
+          3U;
+      EXPECT_EQ(out.rgb[idx + 0], static_cast<uint8_t>(y + x));
+      EXPECT_EQ(out.rgb[idx + 1], static_cast<uint8_t>(x * 5));
+      EXPECT_EQ(out.rgb[idx + 2], static_cast<uint8_t>(y * 17));
+    }
+  }
+}
+
 }  // namespace
 }  // namespace fastslide::runtime::decoders
