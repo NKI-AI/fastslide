@@ -1,0 +1,27 @@
+# Compiled WASM files (generated during build).
+#
+# The Bazel workflow stages everything under `bazel-bin`; nothing under this
+# directory should ever contain build outputs again. Anyone still copying
+# files into example/ from a previous workflow will have them ignored.
+*.wasm
+*.wasm.map
+*_multiplex.js
+*_multiplex.data
+*_multiplex.html
+*_multiplex.js.symbols
+example/fastslide_multiplex.*
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+

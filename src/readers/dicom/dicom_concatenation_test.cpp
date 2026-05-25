@@ -34,9 +34,19 @@ namespace fs = std::filesystem;
 ///
 /// Resolution order:
 ///   1. `FASTSLIDE_DICOM_TESTDATA_DIR` env var (overrides for ad-hoc runs).
-///   2. Bazel test runfiles: `$TEST_SRCDIR/$TEST_WORKSPACE/<repo path>`.
+///   2. Bazel test runfiles. Under bzlmod the data file lives at
+///        `$TEST_SRCDIR/<fastslide canonical repo>/src/readers/dicom/testdata`
+///      where the canonical repo name is `_main` when fastslide IS the root
+///      module (standalone build) and `fastslide+` when loaded as an external
+///      dep (e.g. the aifo monorepo's `local_path_override`). The
+///      `BAZEL_CURRENT_REPOSITORY` macro is auto-injected by Bazel for every
+///      C++ compilation unit and resolves to exactly that canonical name
+///      (empty string for the root module). `TEST_WORKSPACE` alone is *not*
+///      sufficient: it tracks the consumer's main workspace, which stays
+///      `_main` even when the test target itself lives in an external repo.
 ///   3. Workspace-relative path from the current working directory.
 fs::path LocateTestdataDir() {
+  // Package-relative path of the testdata directory inside the runfiles tree.
   static constexpr const char* kRepoRelative =
       "src/readers/dicom/testdata";
 
@@ -45,9 +55,21 @@ fs::path LocateTestdataDir() {
   }
 
   const char* srcdir = std::getenv("TEST_SRCDIR");
-  const char* workspace = std::getenv("TEST_WORKSPACE");
-  if (srcdir != nullptr && workspace != nullptr) {
-    return fs::path(srcdir) / workspace / kRepoRelative;
+  if (srcdir != nullptr) {
+#ifdef BAZEL_CURRENT_REPOSITORY
+    std::string repo = BAZEL_CURRENT_REPOSITORY;
+#else
+    std::string repo;
+#endif
+    if (repo.empty()) {
+      // Root module: `TEST_WORKSPACE` (e.g. `_main`) is the right slot.
+      if (const char* workspace = std::getenv("TEST_WORKSPACE")) {
+        repo = workspace;
+      }
+    }
+    if (!repo.empty()) {
+      return fs::path(srcdir) / repo / kRepoRelative;
+    }
   }
 
   return fs::path(kRepoRelative);

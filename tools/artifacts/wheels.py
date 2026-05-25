@@ -70,7 +70,7 @@ def build_wheels(
 
         # Build all Python versions for this platform in a single Bazel
         # invocation so Bazel can parallelise the four transitioned configs.
-        targets = [f"//aifo/fastslide/python:fastslide_wheel_{t}" for t in python_tags]
+        targets = [f"@fastslide//python:fastslide_wheel_{t}" for t in python_tags]
         tags_label = ", ".join(python_tags)
         print(f"\n▶︎ Building {tags_label} wheels for {platform_key} with {bazel_cmd}")
 
@@ -85,7 +85,7 @@ def build_wheels(
             continue
 
         for py_tag in python_tags:
-            target = f"//aifo/fastslide/python:fastslide_wheel_{py_tag}"
+            target = f"@fastslide//python:fastslide_wheel_{py_tag}"
             try:
                 files = common.cquery_target_files(
                     bazel_cmd=bazel_cmd,

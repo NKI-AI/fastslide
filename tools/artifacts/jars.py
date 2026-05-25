@@ -21,17 +21,17 @@ from .specs import PLATFORMS, PlatformSpec
 ARTIFACT_DIR = common.REPO_ROOT / "aifo" / "fastslide" / "artifacts" / "jars"
 
 _JAR_TARGETS = [
-    "//aifo/fastslide/java:fastslide_java",
-    "//aifo/fastslide/java:fastslidetool_java_deploy.jar",
+    "@fastslide//java:fastslide_java",
+    "@fastslide//java:fastslidetool_java_deploy.jar",
 ]
 
 _NATIVE_TARGETS: dict[str, str] = {
-    "darwin_aarch64": "//aifo/fastslide/java:fastslide_native",
-    "darwin_x86_64": "//aifo/fastslide/java:fastslide_native",
-    "linux_x86_64": "//aifo/fastslide/java:fastslide_native",
-    "linux_arm64": "//aifo/fastslide/java:fastslide_native",
-    "windows_x86_64": "//aifo/fastslide/java:fastslide_native",
-    "windows_arm64": "//aifo/fastslide/java:fastslide_native",
+    "darwin_aarch64": "@fastslide//java:fastslide_native",
+    "darwin_x86_64": "@fastslide//java:fastslide_native",
+    "linux_x86_64": "@fastslide//java:fastslide_native",
+    "linux_arm64": "@fastslide//java:fastslide_native",
+    "windows_x86_64": "@fastslide//java:fastslide_native",
+    "windows_arm64": "@fastslide//java:fastslide_native",
 }
 
 

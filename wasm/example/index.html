@@ -129,8 +129,16 @@
           <button
             id="open-file"
             class="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Open a single-file slide (SVS, NDPI, TIFF, QPTIFF, iSyntax, BIF, CZI, ...)"
           >
-            Open Slide
+            Open File
+          </button>
+          <button
+            id="open-folder"
+            class="inline-flex items-center justify-center rounded-lg bg-gray-700 px-4 py-2 text-sm font-semibold text-gray-100 shadow-sm hover:bg-gray-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title="Open a multi-file slide directory (MRXS + sibling data dir, DICOM, OME-Zarr, ...)"
+          >
+            Open Folder
           </button>
         </div>
       </div>
@@ -314,6 +322,7 @@
             case "ready":
               showStatus("Ready", "success");
               document.getElementById("open-file").disabled = false;
+              document.getElementById("open-folder").disabled = false;
               break;
 
             case "slideLoaded":
@@ -340,7 +349,15 @@
         });
       }
 
-      // Open file dialog
+      // Formats that are a single file plus a sibling directory of the
+      // same base name (MRXS is currently the only one). The "Open File"
+      // handler chains a directory picker after the user picks one of
+      // these, so the worker receives both the entry file and its data
+      // dir in a single mount.
+      const SIDECAR_DIR_EXTENSIONS = new Set([".mrxs"]);
+
+      // Open file dialog (single-file slides; for sidecar-dir formats
+      // like MRXS we also prompt for the data folder).
       document
         .getElementById("open-file")
         .addEventListener("click", async () => {
@@ -349,8 +366,27 @@
               types: [
                 {
                   description: "Whole Slide Images",
+                  // Keep this list in sync with the formats linked into
+                  // the WASM build (see `//aifo/fastslide:fastslide_lib`):
+                  // Aperio SVS, 3DHistech MIRAX, TIFF / BigTIFF / OME-TIFF,
+                  // Hamamatsu NDPI, Akoya QPTIFF, Philips iSyntax,
+                  // DICOM WSI, Ventana BIF, Zeiss CZI, OME-Zarr.
                   accept: {
-                    "image/*": [".svs", ".mrxs", ".tiff", ".tif", ".qptiff"],
+                    "image/*": [
+                      ".svs",
+                      ".mrxs",
+                      ".tif",
+                      ".tiff",
+                      ".ome.tif",
+                      ".ome.tiff",
+                      ".ndpi",
+                      ".qptiff",
+                      ".isyntax",
+                      ".dcm",
+                      ".bif",
+                      ".czi",
+                      ".zarr",
+                    ],
                   },
                 },
               ],
@@ -358,6 +394,67 @@
             });
 
             const file = await fileHandle.getFile();
+            const lower = file.name.toLowerCase();
+            const sidecarExt = [...SIDECAR_DIR_EXTENSIONS].find((ext) =>
+              lower.endsWith(ext)
+            );
+
+            if (sidecarExt) {
+              // MRXS path: prompt for the sibling data folder.
+              const baseName = file.name.slice(0, -sidecarExt.length);
+              showStatus(
+                `Select the data folder for "${file.name}" (usually "${baseName}/" next to it).`,
+                "loading"
+              );
+
+              let dirHandle;
+              try {
+                dirHandle = await window.showDirectoryPicker({
+                  mode: "read",
+                });
+              } catch (err) {
+                if (err.name === "AbortError") {
+                  showStatus(
+                    "Cancelled \u2014 MRXS needs its data folder.",
+                    "error"
+                  );
+                  return;
+                }
+                throw err;
+              }
+
+              showLoading();
+              showStatus("Scanning data folder...", "loading");
+
+              // Mount the chosen folder under `/work/<baseName>/`
+              // regardless of what the user actually called it on disk.
+              // The MRXS reader looks for `<entryPath>` minus the
+              // extension as the directory name, so this guarantees a
+              // match even if the user renamed the folder.
+              const entries = [{ path: file.name, file }];
+              for await (const entry of walkDirectory(dirHandle, baseName)) {
+                entries.push(entry);
+              }
+
+              const hasSlidedat = entries.some(
+                (e) =>
+                  e.path.toLowerCase() ===
+                  `${baseName.toLowerCase()}/slidedat.ini`
+              );
+              if (!hasSlidedat) {
+                console.warn(
+                  `[open-file] Selected folder does not contain Slidedat.ini at the expected path "${baseName}/Slidedat.ini" \u2014 letting the reader surface the real error.`
+                );
+              }
+
+              showStatus(`Loading ${file.name}...`, "loading");
+              worker.postMessage({
+                type: "loadFile",
+                data: { entries, entryPath: file.name },
+              });
+              return;
+            }
+
             showLoading();
             showStatus("Loading...", "loading");
 
@@ -365,6 +462,96 @@
           } catch (err) {
             if (err.name !== "AbortError") {
               showStatus("Error opening file", "error");
+              console.error(err);
+            }
+          }
+        });
+
+      // File extensions recognised as slide entry points when scanning
+      // the contents of a picked folder. Order matters: container
+      // formats win over their single-file fallbacks so that, e.g., a
+      // folder holding `slide.mrxs` + `slide/Slidedat.ini` picks the
+      // `.mrxs` instead of any stray `.tif` thumbnail inside.
+      const SLIDE_EXTENSIONS = [
+        ".mrxs",
+        ".isyntax",
+        ".svs",
+        ".ndpi",
+        ".qptiff",
+        ".bif",
+        ".czi",
+        ".ome.tiff",
+        ".ome.tif",
+        ".tiff",
+        ".tif",
+        ".dcm",
+      ];
+
+      function matchesSlideExtension(name) {
+        const lower = name.toLowerCase();
+        return SLIDE_EXTENSIONS.find((ext) => lower.endsWith(ext)) || null;
+      }
+
+      async function* walkDirectory(dirHandle, base = "") {
+        for await (const [name, child] of dirHandle.entries()) {
+          const path = base ? `${base}/${name}` : name;
+          if (child.kind === "file") {
+            yield { path, file: await child.getFile() };
+          } else if (child.kind === "directory") {
+            yield* walkDirectory(child, path);
+          }
+        }
+      }
+
+      // Open folder dialog (multi-file container formats).
+      document
+        .getElementById("open-folder")
+        .addEventListener("click", async () => {
+          try {
+            const dirHandle = await window.showDirectoryPicker({
+              mode: "read",
+            });
+
+            showLoading();
+            showStatus("Scanning folder...", "loading");
+
+            const entries = [];
+            for await (const entry of walkDirectory(dirHandle)) {
+              entries.push(entry);
+            }
+
+            if (entries.length === 0) {
+              hideLoading();
+              showStatus("Folder is empty", "error");
+              return;
+            }
+
+            // First-match heuristic: prefer entries at the root of the
+            // picked folder, then walk down. This avoids picking a
+            // nested thumbnail when there's a sibling container at the
+            // top level (typical MRXS layout).
+            const sortedByDepth = [...entries].sort(
+              (a, b) =>
+                a.path.split("/").length - b.path.split("/").length ||
+                a.path.localeCompare(b.path)
+            );
+            const entry = sortedByDepth.find((e) =>
+              matchesSlideExtension(e.path)
+            );
+            if (!entry) {
+              hideLoading();
+              showStatus("No recognised slide file found in folder", "error");
+              return;
+            }
+
+            showStatus(`Loading ${entry.path}...`, "loading");
+            worker.postMessage({
+              type: "loadFile",
+              data: { entries, entryPath: entry.path },
+            });
+          } catch (err) {
+            if (err.name !== "AbortError") {
+              showStatus("Error opening folder", "error");
               console.error(err);
             }
           }
@@ -704,6 +891,7 @@
 
       // Initialize
       document.getElementById("open-file").disabled = true;
+      document.getElementById("open-folder").disabled = true;
       showStatus("Initializing...", "loading");
       initWorker();
     </script>

@@ -30,7 +30,7 @@ namespace {
 
 // Get benchmark file path from environment variable
 // Usage: FASTSLIDE_BENCHMARK_FILE=/path/to/file.svs bazelisk run
-// //aifo/fastslide/benchmarks:fastslide_tile_benchmark
+// @fastslide/benchmarks:fastslide_tile_benchmark
 const char* GetBenchmarkFilePath() {
   static const char* cached_path = nullptr;
   if (cached_path == nullptr) {

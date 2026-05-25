@@ -19,21 +19,47 @@ FastSlide is a modern C++20 library for reading whole slide images (WSI) with fi
 
 ### Installation
 
-#### Option 1: Using uv
+#### Option 1: Using uv (prebuilt wheel)
 
 ```bash
 uv pip install fastslide
 ```
 
-#### Option 2: Using Meson directly
+#### Option 2: Build from source with Bazel
+
+FastSlide is a [Bazel module](https://bazel.build/external/module). Builds are
+driven by [bzlmod](https://bazel.build/external/overview#bzlmod) and we pin a
+specific Bazel version through `.bazelversion`; the recommended launcher is
+[bazelisk](https://github.com/bazelbuild/bazelisk), which picks up that file
+automatically.
 
 ```bash
-# Configure for your Python environment
-export MESON_PREFIX=$(python -c "import sys; print(sys.prefix)")
-meson setup builddir --prefix="$MESON_PREFIX" --wrap-mode=forcefallback --prefer-static
-meson compile -C builddir
-meson install -C builddir
+git clone https://github.com/NKI-AI/fastslide
+cd fastslide
+
+# Build everything (C++ library, Python bindings, Go bindings, WASM target).
+bazelisk build //...
+
+# Run the C++ test suite.
+bazelisk test //...
+
+# Build the Python wheel for the current platform.
+bazelisk build //python:wheel
+# The wheel is then written under `bazel-bin/python/`.
 ```
+
+To consume FastSlide from another Bazel module, add it to your `MODULE.bazel`:
+
+```python
+bazel_dep(name = "fastslide", version = "0.5.6")
+git_override(
+    module_name = "fastslide",
+    remote = "https://github.com/NKI-AI/fastslide.git",
+    commit = "<pin a recent commit SHA>",
+)
+```
+
+and depend on `@fastslide//:fastslide_lib` (C++) or `@fastslide//python:fastslide` (Python).
 
 ### Python Usage
 
@@ -194,7 +220,8 @@ x0, y0 = slide.convert_level_native_to_level0(100, 200, level=2)
 
 ## Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](../../CONTRIBUTING.md) for guidelines.
+We welcome contributions. Please open an [issue](https://github.com/NKI-AI/fastslide/issues)
+to discuss what you would like to change, or jump straight into a pull request.
 
 ## Third-Party Components
 
@@ -250,7 +277,7 @@ FastSlide incorporates the following third-party software into its source:
 
   - Licensed under: BSD-2-Clause License
   - Used for: Decoding of JPEG XR tiles in the Zeiss CZI reader
-  - Modifications: Library has been modified to compile with Bazel and Meson, and files which were not necessary deleted.
+  - Modifications: Library has been modified to compile with Bazel and unused files removed.
 
 Several other libraries are used, but these are dynamically (or statically where appropriate) linked.
 
@@ -275,4 +302,4 @@ Several other libraries are used, but these are dynamically (or statically where
 
 FastSlide is licensed under the **Apache License, Version 2.0**.
 
-See [LICENSE](../../LICENSE) for full details.
+See [LICENSE](LICENSE) for full details.

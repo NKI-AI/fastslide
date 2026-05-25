@@ -28,6 +28,7 @@ Tests cover:
 
 import pytest
 import numpy as np
+import sys
 import threading
 import time
 from pathlib import Path
@@ -605,6 +606,42 @@ class TestContextManager:
 
         assert slide1.closed
         assert slide2.closed
+
+    def test_exit_accepts_none_args(self, sample_slide_path: str) -> None:
+        """Regression: ``__exit__`` must accept ``(None, None, None)``.
+
+        Python's context-manager protocol always passes three ``None``
+        arguments to ``__exit__`` when the ``with`` block exits without an
+        exception. The nanobind binding therefore needs each ``nb::object``
+        parameter to explicitly opt in to ``None`` via ``nb::arg().none()``.
+        """
+        slide = fastslide.FastSlide.from_file_path(sample_slide_path)
+        try:
+            result = slide.__exit__(None, None, None)
+        except TypeError as err:
+            pytest.fail(
+                f"FastSlide.__exit__ rejected (None, None, None): {err}",
+            )
+        assert result is False
+        assert slide.closed
+
+    def test_exit_accepts_exception_info(self, sample_slide_path: str) -> None:
+        """``__exit__`` must also accept real exception info tuples."""
+        slide = fastslide.FastSlide.from_file_path(sample_slide_path)
+        try:
+            raise ValueError("boom")
+        except ValueError:
+            exc_type, exc_value, traceback = sys.exc_info()
+            result = slide.__exit__(exc_type, exc_value, traceback)
+        assert result is False
+        assert slide.closed
+
+    def test_with_statement_normal_exit_does_not_raise(self, sample_slide_path: str) -> None:
+        """End-to-end repro of the reported TypeError on normal ``with`` exit."""
+        with fastslide.FastSlide.from_file_path(sample_slide_path) as slide:
+            dims = slide.dimensions
+            assert len(dims) == 2
+        assert slide.closed
 
 
 class TestThreadSafety:

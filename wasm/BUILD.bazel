@@ -1,0 +1,91 @@
+load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+# WASM wrapper binary.
+#
+# The wrapper exposes a Result-style API to JavaScript ({ok: true, value: ...}
+# or {ok: false, error: ...}) and never lets C++ exceptions reach JS. The
+# fastslide library does still use exceptions internally (e.g. metadata.h
+# uses `try { std::stoul(...) }`), so we keep `-fexceptions` on; any
+# leakage from the library is caught by the wrapper and converted to an Err
+# result before crossing the binding boundary.
+#
+# Threads: fastslide's `aifocore::ThreadPoolManager` lazily spawns a
+# `BS::light_thread_pool` on the first `ReadRegion` call, which requires real
+# `std::thread` support. We enable emscripten pthreads (`-pthread`,
+# `-sUSE_PTHREADS=1`) and pre-warm a worker pool of size
+# `navigator.hardwareConcurrency`. This means the served page MUST be cross-
+# origin-isolated (`COOP: same-origin` + `COEP: require-corp`) so the browser
+# exposes `SharedArrayBuffer`; the bundled `serve.py` does this for the
+# `python -m http.server` workflow.
+cc_binary(
+    name = "fastslide_multiplex",
+    srcs = [
+        "fastslide_wrapper.cpp",
+    ],
+    copts = [
+        "-std=c++20",
+        "-Wno-unused-parameter",
+        "-fexceptions",
+    ],
+    linkopts = [
+        # Emscripten-specific link options
+        "-sWASM=1",
+        "-sEXPORT_ES6=1",
+        "-sMODULARIZE=1",
+        "-sENVIRONMENT=web,worker,node",
+        "-sNO_EXIT_RUNTIME=1",
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sINITIAL_MEMORY=134217728",  # 128MB initial memory
+        "-sMAXIMUM_MEMORY=4294967296",  # 4GB maximum memory
+        "-sFILESYSTEM=1",  # Enable virtual filesystem
+        "-sFORCE_FILESYSTEM=1",  # Force filesystem to be included
+        "-sEXPORT_NAME=createFastSlideModule",
+        # Export FS API for filesystem operations.
+        "-sEXPORTED_RUNTIME_METHODS=['FS','WORKERFS']",
+        # Enable embind for C++ bindings.
+        "-lembind",
+        # Force WORKERFS to be included (required for lazy file loading).
+        "-lworkerfs.js",
+        # Keep exception support enabled for internal library code; the
+        # wrapper still presents a no-throw Result API to JS by catching
+        # at the binding boundary.
+        "-fexceptions",
+        "-sDISABLE_EXCEPTION_CATCHING=0",
+        # Pre-warm a pthread worker pool sized to the browser's reported
+        # CPU count so `std::thread(...)` calls (issued by
+        # `BS::light_thread_pool`) can spawn synchronously without
+        # round-tripping through the event loop. `-pthread` and
+        # `-sUSE_PTHREADS=1` are injected by the `use_pthreads` toolchain
+        # feature (see `threads = "emscripten"` on the wasm_cc_binary).
+        "-sPTHREAD_POOL_SIZE=navigator.hardwareConcurrency",
+        # Optimize.
+        "-O2",
+    ],
+    target_compatible_with = [
+        "@platforms//cpu:wasm32",
+    ],
+    deps = [
+        "//:fastslide_lib",
+    ],
+)
+
+# `threads = "emscripten"` enables the toolchain's `use_pthreads` feature,
+# which propagates `-pthread` and `-s USE_PTHREADS=1` to every compile
+# action in the transitive closure (including aifocore/fastslide library
+# objects). Without this propagation, wasm-ld refuses to link with
+# `--shared-memory` because the dependency objects lack the `atomics` /
+# `bulk-memory` features.
+wasm_cc_binary(
+    name = "fastslide_multiplex_wasm",
+    cc_target = ":fastslide_multiplex",
+    threads = "emscripten",
+    visibility = ["//visibility:public"],
+)
+
+# Convenient aliases for building with different platforms
+alias(
+    name = "wasm",
+    actual = ":fastslide_multiplex_wasm",
+    visibility = ["//visibility:public"],
+)

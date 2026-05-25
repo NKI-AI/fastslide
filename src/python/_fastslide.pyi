@@ -352,7 +352,13 @@ class FastSlide:
         """
 
     def __enter__(self) -> FastSlide: ...
-    def __exit__(self, arg0: object, arg1: object, arg2: object, /) -> bool: ...
+    def __exit__(
+        self,
+        exc_type: object | None,
+        exc_value: object | None,
+        traceback: object | None,
+        /,
+    ) -> bool: ...
 
 def get_supported_extensions() -> list[str]:
     """Get list of supported file extensions"""
