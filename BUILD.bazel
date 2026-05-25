@@ -1,0 +1,1726 @@
+load("@aspect_rules_py//py:defs.bzl", "py_library")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("@rules_uv//uv:pip.bzl", "pip_compile")
+
+# Allow other packages (e.g. distribution bundling) to reference these files.
+exports_files([
+    "LICENSE",
+    "README.md",
+    "requirements.in",
+    "requirements_linux.txt",
+    "requirements_darwin.txt",
+])
+
+# Resolve fastslide's runtime/test Python requirements into proper per-platform
+# lockfiles. Listing only direct deps in `requirements.in` is not enough --
+# rules_python's `pip.parse` does not perform transitive resolution itself, so
+# every dep that any wheel imports at runtime (e.g. `pluggy` for pytest) must
+# appear in the resolved lockfile. Driving it through `pip_compile` keeps that
+# closed automatically.
+#
+# Generated `*_test` targets are tagged `manual` for the same reason as the
+# docs/ requirements tests: the lockfile bakes in a path to `requirements.in`
+# that is `requirements.in` for the root module (standalone build) and
+# `../fastslide+/requirements.in` when fastslide is loaded as an external dep
+# (e.g. via the aifo monorepo's `local_path_override`). No single committed
+# file can satisfy both contexts, so we treat freshness checks as a fastslide
+# -standalone CI lint that has to be invoked explicitly.
+pip_compile(
+    name = "generate_requirements_linux_txt",
+    python_platform = "x86_64-unknown-linux-gnu",
+    requirements_in = "requirements.in",
+    requirements_txt = "requirements_linux.txt",
+    tags = ["manual"],
+)
+
+pip_compile(
+    name = "generate_requirements_darwin_txt",
+    python_platform = "aarch64-apple-darwin",
+    requirements_in = "requirements.in",
+    requirements_txt = "requirements_darwin.txt",
+    tags = ["manual"],
+)
+
+# ============================================================================
+# Build Configuration
+# ============================================================================
+
+# Build config to choose JPEG decoder
+# Set via: bazel build --define=jpeg_decoder=jpgd @fastslide/...
+config_setting(
+    name = "use_jpgd",
+    define_values = {"jpeg_decoder": "jpgd"},
+)
+
+# Compiler options for WASM builds
+WASM_COPTS = select({
+    "@platforms//cpu:wasm32": ["-fexceptions"],
+    "//conditions:default": [],
+})
+
+# ============================================================================
+# Documentation Support
+# ============================================================================
+
+# Export all header files for documentation generation
+filegroup(
+    name = "fastslide_headers",
+    srcs = glob(["include/**/*.h"]),
+    visibility = [
+        "//docs:__pkg__",
+        "//package:__pkg__",
+    ],
+)
+
+# Export all source files for documentation generation
+filegroup(
+    name = "fastslide_sources",
+    srcs = glob(["src/**/*.cpp"]),
+    visibility = ["//docs:__pkg__"],
+)
+
+# Export Doxyfile for documentation generation
+exports_files(
+    ["Doxyfile"],
+    visibility = ["//docs:__pkg__"],
+)
+
+# ============================================================================
+# Library Targets
+# ============================================================================
+
+cc_library(
+    name = "tiff_utilities",
+    srcs = [
+        "src/utilities/tiff/tile_utilities.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/utilities/tiff/tile_utilities.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = [
+        "//tests:__pkg__",
+        "//tests:__subpackages__",
+        "//visibility:__subpackages__",
+    ],
+    deps = [
+        ":core_tile_request",
+        ":image",
+        "@aifocore-cpp//:concepts",
+    ],
+)
+
+cc_library(
+    name = "colors",
+    srcs = ["src/utilities/colors.cpp"],
+    hdrs = ["include/fastslide/utilities/colors.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
+    name = "metadata_parsers",
+    srcs = [
+        "src/readers/aperio/metadata_parser.cpp",
+        "src/readers/ometiff/metadata_parser.cpp",
+        "src/readers/qptiff/metadata_parser.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/readers/aperio/metadata_parser.h",
+        "include/fastslide/readers/ometiff/metadata_parser.h",
+        "include/fastslide/readers/qptiff/metadata_parser.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = [
+        "//tests:__pkg__",
+        "//tests:__subpackages__",
+        "//visibility:__subpackages__",
+    ],
+    deps = [
+        ":colors",
+        "@aifocore-cpp//:concepts",
+        "@aifocore-cpp//:result",
+        "@pugixml",
+    ],
+)
+
+# Header-only target exposing the Python binding wrappers. The extension
+# itself (`//src/python:_fastslide_impl`) is built with
+# `nanobind_extension`, which already injects the nanobind cc_library into
+# the link line. Linking nanobind here as well would cause duplicate
+# `-Wl,@.../darwin-ld-cpython.sym` entries and a "recursively loading"
+# linker error on macOS, so we expose only the include path and rely on
+# the extension to provide the actual nanobind dep at compile time.
+cc_library(
+    name = "python_binding_headers",
+    hdrs = [
+        "include/fastslide/python/cache.h",
+        "include/fastslide/python/reader.h",
+    ],
+    includes = ["include"],
+    visibility = ["//src/python:__pkg__"],
+    deps = [
+        ":slide_reader",
+        "@aifocore-cpp//:concepts",
+    ],
+)
+
+cc_library(
+    name = "cache",
+    hdrs = [],
+    includes = ["include"],
+    visibility = [
+        "//src/python:__pkg__",
+        "//tests:__pkg__",
+        "//tests:__subpackages__",
+        "//visibility:__subpackages__",
+    ],
+    deps = [
+        ":runtime_cache_interface",
+        ":runtime_lru_tile_cache",
+        "@aifocore-cpp//:concepts",
+        "@aifocore-cpp//:result",
+    ],
+)
+
+cc_library(
+    name = "sha256",
+    srcs = ["src/utilities/sha-256.c"],
+    hdrs = ["include/fastslide/utilities/sha-256.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "hash",
+    srcs = ["src/utilities/hash.cpp"],
+    hdrs = ["include/fastslide/utilities/hash.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":sha256",
+        "@aifocore-cpp//:portability",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
+    name = "mrxs_internal_types",
+    hdrs = ["include/fastslide/readers/mrxs/mrxs_internal.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "spatial_index",
+    srcs = ["src/readers/mrxs/spatial_index.cpp"],
+    hdrs = [
+        "include/fastslide/readers/mrxs/spatial_index.h",
+        "include/fastslide/readers/spatial/grid_hash.h",
+        "include/fastslide/utilities/unordered_dense.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":image",
+        ":mrxs_internal_types",
+        "@aifocore-cpp//:concepts",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
+    name = "image",
+    srcs = ["src/image.cpp"],
+    hdrs = ["include/fastslide/image.h"],
+    copts = select({
+        "@platforms//cpu:wasm32": [
+            "-fexceptions",  # Enable exceptions for WASM
+        ],
+        "//conditions:default": [],
+    }),
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@aifocore-cpp//:concepts",
+        "@aifocore-cpp//:ndarray",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@hwy",
+    ],
+)
+
+cc_library(
+    name = "slide_options",
+    hdrs = ["include/fastslide/slide_options.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "metadata",
+    hdrs = ["include/fastslide/metadata.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core_metadata",
+        "@aifocore-cpp//:concepts",
+    ],
+)
+
+cc_library(
+    name = "core_metadata",
+    hdrs = ["include/fastslide/core/metadata.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "core_slide_descriptor",
+    hdrs = ["include/fastslide/core/slide_descriptor.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":colors",
+        ":image",
+        "@aifocore-cpp//:concepts",  # For aifocore::Size
+    ],
+)
+
+cc_library(
+    name = "core_tile_request",
+    hdrs = ["include/fastslide/core/tile_request.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":image",
+    ],
+)
+
+cc_library(
+    name = "core_tile_plan",
+    hdrs = ["include/fastslide/core/tile_plan.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core_tile_request",
+        ":image",
+    ],
+)
+
+cc_library(
+    name = "core",
+    hdrs = [
+        "include/fastslide/core/metadata.h",
+        "include/fastslide/core/slide_descriptor.h",
+        "include/fastslide/core/tile_plan.h",
+        "include/fastslide/core/tile_request.h",
+    ],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core_metadata",
+        ":core_slide_descriptor",
+        ":core_tile_plan",
+        ":core_tile_request",
+    ],
+)
+
+cc_library(
+    name = "runtime_cache_interface",
+    hdrs = ["include/fastslide/runtime/cache_interface.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@aifocore-cpp//:concepts",  # For aifocore::Size
+    ],
+)
+
+cc_library(
+    name = "runtime_lru_tile_cache",
+    srcs = ["src/runtime/lru_tile_cache.cpp"],
+    hdrs = ["include/fastslide/runtime/lru_tile_cache.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":runtime_cache_interface",
+        "@aifocore-cpp//:result",
+    ],
+)
+
+cc_library(
+    name = "runtime_global_cache_manager",
+    srcs = ["src/runtime/global_cache_manager.cpp"],
+    hdrs = ["include/fastslide/runtime/global_cache_manager.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":runtime_cache_interface",
+        ":runtime_lru_tile_cache",
+    ],
+)
+
+cc_library(
+    name = "runtime_format_descriptor",
+    hdrs = ["include/fastslide/runtime/format_descriptor.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":runtime_cache_interface",
+        "@aifocore-cpp//:result",
+    ],
+)
+
+cc_library(
+    name = "runtime_reader_registry",
+    srcs = ["src/runtime/reader_registry.cpp"],
+    hdrs = ["include/fastslide/runtime/reader_registry.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":runtime_cache_interface",
+        ":runtime_format_descriptor",
+        ":slide_reader",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
+    name = "runtime_plugin_loader",
+    srcs = ["src/runtime/plugin_loader.cpp"],
+    hdrs = ["include/fastslide/runtime/plugin_loader.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":formats",
+        ":runtime_format_descriptor",
+        ":runtime_reader_registry",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
+    name = "runtime_tile_writer",
+    srcs = [
+        "src/runtime/tile_writer.cpp",
+        "src/runtime/tile_writer/bilinear_blit_hwy.cpp",
+        "src/runtime/tile_writer/canvas_config.cpp",
+        "src/runtime/tile_writer/direct/copy_planar.cpp",
+        "src/runtime/tile_writer/direct/copy_rgb8.cpp",
+        "src/runtime/tile_writer/direct/fills.cpp",
+        "src/runtime/tile_writer/paint_direct.cpp",
+        "src/runtime/tile_writer/paint_dispatch.cpp",
+        "src/runtime/tile_writer/paint_rgb.cpp",
+        "src/runtime/tile_writer/rgb_blit.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/runtime/tile_writer.h",
+        "include/fastslide/runtime/tile_writer/bilinear_blit_hwy.h",
+        "include/fastslide/runtime/tile_writer/clip_region.h",
+        "include/fastslide/runtime/tile_writer/direct/copy_planar.h",
+        "include/fastslide/runtime/tile_writer/direct/copy_rgb8.h",
+        "include/fastslide/runtime/tile_writer/direct/fills.h",
+        "include/fastslide/runtime/tile_writer/fs_profile.h",
+        "include/fastslide/runtime/tile_writer/pixel_ops.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core_tile_plan",
+        ":image",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:thread_pool_singleton",
+        "@aifocore-cpp//:utilities-core",
+        "@hwy",
+    ],
+)
+
+cc_library(
+    name = "runtime",
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":runtime_cache_interface",
+        ":runtime_format_descriptor",
+        ":runtime_lru_tile_cache",
+        ":runtime_reader_registry",
+        ":runtime_tile_writer",
+    ],
+)
+
+cc_library(
+    name = "slide_reader",
+    srcs = ["src/slide_reader.cpp"],
+    hdrs = ["include/fastslide/slide_reader.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cache",
+        ":colors",
+        ":core_slide_descriptor",
+        ":core_tile_plan",
+        ":core_tile_request",
+        ":image",
+        ":metadata",
+        ":runtime_tile_writer",
+        ":slide_options",
+        "@aifocore-cpp//:concepts",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
+    name = "readers",
+    srcs = [
+        "src/readers/tiff_based_reader.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/readers/cached_tile_executor.h",
+        "include/fastslide/readers/reader_factory.h",
+        "include/fastslide/readers/simpletiff_decode_utils.h",
+        "include/fastslide/readers/simpletiff_tile_executor_utils.h",
+        "include/fastslide/readers/tiff_based_reader.h",
+        "include/fastslide/readers/tiff_based_tile_executor.h",
+        "include/fastslide/readers/tiff_reader_factory.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:__subpackages__"],
+    deps = [
+        ":cache",
+        ":core",
+        ":image",
+        ":metadata",
+        ":runtime",
+        ":runtime_binary_utils",
+        ":slide_reader",
+        ":tiff_utilities",
+        "@aifocore-cpp//:concepts",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
+    name = "simpletiff_plan_builder_utils",
+    srcs = ["src/readers/simpletiff_plan_builder_utils.cpp"],
+    hdrs = ["include/fastslide/readers/simpletiff_plan_builder_utils.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:__subpackages__"],
+    deps = [
+        ":core",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+cc_library(
+    name = "associated_data",
+    hdrs = ["include/fastslide/associated_data.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":image",
+    ],
+)
+
+cc_library(
+    name = "formats",
+    hdrs = ["include/fastslide/readers/readers.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":formats_aperio",
+        ":formats_czi",
+        ":formats_dicom",
+        ":formats_generictiff",
+        ":formats_isyntax",
+        ":formats_mrxs",
+        ":formats_ndpitiff",
+        ":formats_ometiff",
+        ":formats_omezarr",
+        ":formats_qptiff",
+    ],
+)
+
+cc_library(
+    name = "formats_omezarr",
+    srcs = [
+        "src/readers/omezarr/omezarr.cpp",
+        "src/readers/omezarr/omezarr_codec.cpp",
+        "src/readers/omezarr/omezarr_format_plugin.cpp",
+        "src/readers/omezarr/omezarr_metadata.cpp",
+        "src/readers/omezarr/omezarr_plan_builder.cpp",
+        "src/readers/omezarr/omezarr_tile_executor.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/readers/omezarr/omezarr.h",
+        "include/fastslide/readers/omezarr/omezarr_codec.h",
+        "include/fastslide/readers/omezarr/omezarr_exec_context.h",
+        "include/fastslide/readers/omezarr/omezarr_format_plugin.h",
+        "include/fastslide/readers/omezarr/omezarr_level_info.h",
+        "include/fastslide/readers/omezarr/omezarr_metadata.h",
+        "include/fastslide/readers/omezarr/omezarr_plan_builder.h",
+        "include/fastslide/readers/omezarr/omezarr_tile_executor.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cache",
+        ":colors",
+        ":core",
+        ":image",
+        ":readers",
+        ":runtime",
+        ":simpletiff_plan_builder_utils",
+        ":slide_reader",
+        "@aifocore-cpp//:concepts",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@nlohmann_json//:json",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+cc_library(
+    name = "formats_ndpitiff",
+    srcs = [
+        "src/readers/ndpitiff/ndpitiff.cpp",
+        "src/readers/ndpitiff/ndpitiff_format_plugin.cpp",
+        "src/readers/ndpitiff/ndpitiff_plan_builder.cpp",
+        "src/readers/ndpitiff/ndpitiff_tile_executor.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/readers/ndpitiff/ndpitiff.h",
+        "include/fastslide/readers/ndpitiff/ndpitiff_exec_context.h",
+        "include/fastslide/readers/ndpitiff/ndpitiff_format_plugin.h",
+        "include/fastslide/readers/ndpitiff/ndpitiff_jpeg_header.h",
+        "include/fastslide/readers/ndpitiff/ndpitiff_level_info.h",
+        "include/fastslide/readers/ndpitiff/ndpitiff_plan_builder.h",
+        "include/fastslide/readers/ndpitiff/ndpitiff_plan_context.h",
+        "include/fastslide/readers/ndpitiff/ndpitiff_tile_executor.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cache",
+        ":core",
+        ":image",
+        ":readers",
+        ":runtime",
+        ":simpletiff_plan_builder_utils",
+        ":slide_reader",
+        ":tiff_utilities",
+        "@aifocore-cpp//:concepts",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+cc_library(
+    name = "formats_ometiff",
+    srcs = [
+        "src/readers/ometiff/metadata_parser.cpp",
+        "src/readers/ometiff/ometiff.cpp",
+        "src/readers/ometiff/ometiff_format_plugin.cpp",
+        "src/readers/ometiff/ometiff_metadata_loader.cpp",
+        "src/readers/ometiff/ometiff_plan_builder.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/readers/multi_channel_tiff_tile_executor.h",
+        "include/fastslide/readers/ometiff/metadata_parser.h",
+        "include/fastslide/readers/ometiff/ometiff.h",
+        "include/fastslide/readers/ometiff/ometiff_exec_context.h",
+        "include/fastslide/readers/ometiff/ometiff_format_plugin.h",
+        "include/fastslide/readers/ometiff/ometiff_level_info.h",
+        "include/fastslide/readers/ometiff/ometiff_metadata_loader.h",
+        "include/fastslide/readers/ometiff/ometiff_plan_builder.h",
+        "include/fastslide/readers/ometiff/ometiff_plan_context.h",
+        "include/fastslide/readers/ometiff/ometiff_tile_executor.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cache",
+        ":colors",
+        ":core",
+        ":image",
+        ":readers",
+        ":runtime",
+        ":simpletiff_plan_builder_utils",
+        ":slide_reader",
+        ":tiff_utilities",
+        "@aifocore-cpp//:concepts",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@pugixml",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+cc_library(
+    name = "formats_dicom",
+    srcs = [
+        "src/readers/dicom/dicom.cpp",
+        "src/readers/dicom/dicom_decode.cpp",
+        "src/readers/dicom/dicom_format_plugin.cpp",
+        "src/readers/dicom/dicom_magic.cpp",
+        "src/readers/dicom/dicom_plan_builder.cpp",
+        "src/readers/dicom/dicom_tile_executor.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/readers/dicom/dicom.h",
+        "include/fastslide/readers/dicom/dicom_decode.h",
+        "include/fastslide/readers/dicom/dicom_exec_context.h",
+        "include/fastslide/readers/dicom/dicom_format_plugin.h",
+        "include/fastslide/readers/dicom/dicom_level_info.h",
+        "include/fastslide/readers/dicom/dicom_magic.h",
+        "include/fastslide/readers/dicom/dicom_plan_builder.h",
+        "include/fastslide/readers/dicom/dicom_plan_context.h",
+        "include/fastslide/readers/dicom/dicom_tile_executor.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cache",
+        ":core",
+        ":image",
+        ":readers",
+        ":runtime",
+        ":runtime_j2k_decoder",
+        ":runtime_jpeg_decoder",
+        ":slide_reader",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@libdicom",
+    ],
+)
+
+cc_library(
+    name = "formats_czi",
+    srcs = [
+        "src/readers/czi/czi.cpp",
+        "src/readers/czi/czi_embedded.cpp",
+        "src/readers/czi/czi_format_plugin.cpp",
+        "src/readers/czi/czi_plan_builder.cpp",
+        "src/readers/czi/czi_spatial_index.cpp",
+        "src/readers/czi/czi_tile_executor.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/readers/czi/czi.h",
+        "include/fastslide/readers/czi/czi_embedded.h",
+        "include/fastslide/readers/czi/czi_exec_context.h",
+        "include/fastslide/readers/czi/czi_format_plugin.h",
+        "include/fastslide/readers/czi/czi_level_info.h",
+        "include/fastslide/readers/czi/czi_plan_builder.h",
+        "include/fastslide/readers/czi/czi_plan_context.h",
+        "include/fastslide/readers/czi/czi_spatial_index.h",
+        "include/fastslide/readers/czi/czi_tile_executor.h",
+        "include/fastslide/readers/spatial/grid_hash.h",
+        "include/fastslide/utilities/unordered_dense.h",
+    ],
+    copts = WASM_COPTS + [
+        "-D__ANSI__",
+    ],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cache",
+        ":core",
+        ":image",
+        ":readers",
+        ":runtime",
+        ":runtime_binary_utils",
+        ":runtime_file_reader",
+        ":runtime_jpeg_decoder",
+        ":runtime_jpeg_xr_decoder",
+        ":slide_reader",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@pugixml",
+        "@zstd",
+    ],
+)
+
+cc_library(
+    name = "libisyntax",
+    srcs = glob(
+        [
+            "src/readers/isyntax/third_party/**/*.c",
+            "src/readers/isyntax/third_party/**/*.cpp",
+        ],
+        exclude = [
+            "src/readers/isyntax/third_party/libisyntax.c",
+            # `isyntax.c` is compiled (as C++) in `:isyntax_core_impl`.
+            "src/readers/isyntax/third_party/isyntax.c",
+            # Use the C++ implementation. The legacy .c file is redundant.
+            "src/readers/isyntax/third_party/platform/platform.c",
+            # Avoid ODR/linker errors: both `mathutils.c` and `mathutils.cpp`
+            # provide the same C-linkage symbols (via `mathutils.h`).
+            "src/readers/isyntax/third_party/utils/mathutils.c",
+        ],
+    ),
+    hdrs = glob(["include/fastslide/readers/isyntax/third_party/**/*.h"]),
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":isyntax_core_impl",
+        ":runtime_jpeg_decoder",
+        "@aifocore-cpp//:portability",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
+    name = "isyntax_core_impl",
+    srcs = ["src/readers/isyntax/third_party/isyntax.c"],
+    hdrs = glob(["include/fastslide/readers/isyntax/third_party/**/*.h"]),
+    # Force `isyntax.c` to compile as C++ (real TU, not textual inclusion).
+    copts = WASM_COPTS + [
+        "-x",
+        "c++",
+        "-std=c++20",
+    ],
+    includes = ["include"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+# iSyntax format
+cc_library(
+    name = "formats_isyntax",
+    srcs = [
+        "src/readers/isyntax/isyntax.cpp",
+        "src/readers/isyntax/isyntax_plan_builder.cpp",
+        "src/readers/isyntax/isyntax_tile_executor.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/readers/isyntax/isyntax.h",
+        "include/fastslide/readers/isyntax/isyntax_exec_context.h",
+        "include/fastslide/readers/isyntax/isyntax_plan_builder.h",
+        "include/fastslide/readers/isyntax/isyntax_plan_context.h",
+        "include/fastslide/readers/isyntax/isyntax_tile_executor.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":colors",
+        ":core",
+        ":image",
+        ":libisyntax",
+        ":readers",
+        ":runtime",
+        ":slide_reader",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
+    name = "runtime_register_builtin_formats",
+    srcs = ["src/runtime/register_builtin_formats.cpp"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":formats",
+        ":runtime_plugin_loader",
+        ":runtime_reader_registry",
+    ],
+    alwayslink = 1,
+)
+
+# Aperio format
+cc_library(
+    name = "formats_aperio",
+    srcs = [
+        "src/readers/aperio/aperio.cpp",
+        "src/readers/aperio/aperio_format_plugin.cpp",
+        "src/readers/aperio/aperio_plan_builder.cpp",
+        "src/readers/aperio/aperio_tile_executor.cpp",
+        "src/readers/aperio/metadata_parser.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/readers/aperio/aperio.h",
+        "include/fastslide/readers/aperio/aperio_exec_context.h",
+        "include/fastslide/readers/aperio/aperio_format_plugin.h",
+        "include/fastslide/readers/aperio/aperio_level_info.h",
+        "include/fastslide/readers/aperio/aperio_plan_builder.h",
+        "include/fastslide/readers/aperio/aperio_plan_context.h",
+        "include/fastslide/readers/aperio/aperio_tiff_metadata.h",
+        "include/fastslide/readers/aperio/aperio_tile_executor.h",
+        "include/fastslide/readers/aperio/metadata_parser.h",
+        "include/fastslide/readers/tiff_based_tile_executor.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":colors",
+        ":core",
+        ":hash",
+        ":image",
+        ":readers",
+        ":runtime",
+        ":simpletiff_plan_builder_utils",
+        ":slide_reader",
+        ":tiff_utilities",
+        "@aifocore-cpp//:concepts",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@pugixml",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+# QPTIFF format
+cc_library(
+    name = "formats_qptiff",
+    srcs = [
+        "src/readers/qptiff/metadata_parser.cpp",
+        "src/readers/qptiff/qptiff.cpp",
+        "src/readers/qptiff/qptiff_format_plugin.cpp",
+        "src/readers/qptiff/qptiff_metadata_loader.cpp",
+        "src/readers/qptiff/qptiff_plan_builder.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/readers/multi_channel_tiff_tile_executor.h",
+        "include/fastslide/readers/qptiff/metadata_parser.h",
+        "include/fastslide/readers/qptiff/qptiff.h",
+        "include/fastslide/readers/qptiff/qptiff_exec_context.h",
+        "include/fastslide/readers/qptiff/qptiff_format_plugin.h",
+        "include/fastslide/readers/qptiff/qptiff_level_info.h",
+        "include/fastslide/readers/qptiff/qptiff_metadata_loader.h",
+        "include/fastslide/readers/qptiff/qptiff_plan_builder.h",
+        "include/fastslide/readers/qptiff/qptiff_plan_context.h",
+        "include/fastslide/readers/qptiff/qptiff_tile_executor.h",
+        "include/fastslide/readers/tiff_based_tile_executor.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cache",
+        ":colors",
+        ":core",
+        ":image",
+        ":readers",
+        ":runtime",
+        ":simpletiff_plan_builder_utils",
+        ":slide_reader",
+        ":tiff_utilities",
+        "@aifocore-cpp//:concepts",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@pugixml",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+# MRXS format
+cc_library(
+    name = "formats_mrxs",
+    srcs = [
+        "src/readers/mrxs/mrxs.cpp",
+        "src/readers/mrxs/mrxs_data_reader.cpp",
+        "src/readers/mrxs/mrxs_decoder.cpp",
+        "src/readers/mrxs/mrxs_format_plugin.cpp",
+        "src/readers/mrxs/mrxs_index_reader.cpp",
+        "src/readers/mrxs/mrxs_ini_parser.cpp",
+        "src/readers/mrxs/mrxs_layer_parser.cpp",
+        "src/readers/mrxs/mrxs_plan_builder.cpp",
+        "src/readers/mrxs/mrxs_tile_executor.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/readers/mrxs/mrxs.h",
+        "include/fastslide/readers/mrxs/mrxs_constants.h",
+        "include/fastslide/readers/mrxs/mrxs_data_reader.h",
+        "include/fastslide/readers/mrxs/mrxs_decoder.h",
+        "include/fastslide/readers/mrxs/mrxs_exec_context.h",
+        "include/fastslide/readers/mrxs/mrxs_format_plugin.h",
+        "include/fastslide/readers/mrxs/mrxs_index_reader.h",
+        "include/fastslide/readers/mrxs/mrxs_ini_parser.h",
+        "include/fastslide/readers/mrxs/mrxs_internal.h",
+        "include/fastslide/readers/mrxs/mrxs_layer_parser.h",
+        "include/fastslide/readers/mrxs/mrxs_plan_builder.h",
+        "include/fastslide/readers/mrxs/mrxs_plan_context.h",
+        "include/fastslide/readers/mrxs/mrxs_tile_executor.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":associated_data",
+        ":cache",
+        ":colors",
+        ":core",
+        ":hash",
+        ":image",
+        ":readers",
+        ":runtime",
+        ":runtime_binary_utils",
+        ":runtime_bmp_decoder",
+        ":runtime_file_reader",
+        ":runtime_jpeg_decoder",
+        ":runtime_jpeg_xr_decoder",
+        ":runtime_png_decoder",
+        ":slide_reader",
+        ":spatial_index",
+        "@aifocore-cpp//:concepts",
+        "@aifocore-cpp//:portability",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:thread_pool_singleton",
+        "@aifocore-cpp//:utilities-core",
+        "@hwy",
+    ],
+)
+
+# OpenSlide-compatible TIFF quickhash helper, shared by TIFF-based readers.
+cc_library(
+    name = "tiff_quickhash",
+    srcs = ["src/readers/tiff_quickhash.cpp"],
+    hdrs = ["include/fastslide/readers/tiff_quickhash.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":hash",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+# Generic TIFF format
+cc_library(
+    name = "formats_generictiff",
+    srcs = [
+        "src/readers/generictiff/generictiff.cpp",
+        "src/readers/generictiff/generictiff_format_plugin.cpp",
+        "src/readers/generictiff/generictiff_plan_builder.cpp",
+        "src/readers/generictiff/generictiff_tile_executor.cpp",
+        "src/readers/philipstiff/philipstiff.cpp",
+        "src/readers/philipstiff/philipstiff_plan_builder.cpp",
+        "src/readers/philipstiff/philipstiff_tile_executor.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/readers/generictiff/generictiff.h",
+        "include/fastslide/readers/generictiff/generictiff_exec_context.h",
+        "include/fastslide/readers/generictiff/generictiff_format_plugin.h",
+        "include/fastslide/readers/generictiff/generictiff_level_info.h",
+        "include/fastslide/readers/generictiff/generictiff_plan_builder.h",
+        "include/fastslide/readers/generictiff/generictiff_plan_context.h",
+        "include/fastslide/readers/generictiff/generictiff_tile_executor.h",
+        "include/fastslide/readers/philipstiff/philipstiff.h",
+        "include/fastslide/readers/philipstiff/philipstiff_exec_context.h",
+        "include/fastslide/readers/philipstiff/philipstiff_level_info.h",
+        "include/fastslide/readers/philipstiff/philipstiff_plan_builder.h",
+        "include/fastslide/readers/philipstiff/philipstiff_plan_context.h",
+        "include/fastslide/readers/philipstiff/philipstiff_tile_executor.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core",
+        ":hash",
+        ":image",
+        ":readers",
+        ":runtime",
+        ":simpletiff_plan_builder_utils",
+        ":slide_reader",
+        ":tiff_quickhash",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@pugixml",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+cc_library(
+    name = "runtime_binary_utils",
+    srcs = ["src/runtime/io/binary_utils.cpp"],
+    hdrs = [
+        "include/fastslide/runtime/io/ascii_utils.h",
+        "include/fastslide/runtime/io/binary_utils.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@aifocore-cpp//:portability",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@zlib",
+    ],
+)
+
+cc_library(
+    name = "runtime_jpeg_decoder",
+    srcs = [
+        "src/runtime/decoders/jpeg_decoder_common.cpp",
+    ] + select({
+        ":use_jpgd": ["src/runtime/decoders/jpeg_decoder_jpgd.cpp"],
+        "//conditions:default": ["src/runtime/decoders/jpeg_decoder_libjpeg.cpp"],
+    }),
+    hdrs = [
+        "include/fastslide/runtime/decoders/jpeg_decoder.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ] + select({
+        ":use_jpgd": ["@jpeg-compressor//:jpgd"],
+        "//conditions:default": ["@libjpeg_turbo//:jpeg"],
+    }),
+)
+
+cc_library(
+    name = "runtime_jpeg_xr_decoder",
+    srcs = [
+        "src/runtime/decoders/jpeg_xr_decoder.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/runtime/decoders/jpeg_xr_decoder.h",
+    ],
+    copts = WASM_COPTS + [
+        "-D__ANSI__",
+    ],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":runtime_jpeg_decoder",
+        ":runtime_png_decoder",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@jxrlib",
+    ],
+)
+
+cc_library(
+    name = "runtime_j2k_decoder",
+    srcs = [
+        "src/runtime/decoders/j2k_decoder.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/runtime/decoders/j2k_decoder.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":runtime_jpeg_decoder",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@openjp2",
+    ],
+)
+
+cc_library(
+    name = "runtime_png_decoder",
+    srcs = ["src/runtime/decoders/png_decoder.cpp"],
+    hdrs = ["include/fastslide/runtime/decoders/png_decoder.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":runtime_jpeg_decoder",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@lodepng",
+    ],
+)
+
+cc_library(
+    name = "runtime_bmp_decoder",
+    srcs = ["src/runtime/decoders/bmp_decoder.cpp"],
+    hdrs = ["include/fastslide/runtime/decoders/bmp_decoder.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":runtime_jpeg_decoder",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
+    name = "runtime_file_reader",
+    srcs = ["src/runtime/io/file_reader.cpp"],
+    hdrs = ["include/fastslide/runtime/io/file_reader.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    deps = [
+        "@aifocore-cpp//:portability",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
+    name = "resample",
+    srcs = [],
+    hdrs = [
+        "include/fastslide/resample/average.h",
+        "include/fastslide/resample/lanczos.h",
+        "include/fastslide/resample/utilities.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":image",
+    ],
+)
+
+# Main fastslide library combining all components
+cc_library(
+    name = "fastslide_lib",
+    hdrs = ["include/fastslide/fastslide.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cache",
+        ":colors",
+        ":core",
+        ":formats",
+        ":hash",
+        ":image",
+        ":metadata",
+        ":readers",
+        ":resample",
+        ":runtime",
+        ":runtime_register_builtin_formats",
+        ":slide_reader",
+        ":spatial_index",
+        ":tiff_utilities",
+        "@hwy",
+    ],
+)
+
+# Create a DLL for Windows (or shared lib on Linux/macOS)
+cc_binary(
+    name = "fastslide_bin",
+    copts = [
+        "-lpthread",
+        "-lwinpthread",
+        "-pthread",
+        "-winpthread",
+        # "-mno-sve",  # Disable SVE for linux_arm64 to workaround hwy compiler issue
+    ],
+    linkshared = True,
+    # Windows DLLs only export symbols marked __declspec(dllexport). Defining
+    # FASTSLIDE_BUILDING_DLL flips the FASTSLIDE_API macro in fastslide/c/api.h
+    # to that annotation so the C API ends up in the DLL export table. On
+    # Linux/macOS the default visibility already exports global symbols, so
+    # the define is unnecessary there.
+    local_defines = select({
+        "@platforms//os:windows": ["FASTSLIDE_BUILDING_DLL"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:private"],
+    deps = [
+        ":fastslide_c",
+        ":fastslide_lib",
+    ],
+)
+
+# Platform-specific genrules to rename the output
+genrule(
+    name = "fastslide_windows",
+    srcs = [":fastslide_bin"],
+    outs = ["fastslide.dll"],
+    cmd = "cp $< $@",
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "fastslide_macos",
+    srcs = [":fastslide_bin"],
+    outs = ["libfastslide.dylib"],
+    cmd = "cp $< $@",
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "fastslide_linux",
+    srcs = [":fastslide_bin"],
+    outs = ["libfastslide.so"],
+    cmd = "cp $< $@",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "fastslide",
+    actual = select({
+        "@platforms//os:windows": ":fastslide_windows",
+        "@platforms//os:macos": ":fastslide_macos",
+        "//conditions:default": ":fastslide_linux",
+    }),
+    visibility = ["//visibility:public"],
+)
+
+# C API
+cc_library(
+    name = "fastslide_c",
+    srcs = [
+        "src/c/fastslide.cpp",
+        "src/c/image.cpp",
+        "src/c/internal/debug.h",
+        "src/c/internal/error.h",
+        "src/c/registry.cpp",
+        "src/c/slide_reader.cpp",
+        "src/c/utilities.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/c/api.h",
+        "include/fastslide/c/fastslide.h",
+        "include/fastslide/c/image.h",
+        "include/fastslide/c/registry.h",
+        "include/fastslide/c/slide_reader.h",
+        "include/fastslide/c/utilities.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    # Only Windows requires the DLL-export annotation; Unix shared libraries
+    # already export global symbols by default. If -fvisibility=hidden is
+    # ever introduced for non-Windows builds, add the matching platforms to
+    # this select() so FASTSLIDE_API resolves to visibility("default") there.
+    local_defines = select({
+        "@platforms//os:windows": ["FASTSLIDE_BUILDING_DLL"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [
+        ":fastslide_lib",
+        ":runtime_png_decoder",
+    ],
+)
+
+# Slide information tool
+cc_binary(
+    name = "fastslidetool",
+    srcs = ["//tools:fastslidetool.cpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":fastslide_lib",
+        ":runtime_png_decoder",
+        "//third_party:cli11",
+    ],
+)
+
+# ============================================================================
+# Colocated Tests
+# ============================================================================
+
+cc_test(
+    name = "image_test",
+    size = "small",
+    srcs = ["src/image_test.cpp"],
+    deps = [
+        ":image",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_library(
+    name = "minimal_slide_reader_testing",
+    testonly = True,
+    hdrs = ["src/testing/minimal_slide_reader.h"],
+    strip_include_prefix = "src",
+    deps = [
+        ":image",
+        ":metadata",
+        ":slide_reader",
+        "@aifocore-cpp//:result",
+    ],
+)
+
+cc_test(
+    name = "slide_reader_test",
+    size = "small",
+    srcs = ["src/slide_reader_test.cpp"],
+    deps = [
+        ":minimal_slide_reader_testing",
+        ":slide_reader",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "channel_selection_test",
+    size = "small",
+    srcs = ["src/channel_selection_test.cpp"],
+    deps = [
+        ":minimal_slide_reader_testing",
+        ":slide_reader",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+# Core tests
+cc_test(
+    name = "tile_request_test",
+    size = "small",
+    srcs = ["src/core/tile_request_test.cpp"],
+    deps = [
+        ":core_tile_request",
+        ":image",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "tile_plan_test",
+    size = "small",
+    srcs = ["src/core/tile_plan_test.cpp"],
+    deps = [
+        ":core_tile_plan",
+        ":core_tile_request",
+        ":image",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+# iSyntax C++ conversion tests
+cc_test(
+    name = "isyntax_math_utils_test",
+    size = "small",
+    srcs = ["tests/isyntax_math_utils_test.cpp"],
+    deps = [
+        ":libisyntax",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "isyntax_cpp_test",
+    size = "small",
+    srcs = ["tests/isyntax_cpp_test.cpp"],
+    deps = [
+        ":libisyntax",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "isyntax_jpeg_cpp_test",
+    size = "small",
+    srcs = ["tests/isyntax_jpeg_cpp_test.cpp"],
+    deps = [
+        ":libisyntax",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "isyntax_cache_cpp_test",
+    size = "small",
+    srcs = ["tests/isyntax_cache_cpp_test.cpp"],
+    deps = [
+        ":libisyntax",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "isyntax_open_cpp_test",
+    size = "small",
+    srcs = ["tests/isyntax_open_cpp_test.cpp"],
+    deps = [
+        ":libisyntax",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "region_conversion_test",
+    size = "small",
+    srcs = ["src/core/region_conversion_test.cpp"],
+    deps = [
+        ":minimal_slide_reader_testing",
+        ":slide_reader",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+# Runtime tests
+cc_test(
+    name = "tile_writer_test",
+    size = "small",
+    srcs = ["src/runtime/tile_writer_test.cpp"],
+    deps = [
+        ":core_tile_plan",
+        ":image",
+        ":runtime_tile_writer",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "tile_writer_uint16_test",
+    size = "small",
+    srcs = ["src/runtime/tile_writer_uint16_test.cpp"],
+    deps = [
+        ":core_tile_plan",
+        ":image",
+        ":runtime_tile_writer",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "mrxs_index_reader_test",
+    size = "small",
+    srcs = ["src/readers/mrxs/mrxs_index_reader_test.cpp"],
+    deps = [
+        ":formats_mrxs",
+        ":mrxs_internal_types",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "reader_registry_test",
+    size = "small",
+    srcs = ["src/runtime/reader_registry_test.cpp"],
+    deps = [
+        ":runtime_cache_interface",
+        ":runtime_format_descriptor",
+        ":runtime_reader_registry",
+        ":slide_reader",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "czi_spatial_index_test",
+    size = "small",
+    srcs = ["src/readers/czi/czi_spatial_index_test.cpp"],
+    deps = [
+        ":formats_czi",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "dicom_magic_test",
+    size = "small",
+    srcs = ["src/readers/dicom/dicom_magic_test.cpp"],
+    deps = [
+        ":formats_dicom",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "dicom_concatenation_test",
+    size = "small",
+    srcs = ["src/readers/dicom/dicom_concatenation_test.cpp"],
+    data = [
+        "src/readers/dicom/testdata/part_1.dcm",
+        "src/readers/dicom/testdata/part_2.dcm",
+    ],
+    deps = [
+        ":core_tile_request",
+        ":formats_dicom",
+        ":image",
+        # Pulled in solely so rules_cc injects `-DBAZEL_CURRENT_REPOSITORY=...`
+        # into the compile. The test code uses that macro to locate the
+        # testdata fixtures correctly whether fastslide is the root module
+        # (standalone build, value `""`) or loaded as an external dep
+        # (value `"fastslide+"` under the monorepo `local_path_override`).
+        "@rules_cc//cc/runfiles",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "lru_tile_cache_test",
+    size = "small",
+    srcs = ["src/runtime/lru_tile_cache_test.cpp"],
+    deps = [
+        ":runtime_cache_interface",
+        ":runtime_lru_tile_cache",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "cache_interface_test",
+    size = "small",
+    srcs = ["src/runtime/cache_interface_test.cpp"],
+    deps = [
+        ":runtime_cache_interface",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "binary_utils_test",
+    size = "small",
+    srcs = ["src/runtime/io/binary_utils_test.cpp"],
+    deps = [
+        ":runtime_binary_utils",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+# Format tests
+cc_test(
+    name = "aperio_metadata_parser_test",
+    size = "small",
+    srcs = ["src/readers/aperio/metadata_parser_test.cpp"],
+    deps = [
+        ":metadata_parsers",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "aperio_tile_executor_test",
+    size = "small",
+    srcs = ["src/readers/aperio/aperio_tile_executor_test.cpp"],
+    deps = [
+        ":formats_aperio",
+        "@aifocore-cpp//:result",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+cc_test(
+    name = "qptiff_metadata_parser_test",
+    size = "small",
+    srcs = ["src/readers/qptiff/metadata_parser_test.cpp"],
+    deps = [
+        ":metadata_parsers",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ometiff_metadata_loader_test",
+    size = "small",
+    srcs = ["src/readers/ometiff/ometiff_metadata_loader_test.cpp"],
+    deps = [
+        ":formats_ometiff",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+cc_test(
+    name = "omezarr_metadata_test",
+    size = "small",
+    srcs = ["src/readers/omezarr/omezarr_metadata_test.cpp"],
+    deps = [
+        ":formats_omezarr",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "omezarr_codec_test",
+    size = "small",
+    srcs = ["src/readers/omezarr/omezarr_codec_test.cpp"],
+    deps = [
+        ":formats_omezarr",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@zlib",
+        "@zstd",
+    ],
+)
+
+cc_test(
+    name = "png_decoder_test",
+    size = "small",
+    srcs = ["src/runtime/decoders/png_decoder_test.cpp"],
+    deps = [
+        ":runtime_png_decoder",
+        "@aifocore-cpp//:result",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@lodepng",
+    ],
+)
+
+cc_test(
+    name = "bmp_decoder_test",
+    size = "small",
+    srcs = ["src/runtime/decoders/bmp_decoder_test.cpp"],
+    deps = [
+        ":runtime_bmp_decoder",
+        "@aifocore-cpp//:result",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)

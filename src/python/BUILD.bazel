@@ -1,0 +1,55 @@
+load("@nanobind_bazel//:build_defs.bzl", "nanobind_extension", "nanobind_stubgen")
+
+# Python bindings extension module using nanobind_bazel.
+# The target name `_fastslide` must match the module name passed to
+# NB_MODULE(...) in fastslide.cpp so that Python can locate
+# `PyInit__fastslide` when the shared library is imported.
+#
+# nanobind_extension generates several outputs from this single rule:
+#   - `:_fastslide.so` and `:_fastslide.abi3.so` on Linux/macOS
+#   - `:_fastslide.pyd` on Windows
+#   - `:_fastslide`, an alias resolving to the platform-appropriate file
+nanobind_extension(
+    name = "_fastslide",
+    srcs = [
+        "cache.cpp",
+        "fastslide.cpp",
+        "reader.cpp",
+    ],
+    copts = select({
+        "@platforms//os:windows": [],
+        "//conditions:default": ["-fvisibility=hidden"],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:cache",
+        "//:fastslide_lib",
+        "//:python_binding_headers",
+        "//:runtime_global_cache_manager",
+        "//:runtime_plugin_loader",
+        "//:runtime_reader_registry",
+    ],
+)
+
+# Driver py_binary that runs nanobind's stubgen against the built extension.
+# Run via:
+#     bazelisk run //src/python:_fastslide_stubgen
+# to write the resulting `_fastslide.pyi` into the source tree at
+# `aifo/fastslide/src/python/`. The checked-in stub is then picked up by
+# `:_fastslide_pyi_file` and bundled into the wheel for IDE/type-checker
+# completion.
+nanobind_stubgen(
+    name = "_fastslide_stubgen",
+    module = ":_fastslide",
+    output_file = "_fastslide.pyi",
+    quiet = True,
+)
+
+# Filegroup wrapping the checked-in `_fastslide.pyi` so other packages can
+# bundle it into wheels. Re-run `:_fastslide_stubgen` to regenerate the
+# file after any binding change.
+filegroup(
+    name = "_fastslide_pyi_file",
+    srcs = ["_fastslide.pyi"],
+    visibility = ["//visibility:public"],
+)

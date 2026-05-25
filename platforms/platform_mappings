@@ -1,0 +1,13 @@
+# Maps execution/platform constraints to default flags/configs
+# See https://bazel.build/docs/platforms#platform-mappings
+
+platforms:
+  - constraints: ["@platforms//cpu:wasm32"]
+    flags:
+      - "--config=wasm"
+  - constraints: ["@platforms//os:linux", "@platforms//cpu:x86_64"]
+    flags:
+      - "--config=cpu"
+  - constraints: ["@platforms//os:macos", "@platforms//cpu:aarch64"]
+    flags:
+      - "--config=release"

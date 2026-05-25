@@ -27,27 +27,27 @@ def _targets_for_version(version: str) -> dict[str, BundleInfo]:
     return {
         "linux_x86_64": BundleInfo(
             bazel_platform=PLATFORMS["linux_x86_64"].bazel_platform,
-            bazel_target=f"//aifo/fastslide/package:fastslide-bin-{version}-linux-x86_64",
+            bazel_target=f"@fastslide//package:fastslide-bin-{version}-linux-x86_64",
         ),
         "linux_arm64": BundleInfo(
             bazel_platform=PLATFORMS["linux_arm64"].bazel_platform,
-            bazel_target=f"//aifo/fastslide/package:fastslide-bin-{version}-linux-aarch64",
+            bazel_target=f"@fastslide//package:fastslide-bin-{version}-linux-aarch64",
         ),
         "darwin_x86_64": BundleInfo(
             bazel_platform=PLATFORMS["darwin_x86_64"].bazel_platform,
-            bazel_target=f"//aifo/fastslide/package:fastslide-bin-{version}-macos-x86_64",
+            bazel_target=f"@fastslide//package:fastslide-bin-{version}-macos-x86_64",
         ),
         "darwin_aarch64": BundleInfo(
             bazel_platform=PLATFORMS["darwin_aarch64"].bazel_platform,
-            bazel_target=f"//aifo/fastslide/package:fastslide-bin-{version}-macos-arm64",
+            bazel_target=f"@fastslide//package:fastslide-bin-{version}-macos-arm64",
         ),
         "windows_x86_64": BundleInfo(
             bazel_platform=PLATFORMS["windows_x86_64"].bazel_platform,
-            bazel_target=f"//aifo/fastslide/package:fastslide-bin-{version}-windows-x86_64",
+            bazel_target=f"@fastslide//package:fastslide-bin-{version}-windows-x86_64",
         ),
         "windows_arm64": BundleInfo(
             bazel_platform=PLATFORMS["windows_arm64"].bazel_platform,
-            bazel_target=f"//aifo/fastslide/package:fastslide-bin-{version}-windows-arm64",
+            bazel_target=f"@fastslide//package:fastslide-bin-{version}-windows-arm64",
         ),
     }
 

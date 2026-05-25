@@ -17,7 +17,7 @@ Reads ``--num-regions`` tiles from a slide both serially and from a
 ``ThreadPoolExecutor`` and reports the resulting wall-clock speedup.
 
 Usage:
-    bazelisk run //aifo/fastslide/benchmarks:gil_release_benchmark -- \\
+    bazelisk run @fastslide/benchmarks:gil_release_benchmark -- \\
         --slide /abs/path/to/slide.svs \\
         --workers 8 --num-regions 32 --tile-size 2048
 

@@ -524,7 +524,11 @@ NB_MODULE(_fastslide, m) {
       // Context manager support
       .def("__enter__", &FastSlide::__enter__,
            nb::rv_policy::reference_internal)
-      .def("__exit__", &FastSlide::__exit__);
+      // Python passes (None, None, None) on normal exit, so each parameter
+      // must explicitly accept None - by default nanobind rejects it for
+      // nb::object parameters.
+      .def("__exit__", &FastSlide::__exit__, nb::arg("exc_type").none(),
+           nb::arg("exc_value").none(), nb::arg("traceback").none());
 
   // Utility functions
   m.def(
@@ -544,5 +548,5 @@ NB_MODULE(_fastslide, m) {
       "Check if file format is supported", nb::arg("filename"));
 
   // Version and constants
-  m.attr("__version__") = "0.5.4";
+  m.attr("__version__") = "0.5.6";
 }

@@ -86,10 +86,6 @@ export class FastSlideSource extends ol.source.TileImage {
     // OL z -> FastSlide Level (maxLevel - z)
     const fsLevel = this.maxLevel - z;
 
-    console.log(
-      `[TileSource] Requesting tile: z=${z}(fs=${fsLevel}), x=${x}, y=${y}`
-    );
-
     // Use a valid Data URI (1x1 transparent GIF) as a placeholder + ID in hash.
     // This prevents browser errors if the URL is fetched.
     // 1x1 transparent GIF
@@ -102,11 +98,8 @@ export class FastSlideSource extends ol.source.TileImage {
    * Load tile data
    */
   customTileLoadFunction(tile, url) {
-    console.log(`[TileSource] Loading tile: ${url}`);
-
     // If cache has it, set and return IMMEDIATELY.
     if (this.tileCache.has(url)) {
-      console.log(`[TileSource] Cache hit for ${url}`);
       tile.getImage().src = this.tileCache.get(url);
       return;
     }
@@ -142,10 +135,6 @@ export class FastSlideSource extends ol.source.TileImage {
     const width = Math.min(tileW, levelData.width - px);
     const height = Math.min(tileH, levelData.height - py);
 
-    console.log(
-      `[TileSource] Sending to worker: level=${fsLevel}, x=${px}, y=${py}, w=${width}, h=${height}`
-    );
-
     // Register pending request
     if (!this.pendingRequests.has(url)) {
       this.pendingRequests.set(url, []);
@@ -162,8 +151,6 @@ export class FastSlideSource extends ol.source.TileImage {
           tileId: url,
         },
       });
-    } else {
-      console.log(`[TileSource] Already requesting ${url}, queuing tile`);
     }
 
     this.pendingRequests.get(url).push(tile);
@@ -175,27 +162,41 @@ export class FastSlideSource extends ol.source.TileImage {
 
       if (type === "tileData") {
         this.handleTileData(data);
+        return;
+      }
+
+      if (
+        type === "error" &&
+        e.data.requestType === "readTile" &&
+        e.data.requestData &&
+        typeof e.data.requestData.tileId === "string"
+      ) {
+        this.handleTileError(e.data.requestData.tileId, e.data.message);
       }
     });
   }
 
+  /**
+   * Mark pending tiles for a given tileId as failed so OpenLayers stops
+   * spinning on them. The original error message (already logged by the
+   * worker) is surfaced to the console for debuggability.
+   */
+  handleTileError(tileId, message) {
+    const tiles = this.pendingRequests.get(tileId);
+    if (!tiles) {
+      return;
+    }
+    this.pendingRequests.delete(tileId);
+    console.warn(`[TileSource] Worker failed for ${tileId}: ${message}`);
+    for (const tile of tiles) {
+      // OpenLayers TileState.ERROR = 3; setting the state aborts the in-flight
+      // load so the viewer doesn't keep retrying the same broken tile.
+      tile.setState(3);
+    }
+  }
+
   handleTileData(data) {
     const { tileId, width, height, channels, data: imageData } = data;
-
-    // Calculate average value
-    let sum = 0;
-    const sampleSize = Math.min(imageData.length, 1000);
-    for (let i = 0; i < sampleSize; i++) {
-      sum += imageData[i];
-    }
-    const avg = sum / sampleSize;
-
-    console.log(
-      `[TileSource] Received tile data for ${tileId}: ${width}x${height}x${channels}, bytes=${
-        imageData.byteLength
-      }, avg=${avg.toFixed(2)}`
-    );
-
     const tiles = this.pendingRequests.get(tileId);
     if (!tiles) {
       console.warn(`[TileSource] No pending requests for ${tileId}`);

@@ -1,0 +1,41 @@
+# =============================================================================
+# Common Settings
+# =============================================================================
+# Re-enable autoloading for BCR deps (e.g. googletest 1.17.0) that still rely
+# on the legacy native cc_library/cc_test globals removed in Bazel 9.
+# Drop once all transitive BUILD files add explicit `load("@rules_cc//...")`.
+build --incompatible_autoload_externally=+@rules_cc,+@rules_python,+@rules_shell
+
+common --enable_platform_specific_config
+
+# =============================================================================
+# C++ Compiler Settings
+# =============================================================================
+build --cxxopt=-std=c++20
+build --host_cxxopt=-std=c++20
+
+# =============================================================================
+# Developer Experience
+# =============================================================================
+build --color=yes
+build --show_timestamps
+build --announce_rc
+test  --test_output=errors
+
+# =============================================================================
+# Sandbox (macOS needs /var/tmp mounted into the sandbox for some toolchains)
+# =============================================================================
+build:macos --sandbox_add_mount_pair=/var/tmp
+build:linux --sandbox_add_mount_pair=/tmp
+
+# =============================================================================
+# Java Runtime Settings
+# =============================================================================
+build --java_runtime_version=remotejdk_25
+build --java_language_version=21
+run   --java_runtime_version=remotejdk_25
+
+# =============================================================================
+# Import Local Settings
+# =============================================================================
+try-import %workspace%/.bazelrc.local

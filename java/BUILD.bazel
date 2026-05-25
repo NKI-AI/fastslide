@@ -1,0 +1,53 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_java//java:defs.bzl", "java_binary", "java_library", "java_test")
+
+cc_binary(
+    name = "fastslide_native",
+    srcs = ["src/main/native/fastslide_exports.c"],
+    linkshared = True,
+    # Windows-only: turns FASTSLIDE_API into __declspec(dllexport) so the C
+    # API symbols reach the DLL export table. Without this, JNI/JNA/Panama
+    # SymbolLookup calls (which resolve via GetProcAddress on Windows) fail
+    # for entry points like fastslide_get_last_error. On Unix the macro
+    # already defaults to visible symbols, so no platform define is needed.
+    local_defines = select({
+        "@platforms//os:windows": ["FASTSLIDE_BUILDING_DLL"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:fastslide_c",
+        "//:fastslide_lib",
+    ],
+)
+
+java_library(
+    name = "fastslide_java",
+    srcs = glob(["src/main/java/**/*.java"]),
+    visibility = ["//visibility:public"],
+)
+
+java_test(
+    name = "fastslide_java_test",
+    srcs = glob(["src/test/java/**/*.java"]),
+    data = [":fastslide_native"],
+    jvm_flags = [
+        "--enable-native-access=ALL-UNNAMED",
+        "-Dfastslide.native.path=$(location :fastslide_native)",
+    ],
+    main_class = "dev.aifo.fastslide.FastSlideSmokeTest",
+    use_testrunner = False,
+    deps = [":fastslide_java"],
+)
+
+java_binary(
+    name = "fastslidetool_java",
+    data = [":fastslide_native"],
+    jvm_flags = [
+        "--enable-native-access=ALL-UNNAMED",
+        "-Dfastslide.native.path=$(location :fastslide_native)",
+    ],
+    main_class = "dev.aifo.fastslide.tools.FastSlideTool",
+    visibility = ["//visibility:public"],
+    runtime_deps = [":fastslide_java"],
+)

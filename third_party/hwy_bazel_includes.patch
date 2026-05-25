@@ -1,0 +1,16 @@
+diff --git a/BUILD b/BUILD
+index 6e8b2c1..c0cdb1a 100644
+--- a/BUILD
++++ b/BUILD
+@@ -146,6 +146,10 @@ cc_library(
+     compatible_with = [],
+     copts = COPTS,
+     defines = DEFINES,
++    # Ensure users can include Highway headers via `<hwy/...>` (angled includes).
++    # Without this, Bazel may only add these paths as quote-includes (-iquote),
++    # which breaks `<hwy/base.h>` in downstream projects like libjxl.
++    includes = ["."],
+     local_defines = ["hwy_EXPORTS"],
+     textual_hdrs = [
+         # These are textual because config macros influence them:
+

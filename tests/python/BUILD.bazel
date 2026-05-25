@@ -1,0 +1,48 @@
+load("@aspect_rules_py//py:defs.bzl", aspect_py_test = "py_test")
+load("@fastslide_pip//:requirements.bzl", "requirement")
+
+# Shared test dependencies. The custom `_pytest_main.py` entrypoint imports
+# pytest directly, so it must be in deps; numpy is a runtime dep of several
+# tests; `//python:fastslide` is the SUT.
+PYTEST_DEPS = [
+    requirement("pytest"),
+    requirement("pytest-mock"),
+    requirement("numpy"),
+    "//python:fastslide",
+]
+
+# Each test target uses `_pytest_main.py` as its entrypoint instead of
+# aspect_rules_py's built-in `pytest_main = True`. The built-in expands a
+# `_pytest_paths` rule that drops every external-repo source (`short_path`
+# starts with `../`), which leaves the consumer-side `bazelisk test
+# @fastslide//tests/python:*` invocation with zero pytest collection roots.
+# See `_pytest_main.py` for the full diagnosis.
+aspect_py_test(
+    name = "cache_test",
+    srcs = [
+        "_pytest_main.py",
+        "cache_test.py",
+    ],
+    main = "_pytest_main.py",
+    deps = PYTEST_DEPS,
+)
+
+aspect_py_test(
+    name = "slide_reader_test",
+    srcs = [
+        "_pytest_main.py",
+        "slide_reader_test.py",
+    ],
+    main = "_pytest_main.py",
+    deps = PYTEST_DEPS,
+)
+
+aspect_py_test(
+    name = "image_test",
+    srcs = [
+        "_pytest_main.py",
+        "image_test.py",
+    ],
+    main = "_pytest_main.py",
+    deps = PYTEST_DEPS,
+)

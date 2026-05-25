@@ -19,8 +19,19 @@
 #include <cstring>
 
 #undef HWY_TARGET_INCLUDE
+#if defined(__has_include)
+#if __has_include( \
+    "aifo/fastslide/src/runtime/tile_writer/bilinear_blit_hwy.cpp")
 #define HWY_TARGET_INCLUDE \
-  "src/runtime/tile_writer/bilinear_blit_hwy.cpp"
+  "aifo/fastslide/src/runtime/tile_writer/bilinear_blit_hwy.cpp"
+#elif __has_include("src/runtime/tile_writer/bilinear_blit_hwy.cpp")
+#define HWY_TARGET_INCLUDE "src/runtime/tile_writer/bilinear_blit_hwy.cpp"
+#else
+#define HWY_TARGET_INCLUDE "bilinear_blit_hwy.cpp"
+#endif
+#else
+#define HWY_TARGET_INCLUDE "bilinear_blit_hwy.cpp"
+#endif
 #include "hwy/foreach_target.h"  // IWYU pragma: keep
 #include "hwy/highway.h"
 

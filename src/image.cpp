@@ -22,7 +22,17 @@
 
 // Highway SIMD implementation for image conversions
 #undef HWY_TARGET_INCLUDE
+#if defined(__has_include)
+#if __has_include("aifo/fastslide/src/image.cpp")
+#define HWY_TARGET_INCLUDE "aifo/fastslide/src/image.cpp"
+#elif __has_include("src/image.cpp")
 #define HWY_TARGET_INCLUDE "src/image.cpp"
+#else
+#define HWY_TARGET_INCLUDE "image.cpp"
+#endif
+#else
+#define HWY_TARGET_INCLUDE "image.cpp"
+#endif
 #include "hwy/foreach_target.h"  // IWYU pragma: keep
 #include "hwy/highway.h"
 

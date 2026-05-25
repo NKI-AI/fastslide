@@ -1,6 +1,0 @@
-option('build_tests', type : 'boolean', value : true, description : 'Build tests')
-option('build_examples', type : 'boolean', value : true, description : 'Build examples')
-option('build_benchmarks', type : 'boolean', value : true, description : 'Build benchmarks')
-option('build_python_bindings', type : 'boolean', value : true, description : 'Build Python bindings')
-option('use_jpgd', type : 'boolean', value : false, description : 'Use jpgd (jpeg-compressor) instead of libjpeg-turbo for JPEG decompression')
-
