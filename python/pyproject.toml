@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "czi-reader"
-version = "0.5.6"
+version = "0.6.0"
 description = "Pure-Python reader for Zeiss CZI: parse header, index tiles by pyramid level, and decode tiles."
 requires-python = ">=3.11"
 readme = "README.md"

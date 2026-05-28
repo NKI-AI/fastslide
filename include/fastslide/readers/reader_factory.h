@@ -25,15 +25,15 @@
 /**
  * @file reader_factory.h
  * @brief Generic CRTP factory mixin for slide readers
- * 
+ *
  * This header defines ReaderFactory, a generic template class that consolidates
  * the common Create() flow shared by all slide readers (TIFF-based and
  * non-TIFF formats like MRXS).
- * 
+ *
  * This extends the pattern established by TiffReaderFactory to work with any
  * reader type, eliminating 40+ lines of boilerplate per reader while ensuring
  * consistent error handling conventions.
- * 
+ *
  * **Usage Pattern:**
  * ```cpp
  * class MrxsReader : public SlideReader, public ReaderFactory<MrxsReader> {
@@ -45,32 +45,35 @@
  *
  *  private:
  *   friend class ReaderFactory<MrxsReader>;  // Allow factory access
- *   
+ *
  *   // Hook 1: Validate input (static method)
  *   static absl::Status ValidateInput(const std::filesystem::path& filename);
- *   
+ *
  *   // Hook 2: Load metadata and construct reader
  *   //         This is format-specific and handled by CreateReaderImpl
  *   static absl::StatusOr<std::unique_ptr<MrxsReader>> CreateReaderImpl(
  *       const std::filesystem::path& filename);
  * };
  * ```
- * 
+ *
  * **Factory Flow:**
  * 1. Call `Derived::ValidateInput()` to check file format/existence
- * 2. Call `Derived::CreateReaderImpl()` to construct the fully-initialized reader
+ * 2. Call `Derived::CreateReaderImpl()` to construct the fully-initialized
+ * reader
  * 3. Return the reader
- * 
+ *
  * **Derived Class Requirements:**
  * - Must declare `ReaderFactory<Derived>` as a friend
- * - Must implement `static absl::Status ValidateInput(const PathType& filename)`
- * - Must implement `static absl::StatusOr<std::unique_ptr<Derived>> CreateReaderImpl(const PathType& filename)`
- * 
+ * - Must implement `static absl::Status ValidateInput(const PathType&
+ * filename)`
+ * - Must implement `static absl::StatusOr<std::unique_ptr<Derived>>
+ * CreateReaderImpl(const PathType& filename)`
+ *
  * All calls are resolved at compile time via `Derived::` calls, with zero
  * runtime overhead compared to hand-written factories.
- * 
+ *
  * @tparam Derived The concrete reader class (CRTP parameter)
- * 
+ *
  * @see TiffReaderFactory for a specialized version for TIFF-based readers
  * @see MrxsReader for an example of a non-TIFF reader using this factory
  */
@@ -121,17 +124,20 @@ class ReaderFactory {
     return Derived::CreateReaderImpl(filename);
   }
 
-  /// @brief Protected constructor (only derived classes can instantiate via CRTP)
+  /// @brief Protected constructor (only derived classes can instantiate via
+  /// CRTP)
   ReaderFactory() = default;
 
   /// @brief Protected destructor (not polymorphic - no virtual needed)
   ~ReaderFactory() = default;
 
-  /// @brief Delete copy constructor and assignment (CRTP mixin should not be copied)
+  /// @brief Delete copy constructor and assignment (CRTP mixin should not be
+  /// copied)
   ReaderFactory(const ReaderFactory&) = delete;
   ReaderFactory& operator=(const ReaderFactory&) = delete;
 
-  /// @brief Delete move constructor and assignment (CRTP mixin should not be moved)
+  /// @brief Delete move constructor and assignment (CRTP mixin should not be
+  /// moved)
   ReaderFactory(ReaderFactory&&) = delete;
   ReaderFactory& operator=(ReaderFactory&&) = delete;
 };

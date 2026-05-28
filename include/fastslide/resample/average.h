@@ -186,8 +186,8 @@ inline void ProcessFactor2Contiguous(const T* in_data, T* out_data,
 }  // namespace detail
 
 /// @brief Average‐downsample each channel by `factor` (power of two),
-/// averaging all pixels in each block [x*factor .. (x+1)*factor)×[y*factor .. (y+1)*factor),
-/// clamped at the image borders (partial tiles handled).
+/// averaging all pixels in each block [x*factor .. (x+1)*factor)×[y*factor ..
+/// (y+1)*factor), clamped at the image borders (partial tiles handled).
 template <ArithmeticType T>
 std::unique_ptr<Image> AverageResample(const Image& input, uint32_t factor) {
   if (factor == 0 || (factor & (factor - 1)) != 0) {

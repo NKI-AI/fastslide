@@ -104,7 +104,8 @@ struct ZarrArrayMetadata {
   /// @brief Chunk path separator from `chunk_key_encoding.configuration`.
   /// Defaults to "/" for Zarr V3 default key encoding.
   char chunk_key_separator = '/';
-  /// @brief Fill value (raw JSON literal). Most arrays use 0; we just record it.
+  /// @brief Fill value (raw JSON literal). Most arrays use 0; we just record
+  /// it.
   double fill_value = 0.0;
 };
 

@@ -45,7 +45,8 @@ namespace core {
 /// Describes how to transform a tile from its native coordinates to
 /// the requested output space (e.g., scaling, cropping, rotation).
 struct TileTransform {
-  /// @brief Source region within the tile (sub-pixel precision for MRXS overlaps)
+  /// @brief Source region within the tile (sub-pixel precision for MRXS
+  /// overlaps)
   struct SourceRegion {
     double x;         ///< X offset within tile (sub-pixel for MRXS)
     double y;         ///< Y offset within tile (sub-pixel for MRXS)

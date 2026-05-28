@@ -22,7 +22,7 @@
 /**
  * @file qptiff_format_plugin.h
  * @brief QPTIFF format plugin descriptor
- * 
+ *
  * This header provides the format descriptor for QPTIFF (PerkinElmer) slides.
  */
 

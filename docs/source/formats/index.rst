@@ -9,6 +9,7 @@ Each format has unique characteristics in terms of compression, tile organizatio
    :caption: Format Documentation:
 
    svs
+   bif
    mrxs
    qptiff
 
@@ -29,6 +30,11 @@ Format Overview
      - JPEG (in TIFF)
      - Tiled TIFF / Strips
      - BigTIFF, associated images
+   * - Ventana BIF
+     - .bif
+     - JPEG (in BigTIFF)
+     - Serpentine, overlapping tiles per AOI
+     - Multi-AOI convex-hull stitching, sub-pixel overlaps
    * - MIRAX (MRXS)
      - .mrxs
      - JPEG / PNG / BMP
@@ -46,6 +52,7 @@ Format Detection
 FastSlide automatically detects the file format based on the file extension:
 
 - ``.svs`` → Aperio SVS reader
+- ``.bif`` → Ventana (BIF) reader
 - ``.mrxs`` → MIRAX (MRXS) reader  
 - ``.tif``, ``.tiff``, ``.qptiff`` → QPTIFF reader
 

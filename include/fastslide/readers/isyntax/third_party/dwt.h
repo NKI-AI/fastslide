@@ -470,7 +470,7 @@ static void opj_idwt53_v_cas1_mcols_SSE2_OR_AVX2(icoeff_t* tmp,
 #undef SUB
 #undef SAR
 
-#endif /* (defined(__SSE2__) || defined(__AVX2__)) &&                          \
+#endif /* (defined(__SSE2__) || defined(__AVX2__)) && \
           !defined(STANDARD_SLOW_VERSION) */
 
 /** Vertical inverse 5x3 wavelet transform for one column, when top-most

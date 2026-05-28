@@ -37,8 +37,9 @@ enum class ColorSpace {
 
 /// @brief Bundle of optional dependencies that can be injected into readers
 ///
-/// This struct allows readers to receive shared services without tight coupling.
-/// All fields are optional; readers should provide sensible defaults if not set.
+/// This struct allows readers to receive shared services without tight
+/// coupling. All fields are optional; readers should provide sensible defaults
+/// if not set.
 ///
 /// Example usage:
 /// @code
@@ -61,7 +62,8 @@ struct DependencyBundle {
   /// @brief Background color for empty regions
   ///
   /// Used when filling regions that don't have tile data (e.g., sparse MRXS
-  /// tiles). If not set, readers should use their own default (typically white).
+  /// tiles). If not set, readers should use their own default (typically
+  /// white).
   std::optional<ColorRGB> background_color;
 
   /// @brief Maximum number of threads for parallel operations

@@ -221,11 +221,12 @@ class SlideReaderTest : public ::testing::Test {
 };
 
 /// @brief Parameterized test fixture for ClampRegion tests
-class ClampRegionTest : public ::testing::TestWithParam<
-                            std::tuple<RegionSpec,       // Input region
-                                       ImageDimensions,  // Image dimensions
-                                       RegionSpec        // Expected output
-                                       >> {};
+class ClampRegionTest
+    : public ::testing::TestWithParam<std::tuple<RegionSpec,  // Input region
+                                                 ImageDimensions,  // Image
+                                                                   // dimensions
+                                                 RegionSpec  // Expected output
+                                                 >> {};
 
 // Test ClampRegion utility function
 TEST_F(SlideReaderTest, ClampRegionWithinBounds) {

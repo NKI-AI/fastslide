@@ -15,8 +15,9 @@
 #define TOTAL_LEN_LEN 8
 
 /*
- * Comments from pseudo-code at https://en.wikipedia.org/wiki/SHA-2 are reproduced here.
- * When useful for clarification, portions of the pseudo-code are reproduced here too.
+ * Comments from pseudo-code at https://en.wikipedia.org/wiki/SHA-2 are
+ * reproduced here. When useful for clarification, portions of the pseudo-code
+ * are reproduced here too.
  */
 
 /*
@@ -27,8 +28,9 @@
  */
 static inline uint32_t right_rot(uint32_t value, unsigned int count) {
   /*
-	 * Defined behaviour in standard C for all count where 0 < count < 32, which is what we need here.
-	 */
+   * Defined behaviour in standard C for all count where 0 < count < 32, which
+   * is what we need here.
+   */
   return value >> count | value << (32 - count);
 }
 
@@ -48,18 +50,18 @@ static inline void consume_chunk(uint32_t* h, const uint8_t* p) {
     ah[i] = h[i];
 
   /*
-	 * The w-array is really w[64], but since we only need 16 of them at a time, we save stack by
-	 * calculating 16 at a time.
-	 *
-	 * This optimization was not there initially and the rest of the comments about w[64] are kept in their
-	 * initial state.
-	 */
+   * The w-array is really w[64], but since we only need 16 of them at a time,
+   * we save stack by calculating 16 at a time.
+   *
+   * This optimization was not there initially and the rest of the comments
+   * about w[64] are kept in their initial state.
+   */
 
   /*
-	 * create a 64-entry message schedule array w[0..63] of 32-bit words (The initial values in w[0..63]
-	 * don't matter, so many implementations zero them here) copy chunk into first 16 words w[0..15] of the
-	 * message schedule array
-	 */
+   * create a 64-entry message schedule array w[0..63] of 32-bit words (The
+   * initial values in w[0..63] don't matter, so many implementations zero them
+   * here) copy chunk into first 16 words w[0..15] of the message schedule array
+   */
   uint32_t w[16];
 
   /* Compression function main loop: */
@@ -70,8 +72,8 @@ static inline void consume_chunk(uint32_t* h, const uint8_t* p) {
                (uint32_t)p[2] << 8 | (uint32_t)p[3];
         p += 4;
       } else {
-        /* Extend the first 16 words into the remaining 48 words w[16..63] of the
-				 * message schedule array: */
+        /* Extend the first 16 words into the remaining 48 words w[16..63] of
+         * the message schedule array: */
         const uint32_t s0 = right_rot(w[(j + 1) & 0xf], 7) ^
                             right_rot(w[(j + 1) & 0xf], 18) ^
                             (w[(j + 1) & 0xf] >> 3);
@@ -85,9 +87,10 @@ static inline void consume_chunk(uint32_t* h, const uint8_t* p) {
       const uint32_t ch = (ah[4] & ah[5]) ^ (~ah[4] & ah[6]);
 
       /*
-			 * Initialize array of round constants:
-			 * (first 32 bits of the fractional parts of the cube roots of the first 64 primes 2..311):
-			 */
+       * Initialize array of round constants:
+       * (first 32 bits of the fractional parts of the cube roots of the first
+       * 64 primes 2..311):
+       */
       static const uint32_t k[] = {
           0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b,
           0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01,
@@ -135,9 +138,9 @@ void sha_256_init(struct Sha_256* sha_256, uint8_t hash[SIZE_OF_SHA_256_HASH]) {
   sha_256->space_left = SIZE_OF_SHA_256_CHUNK;
   sha_256->total_len = 0;
   /*
-	 * Initialize hash values (first 32 bits of the fractional parts of the square roots of the first 8 primes
-	 * 2..19):
-	 */
+   * Initialize hash values (first 32 bits of the fractional parts of the square
+   * roots of the first 8 primes 2..19):
+   */
   sha_256->h[0] = 0x6a09e667;
   sha_256->h[1] = 0xbb67ae85;
   sha_256->h[2] = 0x3c6ef372;
@@ -152,16 +155,18 @@ void sha_256_write(struct Sha_256* sha_256, const void* data, size_t len) {
   sha_256->total_len += len;
 
   /*
-	 * The following cast is not necessary, and could even be considered as poor practice. However, it makes this
-	 * file valid C++, which could be a good thing for some use cases.
-	 */
+   * The following cast is not necessary, and could even be considered as poor
+   * practice. However, it makes this file valid C++, which could be a good
+   * thing for some use cases.
+   */
   const uint8_t* p = (const uint8_t*)data;
 
   while (len > 0) {
     /*
-		 * If the input chunks have sizes that are multiples of the calculation chunk size, no copies are
-		 * necessary. We operate directly on the input data instead.
-		 */
+     * If the input chunks have sizes that are multiples of the calculation
+     * chunk size, no copies are necessary. We operate directly on the input
+     * data instead.
+     */
     if (sha_256->space_left == SIZE_OF_SHA_256_CHUNK &&
         len >= SIZE_OF_SHA_256_CHUNK) {
       consume_chunk(sha_256->h, p);
@@ -192,17 +197,19 @@ uint8_t* sha_256_close(struct Sha_256* sha_256) {
   uint32_t* const h = sha_256->h;
 
   /*
-	 * The current chunk cannot be full. Otherwise, it would already have been consumed. I.e. there is space left
-	 * for at least one byte. The next step in the calculation is to add a single one-bit to the data.
-	 */
+   * The current chunk cannot be full. Otherwise, it would already have been
+   * consumed. I.e. there is space left for at least one byte. The next step in
+   * the calculation is to add a single one-bit to the data.
+   */
   *pos++ = 0x80;
   --space_left;
 
   /*
-	 * Now, the last step is to add the total data length at the end of the last chunk, and zero padding before
-	 * that. But we do not necessarily have enough space left. If not, we pad the current chunk with zeroes, and add
-	 * an extra chunk at the end.
-	 */
+   * Now, the last step is to add the total data length at the end of the last
+   * chunk, and zero padding before that. But we do not necessarily have enough
+   * space left. If not, we pad the current chunk with zeroes, and add an extra
+   * chunk at the end.
+   */
   if (space_left < TOTAL_LEN_LEN) {
     memset(pos, 0x00, space_left);
     consume_chunk(h, sha_256->chunk);

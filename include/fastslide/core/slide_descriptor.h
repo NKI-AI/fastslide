@@ -29,7 +29,7 @@
 /**
  * @file slide_descriptor.h
  * @brief Core domain models for slide structure and metadata
- * 
+ *
  * This header defines the fundamental data structures that describe a slide's
  * pyramid structure, physical properties, and channel information. These are
  * pure data types with minimal dependencies, suitable for use in language

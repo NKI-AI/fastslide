@@ -23,7 +23,7 @@
 /**
  * @file metadata.h
  * @brief Core metadata container without external dependencies
- * 
+ *
  * This header defines the metadata container and standardized keys for
  * slide metadata. This is a pure domain model with minimal dependencies,
  * suitable for use in language bindings and format plugins.

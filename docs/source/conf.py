@@ -11,7 +11,7 @@ project = "FastSlide"
 html_title = "FastSlide Documentation"
 copyright = "2025, AI for Oncology"
 author = "AI for Oncology"
-release = "0.5.6"
+release = "0.6.0"
 version = "0.2"
 
 # -- General configuration ---------------------------------------------------

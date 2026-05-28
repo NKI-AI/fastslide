@@ -1,8 +1,8 @@
-///////////////////////// ankerl::unordered_dense::{map, set} /////////////////////////
+///////////////////////// ankerl::unordered_dense::{map, set}
+////////////////////////////
 // NOLINTBEGIN
-// A fast & densely stored hashmap and hashset based on robin-hood backward shift deletion.
-// Version 4.5.0
-// https://github.com/martinus/unordered_dense
+// A fast & densely stored hashmap and hashset based on robin-hood backward
+// shift deletion. Version 4.5.0 https://github.com/martinus/unordered_dense
 //
 // Licensed under the MIT License <http://opensource.org/licenses/MIT>.
 // SPDX-License-Identifier: MIT
@@ -15,8 +15,8 @@
 // copies of the Software, and to permit persons to whom the Software is
 // furnished to do so, subject to the following conditions:
 //
-// The above copyright notice and this permission notice shall be included in all
-// copies or substantial portions of the Software.
+// The above copyright notice and this permission notice shall be included in
+// all copies or substantial portions of the Software.
 //
 // THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 // IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
@@ -38,7 +38,8 @@
 #define ANKERL_UNORDERED_DENSE_VERSION_PATCH \
   0  // NOLINT(cppcoreguidelines-macro-usage) backwards compatible bug fixes
 
-// API versioning with inline namespace, see https://www.foonathan.net/2018/11/inline-namespaces/
+// API versioning with inline namespace, see
+// https://www.foonathan.net/2018/11/inline-namespaces/
 
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define ANKERL_UNORDERED_DENSE_VERSION_CONCAT1(major, minor, patch) \
@@ -177,8 +178,9 @@ namespace detail {
 
 #if ANKERL_UNORDERED_DENSE_HAS_EXCEPTIONS()
 
-// make sure this is not inlined as it is slow and dramatically enlarges code, thus making other
-// inlinings more difficult. Throws are also generally the slow path.
+// make sure this is not inlined as it is slow and dramatically enlarges code,
+// thus making other inlinings more difficult. Throws are also generally the
+// slow path.
 [[noreturn]] inline ANKERL_UNORDERED_DENSE_NOINLINE void
 on_error_key_not_found() {
   throw std::out_of_range("ankerl::unordered_dense::map::at(): key not found");
@@ -216,9 +218,10 @@ on_error_too_many_elements() {
 
 // hash ///////////////////////////////////////////////////////////////////////
 
-// This is a stripped-down implementation of wyhash: https://github.com/wangyi-fudan/wyhash
-// No big-endian support (because different values on different machines don't matter),
-// hardcodes seed and the secret, reformats the code, and clang-tidy fixes.
+// This is a stripped-down implementation of wyhash:
+// https://github.com/wangyi-fudan/wyhash No big-endian support (because
+// different values on different machines don't matter), hardcodes seed and the
+// secret, reformats the code, and clang-tidy fixes.
 namespace detail::wyhash {
 
 inline void mum(uint64_t* a, uint64_t* b) {
@@ -256,7 +259,8 @@ inline void mum(uint64_t* a, uint64_t* b) {
   return a ^ b;
 }
 
-// read functions. WARNING: we don't care about endianness, so results are different on big endian!
+// read functions. WARNING: we don't care about endianness, so results are
+// different on big endian!
 [[nodiscard]] inline auto r8(const uint8_t* p) -> uint64_t {
   uint64_t v{};
   std::memcpy(&v, p, 8U);
@@ -410,8 +414,8 @@ struct hash<Enum, typename std::enable_if<std::is_enum<Enum>::value>::type> {
 
 template <typename... Args>
 struct tuple_hash_helper {
-  // Converts the value into 64bit. If it is an integral type, just cast it. Mixing is doing the rest.
-  // If it isn't an integral we need to hash it.
+  // Converts the value into 64bit. If it is an integral type, just cast it.
+  // Mixing is doing the rest. If it isn't an integral we need to hash it.
   template <typename Arg>
   [[nodiscard]] constexpr static auto to64(Arg const& arg) -> uint64_t {
     if constexpr (std::is_integral_v<Arg> || std::is_enum_v<Arg>) {
@@ -426,9 +430,11 @@ struct tuple_hash_helper {
     return detail::wyhash::mix(state + v, uint64_t{0x9ddfea08eb382d69});
   }
 
-  // Creates a buffer that holds all the data from each element of the tuple. If possible we memcpy the data directly. If
-  // not, we hash the object and use this for the array. Size of the array is known at compile time, and memcpy is optimized
-  // away, so filling the buffer is highly efficient. Finally, call wyhash with this buffer.
+  // Creates a buffer that holds all the data from each element of the tuple. If
+  // possible we memcpy the data directly. If not, we hash the object and use
+  // this for the array. Size of the array is known at compile time, and memcpy
+  // is optimized away, so filling the buffer is highly efficient. Finally, call
+  // wyhash with this buffer.
   template <typename T, std::size_t... Idx>
   [[nodiscard]] static auto calc_hash(T const& t,
                                       std::index_sequence<Idx...>) noexcept
@@ -506,9 +512,9 @@ struct standard {
   static constexpr uint32_t fingerprint_mask =
       dist_inc - 1;  // mask for 1 byte of fingerprint
 
-  uint32_t
-      m_dist_and_fingerprint;  // upper 3 byte: distance to original bucket. lower byte: fingerprint from hash
-  uint32_t m_value_idx;  // index into the m_values vector.
+  uint32_t m_dist_and_fingerprint;  // upper 3 byte: distance to original
+                                    // bucket. lower byte: fingerprint from hash
+  uint32_t m_value_idx;             // index into the m_values vector.
 };
 
 ANKERL_UNORDERED_DENSE_PACK(struct big {
@@ -516,9 +522,9 @@ ANKERL_UNORDERED_DENSE_PACK(struct big {
   static constexpr uint32_t fingerprint_mask =
       dist_inc - 1;  // mask for 1 byte of fingerprint
 
-  uint32_t
-      m_dist_and_fingerprint;  // upper 3 byte: distance to original bucket. lower byte: fingerprint from hash
-  size_t m_value_idx;  // index into the m_values vector.
+  uint32_t m_dist_and_fingerprint;  // upper 3 byte: distance to original
+                                    // bucket. lower byte: fingerprint from hash
+  size_t m_value_idx;               // index into the m_values vector.
 });
 
 }  // namespace bucket_type
@@ -589,11 +595,14 @@ struct base_table_type_set {};
 
 }  // namespace detail
 
-// Very much like std::deque, but faster for indexing (in most cases). As of now this doesn't implement the full std::vector
-// API, but merely what's necessary to work as an underlying container for ankerl::unordered_dense::{map, set}.
-// It allocates blocks of equal size and puts them into the m_blocks vector. That means it can grow simply by adding a new
-// block to the back of m_blocks, and doesn't double its size like an std::vector. The disadvantage is that memory is not
-// linear and thus there is one more indirection necessary for indexing.
+// Very much like std::deque, but faster for indexing (in most cases). As of now
+// this doesn't implement the full std::vector API, but merely what's necessary
+// to work as an underlying container for ankerl::unordered_dense::{map, set}.
+// It allocates blocks of equal size and puts them into the m_blocks vector.
+// That means it can grow simply by adding a new block to the back of m_blocks,
+// and doesn't double its size like an std::vector. The disadvantage is that
+// memory is not linear and thus there is one more indirection necessary for
+// indexing.
 template <typename T, typename Allocator = std::allocator<T>,
           size_t MaxSegmentSizeBytes = 4096>
 class segmented_vector {
@@ -636,8 +645,8 @@ class segmented_vector {
   static constexpr auto mask = num_elements_in_block - 1U;
 
   /**
-     * Iterator class doubles as const_iterator and iterator
-     */
+   * Iterator class doubles as const_iterator and iterator
+   */
   template <bool IsConst>
   class iter_t {
     using ptr_t =
@@ -997,7 +1006,8 @@ class segmented_vector {
 
 namespace detail {
 
-// This is it, the table. Doubles as map and set, and uses `void` for T when its used as a set.
+// This is it, the table. Doubles as map and set, and uses `void` for T when its
+// used as a set.
 template <class Key,
           class T,  // when void, treat it as a set.
           class Hash, class KeyEqual, class AllocatorOrContainer, class Bucket,
@@ -1059,8 +1069,8 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
   static_assert(std::is_trivially_copyable_v<Bucket>,
                 "assert we can just memset / memcpy");
 
-  value_container_type
-      m_values{};  // Contains all the key-value pairs in one densely stored container. No holes.
+  value_container_type m_values{};  // Contains all the key-value pairs in one
+                                    // densely stored container. No holes.
   bucket_container_type m_buckets{};
   size_t m_max_bucket_capacity = 0;
   float m_max_load_factor = default_max_load_factor;
@@ -1085,7 +1095,8 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
     return bucket[offset];
   }
 
-  // use the dist_inc and dist_dec functions so that uint16_t types work without warning
+  // use the dist_inc and dist_dec functions so that uint16_t types work without
+  // warning
   [[nodiscard]] static constexpr auto dist_inc(dist_and_fingerprint_type x)
       -> dist_and_fingerprint_type {
     return static_cast<dist_and_fingerprint_type>(x + Bucket::dist_inc);
@@ -1102,7 +1113,8 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
     if constexpr (is_detected_v<detect_avalanching, Hash>) {
       // we know that the hash is good because is_avalanching.
       if constexpr (sizeof(decltype(m_hash(key))) < sizeof(uint64_t)) {
-        // 32bit hash and is_avalanching => multiply with a constant to avalanche bits upwards
+        // 32bit hash and is_avalanching => multiply with a constant to
+        // avalanche bits upwards
         return m_hash(key) * UINT64_C(0x9ddfea08eb382d69);
       } else {
         // 64bit and is_avalanching => only use the hash itself.
@@ -1172,7 +1184,8 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
     return shifts;
   }
 
-  // assumes m_values has data, m_buckets=m_buckets_end=nullptr, m_shifts is INITIAL_SHIFTS
+  // assumes m_values has data, m_buckets=m_buckets_end=nullptr, m_shifts is
+  // INITIAL_SHIFTS
   void copy_buckets(table const& other) {
     // assumes m_values has already the correct data copied over.
     if (empty()) {
@@ -1195,8 +1208,8 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
   }
 
   /**
-     * True when no element can be added any more without increasing the size
-     */
+   * True when no element can be added any more without increasing the size
+   */
   [[nodiscard]] auto is_full() const -> bool {
     return size() > m_max_bucket_capacity;
   }
@@ -1248,7 +1261,8 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
       auto const& key = get_key(m_values[value_idx]);
       auto [dist_and_fingerprint, bucket] = next_while_less(key);
 
-      // we know for certain that key has not yet been inserted, so no need to check it.
+      // we know for certain that key has not yet been inserted, so no need to
+      // check it.
       place_and_shift_up({dist_and_fingerprint, value_idx}, bucket);
     }
   }
@@ -1286,11 +1300,13 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
 
     // update m_values
     if (value_idx_to_remove != m_values.size() - 1) {
-      // no luck, we'll have to replace the value with the last one and update the index accordingly
+      // no luck, we'll have to replace the value with the last one and update
+      // the index accordingly
       auto& val = m_values[value_idx_to_remove];
       val = std::move(m_values.back());
 
-      // update the values_idx of the moved entry. No need to play the info game, just look until we find the values_idx
+      // update the values_idx of the moved entry. No need to play the info
+      // game, just look until we find the values_idx
       auto mh = mixed_hash(get_key(val));
       bucket_idx = bucket_idx_from_hash(mh);
 
@@ -1343,7 +1359,8 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
                         value_idx_type bucket_idx, Args&&... args)
       -> std::pair<iterator, bool> {
 
-    // emplace the new value. If that throws an exception, no harm done; index is still in a valid state
+    // emplace the new value. If that throws an exception, no harm done; index
+    // is still in a valid state
     m_values.emplace_back(std::forward<Args>(args)...);
 
     auto value_idx = static_cast<value_idx_type>(m_values.size() - 1);
@@ -1392,7 +1409,8 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
     auto bucket_idx = bucket_idx_from_hash(mh);
     auto* bucket = &at(m_buckets, bucket_idx);
 
-    // unrolled loop. *Always* check a few directly, then enter the loop. This is faster.
+    // unrolled loop. *Always* check a few directly, then enter the loop. This
+    // is faster.
     if (dist_and_fingerprint == bucket->m_dist_and_fingerprint &&
         m_equal(key, get_key(m_values[bucket->m_value_idx]))) {
       return begin() + static_cast<difference_type>(bucket->m_value_idx);
@@ -1526,7 +1544,8 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
 
   auto operator=(table const& other) -> table& {
     if (&other != this) {
-      deallocate_buckets();  // deallocate before m_values is set (might have another allocator)
+      deallocate_buckets();  // deallocate before m_values is set (might have
+                             // another allocator)
       m_values = other.m_values;
       m_max_load_factor = other.m_max_load_factor;
       m_hash = other.m_hash;
@@ -1538,11 +1557,12 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
   }
 
   auto operator=(table&& other) noexcept(
-      noexcept(std::is_nothrow_move_assignable_v<value_container_type>&&
-                   std::is_nothrow_move_assignable_v<Hash>&&
-                       std::is_nothrow_move_assignable_v<KeyEqual>)) -> table& {
+      noexcept(std::is_nothrow_move_assignable_v<value_container_type> &&
+               std::is_nothrow_move_assignable_v<Hash> &&
+               std::is_nothrow_move_assignable_v<KeyEqual>)) -> table& {
     if (&other != this) {
-      deallocate_buckets();  // deallocate before m_values is set (might have another allocator)
+      deallocate_buckets();  // deallocate before m_values is set (might have
+                             // another allocator)
       m_values = std::move(other.m_values);
       other.m_values.clear();
 
@@ -1559,11 +1579,12 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
         other.allocate_buckets_from_shift();
         other.clear_buckets();
       } else {
-        // set max_load_factor *before* copying the other's buckets, so we have the same
-        // behavior
+        // set max_load_factor *before* copying the other's buckets, so we have
+        // the same behavior
         m_max_load_factor = other.m_max_load_factor;
 
-        // copy_buckets sets m_buckets, m_num_buckets, m_max_bucket_capacity, m_shifts
+        // copy_buckets sets m_buckets, m_num_buckets, m_max_bucket_capacity,
+        // m_shifts
         copy_buckets(other);
         // clear's the other's buckets so other is now already usable.
         other.clear_buckets();
@@ -1662,11 +1683,13 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
   }
 
   // nonstandard API: *this is emptied.
-  // Also see "A Standard flat_map" https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p0429r9.pdf
+  // Also see "A Standard flat_map"
+  // https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2022/p0429r9.pdf
   auto extract() && -> value_container_type { return std::move(m_values); }
 
   // nonstandard API:
-  // Discards the internally held container and replaces it with the one passed. Erases non-unique elements.
+  // Discards the internally held container and replaces it with the one passed.
+  // Erases non-unique elements.
   auto replace(value_container_type&& container) {
     if (ANKERL_UNORDERED_DENSE_UNLIKELY(container.size() > max_size())) {
       on_error_too_many_elements();
@@ -1682,10 +1705,12 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
 
     m_values = std::move(container);
 
-    // can't use clear_and_fill_buckets_from_values() because container elements might not be unique
+    // can't use clear_and_fill_buckets_from_values() because container elements
+    // might not be unique
     auto value_idx = value_idx_type{};
 
-    // loop until we reach the end of the container. duplicated entries will be replaced with back().
+    // loop until we reach the end of the container. duplicated entries will be
+    // replaced with back().
     while (value_idx != static_cast<value_idx_type>(m_values.size())) {
       auto const& key = get_key(m_values[value_idx]);
 
@@ -1761,7 +1786,8 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
         .first;
   }
 
-  // Single arguments for unordered_set can be used without having to construct the value_type
+  // Single arguments for unordered_set can be used without having to construct
+  // the value_type
   template <
       class K, typename Q = T, typename H = Hash, typename KE = KeyEqual,
       std::enable_if_t<!is_map_v<Q> && is_transparent_v<H, KE>, bool> = true>
@@ -1784,7 +1810,8 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
       bucket_idx = next(bucket_idx);
     }
 
-    // value is new, insert element first, so when exception happens we are in a valid state
+    // value is new, insert element first, so when exception happens we are in a
+    // valid state
     return do_place_element(dist_and_fingerprint, bucket_idx,
                             std::forward<K>(key));
   }
@@ -1792,7 +1819,8 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
   template <class... Args>
   auto emplace(Args&&... args) -> std::pair<iterator, bool> {
     // we have to instantiate the value_type to be able to access the key.
-    // 1. emplace_back the object so it is constructed. 2. If the key is already there, pop it later in the loop.
+    // 1. emplace_back the object so it is constructed. 2. If the key is already
+    // there, pop it later in the loop.
     auto& key = get_key(m_values.emplace_back(std::forward<Args>(args)...));
     auto hash = mixed_hash(key);
     auto dist_and_fingerprint = dist_and_fingerprint_from_hash(hash);
@@ -1930,7 +1958,8 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
       ++idx;
     }
 
-    // all elements from the right are moved, now remove the last element until all done
+    // all elements from the right are moved, now remove the last element until
+    // all done
     idx = idx_last;
     while (idx != mid) {
       --idx;
@@ -1966,9 +1995,9 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
   }
 
   void swap(table& other) noexcept(
-      noexcept(std::is_nothrow_swappable_v<value_container_type>&&
-                   std::is_nothrow_swappable_v<Hash>&&
-                       std::is_nothrow_swappable_v<KeyEqual>)) {
+      noexcept(std::is_nothrow_swappable_v<value_container_type> &&
+               std::is_nothrow_swappable_v<Hash> &&
+               std::is_nothrow_swappable_v<KeyEqual>)) {
     using std::swap;
     swap(other, *this);
   }
@@ -2123,7 +2152,8 @@ class table : public std::conditional_t<is_map_v<T>, base_table_type_map<T>,
   void reserve(size_t capa) {
     capa = (std::min)(capa, max_size());
     if constexpr (has_reserve<value_container_type>) {
-      // std::deque doesn't have reserve(). Make sure we only call when available
+      // std::deque doesn't have reserve(). Make sure we only call when
+      // available
       m_values.reserve(capa);
     }
     auto shifts = calc_shifts_for_size((std::max)(capa, size()));
@@ -2258,7 +2288,8 @@ using segmented_set =
 // deduction guides ///////////////////////////////////////////////////////////
 
 // deduction guides for alias templates are only possible since C++20
-// see https://en.cppreference.com/w/cpp/language/class_template_argument_deduction
+// see
+// https://en.cppreference.com/w/cpp/language/class_template_argument_deduction
 
 }  // namespace ANKERL_UNORDERED_DENSE_NAMESPACE
 }  // namespace ankerl::unordered_dense

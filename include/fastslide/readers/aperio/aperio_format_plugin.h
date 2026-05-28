@@ -22,7 +22,7 @@
 /**
  * @file aperio_format_plugin.h
  * @brief Aperio format plugin descriptor
- * 
+ *
  * This header provides the format descriptor for Aperio slides.
  */
 

@@ -17,19 +17,72 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
+#include <string>
+#include <utility>
 
+#include "fastslide/runtime/cache_interface.h"
 #include "simpletiff/index.h"
 
 namespace fastslide {
 
 /// @brief Read-only view of NDPI reader state needed by the tile executor.
-struct NdpiTiffExecContext {
-  const simpletiff::TiffIndex& tiff_index;
-  int level_count = 0;
-  std::span<const uint8_t> jpeg_header_template;
-  std::span<const size_t> sof_height_offsets;
-  std::span<const size_t> sof_width_offsets;
+///
+/// Mirrors the AperioExecContext shape (filename + cache + tiff_index) so the
+/// CRTP `CachedTileExecutor<NdpiTiffTileExecutor>` can call `IsCacheEnabled()`
+/// and `GetCache()` directly on the context. The NDPI-specific JPEG header
+/// template fields are needed by the headerless-tile decode path.
+class NdpiTiffExecContext {
+ public:
+  NdpiTiffExecContext(std::string filename,
+                      std::shared_ptr<runtime::ITileCache> cache,
+                      const simpletiff::TiffIndex& tiff_index, int level_count,
+                      std::span<const uint8_t> jpeg_header_template,
+                      std::span<const size_t> sof_height_offsets,
+                      std::span<const size_t> sof_width_offsets)
+      : filename_(std::move(filename)),
+        cache_(std::move(cache)),
+        tiff_index_(tiff_index),
+        level_count_(level_count),
+        jpeg_header_template_(jpeg_header_template),
+        sof_height_offsets_(sof_height_offsets),
+        sof_width_offsets_(sof_width_offsets) {}
+
+  [[nodiscard]] const std::string& GetFilename() const { return filename_; }
+
+  [[nodiscard]] std::shared_ptr<runtime::ITileCache> GetCache() const {
+    return cache_;
+  }
+
+  [[nodiscard]] bool IsCacheEnabled() const { return cache_ != nullptr; }
+
+  [[nodiscard]] const simpletiff::TiffIndex& GetTiffIndex() const {
+    return tiff_index_;
+  }
+
+  [[nodiscard]] int GetLevelCount() const { return level_count_; }
+
+  [[nodiscard]] std::span<const uint8_t> GetJpegHeaderTemplate() const {
+    return jpeg_header_template_;
+  }
+
+  [[nodiscard]] std::span<const size_t> GetSofHeightOffsets() const {
+    return sof_height_offsets_;
+  }
+
+  [[nodiscard]] std::span<const size_t> GetSofWidthOffsets() const {
+    return sof_width_offsets_;
+  }
+
+ private:
+  std::string filename_;
+  std::shared_ptr<runtime::ITileCache> cache_;
+  const simpletiff::TiffIndex& tiff_index_;
+  int level_count_;
+  std::span<const uint8_t> jpeg_header_template_;
+  std::span<const size_t> sof_height_offsets_;
+  std::span<const size_t> sof_width_offsets_;
 };
 
 }  // namespace fastslide

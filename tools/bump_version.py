@@ -179,17 +179,6 @@ def _collect_plans(*, current_version: str, new_version: str) -> list[PlannedEdi
         )
     )
 
-    # Meson build version.
-    plans.append(
-        _plan_regex_sub(
-            path=REPO_ROOT / "aifo" / "fastslide" / "meson.build",
-            description="Update version in meson.build",
-            pattern=r"^(\s*version:\s*)'[^']+'(,\s*)$",
-            replacement=f"\\g<1>'{new_version}'\\g<2>",
-            flags=re.MULTILINE,
-        )
-    )
-
     # C/C++ version markers.
     plans.append(
         _plan_regex_sub(

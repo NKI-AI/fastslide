@@ -124,10 +124,25 @@ void Canvas::BilinearRgbBlit(const uint8_t* src, int src_w, int src_h,
   const int w_br = distx * disty;
   const bool needs_interp = (distx != 0 || disty != 0);
 
-  const int safe_dx_start = std::max(dx_start, -base_ix);
-  const int safe_dx_end = std::min(dx_end, src_w - 1 - base_ix);
-  const int safe_dy_start = std::max(dy_start, -base_iy);
-  const int safe_dy_end = std::min(dy_end, src_h - 1 - base_iy);
+  // Confine sampling to the source sub-rectangle, not the whole physical tile.
+  // At level > 0 a physical tile packs d*d independently-downsampled level-0
+  // tiles side by side; the sub-cells image scene positions ~overlap apart, so
+  // sampling ix+1 / iy+1 past a sub-cell edge would read a *neighbouring*
+  // tile's pixels and paint a bright/coloured line. Clamping ix/iy to the
+  // sub-rect (replicate the border pixel itself, never border+1) makes each
+  // tile resample as an isolated image. Tiles still land on the common integer
+  // output grid, so overlaps remain seamless.
+  const int sub_x0 = std::max(0, static_cast<int>(src_offset_x));
+  const int sub_y0 = std::max(0, static_cast<int>(src_offset_y));
+  const int sub_x1 =
+      std::min(src_w, static_cast<int>(src_offset_x) + visible_w);
+  const int sub_y1 =
+      std::min(src_h, static_cast<int>(src_offset_y) + visible_h);
+
+  const int safe_dx_start = std::max(dx_start, sub_x0 - base_ix);
+  const int safe_dx_end = std::min(dx_end, sub_x1 - 1 - base_ix);
+  const int safe_dy_start = std::max(dy_start, sub_y0 - base_iy);
+  const int safe_dy_end = std::min(dy_end, sub_y1 - 1 - base_iy);
 
   const int src_stride = src_w * 3;
   uint8_t* buf = output_image_->GetData();
@@ -153,10 +168,18 @@ void Canvas::BilinearRgbBlit(const uint8_t* src, int src_w, int src_h,
       }
 
       const int ix = dx + base_ix;
-      const auto tl = pixel::FetchRgbPad(src, src_w, src_h, ix, iy);
-      const auto tr = pixel::FetchRgbPad(src, src_w, src_h, ix + 1, iy);
-      const auto bl = pixel::FetchRgbPad(src, src_w, src_h, ix, iy + 1);
-      const auto br = pixel::FetchRgbPad(src, src_w, src_h, ix + 1, iy + 1);
+      // Clamp to the sub-rectangle so border samples replicate the sub-tile's
+      // own edge instead of bleeding in the neighbouring packed tile.
+      const auto fetch = [&](int x, int y) -> pixel::Rgb8 {
+        x = std::clamp(x, sub_x0, sub_x1 - 1);
+        y = std::clamp(y, sub_y0, sub_y1 - 1);
+        const size_t off = (static_cast<size_t>(y) * src_w + x) * 3;
+        return {src[off], src[off + 1], src[off + 2]};
+      };
+      const auto tl = fetch(ix, iy);
+      const auto tr = fetch(ix + 1, iy);
+      const auto bl = fetch(ix, iy + 1);
+      const auto br = fetch(ix + 1, iy + 1);
 
       if (!needs_interp) {
         dst_row[dx * 3] = tl.r;

@@ -27,7 +27,7 @@
 /**
  * @file cache_interface.h
  * @brief Polymorphic tile cache interface for dependency injection
- * 
+ *
  * This header defines the abstract interface for tile caching, allowing
  * different cache implementations (LRU, shared-memory, GPU, etc.) to be
  * plugged into readers without changing their code.

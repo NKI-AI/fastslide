@@ -26,6 +26,7 @@
 #include "fastslide/readers/qptiff/qptiff_format_plugin.h"
 
 #include "fastslide/readers/aperio/aperio_format_plugin.h"  // SVS format not implemented yet
+#include "fastslide/readers/bif/bif_format_plugin.h"
 #include "fastslide/readers/dicom/dicom_format_plugin.h"
 #include "fastslide/readers/generictiff/generictiff_format_plugin.h"
 #include "fastslide/readers/ndpitiff/ndpitiff_format_plugin.h"
@@ -63,6 +64,7 @@ inline std::vector<FormatDescriptor> GetBuiltinFormats() {
       formats::aperio::CreateAperioFormatDescriptor(),
       formats::generictiff::CreateGenericTiffFormatDescriptor(),
       formats::ndpitiff::CreateNdpiTiffFormatDescriptor(),
+      formats::bif::CreateBifFormatDescriptor(),
       formats::dicom::CreateDicomFormatDescriptor(),
   };
 

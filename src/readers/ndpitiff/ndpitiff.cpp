@@ -17,10 +17,8 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -86,28 +84,6 @@ constexpr uint16_t kPhotometricYCbCr = 6;
   return std::min<uint32_t>(nominal, full - offset);
 }
 
-[[nodiscard]] const char* GetEnvOrNull(const char* name) {
-  return std::getenv(name);
-}
-
-[[nodiscard]] bool IsNdpiDebugEnabled() {
-  const char* v = GetEnvOrNull("FASTSLIDE_NDPI_DEBUG");
-  return v != nullptr && std::string_view(v) == "1";
-}
-
-[[nodiscard]] const char* StorageName(simpletiff::Storage storage) {
-  switch (storage) {
-    case simpletiff::Storage::kTiles:
-      return "tiles";
-    case simpletiff::Storage::kStrips:
-      return "strips";
-    case simpletiff::Storage::kSingleJpeg:
-      return "single_jpeg";
-    default:
-      return "unknown";
-  }
-}
-
 // Validates that an NDPI associated image page (macro/map) has plausible
 // parameters and can be decoded by ReadAssociatedImage.
 //
@@ -134,24 +110,6 @@ constexpr uint16_t kPhotometricYCbCr = 6;
     return true;
   }
   return page.samples_per_pixel > 0 && page.bits_per_sample > 0;
-}
-
-void MaybeDumpJpegStreamOnce(std::span<const uint8_t> jpeg_stream) {
-  static bool dumped = false;
-  if (dumped) {
-    return;
-  }
-  const char* path = GetEnvOrNull("FASTSLIDE_NDPI_DUMP_JPEG_STREAM");
-  if (path == nullptr || std::strlen(path) == 0) {
-    return;
-  }
-  std::ofstream out(path, std::ios::binary);
-  if (!out) {
-    return;
-  }
-  out.write(reinterpret_cast<const char*>(jpeg_stream.data()),
-            static_cast<std::streamsize>(jpeg_stream.size()));
-  dumped = true;
 }
 
 aifocore::Result<std::vector<uint8_t>> FindNdpiJpegHeaderTemplate(
@@ -458,8 +416,6 @@ aifocore::Result<RGBImage> NdpiTiffReader::ReadAssociatedImage(
                                          decode_ctx.jpeg_stream_buffer.size());
           }
 
-          MaybeDumpJpegStreamOnce(jpeg_stream_span);
-
           int decoded_w = 0;
           int decoded_h = 0;
           if (!simpletiff::DecodeJpeg(decode_ctx, jpeg_stream_span, decoded_w,
@@ -544,8 +500,6 @@ aifocore::Result<RGBImage> NdpiTiffReader::ReadAssociatedImage(
             std::span<const uint8_t>(decode_ctx.jpeg_stream_buffer.data(),
                                      decode_ctx.jpeg_stream_buffer.size());
       }
-
-      MaybeDumpJpegStreamOnce(jpeg_stream_span);
 
       int decoded_w = 0;
       int decoded_h = 0;
@@ -654,13 +608,11 @@ aifocore::Result<core::TilePlan> NdpiTiffReader::PrepareRequest(
 
 aifocore::Status NdpiTiffReader::ExecutePlan(const core::TilePlan& plan,
                                              runtime::Canvas& writer) const {
-  const NdpiTiffExecContext context{
-      .tiff_index = GetTiffIndex(),
-      .level_count = GetLevelCount(),
-      .jpeg_header_template = jpeg_header_template_,
-      .sof_height_offsets = sof_height_offsets_,
-      .sof_width_offsets = sof_width_offsets_,
-  };
+  const NdpiTiffExecContext context(
+      GetFilename(), GetCache(), GetTiffIndex(), GetLevelCount(),
+      std::span<const uint8_t>(jpeg_header_template_),
+      std::span<const size_t>(sof_height_offsets_),
+      std::span<const size_t>(sof_width_offsets_));
   return NdpiTiffTileExecutor::ExecutePlan(plan, context, writer);
 }
 
@@ -687,62 +639,6 @@ aifocore::Status NdpiTiffReader::ProcessMetadata() {
   }
   if (needs_jpeg_template) {
     AIFOCORE_RETURN_IF_ERROR(LoadJpegHeaderTemplate());
-
-    // Debug hook: dump reconstructed JPEG stream for pyramid tile 0 (level 0).
-    // This allows direct comparison with ndpi_python's reconstruction logic.
-    //
-    // Usage:
-    //   FASTSLIDE_NDPI_DUMP_JPEG_STREAM=/tmp/cpp_ndpi_L0_T0.jpg \
-    //     bazelisk run //aifo/fastslide:fastslidetool -- info --input ...ndpi
-    if (GetEnvOrNull("FASTSLIDE_NDPI_DUMP_JPEG_STREAM") != nullptr &&
-        tiff_index_ && !pyramid_levels_.empty()) {
-      const uint16_t page0 = pyramid_levels_.front().page;
-      if (page0 < tiff_index_->NumPages()) {
-        const auto& page_header = tiff_index_->Page(page0);
-        if (page_header.storage == simpletiff::Storage::kTiles) {
-          const auto& tiles = tiff_index_->Tiles(page_header.payload_id);
-          if (tiles.tiles_x > 0 && tiles.tiles_y > 0 && tiles.tile_w > 0 &&
-              tiles.tile_h > 0) {
-            static thread_local std::vector<uint8_t> raw_tile;
-            static thread_local std::vector<uint8_t> patched_header;
-            auto rr = simpletiff::ReadRawTile(*tiff_index_, page0,
-                                              /*tile_index=*/0, raw_tile);
-            if (rr.ok()) {
-              const uint32_t actual_w = ComputeEdgeTileDim(
-                  tiles.tile_w, /*offset=*/0, page_header.width);
-              const uint32_t actual_h = ComputeEdgeTileDim(
-                  tiles.tile_h, /*offset=*/0, page_header.height);
-              if (actual_w > 0 && actual_h > 0 &&
-                  actual_w <= std::numeric_limits<uint16_t>::max() &&
-                  actual_h <= std::numeric_limits<uint16_t>::max()) {
-                const auto raw_span =
-                    std::span<const uint8_t>(raw_tile.data(), raw_tile.size());
-                if (LooksLikeJpegStream(raw_span)) {
-                  MaybeDumpJpegStreamOnce(raw_span);
-                } else if (BuildPatchedJpegHeader(
-                               static_cast<uint16_t>(actual_w),
-                               static_cast<uint16_t>(actual_h), patched_header)
-                               .ok()) {
-                  std::vector<uint8_t> stream;
-                  stream.resize(patched_header.size() + raw_tile.size() + 2);
-                  uint8_t* out_ptr = stream.data();
-                  std::memcpy(out_ptr, patched_header.data(),
-                              patched_header.size());
-                  out_ptr += patched_header.size();
-                  if (!raw_tile.empty()) {
-                    std::memcpy(out_ptr, raw_tile.data(), raw_tile.size());
-                    out_ptr += raw_tile.size();
-                  }
-                  out_ptr[0] = 0xFF;
-                  out_ptr[1] = 0xD9;
-                  MaybeDumpJpegStreamOnce(stream);
-                }
-              }
-            }
-          }
-        }
-      }
-    }
   }
 
   return aifocore::Status::OkStatus();
@@ -814,36 +710,6 @@ aifocore::Status NdpiTiffReader::LoadDirectories() {
                                 "No NDPI pyramid levels found");
   }
 
-  if (IsNdpiDebugEnabled()) {
-    std::fprintf(stderr,
-                 "[NDPI] Selected %zu candidate pyramid pages (pre-sort)\n",
-                 pyramid_pages.size());
-    for (const uint16_t page_idx : pyramid_pages) {
-      const auto& page = tiff_index_->Page(page_idx);
-      std::fprintf(
-          stderr,
-          "[NDPI] page=%u %ux%u storage=%s compression=%u photometric=%u\n",
-          static_cast<unsigned>(page_idx), static_cast<unsigned>(page.width),
-          static_cast<unsigned>(page.height), StorageName(page.storage),
-          static_cast<unsigned>(page.compression),
-          static_cast<unsigned>(page.photometric));
-      if (page.storage == simpletiff::Storage::kTiles) {
-        const auto& tiles = tiff_index_->Tiles(page.payload_id);
-        std::fprintf(stderr, "       tiles: %ux%u tiles_x=%u tiles_y=%u\n",
-                     static_cast<unsigned>(tiles.tile_w),
-                     static_cast<unsigned>(tiles.tile_h),
-                     static_cast<unsigned>(tiles.tiles_x),
-                     static_cast<unsigned>(tiles.tiles_y));
-      } else if (page.storage == simpletiff::Storage::kStrips) {
-        const auto& strips = tiff_index_->Strips(page.payload_id);
-        std::fprintf(stderr, "       strips: rows_per_strip=%u count=%u\n",
-                     static_cast<unsigned>(strips.rows_per_strip),
-                     static_cast<unsigned>(strips.offsets.count));
-      }
-    }
-    std::fflush(stderr);
-  }
-
   std::sort(pyramid_pages.begin(), pyramid_pages.end(),
             [&](uint16_t a, uint16_t b) {
               const auto& pa = tiff_index_->Page(a);
@@ -877,17 +743,6 @@ aifocore::Status NdpiTiffReader::LoadDirectories() {
       const auto& p = tiff_index_->Page(*macro_page);
       associated_images_.push_back(
           {.page = *macro_page, .size = {p.width, p.height}, .name = "macro"});
-    } else if (IsNdpiDebugEnabled()) {
-      const auto& p = tiff_index_->Page(*macro_page);
-      std::fprintf(stderr,
-                   "[NDPI] Skipping macro page %u: undecodable parameters "
-                   "(samples_per_pixel=%u bits_per_sample=%u storage=%s "
-                   "compression=%u)\n",
-                   static_cast<unsigned>(*macro_page),
-                   static_cast<unsigned>(p.samples_per_pixel),
-                   static_cast<unsigned>(p.bits_per_sample),
-                   StorageName(p.storage),
-                   static_cast<unsigned>(p.compression));
     }
   }
   if (map_page.has_value()) {
@@ -895,17 +750,6 @@ aifocore::Status NdpiTiffReader::LoadDirectories() {
       const auto& p = tiff_index_->Page(*map_page);
       associated_images_.push_back(
           {.page = *map_page, .size = {p.width, p.height}, .name = "map"});
-    } else if (IsNdpiDebugEnabled()) {
-      const auto& p = tiff_index_->Page(*map_page);
-      std::fprintf(stderr,
-                   "[NDPI] Skipping map page %u: undecodable parameters "
-                   "(samples_per_pixel=%u bits_per_sample=%u storage=%s "
-                   "compression=%u)\n",
-                   static_cast<unsigned>(*map_page),
-                   static_cast<unsigned>(p.samples_per_pixel),
-                   static_cast<unsigned>(p.bits_per_sample),
-                   StorageName(p.storage),
-                   static_cast<unsigned>(p.compression));
     }
   }
 

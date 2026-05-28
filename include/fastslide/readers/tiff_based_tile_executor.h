@@ -21,7 +21,8 @@
 
 namespace fastslide {
 
-/// @brief CRTP base class providing thread-local buffer reuse for TIFF tile executors
+/// @brief CRTP base class providing thread-local buffer reuse for TIFF tile
+/// executors
 ///
 /// This class provides shared thread-local buffer management for all TIFF-based
 /// tile executors (Aperio, QPTIFF, etc.). Each derived class gets its own
@@ -35,8 +36,10 @@ namespace fastslide {
 ///
 /// Usage:
 /// ```cpp
-/// class AperioTileExecutor : public TiffBasedTileExecutor<AperioTileExecutor> {
-///   // Access buffers via GetBuffers().GetTileBuffer() and GetBuffers().GetCropBuffer()
+/// class AperioTileExecutor : public TiffBasedTileExecutor<AperioTileExecutor>
+/// {
+///   // Access buffers via GetBuffers().GetTileBuffer() and
+///   GetBuffers().GetCropBuffer()
 /// };
 /// ```
 template <typename Derived>
@@ -68,11 +71,13 @@ class TiffBasedTileExecutor {
     }
   };
 
-  /// @brief Access thread-local buffers (each derived class gets its own storage)
+  /// @brief Access thread-local buffers (each derived class gets its own
+  /// storage)
   static ThreadLocalTileBuffers& GetBuffers() { return tls_buffers_; }
 
  private:
-  // Each template instantiation (Aperio, QPTIFF, etc.) gets its own thread-local storage
+  // Each template instantiation (Aperio, QPTIFF, etc.) gets its own
+  // thread-local storage
   static thread_local ThreadLocalTileBuffers tls_buffers_;
 };
 

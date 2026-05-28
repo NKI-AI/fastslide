@@ -277,7 +277,8 @@ struct SlideDataInfo {
   int position_layer_record_offset =
       -1;  ///< Record offset for position data (-1 if not found)
   bool position_layer_compressed =
-      false;  ///< True if position layer is compressed (StitchingIntensityLayer)
+      false;  ///< True if position layer is compressed
+              ///< (StitchingIntensityLayer)
 
   // Camera position intensity gain values (1 value per position)
   // Values typically range 0.97-1.04, centered around 1.0

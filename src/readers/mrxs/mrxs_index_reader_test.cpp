@@ -132,7 +132,8 @@ std::vector<uint8_t> BuildIndexBufferMulti(
 ///   level pointers      one int32 per level (here we have 1 level)
 ///   zoom-level block    [sentinel=0:int32][data_pages_pointer:int32]
 ///   data page           [page_length:int32][next_page=0:int32]
-///                       N x 16-byte records [image_index][offset][length][fileno]
+///                       N x 16-byte records
+///                       [image_index][offset][length][fileno]
 std::vector<uint8_t> BuildIndexBuffer(
     const std::string& slide_id, const std::vector<SyntheticRecord>& records) {
   std::vector<uint8_t> buf;

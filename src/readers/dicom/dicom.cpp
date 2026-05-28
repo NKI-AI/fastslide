@@ -180,7 +180,8 @@ aifocore::Status VerifyTagInt(const DcmDataSet* dataset,
   return aifocore::Status::OkStatus();
 }
 
-/// @brief Purpose of a DICOM WSI file as determined from ImageType (PS3.3 C.7.6.1).
+/// @brief Purpose of a DICOM WSI file as determined from ImageType (PS3.3
+/// C.7.6.1).
 enum class DicomImagePurpose {
   kPyramidLevel,
   kLabel,

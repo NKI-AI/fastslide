@@ -104,7 +104,7 @@ constexpr double Sinc(double x) noexcept {
 }
 
 template <int A>
-requires ValidKernelSize<A>
+  requires ValidKernelSize<A>
 
 constexpr double LanczosKernel(double x) noexcept {
   if (std::abs(x) >= A)
@@ -113,7 +113,7 @@ constexpr double LanczosKernel(double x) noexcept {
 }
 
 template <int A>
-requires ValidKernelSize<A>
+  requires ValidKernelSize<A>
 
 constexpr double CosineWindowedSinc(double x) noexcept {
   if (std::abs(x) >= A)
@@ -128,7 +128,7 @@ constexpr double CosineWindowedSinc(double x) noexcept {
 }
 
 template <int A>
-requires ValidKernelSize<A>
+  requires ValidKernelSize<A>
 
 constexpr double ComputeWeight(double x, WindowType window_type) noexcept {
   switch (window_type) {
@@ -155,7 +155,7 @@ constexpr int ReflectIndex(int x, int max) noexcept {
 
 /// @brief Runtime-initialized kernel lookup table
 template <int A, WindowType WT>
-requires ValidKernelSize<A>
+  requires ValidKernelSize<A>
 static const auto KernelTable = []() {
   constexpr int M = 1024;
   std::array<float, M + 1> t{};
@@ -171,7 +171,7 @@ static const auto KernelTable = []() {
 //---------------------------------------------------------------------------------------
 
 template <int A, WindowType WT>
-requires ValidKernelSize<A>
+  requires ValidKernelSize<A>
 
 struct KernelConfig {
   static constexpr int kKernelSize = A;
@@ -249,7 +249,7 @@ int ComputeSupport(uint32_t input_dim, uint32_t output_dim) noexcept {
 template <typename KernelT>
 int ComputeSampleWeights(uint32_t length,  // output dimension (width or height)
                          uint32_t input_dim,  // input dimension (in_w or in_h)
-                         Tap* out_taps  // pointer into thread‐local pool
+                         Tap* out_taps        // pointer into thread‐local pool
                          ) noexcept {
   // Precompute all loop-invariant parameters
   auto params = PrepareWeights<KernelT>(input_dim, length);

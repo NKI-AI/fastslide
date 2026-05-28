@@ -29,7 +29,7 @@
 /**
  * @file format_descriptor.h
  * @brief Format plugin descriptors and capability negotiation
- * 
+ *
  * This header defines the structures used to describe format capabilities
  * and create reader instances through a plugin system. This provides a
  * more structured and extensible alternative to raw factory functions.

@@ -171,7 +171,8 @@ fastslide_slide_reader_get_image_format(const FastSlideSlideReader* reader);
 
 /// @brief Get pixel data type
 /// @param reader Slide reader handle
-/// @return Data type (FASTSLIDE_DATA_TYPE_UINT8, FASTSLIDE_DATA_TYPE_UINT16, etc.)
+/// @return Data type (FASTSLIDE_DATA_TYPE_UINT8, FASTSLIDE_DATA_TYPE_UINT16,
+/// etc.)
 FastSlideDataType fastslide_slide_reader_get_data_type(
     const FastSlideSlideReader* reader);
 

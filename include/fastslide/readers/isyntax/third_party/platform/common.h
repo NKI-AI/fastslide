@@ -120,8 +120,8 @@
 #include <io.h>
 #define access _access
 #define F_OK 0  // check for file existence
-#define S_ISDIR(m) \
-  (((m)&0xF000) == \
+#define S_ISDIR(m)   \
+  (((m) & 0xF000) == \
    0x4000)  // check for whether a file is a directory (from stat.h)
 #define strncasecmp _strnicmp
 #define strcasecmp _stricmp

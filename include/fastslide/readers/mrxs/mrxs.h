@@ -1,4 +1,4 @@
-// Copyright 2025 Jonas Teuwen. All Rights Reserved.
+// Copyright 2026 Jonas Teuwen. All Rights Reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -210,12 +210,6 @@ class MrxsReader : public SlideReader, public ReaderFactory<MrxsReader> {
   [[nodiscard]] aifocore::Result<AssociatedData> LoadAssociatedData(
       std::string_view name) const;
 
-  /// @brief Read raw tile data from data file (needed by tile executor)
-  /// @param tile Tile information
-  /// @return Result containing the raw data or error
-  [[nodiscard]] aifocore::Result<std::vector<uint8_t>> ReadTileData(
-      const mrxs::MiraxTileRecord& tile) const;
-
   /// @brief Get or build spatial index for a level (needed by plan builder)
   /// @param level Level index
   /// @return Result containing spatial index or error
@@ -242,31 +236,6 @@ class MrxsReader : public SlideReader, public ReaderFactory<MrxsReader> {
   static aifocore::Result<std::unique_ptr<MrxsReader>> CreateReaderImpl(
       const fs::path& filename);
 
-  /// @brief Read and parse the Slidedat.ini file
-  /// @param slidedat_path Path to Slidedat.ini
-  /// @param dirname Path to MRXS directory for cache keys
-  /// @return Result containing SlideDataInfo or error
-  static aifocore::Result<mrxs::SlideDataInfo> ReadSlidedatIni(
-      const fs::path& slidedat_path, const fs::path& dirname);
-
-  /// @brief Read a nonhier record from the index file
-  /// @param record_index Record number to read
-  /// @return Tuple of (datafile_path, offset, size) or error
-  aifocore::Result<std::tuple<std::string, int64_t, int64_t>> ReadNonHierRecord(
-      int record_index) const;
-
-  /// @brief Read camera positions from position buffer
-  /// @param dirname Directory containing MRXS files
-  /// @param slide_info Slide information to update with positions
-  /// @return Status indicating success or error
-  static aifocore::Status ReadCameraPositions(const fs::path& dirname,
-                                              mrxs::SlideDataInfo& slide_info);
-
-  /// @brief Detect type of associated data from magic bytes
-  /// @param data Raw data bytes
-  /// @return Detected data type
-  static AssociatedDataType DetectDataType(const std::vector<uint8_t>& data);
-
   /// @brief Calculate level parameters for all zoom levels
   /// @return Vector of level parameters
   std::vector<mrxs::PyramidLevelParameters> CalculateLevelParams() const;
@@ -276,25 +245,6 @@ class MrxsReader : public SlideReader, public ReaderFactory<MrxsReader> {
   /// @return Vector of tile information or error
   aifocore::Result<std::vector<mrxs::MiraxTileRecord>> ReadLevelTiles(
       int level_index) const;
-
-  /// @brief Decode tile data into RGB image
-  /// @param data Compressed tile data
-  /// @param format Image format
-  /// @return Result containing decoded RGB image or error
-  aifocore::Result<RGBImage> DecodeTile(const std::vector<uint8_t>& data,
-                                        mrxs::MrxsImageFormat format) const;
-
-  /// @brief Stitch tiles together with overlap averaging
-  /// @param tiles Vector of tiles to stitch
-  /// @param level Level index
-  /// @param x X coordinate (fractional)
-  /// @param y Y coordinate (fractional)
-  /// @param width Width in pixels
-  /// @param height Height in pixels
-  /// @return Result containing stitched RGB image or error
-  aifocore::Result<RGBImage> StitchTiles(
-      const std::vector<mrxs::MiraxTileRecord>& tiles, int level, double x,
-      double y, uint32_t width, uint32_t height) const;
 
   /// @brief Initialize properties from slide info
   aifocore::Status InitializeProperties();

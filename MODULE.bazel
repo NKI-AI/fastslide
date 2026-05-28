@@ -7,7 +7,7 @@ local_path_override.
 
 module(
     name = "fastslide",
-    version = "0.5.6",
+    version = "0.6.0",
 )
 
 bazel_dep(name = "rules_cc", version = "0.2.17")
@@ -23,7 +23,6 @@ bazel_dep(name = "zlib", version = "1.3.1.bcr.5")
 bazel_dep(name = "zstd", version = "1.5.7")
 bazel_dep(name = "libjpeg_turbo", version = "2.1.91")
 bazel_dep(name = "nlohmann_json", version = "3.11.3.bcr.1")
-bazel_dep(name = "aifocore-cpp", version = "0.0.1")
 
 # aifocore-cpp is not on the Bazel Central Registry. In the monorepo this
 # bazel_dep is satisfied by the root module's local_path_override; the
@@ -31,12 +30,19 @@ bazel_dep(name = "aifocore-cpp", version = "0.0.1")
 # *_override directives in the root module). When this MODULE.bazel is the
 # root (i.e. the standalone NKI-AI/aifocore checkout), the git_override
 # resolves the dep from GitHub instead.
+bazel_dep(name = "aifocore-cpp", version = "0.0.1")
 git_override(
     module_name = "aifocore-cpp",
     commit = "a1046b325dd8f7a89a4411fa1b45bc9faeb80ff8",
     remote = "https://github.com/NKI-AI/aifocore.git",
 )
 
+# simpletiff is not on the Bazel Central Registry. In the monorepo this
+# bazel_dep is satisfied by the root module's local_path_override; the
+# git_override below is silently ignored in that context (Bazel only honors
+# *_override directives in the root module). When this MODULE.bazel is the
+# root (i.e. the standalone NKI-AI/simpletiff checkout), the git_override
+# resolves the dep from GitHub instead.
 bazel_dep(name = "jpeg-compressor", version = "0.0.1")
 git_override(
     module_name = "jpeg-compressor",
@@ -44,26 +50,28 @@ git_override(
     remote = "https://github.com/NKI-AI/jpeg-compressor.git",
 )
 
+# simpletiff is not on the Bazel Central Registry. In the monorepo this
+# bazel_dep is satisfied by the root module's local_path_override; the
+# git_override below is silently ignored in that context (Bazel only honors
+# *_override directives in the root module). When this MODULE.bazel is the
+# root (i.e. the standalone NKI-AI/simpletiff checkout), the git_override
+# resolves the dep from GitHub instead.
 bazel_dep(name = "simpletiff", version = "0.0.1")
 git_override(
     module_name = "simpletiff",
-    commit = "ae22ea081b2b8daa4c9ab3bb251396dbe7152af4",
+    commit = "8bce3705e7a2c4d6bc864a5e7390f4dd70b7f455",
     remote = "https://github.com/NKI-AI/simpletiff.git",
 )
 
-# pugixml is fetched as an http_archive (see below) rather than via the BCR
-# bazel_dep, because we need to inject `-fexceptions` for the Emscripten/wasm
-# build: pugixml's XPath module uses `throw`, which emcc rejects unless
-# exceptions are explicitly enabled. The BCR build file offers no knob for
-# that, so we wrap the upstream tarball with our own BUILD file.
-
+# jxrlib is available on github, but does not have a Bazel entry,
+# and we have some compile errors we have fixed, therefore we
+# have a custom version.
 bazel_dep(name = "jxrlib", version = "1.1.0")
 git_override(
     module_name = "jxrlib",
     commit = "36dd1c94bd1c31551964bbb7b893674de95ca72f",
     remote = "https://github.com/NKI-AI/jxrlib.git",
 )
-
 
 bazel_dep(name = "nanobind_bazel", version = "2.12.0")
 bazel_dep(name = "rules_python", version = "2.0.0")
@@ -162,8 +170,11 @@ http_archive(
     urls = ["https://github.com/troydhanson/uthash/archive/refs/tags/v2.3.0.tar.gz"],
 )
 
-# pugixml 1.15 with a custom BUILD file that opts into `-fexceptions` for the
-# Emscripten/wasm32 build (the upstream XPath sources use `throw`).
+# pugixml is fetched as an http_archive rather than via the BCR
+# bazel_dep, because we need to inject `-fexceptions` for the Emscripten/wasm
+# build: pugixml's XPath module uses `throw`, which emcc rejects unless
+# exceptions are explicitly enabled. The BCR build file offers no knob for
+# that, so we wrap the upstream tarball with our own BUILD file.
 http_archive(
     name = "pugixml",
     build_file = "//third_party:pugixml.BUILD",
@@ -171,11 +182,3 @@ http_archive(
     strip_prefix = "pugixml-1.15",
     urls = ["https://github.com/zeux/pugixml/releases/download/v1.15/pugixml-1.15.tar.gz"],
 )
-
-# http_archive(
-#     name = "openslide",
-#     build_file = "//third_party:openslide.BUILD",
-#     sha256 = "cc227c44316abb65fb28f1c967706eb7254f91dbfab31e9ae6a48db6cf4ae562",
-#     strip_prefix = "openslide-4.0.0",
-#     urls = ["https://github.com/openslide/openslide/releases/download/v4.0.0/openslide-4.0.0.tar.xz"],
-# )

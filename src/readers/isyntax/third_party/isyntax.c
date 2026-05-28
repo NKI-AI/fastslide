@@ -10,7 +10,8 @@
 //  Redistribution and use in source and binary forms, with or without
 //  modification, are permitted provided that the following conditions are met:
 
-//  1. Redistributions of source code must retain the above copyright notice, this
+//  1. Redistributions of source code must retain the above copyright notice,
+//  this
 //     list of conditions and the following disclaimer.
 //
 //  2. Redistributions in binary form must reproduce the above copyright notice,
@@ -19,8 +20,9 @@
 //
 //  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 //  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-//  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-//  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+//  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+//  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+//  LIABLE
 
 /*
   Decoder for whole-slide image files in iSyntax format.
@@ -70,14 +72,13 @@
 
 // NOLINTBEGIN
 // Example codeblock order for a 'chunk' in the file:
-// x        y        color   scale   coeff   offset       size    header_template_id
-// 66302    66302    0       8       1       850048253    8270    18
-// 65918    65918    0       7       1       850056531    17301   19
-// 98686    65918    0       7       1       850073840    14503   19
-// 65918    98686    0       7       1       850088351    8       19
-// 98686    98686    0       7       1       850088367    8       19
-// 65726    65726    0       6       1       850088383    26838   20
-// 82110    65726    0       6       1       850115229    11215   20
+// x        y        color   scale   coeff   offset       size
+// header_template_id 66302    66302    0       8       1       850048253 8270
+// 18 65918    65918    0       7       1       850056531    17301   19 98686
+// 65918    0       7       1       850073840    14503   19 65918    98686    0
+// 7       1       850088351    8       19 98686    98686    0       7       1
+// 850088367    8       19 65726    65726    0       6       1       850088383
+// 26838   20 82110    65726    0       6       1       850115229    11215   20
 // 98494    65726    0       6       1       850126452    6764    20
 // 114878   65726    0       6       1       850133224    25409   20
 // 65726    82110    0       6       1       850158641    21369   20

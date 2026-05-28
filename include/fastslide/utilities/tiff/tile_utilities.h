@@ -29,8 +29,9 @@ using TileCoordinate = aifocore::Size<uint32_t, 2>;
 
 /// @brief Iterator for 2D tile coordinates within a region
 ///
-/// This iterator yields tile coordinates (x, y) that intersect with a given region,
-/// following C++20 iterator concepts for use with ranges and algorithms.
+/// This iterator yields tile coordinates (x, y) that intersect with a given
+/// region, following C++20 iterator concepts for use with ranges and
+/// algorithms.
 class TileCoordinateIterator {
  public:
   using iterator_category = std::forward_iterator_tag;

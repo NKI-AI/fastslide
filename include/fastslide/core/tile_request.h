@@ -26,7 +26,7 @@
 /**
  * @file tile_request.h
  * @brief Core domain models for tile and region requests
- * 
+ *
  * This header defines the structures used to request regions and tiles
  * from slides. These are lightweight, dependency-free structures suitable
  * for use across format plugins and language bindings.

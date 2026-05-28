@@ -25,7 +25,7 @@
 /**
  * @file mrxs_format_plugin.h
  * @brief MRXS format plugin descriptor
- * 
+ *
  * This header provides the format descriptor for MRXS (3DHISTECH) slides.
  * It encapsulates all MRXS-specific logic in a self-contained plugin that
  * can be registered with the reader registry.

@@ -47,8 +47,7 @@ namespace fs = std::filesystem;
 ///   3. Workspace-relative path from the current working directory.
 fs::path LocateTestdataDir() {
   // Package-relative path of the testdata directory inside the runfiles tree.
-  static constexpr const char* kRepoRelative =
-      "src/readers/dicom/testdata";
+  static constexpr const char* kRepoRelative = "src/readers/dicom/testdata";
 
   if (const char* override_dir = std::getenv("FASTSLIDE_DICOM_TESTDATA_DIR")) {
     return fs::path(override_dir);
