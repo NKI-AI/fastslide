@@ -53,15 +53,59 @@ bazelisk build //...
 # Run the C++ test suite.
 bazelisk test //...
 
-# Build the Python wheel for the current platform.
-bazelisk build //python:wheel
-# The wheel is then written under `bazel-bin/python/`.
+# Build the Python wheel for the current platform (example: Python 3.11).
+bazelisk build //python:fastslide_wheel_cp311
+# The wheel is written under `bazel-bin/python/`.
 ```
+
+#### Building Python wheels
+
+Wheels are platform-specific because they bundle the native C++ extension. Each
+Python version has its own Bazel target: `//python:fastslide_wheel_cp310` through
+`//python:fastslide_wheel_cp314` (Python 3.10–3.14).
+
+**Current platform** — build on the host OS/arch without cross-compilation:
+
+```bash
+# Example: Python 3.11 wheel for the machine you are on.
+bazelisk build //python:fastslide_wheel_cp311
+```
+
+The `.whl` file appears under `bazel-bin/python/`.
+
+**Cross-compilation** — build wheels for other platforms using the Zig-backed
+hermetic toolchains (`--config=hermetic` in `.bazelrc`):
+
+```bash
+# Example: Linux x86_64 wheel for Python 3.11, e.g. from macOS.
+bazelisk build --config=hermetic --platforms=//platforms:linux_x86_64 \
+  //python:fastslide_wheel_cp311
+```
+
+Supported platform keys: `linux_x86_64`, `linux_arm64`, `darwin_x86_64`,
+`darwin_aarch64`, `windows_x86_64`. When building for the host macOS
+architecture from macOS, the native toolchain is used instead of hermetic Zig.
+
+**Batch builds** — `tools/build_wheels.py` drives Bazel for multiple platforms
+and Python versions and copies wheels into `artifacts/wheels/`:
+
+```bash
+# All supported platforms and Python versions.
+python tools/build_wheels.py
+
+# Subset, e.g. one platform and one Python tag.
+python tools/build_wheels.py --platform linux_x86_64 --python cp311
+
+# Continue after individual failures.
+python tools/build_wheels.py --keep-going
+```
+
+Run `python tools/build_wheels.py --help` for the full option list.
 
 To consume FastSlide from another Bazel module, add it to your `MODULE.bazel`:
 
 ```python
-bazel_dep(name = "fastslide", version = "0.5.6")
+bazel_dep(name = "fastslide", version = "0.6.0")
 git_override(
     module_name = "fastslide",
     remote = "https://github.com/NKI-AI/fastslide.git",
