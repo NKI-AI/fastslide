@@ -328,7 +328,6 @@ FastSlide incorporates the following third-party software into its source:
   - Modifications: Library has been stripped to the minimal requirements.
 
 - **jxrlib** from [4creators/jxrlib](https://github.com/4creators/jxrlib.git) by Microsoft
-
   - Licensed under: BSD-2-Clause License
   - Used for: Decoding of JPEG XR tiles in the Zeiss CZI reader
   - Modifications: Library has been modified to compile with Bazel and unused files removed.
