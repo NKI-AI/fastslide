@@ -21,7 +21,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+def find_fastslide_workspace() -> Path:
+    """Return the Bazel workspace root for the FastSlide module."""
+    path = Path(__file__).resolve()
+    for parent in path.parents:
+        module_file = parent / "MODULE.bazel"
+        if not module_file.is_file():
+            continue
+        if 'name = "fastslide"' in module_file.read_text(encoding="utf-8"):
+            return parent
+    raise RuntimeError('Could not locate the FastSlide Bazel workspace (MODULE.bazel with name = "fastslide").')
+
+
+WORKSPACE_ROOT = find_fastslide_workspace()
 
 
 @dataclass(frozen=True)
@@ -48,7 +60,7 @@ def _validate_version(version: str) -> None:
 
 
 def _read_current_fastslide_version() -> str:
-    versions_json = REPO_ROOT / "aifo" / "fastslide" / "package" / "versions.json"
+    versions_json = WORKSPACE_ROOT / "package" / "versions.json"
     data = json.loads(_read_text(versions_json))
     entries = data.get("versions")
     if isinstance(entries, list):
@@ -83,7 +95,7 @@ def _plan_regex_sub(
 
 
 def _plan_versions_json_update(*, new_version: str) -> PlannedEdit:
-    path = REPO_ROOT / "aifo" / "fastslide" / "package" / "versions.json"
+    path = WORKSPACE_ROOT / "package" / "versions.json"
     data = json.loads(_read_text(path))
     entries = data.get("versions")
     if not isinstance(entries, list):
@@ -113,8 +125,8 @@ def _collect_plans(*, current_version: str, new_version: str) -> list[PlannedEdi
     # Bazel constants.
     plans.append(
         _plan_regex_sub(
-            path=REPO_ROOT / "aifo" / "fastslide" / "package" / "BUILD.bazel",
-            description="Update FASTSLIDE_VERSION in fastslide/package/BUILD.bazel",
+            path=WORKSPACE_ROOT / "package" / "BUILD.bazel",
+            description="Update FASTSLIDE_VERSION in package/BUILD.bazel",
             pattern=r'^(FASTSLIDE_VERSION\s*=\s*)"[^"]*"\s*$',
             replacement=f'\\g<1>"{new_version}"',
             flags=re.MULTILINE,
@@ -122,10 +134,19 @@ def _collect_plans(*, current_version: str, new_version: str) -> list[PlannedEdi
     )
     plans.append(
         _plan_regex_sub(
-            path=REPO_ROOT / "aifo" / "fastslide" / "python" / "BUILD.bazel",
-            description="Update FASTSLIDE_VERSION in fastslide/python/BUILD.bazel",
+            path=WORKSPACE_ROOT / "python" / "BUILD.bazel",
+            description="Update FASTSLIDE_VERSION in python/BUILD.bazel",
             pattern=r'^(FASTSLIDE_VERSION\s*=\s*)"[^"]*"\s*$',
             replacement=f'\\g<1>"{new_version}"',
+            flags=re.MULTILINE,
+        )
+    )
+    plans.append(
+        _plan_regex_sub(
+            path=WORKSPACE_ROOT / "MODULE.bazel",
+            description="Update version in MODULE.bazel",
+            pattern=r'(^module\(\s*\n\s*name\s*=\s*"fastslide",\s*\n\s*version\s*=\s*")[^"]*(")',
+            replacement=f"\\g<1>{new_version}\\g<2>",
             flags=re.MULTILINE,
         )
     )
@@ -133,8 +154,8 @@ def _collect_plans(*, current_version: str, new_version: str) -> list[PlannedEdi
     # Python package version markers.
     plans.append(
         _plan_regex_sub(
-            path=REPO_ROOT / "aifo" / "fastslide" / "pyproject.toml",
-            description="Update version in aifo/fastslide/pyproject.toml",
+            path=WORKSPACE_ROOT / "pyproject.toml",
+            description="Update version in pyproject.toml",
             pattern=r'^(version\s*=\s*)"[^"]*"\s*$',
             replacement=f'\\g<1>"{new_version}"',
             flags=re.MULTILINE,
@@ -142,8 +163,8 @@ def _collect_plans(*, current_version: str, new_version: str) -> list[PlannedEdi
     )
     plans.append(
         _plan_regex_sub(
-            path=REPO_ROOT / "aifo" / "fastslide" / "python" / "pyproject.toml",
-            description="Update version in aifo/fastslide/python/pyproject.toml",
+            path=WORKSPACE_ROOT / "python" / "pyproject.toml",
+            description="Update version in python/pyproject.toml",
             pattern=r'^(version\s*=\s*)"[^"]*"\s*$',
             replacement=f'\\g<1>"{new_version}"',
             flags=re.MULTILINE,
@@ -151,8 +172,8 @@ def _collect_plans(*, current_version: str, new_version: str) -> list[PlannedEdi
     )
     plans.append(
         _plan_regex_sub(
-            path=REPO_ROOT / "aifo" / "fastslide" / "python" / "fastslide" / "__init__.py",
-            description="Update __version__ in fastslide/python/fastslide/__init__.py",
+            path=WORKSPACE_ROOT / "python" / "fastslide" / "__init__.py",
+            description="Update __version__ in python/fastslide/__init__.py",
             pattern=r'^(__version__\s*=\s*)"[^"]*"\s*$',
             replacement=f'\\g<1>"{new_version}"',
             flags=re.MULTILINE,
@@ -162,7 +183,7 @@ def _collect_plans(*, current_version: str, new_version: str) -> list[PlannedEdi
     # Docs.
     plans.append(
         _plan_regex_sub(
-            path=REPO_ROOT / "aifo" / "fastslide" / "docs" / "source" / "conf.py",
+            path=WORKSPACE_ROOT / "docs" / "source" / "conf.py",
             description="Update release in docs/source/conf.py",
             pattern=r'^(release\s*=\s*)"[^"]*"\s*$',
             replacement=f'\\g<1>"{new_version}"',
@@ -171,7 +192,7 @@ def _collect_plans(*, current_version: str, new_version: str) -> list[PlannedEdi
     )
     plans.append(
         _plan_regex_sub(
-            path=REPO_ROOT / "aifo" / "fastslide" / "docs" / "Doxyfile",
+            path=WORKSPACE_ROOT / "docs" / "Doxyfile",
             description="Update PROJECT_NUMBER in docs/Doxyfile",
             pattern=r"^(PROJECT_NUMBER\s*=\s*)[0-9A-Za-z.+-]+\s*$",
             replacement=f"\\g<1>{new_version}",
@@ -182,7 +203,7 @@ def _collect_plans(*, current_version: str, new_version: str) -> list[PlannedEdi
     # C/C++ version markers.
     plans.append(
         _plan_regex_sub(
-            path=REPO_ROOT / "aifo" / "fastslide" / "src" / "c" / "registry.cpp",
+            path=WORKSPACE_ROOT / "src" / "c" / "registry.cpp",
             description="Update fastslide_get_version() in src/c/registry.cpp",
             pattern=r'^(const char\*\s+fastslide_get_version\s*\(\s*void\s*\)\s*\{\s*\n\s*return\s+)"[^"]*"(;\s*\n\})',
             replacement=f'\\g<1>"{new_version}"\\g<2>',
@@ -191,7 +212,7 @@ def _collect_plans(*, current_version: str, new_version: str) -> list[PlannedEdi
     )
     plans.append(
         _plan_regex_sub(
-            path=REPO_ROOT / "aifo" / "fastslide" / "src" / "python" / "fastslide.cpp",
+            path=WORKSPACE_ROOT / "src" / "python" / "fastslide.cpp",
             description='Update m.attr("__version__") in src/python/fastslide.cpp',
             pattern=r'^(\s*m\.attr\("__version__"\)\s*=\s*)"[^"]*"(;\s*)$',
             replacement=f'\\g<1>"{new_version}"\\g<2>',
@@ -210,7 +231,7 @@ def _collect_plans(*, current_version: str, new_version: str) -> list[PlannedEdi
 def _print_plan(plans: list[PlannedEdit]) -> None:
     print("\nPlanned version updates:\n")
     for p in plans:
-        print(f"- {p.path.relative_to(REPO_ROOT)}: {p.description}")
+        print(f"- {p.path.relative_to(WORKSPACE_ROOT)}: {p.description}")
     print()
 
 
@@ -251,7 +272,7 @@ def main() -> None:
 
     print("\nDone. Updated files:")
     for p in plans:
-        print(f"- {p.path.relative_to(REPO_ROOT)}")
+        print(f"- {p.path.relative_to(WORKSPACE_ROOT)}")
 
 
 if __name__ == "__main__":

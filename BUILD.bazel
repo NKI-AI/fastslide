@@ -1,6 +1,18 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
 load("@aspect_rules_py//py:defs.bzl", "py_library")
+load("@npm//:defs.bzl", "npm_link_all_packages")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("@rules_uv//uv:pip.bzl", "pip_compile")
+
+package(default_visibility = ["//visibility:public"])
+
+npm_link_all_packages(name = "node_modules")
+
+js_library(
+    name = "prettierrc",
+    srcs = ["prettier.config.cjs"],
+    visibility = ["//tools/format:__pkg__"],
+)
 
 # Allow other packages (e.g. distribution bundling) to reference these files.
 exports_files([
@@ -9,7 +21,14 @@ exports_files([
     "requirements.in",
     "requirements_linux.txt",
     "requirements_darwin.txt",
+    ".clang-format",
+    ".ruff.toml",
 ])
+
+alias(
+    name = "format",
+    actual = "//tools/format",
+)
 
 # Resolve fastslide's runtime/test Python requirements into proper per-platform
 # lockfiles. Listing only direct deps in `requirements.in` is not enough --

@@ -5,3 +5,4 @@ subprojects/*
 subprojects/*.wrap
 !subprojects/*-redirect.wrap
 builddir/
+node_modules/

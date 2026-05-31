@@ -83,6 +83,10 @@ bazel_dep(name = "rules_java", version = "9.6.1")
 bazel_dep(name = "rules_doxygen", version = "2.5.0")
 bazel_dep(name = "rules_uv", version = "0.89.2")
 bazel_dep(name = "sphinxdocs", version = "2.0.1")
+bazel_dep(name = "aspect_rules_lint", version = "2.3.0")
+bazel_dep(name = "aspect_rules_js", version = "2.9.2")
+bazel_dep(name = "buildifier_prebuilt", version = "8.0.3")
+bazel_dep(name = "toolchains_llvm", version = "1.7.0")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
@@ -111,6 +115,15 @@ pip.parse(
     requirements_lock = "//docs:requirements_linux.txt",
 )
 use_repo(pip, "fastslide_docs_pip", "fastslide_pip")
+
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
+npm.npm_translate_lock(
+    name = "npm",
+    npmrc = "//:.npmrc",
+    pnpm_lock = "//:pnpm-lock.yaml",
+    verify_node_modules_ignored = "//:.bazelignore",
+)
+use_repo(npm, "npm")
 
 doxygen_extension = use_extension("@rules_doxygen//:extensions.bzl", "doxygen_extension")
 doxygen_extension.repository(name = "fastslide_doxygen")
@@ -182,3 +195,17 @@ http_archive(
     strip_prefix = "pugixml-1.15",
     urls = ["https://github.com/zeux/pugixml/releases/download/v1.15/pugixml-1.15.tar.gz"],
 )
+
+# Hermetic C++ toolchain for cross-compilation (opt-in via --config=hermetic).
+# Uses Zig's compiler for hermetic cross-compilation without replacing the
+# default host toolchain.
+bazel_dep(name = "hermetic_cc_toolchain", version = "4.1.0")
+
+toolchains = use_extension("@hermetic_cc_toolchain//toolchain:ext.bzl", "toolchains")
+use_repo(toolchains, "zig_sdk")
+
+llvm = use_extension("@toolchains_llvm//toolchain/extensions:llvm.bzl", "llvm")
+llvm.toolchain(
+    llvm_version = "21.1.8",
+)
+use_repo(llvm, "llvm_toolchain", "llvm_toolchain_llvm")

@@ -1,0 +1,24 @@
+load("@aspect_rules_js//js:defs.bzl", "js_library")
+load("@aspect_rules_lint//format:defs.bzl", "format_multirun")
+load("@npm//:prettier/package_json.bzl", prettier = "bin")
+
+package(default_visibility = ["//visibility:public"])
+
+prettier.prettier_binary(
+    name = "prettier",
+    data = ["//:prettierrc"],
+    env = {"BAZEL_BINDIR": "."},
+    fixed_args = [
+        "--config=\"$$JS_BINARY__RUNFILES\"/$(rlocationpath //:prettierrc)",
+        "--log-level=warn",
+    ],
+)
+
+format_multirun(
+    name = "format",
+    c = "@llvm_toolchain_llvm//:bin/clang-format",
+    cc = "@llvm_toolchain_llvm//:bin/clang-format",
+    markdown = ":prettier",
+    python = "@aspect_rules_lint//format:ruff",
+    starlark = "@buildifier_prebuilt//:buildifier",
+)

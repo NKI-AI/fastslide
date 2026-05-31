@@ -9,16 +9,36 @@ import stat
 import subprocess
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
-VERSIONS_JSON = REPO_ROOT / "aifo" / "fastslide" / "package" / "versions.json"
+
+def find_fastslide_workspace() -> Path:
+    """Return the Bazel workspace root for the FastSlide module."""
+    path = Path(__file__).resolve()
+    for parent in path.parents:
+        module_file = parent / "MODULE.bazel"
+        if not module_file.is_file():
+            continue
+        if 'name = "fastslide"' in module_file.read_text(encoding="utf-8"):
+            return parent
+    raise RuntimeError('Could not locate the FastSlide Bazel workspace (MODULE.bazel with name = "fastslide").')
+
+
+WORKSPACE_ROOT = find_fastslide_workspace()
+VERSIONS_JSON = WORKSPACE_ROOT / "package" / "versions.json"
 
 
 def run(cmd: list[str], *, env: dict[str, str]) -> None:
-    subprocess.run(cmd, cwd=REPO_ROOT, check=True, env=env)
+    subprocess.run(cmd, cwd=WORKSPACE_ROOT, check=True, env=env)
 
 
 def run_capture(cmd: list[str], *, env: dict[str, str]) -> str:
-    result = subprocess.run(cmd, cwd=REPO_ROOT, check=True, capture_output=True, env=env, text=True)
+    result = subprocess.run(
+        cmd,
+        cwd=WORKSPACE_ROOT,
+        check=True,
+        capture_output=True,
+        env=env,
+        text=True,
+    )
     return result.stdout
 
 
@@ -66,7 +86,7 @@ def cquery_target_files(*, bazel_cmd: str, target: str, bazel_flags: list[str], 
         line = line.strip()
         if not line:
             continue
-        files.append(REPO_ROOT / line)
+        files.append(WORKSPACE_ROOT / line)
     return files
 
 

@@ -1,0 +1,54 @@
+name: Enforce Formatting
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+jobs:
+  check-formatting:
+    runs-on: ubuntu-latest # Standardizing on Linux prevents the OS-mismatch issue
+    if: github.event.pull_request.draft == false || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      # ubuntu-latest ships with large preinstalled SDKs; format needs room to extract LLVM (~2 GiB).
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+      # Cache only downloaded externals (not the full output base). A single key "bazel" for
+      # ~/.cache/bazel grows without bound and commonly causes "No space left on device" when
+      # extracting LLVM-21.x-Linux-X64.tar.xz.
+      - name: Mount Bazel repository cache
+        uses: actions/cache@v4
+        with:
+          path: /tmp/bazel-repository-cache
+          key: bazel-repo-${{ runner.os }}-${{ hashFiles('.bazelversion', 'MODULE.bazel', 'MODULE.bazel.lock') }}
+          restore-keys: |
+            bazel-repo-${{ runner.os }}-
+      - name: Show disk usage
+        run: df -h
+      - name: Run Formatter
+        env:
+          BAZELISK_HOME: /tmp/bazelisk
+        run: |
+          bazelisk --output_user_root=/tmp/bazel-output run format \
+            --repository_cache=/tmp/bazel-repository-cache \
+            --disk_cache=
+      - name: Check for Uncommitted Changes
+        id: diff-check
+        shell: bash
+        run: |
+          changed_files="$(git diff --name-only)"
+
+          if [[ -z "${changed_files}" ]]; then
+            echo "Formatting is already up to date."
+            exit 0
+          fi
+
+          echo "❌ Formatting issues detected in these files:"
+          printf '%s\n' "${changed_files}"
+          echo
+          echo "Run 'bazelisk run format' locally and push the result."
+          exit 1

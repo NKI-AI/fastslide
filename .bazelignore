@@ -9,6 +9,7 @@ bazel-bin
 bazel-out
 bazel-testlogs
 bazel-fastslide
+node_modules
 # Leftover Meson subprojects (the standalone repo is Bazel-only; these
 # directories are not generated, but the entry is harmless if absent).
 subprojects/*
