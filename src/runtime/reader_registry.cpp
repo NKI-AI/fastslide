@@ -1,0 +1,265 @@
+// Copyright 2025 Jonas Teuwen. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "fastslide/runtime/reader_registry.h"
+
+#include <algorithm>
+#include <cctype>
+#include <filesystem>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
+
+#include "aifocore/status/result.h"
+#include "aifocore/utilities/fmt.h"
+#include "fastslide/slide_reader.h"
+
+namespace fastslide {
+namespace runtime {
+
+std::string ReaderRegistry::NormalizeExtension(std::string_view extension) {
+  std::string result(extension);
+
+  // Convert to lowercase
+  std::transform(result.begin(), result.end(), result.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+
+  // Ensure leading dot
+  if (!result.empty() && result[0] != '.') {
+    result = "." + result;
+  }
+
+  return result;
+}
+
+void ReaderRegistry::RegisterFormat(FormatDescriptor descriptor) {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  std::string normalized = NormalizeExtension(descriptor.primary_extension);
+  formats_[normalized] = std::move(descriptor);
+
+  // Also register aliases
+  auto& desc = formats_[normalized];
+  for (const auto& alias : desc.aliases) {
+    std::string normalized_alias = NormalizeExtension(alias);
+    formats_[normalized_alias] = desc;  // Copy descriptor for alias
+  }
+}
+
+void ReaderRegistry::RegisterFormats(
+    std::vector<FormatDescriptor> descriptors) {
+  for (auto& desc : descriptors) {
+    RegisterFormat(std::move(desc));
+  }
+}
+
+aifocore::Result<std::unique_ptr<SlideReader>> ReaderRegistry::CreateReader(
+    std::string_view filename, std::shared_ptr<ITileCache> cache) const {
+  // Extract extension.
+  //
+  // Note: some formats use a "double extension" like ".ome.tif"/".ome.tiff".
+  // std::filesystem::path::extension() only returns the last suffix (".tif"),
+  // so we special-case these here to allow dedicated registration.
+  std::filesystem::path path(filename);
+  std::string extension;
+
+  // Normalize the full path, stripping trailing slashes so directory-based
+  // formats (.zarr/, .ome.zarr/) match cleanly.
+  std::string full_lower(filename);
+  while (!full_lower.empty() &&
+         (full_lower.back() == '/' || full_lower.back() == '\\')) {
+    full_lower.pop_back();
+  }
+  std::transform(full_lower.begin(), full_lower.end(), full_lower.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+
+  const std::string filename_str =
+      std::filesystem::path(full_lower).filename().string();
+  std::string filename_lower = filename_str;
+
+  if (filename_lower.size() >= 8 && filename_lower.ends_with(".ome.tif")) {
+    extension = ".ome.tif";
+  } else if (filename_lower.size() >= 9 &&
+             filename_lower.ends_with(".ome.tiff")) {
+    extension = ".ome.tiff";
+  } else if (filename_lower.size() >= 9 &&
+             filename_lower.ends_with(".ome.zarr")) {
+    extension = ".ome.zarr";
+  } else if (filename_lower.size() >= 5 && filename_lower.ends_with(".zarr")) {
+    extension = ".zarr";
+  } else {
+    extension = path.extension().string();
+  }
+
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  // First try extension-based lookup (fast path).
+  if (!extension.empty()) {
+    std::string normalized = NormalizeExtension(extension);
+    auto it = formats_.find(normalized);
+    if (it != formats_.end()) {
+      const auto& descriptor = it->second;
+      if (!descriptor.factory) {
+        return aifocore::Status(
+            aifocore::StatusCode::kInternal,
+            aifocore::fmt::format(
+                "Format descriptor for {} has no factory function", extension));
+      }
+      return descriptor.factory(cache, filename);
+    }
+  }
+
+  // Fall back to content-based matching for files without an extension or
+  // with an unrecognised one. Iterate unique descriptors (the formats_ map
+  // contains aliases that point at the same descriptor, so dedupe by the
+  // primary extension before invoking the matcher).
+  std::vector<const FormatDescriptor*> seen;
+  for (const auto& [ext, desc] : formats_) {
+    if (!desc.matches_content || !desc.factory) {
+      continue;
+    }
+    bool already_tried = false;
+    for (const auto* existing : seen) {
+      if (existing->primary_extension == desc.primary_extension) {
+        already_tried = true;
+        break;
+      }
+    }
+    if (already_tried) {
+      continue;
+    }
+    seen.push_back(&desc);
+
+    if (desc.matches_content(filename)) {
+      return desc.factory(cache, filename);
+    }
+  }
+
+  if (extension.empty()) {
+    return aifocore::Status(
+        aifocore::StatusCode::kNotFound,
+        aifocore::fmt::format(
+            "Could not detect a slide format for '{}': file has no extension "
+            "and no registered format claimed its contents",
+            filename));
+  }
+  return aifocore::Status(
+      aifocore::StatusCode::kNotFound,
+      aifocore::fmt::format("No reader registered for extension: {}",
+                            extension));
+}
+
+std::vector<std::string> ReaderRegistry::ListFormats() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  std::vector<std::string> formats;
+  formats.reserve(formats_.size());
+
+  // Collect unique format names (avoid duplicates from aliases)
+  std::map<std::string, bool> seen;
+  for (const auto& [ext, desc] : formats_) {
+    if (seen.find(desc.format_name) == seen.end()) {
+      formats.push_back(desc.format_name);
+      seen[desc.format_name] = true;
+    }
+  }
+
+  std::sort(formats.begin(), formats.end());
+  return formats;
+}
+
+const FormatDescriptor* ReaderRegistry::GetFormat(
+    std::string_view extension) const {
+  std::string normalized = NormalizeExtension(extension);
+
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  auto it = formats_.find(normalized);
+  if (it == formats_.end()) {
+    return nullptr;
+  }
+
+  return &it->second;
+}
+
+bool ReaderRegistry::SupportsExtension(std::string_view extension) const {
+  return GetFormat(extension) != nullptr;
+}
+
+bool ReaderRegistry::SupportsCapability(std::string_view extension,
+                                        FormatCapability capability) const {
+  const auto* format = GetFormat(extension);
+  if (!format) {
+    return false;
+  }
+
+  return HasCapability(format->capabilities, capability);
+}
+
+std::vector<std::string> ReaderRegistry::ListFormatsByCapability(
+    FormatCapability capability) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  std::vector<std::string> formats;
+
+  // Collect unique format names that support the capability
+  std::map<std::string, bool> seen;
+  for (const auto& [ext, desc] : formats_) {
+    if (HasCapability(desc.capabilities, capability)) {
+      if (seen.find(desc.format_name) == seen.end()) {
+        formats.push_back(desc.format_name);
+        seen[desc.format_name] = true;
+      }
+    }
+  }
+
+  std::sort(formats.begin(), formats.end());
+  return formats;
+}
+
+std::vector<std::string> ReaderRegistry::GetSupportedExtensions() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  std::vector<std::string> extensions;
+  extensions.reserve(formats_.size());
+
+  for (const auto& [ext, desc] : formats_) {
+    extensions.push_back(ext);
+  }
+
+  std::sort(extensions.begin(), extensions.end());
+  return extensions;
+}
+
+void ReaderRegistry::Clear() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  formats_.clear();
+}
+
+// Global registry implementation
+ReaderRegistry& GetGlobalRegistry() {
+  static ReaderRegistry* global_registry = []() {
+    auto* registry = new ReaderRegistry();
+    // Register built-in formats (will be done in register_builtin_formats.cc)
+    return registry;
+  }();
+  return *global_registry;
+}
+
+}  // namespace runtime
+}  // namespace fastslide

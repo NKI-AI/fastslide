@@ -1,0 +1,17 @@
+load("@rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
+
+# FastSlide Go library
+go_library(
+    name = "fastslide_go",
+    srcs = [
+        "fastslide/errors.go",
+        "fastslide/fastslide.go",
+        "fastslide/resample.go",
+        "fastslide/slidereader.go",
+        "fastslide/utilities.go",
+    ],
+    cdeps = ["//:fastslide_c"],
+    cgo = True,
+    importpath = "aifo.dev/aifo/fastslide/go/fastslide_go/fastslide",
+    visibility = ["//visibility:public"],
+)

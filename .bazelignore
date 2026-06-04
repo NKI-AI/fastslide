@@ -1,0 +1,15 @@
+# Bazel convenience symlinks. Normally these are filtered by Bazel's
+# root-workspace heuristic, but only when fastslide IS the root module. When
+# the monorepo loads fastslide via `local_path_override`, the heuristic does
+# not apply and `@fastslide//...` would otherwise descend into the execroot
+# mirror (e.g. `bazel-fastslide/external/simpletiff+/python/BUILD.bazel`),
+# which loads repos from simpletiff's module graph that are not visible from
+# fastslide's perspective. Explicit ignores fix that for both contexts.
+bazel-bin
+bazel-out
+bazel-testlogs
+bazel-fastslide
+tools/format/node_modules
+# Leftover Meson subprojects (the standalone repo is Bazel-only; these
+# directories are not generated, but the entry is harmless if absent).
+subprojects/*

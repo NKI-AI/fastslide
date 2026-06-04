@@ -1,0 +1,4 @@
+exports_files([
+    "versioned_py_wheel.bzl",
+    "fastslidetool.cpp",
+])

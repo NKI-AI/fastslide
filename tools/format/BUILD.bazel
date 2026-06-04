@@ -1,0 +1,31 @@
+load("@aspect_rules_lint//format:defs.bzl", "format_multirun")
+load("@fastslide_npm//:defs.bzl", "npm_link_all_packages")
+load("@fastslide_npm//tools/format:prettier/package_json.bzl", prettier = "bin")
+
+package(default_visibility = ["//visibility:public"])
+
+# All npm wiring lives in this package (the pnpm workspace root) so it is only
+# evaluated when fastslide is the root module. A host workspace consuming
+# fastslide as a dependency never loads this package.
+npm_link_all_packages(name = "node_modules")
+
+prettier.prettier_binary(
+    name = "prettier",
+    # `prettier.config.cjs` only sets scalar options (no `require()`), so it can
+    # be passed as a plain runfile rather than a linked js_library.
+    data = ["prettier.config.cjs"],
+    env = {"BAZEL_BINDIR": "."},
+    fixed_args = [
+        "--config=\"$$JS_BINARY__RUNFILES\"/$(rlocationpath prettier.config.cjs)",
+        "--log-level=warn",
+    ],
+)
+
+format_multirun(
+    name = "format",
+    c = "@llvm_toolchain_llvm//:bin/clang-format",
+    cc = "@llvm_toolchain_llvm//:bin/clang-format",
+    markdown = ":prettier",
+    python = "@aspect_rules_lint//format:ruff",
+    starlark = "@buildifier_prebuilt//:buildifier",
+)

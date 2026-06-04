@@ -1,0 +1,42 @@
+load("@aspect_bazel_lib//lib:copy_to_directory.bzl", "copy_to_directory")
+
+# Stage the FastSlide WASM viewer into a single self-contained directory
+# under `bazel-bin`. The example HTML/JS lives next to the wasm_cc_binary
+# outputs so the browser can resolve `./fastslide_multiplex.js` and friends
+# without any manual `cp` step.
+#
+# The pthread-enabled WASM module needs `SharedArrayBuffer`, which means
+# every response must carry `Cross-Origin-Opener-Policy: same-origin` and
+# `Cross-Origin-Embedder-Policy: credentialless`. `python -m http.server`
+# does not send these headers, so we bundle a tiny `serve.py` wrapper.
+# (We use `credentialless` instead of `require-corp` so the example can
+# still pull Tailwind/OpenLayers from public CDNs.)
+#
+# Workflow (standalone build):
+#   bazelisk build //wasm/example:site
+#   python3 bazel-bin/wasm/example/site/serve.py
+#
+# Workflow (consumed as external bzlmod dep, e.g. from the aifo monorepo):
+#   bazelisk build @fastslide//wasm/example:site
+#   python3 bazel-bin/external/fastslide+/wasm/example/site/serve.py
+copy_to_directory(
+    name = "site",
+    srcs = [
+        "fastslide-tilesource.js",
+        "fastslide-worker.js",
+        "index.html",
+        "serve.py",
+        "//wasm:fastslide_multiplex_wasm",
+    ],
+    root_paths = [
+        # Strip the package path from the example sources.
+        ".",
+        # Strip the wasm_cc_binary output directory so files appear flat next
+        # to the example HTML/JS. copy_to_directory automatically strips the
+        # external-repo prefix (`fastslide+`) for files coming from `@fastslide`,
+        # so the same root_path matches in both the standalone and external
+        # build contexts.
+        "wasm/fastslide_multiplex_wasm",
+    ],
+    visibility = ["//visibility:public"],
+)

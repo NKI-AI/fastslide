@@ -1,0 +1,8 @@
+subprojects/*
+!subprojects/simpletiff
+!subprojects/jpeg-compressor
+!subprojects/aifocore
+subprojects/*.wrap
+!subprojects/*-redirect.wrap
+builddir/
+node_modules/

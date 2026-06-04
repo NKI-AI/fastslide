@@ -1,0 +1,21 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+cc_binary(
+    name = "read_region",
+    srcs = ["read_region.cpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:fastslide_lib",
+        "//third_party:cli11",
+    ],
+)
+
+cc_binary(
+    name = "cache_example",
+    srcs = ["cache_example.cpp"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//:fastslide_lib",
+        "//third_party:cli11",
+    ],
+)

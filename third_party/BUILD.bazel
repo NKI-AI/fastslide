@@ -1,0 +1,16 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+exports_files([
+    "hwy_bazel_includes.patch",
+    "libdicom.BUILD",
+    "openjp2.BUILD",
+    "openslide.BUILD",
+    "uthash.BUILD",
+])
+
+cc_library(
+    name = "cli11",
+    hdrs = ["CLI11/CLI11.hpp"],
+    includes = ["."],
+    visibility = ["//visibility:public"],
+)
