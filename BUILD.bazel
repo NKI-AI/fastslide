@@ -478,8 +478,16 @@ cc_library(
 
 cc_library(
     name = "slide_reader",
-    srcs = ["src/slide_reader.cpp"],
-    hdrs = ["include/fastslide/slide_reader.h"],
+    srcs = [
+        "src/self_image_view.cpp",
+        "src/slide_image.cpp",
+        "src/slide_reader.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/self_image_view.h",
+        "include/fastslide/slide_image.h",
+        "include/fastslide/slide_reader.h",
+    ],
     copts = WASM_COPTS,
     includes = ["include"],
     visibility = ["//visibility:public"],
@@ -572,6 +580,7 @@ cc_library(
         ":formats_isyntax",
         ":formats_mrxs",
         ":formats_ndpitiff",
+        ":formats_olympusvsi",
         ":formats_ometiff",
         ":formats_omezarr",
         ":formats_qptiff",
@@ -614,6 +623,49 @@ cc_library(
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
         "@nlohmann_json//:json",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+cc_library(
+    name = "formats_olympusvsi",
+    srcs = [
+        "src/readers/olympusvsi/olympusvsi.cpp",
+        "src/readers/olympusvsi/olympusvsi_ets.cpp",
+        "src/readers/olympusvsi/olympusvsi_format_plugin.cpp",
+        "src/readers/olympusvsi/olympusvsi_plan_builder.cpp",
+        "src/readers/olympusvsi/olympusvsi_tile_executor.cpp",
+        "src/readers/olympusvsi/olympusvsi_vsi_metadata.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/readers/olympusvsi/olympusvsi.h",
+        "include/fastslide/readers/olympusvsi/olympusvsi_ets.h",
+        "include/fastslide/readers/olympusvsi/olympusvsi_exec_context.h",
+        "include/fastslide/readers/olympusvsi/olympusvsi_format_plugin.h",
+        "include/fastslide/readers/olympusvsi/olympusvsi_level_info.h",
+        "include/fastslide/readers/olympusvsi/olympusvsi_plan_builder.h",
+        "include/fastslide/readers/olympusvsi/olympusvsi_tile_executor.h",
+        "include/fastslide/readers/olympusvsi/olympusvsi_vsi_metadata.h",
+        "include/fastslide/utilities/unordered_dense.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cache",
+        ":colors",
+        ":core",
+        ":image",
+        ":readers",
+        ":runtime",
+        ":runtime_file_reader",
+        ":runtime_j2k_decoder",
+        ":runtime_jpeg_decoder",
+        ":simpletiff_plan_builder_utils",
+        ":slide_reader",
+        "@aifocore-cpp//:concepts",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
         "@simpletiff//:simpletiff_lib",
     ],
 )
@@ -789,7 +841,9 @@ cc_library(
         "src/readers/czi/czi.cpp",
         "src/readers/czi/czi_embedded.cpp",
         "src/readers/czi/czi_format_plugin.cpp",
+        "src/readers/czi/czi_parse.cpp",
         "src/readers/czi/czi_plan_builder.cpp",
+        "src/readers/czi/czi_scene_image.cpp",
         "src/readers/czi/czi_spatial_index.cpp",
         "src/readers/czi/czi_tile_executor.cpp",
     ],
@@ -799,8 +853,10 @@ cc_library(
         "include/fastslide/readers/czi/czi_exec_context.h",
         "include/fastslide/readers/czi/czi_format_plugin.h",
         "include/fastslide/readers/czi/czi_level_info.h",
+        "include/fastslide/readers/czi/czi_parse.h",
         "include/fastslide/readers/czi/czi_plan_builder.h",
         "include/fastslide/readers/czi/czi_plan_context.h",
+        "include/fastslide/readers/czi/czi_scene_image.h",
         "include/fastslide/readers/czi/czi_spatial_index.h",
         "include/fastslide/readers/czi/czi_tile_executor.h",
         "include/fastslide/readers/spatial/grid_hash.h",
@@ -813,6 +869,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":cache",
+        ":colors",
         ":core",
         ":image",
         ":readers",
@@ -1156,6 +1213,18 @@ cc_library(
     ],
 )
 
+# Header-only library carrying the codec-agnostic decoded-image structs
+# (`DecodedRgb`, `DecodedRgba`, `DecodedRgb16`). Every codec depends on
+# this so they do not have to depend on each other just to reuse a
+# return type.
+cc_library(
+    name = "runtime_decoded_image",
+    hdrs = ["include/fastslide/runtime/decoders/decoded_image.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+
 cc_library(
     name = "runtime_jpeg_decoder",
     srcs = [
@@ -1172,6 +1241,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":core",
+        ":runtime_decoded_image",
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
     ] + select({
@@ -1194,8 +1264,7 @@ cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
-        ":runtime_jpeg_decoder",
-        ":runtime_png_decoder",
+        ":runtime_decoded_image",
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
         "@jxrlib",
@@ -1214,7 +1283,7 @@ cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
-        ":runtime_jpeg_decoder",
+        ":runtime_decoded_image",
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
         "@openjp2",
@@ -1229,7 +1298,7 @@ cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
-        ":runtime_jpeg_decoder",
+        ":runtime_decoded_image",
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
         "@lodepng",
@@ -1244,7 +1313,7 @@ cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
-        ":runtime_jpeg_decoder",
+        ":runtime_decoded_image",
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
     ],
@@ -1376,6 +1445,7 @@ cc_library(
         "src/c/internal/debug.h",
         "src/c/internal/error.h",
         "src/c/registry.cpp",
+        "src/c/slide_image.cpp",
         "src/c/slide_reader.cpp",
         "src/c/utilities.cpp",
     ],
@@ -1384,6 +1454,7 @@ cc_library(
         "include/fastslide/c/fastslide.h",
         "include/fastslide/c/image.h",
         "include/fastslide/c/registry.h",
+        "include/fastslide/c/slide_image.h",
         "include/fastslide/c/slide_reader.h",
         "include/fastslide/c/utilities.h",
     ],
@@ -1627,6 +1698,29 @@ cc_test(
 )
 
 cc_test(
+    name = "czi_parse_test",
+    size = "small",
+    srcs = ["src/readers/czi/czi_parse_test.cpp"],
+    deps = [
+        ":formats_czi",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "czi_scene_plane_test",
+    size = "small",
+    srcs = ["src/readers/czi/czi_scene_plane_test.cpp"],
+    deps = [
+        ":core",
+        ":formats_czi",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "bif_test",
     size = "small",
     srcs = ["src/readers/bif/bif_test.cpp"],
@@ -1774,6 +1868,40 @@ cc_test(
         "@googletest//:gtest_main",
         "@zlib",
         "@zstd",
+    ],
+)
+
+cc_test(
+    name = "olympusvsi_ets_test",
+    size = "small",
+    srcs = ["src/readers/olympusvsi/olympusvsi_ets_test.cpp"],
+    deps = [
+        ":formats_olympusvsi",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "olympusvsi_plan_builder_test",
+    size = "small",
+    srcs = ["src/readers/olympusvsi/olympusvsi_plan_builder_test.cpp"],
+    deps = [
+        ":core",
+        ":formats_olympusvsi",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "olympusvsi_vsi_metadata_test",
+    size = "small",
+    srcs = ["src/readers/olympusvsi/olympusvsi_vsi_metadata_test.cpp"],
+    deps = [
+        ":formats_olympusvsi",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
     ],
 )
 

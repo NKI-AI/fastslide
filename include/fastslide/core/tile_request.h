@@ -35,6 +35,27 @@
 namespace fastslide {
 namespace core {
 
+/// @brief Non-spatial plane selector for multi-dimensional images.
+///
+/// Selects a single focal plane (Z) and time point (T) out of an image's
+/// stack. Both are zero-based indices into the image's sorted-unique Z/T
+/// values (see `SlideImage::GetStackInfo`). The defaults select the first
+/// plane, so 2D formats and callers that ignore Z/T behave unchanged.
+///
+/// This is an aggregate type to support designated initializers in C++20.
+struct PlaneIndex {
+  uint32_t z = 0;  ///< Focal-plane index (0 = first plane)
+  uint32_t t = 0;  ///< Time-point index (0 = first time point)
+
+  /// @brief Equality comparison
+  bool operator==(const PlaneIndex& other) const {
+    return z == other.z && t == other.t;
+  }
+
+  /// @brief Inequality comparison
+  bool operator!=(const PlaneIndex& other) const { return !(*this == other); }
+};
+
 /// @brief Region of interest specification
 ///
 /// Specifies a rectangular region to read from a slide at a particular
@@ -46,6 +67,7 @@ struct RegionSpec {
   ImageCoordinate top_left;  ///< Top-left coordinate (level coordinates)
   ImageDimensions size;      ///< Desired region size in pixels
   int level;                 ///< Pyramid level (0 = full resolution)
+  PlaneIndex plane{};        ///< Focal/time plane selector (default = first)
 
   /// @brief Check if region is valid
   [[nodiscard]] bool IsValid() const noexcept {
@@ -102,6 +124,7 @@ struct TileRequest {
   int level;                            ///< Pyramid level
   TileCoordinate tile_coord;            ///< Tile coordinates in grid
   std::vector<size_t> channel_indices;  ///< Requested channels (empty = all)
+  PlaneIndex plane{};                   ///< Focal/time plane selector
 
   /// @brief Optional region bounds for region-based requests
   /// @note Used when request originates from RegionSpec with fractional coords
@@ -174,6 +197,7 @@ struct MultiTileRequest {
 
 // Import core types into fastslide namespace for backward compatibility
 using core::MultiTileRequest;
+using core::PlaneIndex;
 using core::RegionSpec;
 using core::TileCoordinate;
 using core::TileRequest;

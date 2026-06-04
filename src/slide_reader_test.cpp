@@ -31,6 +31,7 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/runtime/tile_writer.h"
+#include "fastslide/slide_image.h"
 #include "testing/minimal_slide_reader.h"
 
 namespace fastslide {
@@ -581,6 +582,77 @@ TEST_F(SlideReaderTest, ChannelMetadata) {
   EXPECT_EQ(channel_metadata.size(), 1);
   EXPECT_EQ(channel_metadata[0].name, "RGB");
   EXPECT_EQ(channel_metadata[0].biomarker, "RGB");
+}
+
+// ---------------------------------------------------------------------
+// SlideImage container API (default SelfImageView adapter)
+// ---------------------------------------------------------------------
+
+// Single-image readers should expose exactly one image (primary at index 0)
+// via the default container API.
+TEST_F(SlideReaderTest, DefaultContainerApiExposesSingleImage) {
+  MockSlideReader reader("test.mock");
+
+  EXPECT_EQ(reader.GetImageCount(), 1);
+  EXPECT_EQ(reader.GetPrimaryImageIndex(), 0);
+
+  const auto names = reader.GetImageNames();
+  ASSERT_EQ(names.size(), 1u);
+  EXPECT_EQ(names[0], "image 0");
+
+  auto image_or = reader.GetImage(0);
+  ASSERT_TRUE(image_or.ok()) << image_or.status().ToString();
+  EXPECT_NE(image_or.value(), nullptr);
+}
+
+// `SelfImageView` should forward `SlideImage` calls back to the reader, so
+// readers that haven't overridden `GetImage` keep working as before.
+TEST_F(SlideReaderTest, SelfImageViewForwardsToReader) {
+  MockSlideReader reader("test.mock");
+
+  auto image_or = reader.GetImage(0);
+  ASSERT_TRUE(image_or.ok());
+  const SlideImage& image = *image_or.value();
+
+  EXPECT_EQ(image.GetLevelCount(), reader.GetLevelCount());
+  EXPECT_EQ(image.GetImageFormat(), reader.GetImageFormat());
+  EXPECT_EQ(image.GetDataType(), reader.GetDataType());
+
+  auto reader_level0 = reader.GetLevelInfo(0);
+  auto image_level0 = image.GetLevelInfo(0);
+  ASSERT_TRUE(reader_level0.ok());
+  ASSERT_TRUE(image_level0.ok());
+  EXPECT_EQ(image_level0->dimensions[0], reader_level0->dimensions[0]);
+  EXPECT_EQ(image_level0->dimensions[1], reader_level0->dimensions[1]);
+
+  // Tile size and channel layout should also round-trip through the view.
+  EXPECT_EQ(image.GetTileSize()[0], reader.GetTileSize()[0]);
+  EXPECT_EQ(image.GetTileSize()[1], reader.GetTileSize()[1]);
+  EXPECT_EQ(image.GetChannelMetadata().size(),
+            reader.GetChannelMetadata().size());
+}
+
+// Out-of-range indices should not return a (nullable) raw pointer to garbage.
+TEST_F(SlideReaderTest, GetImageRejectsInvalidIndex) {
+  MockSlideReader reader("test.mock");
+
+  auto neg = reader.GetImage(-1);
+  EXPECT_FALSE(neg.ok());
+
+  auto too_high = reader.GetImage(reader.GetImageCount());
+  EXPECT_FALSE(too_high.ok());
+}
+
+// Repeated `GetImage(0)` should return the same view (caching the
+// `SelfImageView` is a documented optimisation).
+TEST_F(SlideReaderTest, SelfImageViewIsCached) {
+  MockSlideReader reader("test.mock");
+
+  auto first = reader.GetImage(0);
+  auto second = reader.GetImage(0);
+  ASSERT_TRUE(first.ok());
+  ASSERT_TRUE(second.ok());
+  EXPECT_EQ(first.value(), second.value());
 }
 
 // Integration test with MockSlideReader

@@ -20,8 +20,7 @@
 #include <span>
 
 #include "aifocore/status/result.h"
-#include "fastslide/runtime/decoders/jpeg_decoder.h"
-#include "fastslide/runtime/decoders/png_decoder.h"
+#include "fastslide/runtime/decoders/decoded_image.h"
 
 namespace fastslide::runtime::decoders {
 

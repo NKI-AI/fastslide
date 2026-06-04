@@ -25,6 +25,7 @@
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
+#include "fastslide/image.h"
 #include "fastslide/readers/czi/czi_spatial_index.h"
 
 namespace fastslide {
@@ -57,18 +58,20 @@ void DetermineRegionBounds(const core::TileRequest& request,
   }
 }
 
-core::OutputSpec CreateOutputSpec(uint32_t width, uint32_t height) {
+core::OutputSpec CreateOutputSpec(uint32_t width, uint32_t height,
+                                  DataType data_type) {
   core::OutputSpec spec;
   spec.dimensions = {width, height};
   spec.channels = 3;  // RGB
-  spec.pixel_format = core::OutputSpec::PixelFormat::kUInt8;
+  spec.pixel_format = core::ToOutputPixelFormat(data_type);
   spec.background = {255, 255, 255, 255};
   return spec;
 }
 
 std::optional<core::TileReadOp> CreateTileOperation(
     int level, uint32_t subblock_index, const czi::SpatialTile& spatial_tile,
-    double region_x, double region_y, uint32_t region_w, uint32_t region_h) {
+    double region_x, double region_y, uint32_t region_w, uint32_t region_h,
+    bool emit_blend_metadata) {
   const double tile_x_in_level = spatial_tile.bbox.min[0];
   const double tile_y_in_level = spatial_tile.bbox.min[1];
 
@@ -93,11 +96,16 @@ std::optional<core::TileReadOp> CreateTileOperation(
   op.transform.source = {0.0, 0.0, tile_w, tile_h};
   op.transform.dest = {dest_x, dest_y, tile_w, tile_h};
 
-  core::BlendMetadata blend{};
-  blend.weight = 1.0;
-  blend.gain = 1.0f;
-  blend.mode = core::BlendMode::kAverage;
-  op.blend_metadata = blend;
+  // 16-bit scenes use the Canvas RGB16 integer-copy path, which ignores blend
+  // metadata; omitting it (as the MRXS builder does for >= 16-bit slides) keeps
+  // the plan honest and avoids enabling the 8-bit bilinear blender.
+  if (emit_blend_metadata) {
+    core::BlendMetadata blend{};
+    blend.weight = 1.0;
+    blend.gain = 1.0f;
+    blend.mode = core::BlendMode::kAverage;
+    op.blend_metadata = blend;
+  }
 
   return op;
 }
@@ -111,6 +119,8 @@ aifocore::Result<core::TilePlan> CziPlanBuilder::BuildPlan(
 
   AIFOCORE_RETURN_IF_ERROR(ValidateRequest(request, context));
   const auto& level_info = context.level_info;
+  const DataType data_type = context.data_type;
+  const bool emit_blend_metadata = data_type != DataType::kUInt16;
 
   double x = 0.0;
   double y = 0.0;
@@ -120,7 +130,7 @@ aifocore::Result<core::TilePlan> CziPlanBuilder::BuildPlan(
 
   // Empty regions still return a plan (filled with background).
   if (width == 0 || height == 0) {
-    plan.output = CreateOutputSpec(width, height);
+    plan.output = CreateOutputSpec(width, height, data_type);
     plan.actual_region = {
         .top_left = {0, 0}, .size = {width, height}, .level = request.level};
     return plan;
@@ -129,7 +139,7 @@ aifocore::Result<core::TilePlan> CziPlanBuilder::BuildPlan(
   // Clamp region to level bounds.
   if (x >= static_cast<double>(level_info.dimensions[0]) ||
       y >= static_cast<double>(level_info.dimensions[1])) {
-    plan.output = CreateOutputSpec(width, height);
+    plan.output = CreateOutputSpec(width, height, data_type);
     plan.actual_region = {
         .top_left = {static_cast<uint32_t>(x), static_cast<uint32_t>(y)},
         .size = {width, height},
@@ -155,14 +165,14 @@ aifocore::Result<core::TilePlan> CziPlanBuilder::BuildPlan(
     const auto& st = tiles[idx];
     const uint32_t subblock_index = st.info.subblock_index;
     auto op = CreateTileOperation(request.level, subblock_index, st, x, y,
-                                  width, height);
+                                  width, height, emit_blend_metadata);
     if (op) {
       ops.push_back(*op);
     }
   }
 
   plan.operations = std::move(ops);
-  plan.output = CreateOutputSpec(width, height);
+  plan.output = CreateOutputSpec(width, height, data_type);
   plan.actual_region = {
       .top_left = {static_cast<uint32_t>(x), static_cast<uint32_t>(y)},
       .size = {width, height},

@@ -87,6 +87,45 @@ TEST(RegionSpecTest, HighLevel) {
   EXPECT_TRUE(region.IsValid());
 }
 
+TEST(RegionSpecTest, DefaultPlaneIsFirstPlane) {
+  RegionSpec region;
+  region.top_left = ImageCoordinate{0, 0};
+  region.size = ImageDimensions{256, 256};
+  region.level = 0;
+
+  EXPECT_EQ(region.plane.z, 0u);
+  EXPECT_EQ(region.plane.t, 0u);
+}
+
+TEST(RegionSpecTest, DesignatedInitializerSetsPlane) {
+  RegionSpec region{
+      .top_left = {0, 0}, .size = {256, 256}, .level = 0, .plane = {3, 5}};
+
+  EXPECT_EQ(region.plane.z, 3u);
+  EXPECT_EQ(region.plane.t, 5u);
+}
+
+// ============================================================================
+// PlaneIndex Tests
+// ============================================================================
+
+TEST(PlaneIndexTest, DefaultsToFirstPlane) {
+  PlaneIndex plane{};
+  EXPECT_EQ(plane.z, 0u);
+  EXPECT_EQ(plane.t, 0u);
+}
+
+TEST(PlaneIndexTest, Equality) {
+  PlaneIndex a{1, 2};
+  PlaneIndex b{1, 2};
+  PlaneIndex c{1, 3};
+
+  EXPECT_TRUE(a == b);
+  EXPECT_FALSE(a == c);
+  EXPECT_FALSE(a != b);
+  EXPECT_TRUE(a != c);
+}
+
 // ============================================================================
 // TileCoordinate Tests
 // ============================================================================
@@ -194,6 +233,8 @@ TEST(TileRequestTest, DefaultConstruction) {
   EXPECT_EQ(request.tile_coord.y, 0);
   EXPECT_TRUE(request.channel_indices.empty());
   EXPECT_FALSE(request.region_bounds.has_value());
+  EXPECT_EQ(request.plane.z, 0u);
+  EXPECT_EQ(request.plane.t, 0u);
   EXPECT_TRUE(request.IsValid());
   EXPECT_TRUE(request.IsAllChannels());
   EXPECT_FALSE(request.IsRegionRequest());

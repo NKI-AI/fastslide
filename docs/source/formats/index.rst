@@ -12,6 +12,7 @@ Each format has unique characteristics in terms of compression, tile organizatio
    bif
    mrxs
    qptiff
+   olympusvsi
 
 Format Overview
 ---------------
@@ -45,6 +46,11 @@ Format Overview
      - LZW / JPEG / Uncompressed
      - Multi-page TIFF
      - Multi-channel spectral imaging
+   * - Olympus VSI
+     - .vsi (+ .ets)
+     - JPEG2000 / JPEG (in SIS/ETS)
+     - Regular non-overlapping tile grid
+     - Sidecar ``.ets`` pyramid, sparse grids
 
 Format Detection
 ----------------
@@ -55,5 +61,6 @@ FastSlide automatically detects the file format based on the file extension:
 - ``.bif`` → Ventana (BIF) reader
 - ``.mrxs`` → MIRAX (MRXS) reader  
 - ``.tif``, ``.tiff``, ``.qptiff`` → QPTIFF reader
+- ``.vsi`` (or a ``frame_t.ets`` / data directory) → Olympus VSI reader
 
 The appropriate reader is selected based solely on the filename extension.

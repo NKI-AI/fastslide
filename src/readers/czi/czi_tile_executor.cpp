@@ -12,15 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/// @file czi_tile_executor.cpp
+/// @brief CZI tile decode + paint stage.
+///
+/// Based on the BSD-3-Clause `czifile` library (Christoph Gohlke).
+
 #include "fastslide/readers/czi/czi_tile_executor.h"
 
 #include <algorithm>
 #include <atomic>
-#include <bit>
-#include <cmath>
-#include <csetjmp>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <mutex>
 #include <span>
@@ -29,11 +32,10 @@
 #include <utility>
 #include <vector>
 
-#include <zstd.h>
-
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "aifocore/utilities/thread_pool_singleton.h"
+#include "fastslide/readers/czi/czi_parse.h"
 #include "fastslide/runtime/decoders/jpeg_decoder.h"
 #include "fastslide/runtime/decoders/jpeg_xr_decoder.h"
 #include "fastslide/runtime/io/ascii_utils.h"
@@ -49,7 +51,6 @@ using runtime::io::ReadFixedAscii;
 using runtime::io::StartsWithMagic;
 
 constexpr std::string_view kSidZisRawSubblock = "ZISRAWSUBBLOCK";
-constexpr size_t kCziSubblockHdrLen = 288;
 
 enum class Compression : int32_t {
   kNone = 0,
@@ -81,105 +82,13 @@ size_t BytesPerPixel(PixelType pt) {
   return 0;
 }
 
-uint32_t ScaleU16ToU8(uint16_t v, uint16_t denom) {
-  return static_cast<uint32_t>(
-      (static_cast<uint32_t>(v) * 255u + static_cast<uint32_t>(denom) / 2u) /
-      static_cast<uint32_t>(denom));
-}
-
-uint16_t ChooseU16Denom(uint16_t max_val) {
-  if (max_val == 0) {
-    return 255;
-  }
-  const unsigned bits = std::bit_width<uint16_t>(max_val);
-  const uint16_t pow2 = static_cast<uint16_t>(1u << (bits - 1));
-  uint16_t denom = 0;
-  if (max_val == pow2) {
-    denom = static_cast<uint16_t>(pow2 - 1);
-  } else {
-    denom = static_cast<uint16_t>((1u << bits) - 1u);
-  }
-  return std::max<uint16_t>(denom, 255);
-}
-
-aifocore::Result<std::vector<uint8_t>> UnpackHiLo16(
-    std::span<const uint8_t> in) {
-  if ((in.size() % 2) != 0) {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                "HiLo unpacking requires even byte count");
-  }
-  const size_t half = in.size() / 2;
-  std::vector<uint8_t> out(in.size());
-  for (size_t i = 0; i < half; ++i) {
-    out[i * 2] = in[i];
-    out[i * 2 + 1] = in[half + i];
-  }
-  return out;
-}
-
-struct Zstd1ParseResult {
-  std::span<const uint8_t> payload;
-  bool do_hilo = false;
-};
-
-aifocore::Result<Zstd1ParseResult> ParseZstd1Payload(
-    std::span<const uint8_t> in) {
-  // ZSTD1 payloads start with a small container header:
-  // - byte[0] == header_size_in_bytes (including byte[0])
-  // - if header_size == 3: byte[1] is chunk type (expected 1), byte[2] are
-  // flags
-  if (in.empty()) {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                "zstd1 payload truncated");
-  }
-
-  const uint8_t header_len = in[0];
-  if (header_len == 1) {
-    return Zstd1ParseResult{.payload = in.subspan(1), .do_hilo = false};
-  }
-
-  if (header_len == 3) {
-    if (in.size() < 3) {
-      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                  "zstd1 payload truncated (header)");
-    }
-    const uint8_t chunk_type = in[1];
-    const uint8_t flags = in[2];
-    if (chunk_type != 1) {
-      return AIFOCORE_MAKE_STATUS(
-          aifocore::StatusCode::kInvalidArgument,
-          aifocore::fmt::format("Unexpected zstd1 chunk type: {}", chunk_type));
-    }
-    return Zstd1ParseResult{.payload = in.subspan(3),
-                            .do_hilo = (flags & 1u) != 0u};
-  }
-
-  return AIFOCORE_MAKE_STATUS(
-      aifocore::StatusCode::kInvalidArgument,
-      aifocore::fmt::format("Unexpected zstd1 header length: {}", header_len));
-}
-
-aifocore::Result<std::vector<uint8_t>> DecompressZstd(
-    std::span<const uint8_t> in, size_t expected_size) {
-  std::vector<uint8_t> out(expected_size);
-  const size_t res =
-      ZSTD_decompress(out.data(), out.size(), in.data(), in.size());
-  if (ZSTD_isError(res)) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kInternal,
-        aifocore::fmt::format("ZSTD_decompress failed: {}",
-                              ZSTD_getErrorName(res)));
-  }
-  if (res != expected_size) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kInvalidArgument,
-        aifocore::fmt::format("ZSTD size mismatch: got {}, expected {}", res,
-                              expected_size));
-  }
-  return out;
-}
-
-aifocore::Result<std::vector<uint8_t>> ConvertRawToRgb8(
+/// @brief Convert a decoded subblock buffer to packed RGB, preserving depth.
+///
+/// 8-bit pixel types yield 8-bit RGB; 16-bit pixel types yield native 16-bit
+/// RGB with no rescaling (matching `czifile`, which keeps the original dtype).
+/// Grayscale is broadcast across the three channels. Output bytes are
+/// little-endian, ready for the Canvas RGB8/RGB16 paint paths.
+aifocore::Result<std::vector<uint8_t>> ConvertRawToRgb(
     PixelType pixel_type, uint32_t w, uint32_t h,
     std::span<const uint8_t> raw) {
   const size_t npx = static_cast<size_t>(w) * h;
@@ -205,19 +114,16 @@ aifocore::Result<std::vector<uint8_t>> ConvertRawToRgb8(
                                     "GRAY16 size mismatch");
       }
       const uint16_t* u16 = reinterpret_cast<const uint16_t*>(raw.data());
-      uint16_t max_v = 0;
+      std::vector<uint16_t> rgb(npx * 3);
       for (size_t i = 0; i < npx; ++i) {
-        max_v = std::max(max_v, u16[i]);
-      }
-      const uint16_t denom = ChooseU16Denom(max_v);
-      std::vector<uint8_t> rgb(npx * 3);
-      for (size_t i = 0; i < npx; ++i) {
-        const uint8_t g = static_cast<uint8_t>(ScaleU16ToU8(u16[i], denom));
+        const uint16_t g = u16[i];
         rgb[i * 3 + 0] = g;
         rgb[i * 3 + 1] = g;
         rgb[i * 3 + 2] = g;
       }
-      return rgb;
+      std::vector<uint8_t> out(rgb.size() * sizeof(uint16_t));
+      std::memcpy(out.data(), rgb.data(), out.size());
+      return out;
     }
     case PixelType::kBgr24: {
       if (raw.size() != npx * 3) {
@@ -241,21 +147,15 @@ aifocore::Result<std::vector<uint8_t>> ConvertRawToRgb8(
                                     "BGR48 size mismatch");
       }
       const uint16_t* u16 = reinterpret_cast<const uint16_t*>(raw.data());
-      uint16_t max_v = 0;
-      for (size_t i = 0; i < npx * 3; ++i) {
-        max_v = std::max(max_v, u16[i]);
-      }
-      const uint16_t denom = ChooseU16Denom(max_v);
-      std::vector<uint8_t> rgb(npx * 3);
+      std::vector<uint16_t> rgb(npx * 3);
       for (size_t i = 0; i < npx; ++i) {
-        const uint16_t b16 = u16[i * 3 + 0];
-        const uint16_t g16 = u16[i * 3 + 1];
-        const uint16_t r16 = u16[i * 3 + 2];
-        rgb[i * 3 + 0] = static_cast<uint8_t>(ScaleU16ToU8(r16, denom));
-        rgb[i * 3 + 1] = static_cast<uint8_t>(ScaleU16ToU8(g16, denom));
-        rgb[i * 3 + 2] = static_cast<uint8_t>(ScaleU16ToU8(b16, denom));
+        rgb[i * 3 + 0] = u16[i * 3 + 2];  // R
+        rgb[i * 3 + 1] = u16[i * 3 + 1];  // G
+        rgb[i * 3 + 2] = u16[i * 3 + 0];  // B
       }
-      return rgb;
+      std::vector<uint8_t> out(rgb.size() * sizeof(uint16_t));
+      std::memcpy(out.data(), rgb.data(), out.size());
+      return out;
     }
   }
 
@@ -333,7 +233,9 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
   }
 
   const int64_t data_pos =
-      sb.file_pos + static_cast<int64_t>(kCziSubblockHdrLen) + meta_size;
+      sb.file_pos +
+      static_cast<int64_t>(czi::SubblockFixedHeaderLength(sb.dim_count)) +
+      meta_size;
   AIFOCORE_RETURN_IF_ERROR(file.Seek(data_pos));
   AIFOCORE_ASSIGN_OR_RETURN(auto payload,
                             file.ReadBytes(static_cast<size_t>(data_size)));
@@ -363,14 +265,15 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
     bool do_hilo = false;
     std::span<const uint8_t> zpayload(payload);
     if (comp == Compression::kZstd1) {
-      AIFOCORE_ASSIGN_OR_RETURN(const auto parsed, ParseZstd1Payload(zpayload));
+      AIFOCORE_ASSIGN_OR_RETURN(const auto parsed,
+                                czi::ParseZstd1Payload(zpayload));
       zpayload = parsed.payload;
       do_hilo = parsed.do_hilo;
     }
 
-    AIFOCORE_ASSIGN_OR_RETURN(raw, DecompressZstd(zpayload, expected_raw));
+    AIFOCORE_ASSIGN_OR_RETURN(raw, czi::DecompressZstd(zpayload, expected_raw));
     if (do_hilo) {
-      AIFOCORE_ASSIGN_OR_RETURN(auto unpacked, UnpackHiLo16(raw));
+      AIFOCORE_ASSIGN_OR_RETURN(auto unpacked, czi::UnpackHiLo16(raw));
       raw = std::move(unpacked);
     }
   } else if (comp == Compression::kJxr) {
@@ -397,8 +300,9 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
                               sb.compression));
   }
 
-  // Convert raw pixel bytes to RGB8.
-  AIFOCORE_ASSIGN_OR_RETURN(auto rgb, ConvertRawToRgb8(pt, sb.w, sb.h, raw));
+  // Convert raw pixel bytes to packed RGB, preserving the native bit depth
+  // (8-bit types stay 8-bit, 16-bit types stay 16-bit; see ConvertRawToRgb).
+  AIFOCORE_ASSIGN_OR_RETURN(auto rgb, ConvertRawToRgb(pt, sb.w, sb.h, raw));
   auto& tile_buf = GetBuffers().tile_buffer;
   tile_buf = std::move(rgb);
   return DecodedTileData{

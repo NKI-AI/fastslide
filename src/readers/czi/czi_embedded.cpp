@@ -14,6 +14,11 @@
 
 /// @file czi_embedded.cpp
 /// @brief Implementation of embedded-CZI parsing/decoding helpers.
+///
+/// Clean-room implementation from the public Zeiss CZI / ZISRAW binary-format
+/// definition, using the permissively licensed `czifile` Python library
+/// (Christoph Gohlke, BSD-3-Clause) as the on-disk-layout reference. The shared
+/// ZISRAW decoders live in `czi_parse`.
 
 #include "fastslide/readers/czi/czi_embedded.h"
 
@@ -26,10 +31,9 @@
 #include <utility>
 #include <vector>
 
-#include <zstd.h>
-
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
+#include "fastslide/readers/czi/czi_parse.h"
 #include "fastslide/runtime/io/ascii_utils.h"
 #include "fastslide/runtime/io/binary_utils.h"
 
@@ -47,111 +51,6 @@ using runtime::io::StartsWithMagic;
 constexpr std::string_view kSidZisRawFile = "ZISRAWFILE";
 constexpr std::string_view kSidZisRawDirectory = "ZISRAWDIRECTORY";
 constexpr std::string_view kSidZisRawSubblock = "ZISRAWSUBBLOCK";
-constexpr std::string_view kSchemaDv = "DV";
-
-/// @brief Choose a 16-bit denominator for normalising BGR48 to 8-bit RGB.
-///
-/// Picks `(2^bits)-1` (or `2^(bits-1)-1` if `max_val` is itself a power of
-/// two), clamped to at least 255. This avoids dark output for instruments
-/// that store ~12-bit samples in 16-bit channels.
-uint16_t ChooseU16Denom(uint16_t max_val) {
-  if (max_val == 0) {
-    return 255;
-  }
-  unsigned bits = 0;
-  uint16_t tmp = max_val;
-  while (tmp != 0) {
-    ++bits;
-    tmp >>= 1;
-  }
-  const auto pow2 = static_cast<uint16_t>(1u << (bits - 1));
-  uint16_t denom = 0;
-  if (max_val == pow2) {
-    denom = static_cast<uint16_t>(pow2 - 1);
-  } else {
-    denom = static_cast<uint16_t>((1u << bits) - 1u);
-  }
-  return std::max<uint16_t>(denom, 255);
-}
-
-uint8_t ScaleU16ToU8(uint16_t v, uint16_t denom) {
-  const uint32_t out =
-      (static_cast<uint32_t>(v) * 255u + static_cast<uint32_t>(denom) / 2u) /
-      static_cast<uint32_t>(denom);
-  return static_cast<uint8_t>(std::min<uint32_t>(255u, out));
-}
-
-aifocore::Result<std::vector<uint8_t>> DecompressZstd(
-    std::span<const uint8_t> in, size_t expected_size) {
-  std::vector<uint8_t> out(expected_size);
-  const size_t res =
-      ZSTD_decompress(out.data(), out.size(), in.data(), in.size());
-  if (ZSTD_isError(res)) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kInternal,
-        aifocore::fmt::format("ZSTD_decompress failed: {}",
-                              ZSTD_getErrorName(res)));
-  }
-  if (res != expected_size) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kInvalidArgument,
-        aifocore::fmt::format("ZSTD size mismatch: got {}, expected {}", res,
-                              expected_size));
-  }
-  return out;
-}
-
-aifocore::Result<std::vector<uint8_t>> UnpackHiLo16(
-    std::span<const uint8_t> in) {
-  if ((in.size() % 2) != 0) {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                "HiLo unpacking requires even byte count");
-  }
-  const size_t half = in.size() / 2;
-  std::vector<uint8_t> out(in.size());
-  for (size_t i = 0; i < half; ++i) {
-    out[i * 2] = in[i];
-    out[i * 2 + 1] = in[half + i];
-  }
-  return out;
-}
-
-struct Zstd1ParseResult {
-  std::span<const uint8_t> payload;
-  bool do_hilo = false;
-};
-
-aifocore::Result<Zstd1ParseResult> ParseZstd1Payload(
-    std::span<const uint8_t> in) {
-  // zstd1 payload starts with a tiny header. The first byte is the header
-  // length. Known values:
-  // - 1: header is just the length byte, no options.
-  // - 3: includes (chunk_type, is_hi_low_pack).
-  if (in.empty()) {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                "zstd1 payload truncated");
-  }
-  const uint8_t header_len = in[0];
-  if (header_len == 1) {
-    return Zstd1ParseResult{.payload = in.subspan(1), .do_hilo = false};
-  }
-  if (header_len == 3) {
-    if (in.size() < 3) {
-      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                  "zstd1 payload truncated (header)");
-    }
-    const uint8_t chunk_type = in[1];
-    const uint8_t flags = in[2];
-    if (chunk_type != 1) {
-      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                  "zstd1 payload has unsupported chunk type");
-    }
-    return Zstd1ParseResult{.payload = in.subspan(3),
-                            .do_hilo = (flags & 1u) != 0u};
-  }
-  return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                              "zstd1 payload has unsupported header length");
-}
 
 }  // namespace
 
@@ -206,13 +105,10 @@ aifocore::Result<EmbeddedSubblock> ParseEmbeddedSingleSubblock(
                                 "Embedded CZI: bad directory magic");
   }
 
-  int64_t allocated_size = 0;
-  int64_t used_size = 0;
   int32_t entry_count = 0;
-  AIFOCORE_ASSIGN_OR_RETURN(allocated_size, ReadLeInt64(file.Get()));
-  AIFOCORE_ASSIGN_OR_RETURN(used_size, ReadLeInt64(file.Get()));
+  (void)ReadLeInt64(file.Get());  // allocated_size
+  (void)ReadLeInt64(file.Get());  // used_size
   AIFOCORE_ASSIGN_OR_RETURN(entry_count, ReadLeInt32(file.Get()));
-  (void)allocated_size;
   char reserved_dir[124];
   AIFOCORE_RETURN_IF_ERROR(file.Read(reserved_dir, sizeof(reserved_dir)));
 
@@ -223,86 +119,33 @@ aifocore::Result<EmbeddedSubblock> ParseEmbeddedSingleSubblock(
                               entry_count));
   }
 
-  // Read single DV entry and its dimensions from directory segment buffer.
-  const int64_t header_size = 16 + 8 + 8 + 4 + 124;
-  const int64_t seg_hdr_size = 16 + 8 + 8;
-  const int64_t seg_size = used_size - header_size + seg_hdr_size;
-  if (seg_size <= 0) {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                "Embedded CZI: invalid directory seg_size");
-  }
-
-  AIFOCORE_ASSIGN_OR_RETURN(auto buf,
-                            file.ReadBytes(static_cast<size_t>(seg_size)));
-  size_t p = 0;
-  if (buf.size() < 2) {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                "Embedded CZI: directory truncated");
-  }
-  const std::string schema(reinterpret_cast<const char*>(buf.data()), 2);
-  p += 2;
-  if (schema != kSchemaDv) {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                "Embedded CZI: unexpected schema");
-  }
-  if (p + 4 + 8 + 4 + 4 + 1 + 1 + 4 + 4 > buf.size()) {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                "Embedded CZI: directory entry truncated");
-  }
-
-  int32_t pixel_type = 0;
-  std::memcpy(&pixel_type, buf.data() + p, sizeof(pixel_type));
-  p += 4;
-  int64_t file_pos = 0;
-  std::memcpy(&file_pos, buf.data() + p, sizeof(file_pos));
-  p += 8;
-  // file_part
-  p += 4;
-  int32_t compression = 0;
-  std::memcpy(&compression, buf.data() + p, sizeof(compression));
-  p += 4;
-  // pyramid_type + reserved
-  p += 1;
-  p += 1;
-  p += 4;
-  int32_t ndimensions = 0;
-  std::memcpy(&ndimensions, buf.data() + p, sizeof(ndimensions));
-  p += 4;
+  // Read the single DirectoryEntryDV straight from the stream using the same
+  // pure decoders as the top-level directory: a 32-byte fixed header followed
+  // by `dimension_count` 20-byte dimension records. No derived segment-size
+  // arithmetic is required.
+  AIFOCORE_ASSIGN_OR_RETURN(auto fixed, file.ReadBytes(kDirEntryFixedSize));
+  AIFOCORE_ASSIGN_OR_RETURN(const auto header, ParseDirEntryHeader(fixed));
 
   int32_t x = 0;
   int32_t y = 0;
   uint32_t w = 0;
   uint32_t h = 0;
-
-  for (int d = 0; d < ndimensions; ++d) {
-    if (p + 4 + 4 + 4 + 4 + 4 > buf.size()) {
-      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                  "Embedded CZI: dimension entry truncated");
-    }
-    char dim_raw[4];
-    std::memcpy(dim_raw, buf.data() + p, sizeof(dim_raw));
-    p += 4;
-    const std::string dim_name = ReadFixedAscii(dim_raw, sizeof(dim_raw));
-    int32_t start = 0;
-    int32_t size0 = 0;
-    float start_coord = 0.0f;
-    int32_t stored_size = 0;
-    std::memcpy(&start, buf.data() + p, sizeof(start));
-    p += 4;
-    std::memcpy(&size0, buf.data() + p, sizeof(size0));
-    p += 4;
-    std::memcpy(&start_coord, buf.data() + p, sizeof(start_coord));
-    p += 4;
-    std::memcpy(&stored_size, buf.data() + p, sizeof(stored_size));
-    p += 4;
-    (void)size0;
-    (void)start_coord;
-    if (dim_name == "X") {
-      x = start;
-      w = static_cast<uint32_t>(std::max(0, stored_size));
-    } else if (dim_name == "Y") {
-      y = start;
-      h = static_cast<uint32_t>(std::max(0, stored_size));
+  if (header.dimension_count > 0) {
+    const size_t dims_bytes =
+        static_cast<size_t>(header.dimension_count) * kDimensionEntrySize;
+    AIFOCORE_ASSIGN_OR_RETURN(auto dims_buf, file.ReadBytes(dims_bytes));
+    std::span<const uint8_t> dims_span(dims_buf);
+    for (int32_t d = 0; d < header.dimension_count; ++d) {
+      AIFOCORE_ASSIGN_OR_RETURN(
+          const auto dim, ParseDimensionRecord(dims_span.subspan(
+                              static_cast<size_t>(d) * kDimensionEntrySize)));
+      if (dim.axis == 'X') {
+        x = dim.start;
+        w = static_cast<uint32_t>(std::max(0, dim.stored_size));
+      } else if (dim.axis == 'Y') {
+        y = dim.start;
+        h = static_cast<uint32_t>(std::max(0, dim.stored_size));
+      }
     }
   }
 
@@ -312,17 +155,18 @@ aifocore::Result<EmbeddedSubblock> ParseEmbeddedSingleSubblock(
   }
 
   EmbeddedSubblock sb{};
-  sb.file_pos = file_pos;
-  sb.pixel_type = pixel_type;
-  sb.compression = compression;
+  sb.file_pos = header.file_position;
+  sb.pixel_type = header.pixel_type;
+  sb.compression = header.compression;
   sb.x = x;
   sb.y = y;
   sb.w = w;
   sb.h = h;
+  sb.dim_count = header.dimension_count;
   return sb;
 }
 
-aifocore::Result<std::vector<uint8_t>> ReadEmbeddedSubblockRgb8(
+aifocore::Result<EmbeddedRgb> ReadEmbeddedSubblockRgb(
     FileReader& file, int64_t base_offset, const EmbeddedSubblock& sb) {
   // Subblock segment header (embedded CZI, little-endian):
   // - sid[16] ("ZISRAWSUBBLOCK")
@@ -347,7 +191,9 @@ aifocore::Result<std::vector<uint8_t>> ReadEmbeddedSubblockRgb8(
   (void)attach_size;
 
   const int64_t data_pos =
-      base_offset + sb.file_pos + 288 + static_cast<int64_t>(meta_size);
+      base_offset + sb.file_pos +
+      static_cast<int64_t>(SubblockFixedHeaderLength(sb.dim_count)) +
+      static_cast<int64_t>(meta_size);
   AIFOCORE_RETURN_IF_ERROR(file.Seek(data_pos));
   AIFOCORE_ASSIGN_OR_RETURN(auto payload,
                             file.ReadBytes(static_cast<size_t>(data_size)));
@@ -376,8 +222,10 @@ aifocore::Result<std::vector<uint8_t>> ReadEmbeddedSubblockRgb8(
                                 "Embedded CZI: unsupported compression");
   }
 
-  // Convert BGR24/BGR48 -> RGB8. For BGR48, use max-based scaling to avoid
-  // dark output.
+  // Associated images (label, slide preview, thumbnail) keep their native bit
+  // depth: BGR24 -> 8-bit RGB, BGR48 -> native 16-bit RGB with no rescaling.
+  // Channels are reordered BGR -> RGB exactly as czifile does (it reverses the
+  // last axis and preserves the original dtype, `image[..., ::-1]`)
   const size_t npx = static_cast<size_t>(sb.w) * sb.h;
   if (sb.pixel_type == 3) {
     if (raw.size() != npx * 3) {
@@ -393,7 +241,7 @@ aifocore::Result<std::vector<uint8_t>> ReadEmbeddedSubblockRgb8(
       rgb[i * 3 + 1] = g;
       rgb[i * 3 + 2] = b;
     }
-    return rgb;
+    return EmbeddedRgb{std::move(rgb), DataType::kUInt8};
   }
   if (sb.pixel_type == 4) {
     if (raw.size() != npx * 6) {
@@ -401,21 +249,15 @@ aifocore::Result<std::vector<uint8_t>> ReadEmbeddedSubblockRgb8(
                                   "Embedded CZI: BGR48 size mismatch");
     }
     const uint16_t* u16 = reinterpret_cast<const uint16_t*>(raw.data());
-    uint16_t max_v = 0;
-    for (size_t i = 0; i < npx * 3; ++i) {
-      max_v = std::max(max_v, u16[i]);
-    }
-    const uint16_t denom = ChooseU16Denom(max_v);
-    std::vector<uint8_t> rgb(npx * 3);
+    std::vector<uint16_t> rgb(npx * 3);
     for (size_t i = 0; i < npx; ++i) {
-      const uint16_t b16 = u16[i * 3 + 0];
-      const uint16_t g16 = u16[i * 3 + 1];
-      const uint16_t r16 = u16[i * 3 + 2];
-      rgb[i * 3 + 0] = ScaleU16ToU8(r16, denom);
-      rgb[i * 3 + 1] = ScaleU16ToU8(g16, denom);
-      rgb[i * 3 + 2] = ScaleU16ToU8(b16, denom);
+      rgb[i * 3 + 0] = u16[i * 3 + 2];  // R
+      rgb[i * 3 + 1] = u16[i * 3 + 1];  // G
+      rgb[i * 3 + 2] = u16[i * 3 + 0];  // B
     }
-    return rgb;
+    std::vector<uint8_t> out(rgb.size() * sizeof(uint16_t));
+    std::memcpy(out.data(), rgb.data(), out.size());
+    return EmbeddedRgb{std::move(out), DataType::kUInt16};
   }
 
   return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,

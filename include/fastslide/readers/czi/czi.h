@@ -18,8 +18,8 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
-#include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -31,7 +31,7 @@
 #include "fastslide/core/tile_request.h"
 #include "fastslide/image.h"
 #include "fastslide/readers/czi/czi_level_info.h"
-#include "fastslide/readers/czi/czi_spatial_index.h"
+#include "fastslide/readers/czi/czi_scene_image.h"
 #include "fastslide/readers/reader_factory.h"
 #include "fastslide/runtime/io/file_reader.h"
 #include "fastslide/slide_reader.h"
@@ -40,15 +40,17 @@ namespace fastslide {
 
 namespace fs = std::filesystem;
 
-/// @brief Zeiss CZI slide reader.
+/// @brief Zeiss CZI slide reader (multi-image container).
 ///
-/// This reader implements:
-/// - Parsing the CZI file header and SubBlockDirectory (schema DV)
-/// - Building pyramid levels via integer downsample factors
-/// - Two-stage pipeline: `PrepareRequest()` + `ExecutePlan()`
-/// - Fractional tile placement (subpixel accurate) via `BlendMetadata`
-/// - Decoding JPEG-XR tiles via `jxrlib`
-/// - Decompressing zstd0/zstd1 subblocks (including HiLo unpacking)
+/// Implemented from the public Zeiss CZI / ZISRAW binary-format definition.
+/// This reader:
+/// - Parses the CZI file header and SubBlockDirectory (schema "DV").
+/// - Surfaces each CZI scene (the "S" dimension) as its own `SlideImage`
+///   (`CziSceneImage`); the legacy single-image surface forwards to the
+///   primary scene (the one with the lowest scene index).
+/// - Builds pyramid levels per scene via integer downsample factors.
+/// - Decodes uncompressed BGR, JPEG, JPEG-XR and zstd0/zstd1 subblocks
+///   (including the optional 16-bit lo-hi byte unpacking).
 class CziReader : public SlideReader, public ReaderFactory<CziReader> {
  public:
   /// @brief Public, stable view of a parsed subblock (tile).
@@ -59,80 +61,102 @@ class CziReader : public SlideReader, public ReaderFactory<CziReader> {
     return CreateImpl(fs::path(filename));
   }
 
-  ~CziReader() override = default;
+  ~CziReader() override;
 
-  int GetLevelCount() const override;
-
-  aifocore::Result<LevelInfo> GetLevelInfo(int level) const override;
-
-  const SlideProperties& GetProperties() const override;
-
-  std::vector<ChannelMetadata> GetChannelMetadata() const override;
-
-  std::vector<std::string> GetAssociatedImageNames() const override;
-
-  aifocore::Result<ImageDimensions> GetAssociatedImageDimensions(
-      std::string_view name) const override;
-
-  aifocore::Result<Image> ReadAssociatedImage(
-      std::string_view name) const override;
-
-  Metadata GetMetadata() const override;
-
-  std::string GetFormatName() const override { return "CZI"; }
-
-  ImageFormat GetImageFormat() const override { return ImageFormat::kRGB; }
-
-  [[nodiscard]] DataType GetDataType() const override {
-    return DataType::kUInt8;
+  // -- Multi-image container API ----------------------------------------
+  [[nodiscard]] int GetImageCount() const override {
+    return static_cast<int>(images_.size());
   }
 
-  ImageDimensions GetTileSize() const override;
+  [[nodiscard]] int GetPrimaryImageIndex() const override {
+    return primary_index_;
+  }
 
-  aifocore::Result<core::TilePlan> PrepareRequest(
+  [[nodiscard]] std::vector<std::string> GetImageNames() const override;
+  [[nodiscard]] aifocore::Result<const SlideImage*> GetImage(
+      int index) const override;
+
+  // -- Primary-scene forwarders (single-image surface) ------------------
+  [[nodiscard]] int GetLevelCount() const override;
+  [[nodiscard]] aifocore::Result<LevelInfo> GetLevelInfo(
+      int level) const override;
+  [[nodiscard]] const SlideProperties& GetProperties() const override;
+  [[nodiscard]] std::vector<ChannelMetadata> GetChannelMetadata()
+      const override;
+  [[nodiscard]] ImageDimensions GetTileSize() const override;
+  [[nodiscard]] StackInfo GetStackInfo() const override;
+  [[nodiscard]] aifocore::Result<core::TilePlan> PrepareRequest(
       const core::TileRequest& request) const override;
+  [[nodiscard]] aifocore::Status ExecutePlan(
+      const core::TilePlan& plan, runtime::Canvas& writer) const override;
 
-  aifocore::Status ExecutePlan(const core::TilePlan& plan,
-                               runtime::Canvas& writer) const override;
+  // -- Associated images (container level) ------------------------------
+  //
+  // Associated images are surfaced under their native CZI attachment names
+  // (e.g. "Label", "SlidePreview", "Thumbnail") with no renaming.
+  [[nodiscard]] std::vector<std::string> GetAssociatedImageNames()
+      const override;
+  [[nodiscard]] aifocore::Result<ImageDimensions> GetAssociatedImageDimensions(
+      std::string_view name) const override;
+  [[nodiscard]] aifocore::Result<Image> ReadAssociatedImage(
+      std::string_view name) const override;
+
+  [[nodiscard]] Metadata GetMetadata() const override;
+
+  [[nodiscard]] std::string GetFormatName() const override { return "CZI"; }
+
+  [[nodiscard]] ImageFormat GetImageFormat() const override {
+    return ImageFormat::kRGB;
+  }
+
+  [[nodiscard]] DataType GetDataType() const override {
+    return Primary().GetDataType();
+  }
 
   /// @brief Get the filename as string (for cache keys).
   [[nodiscard]] const std::string& GetFilename() const { return filename_; }
 
-  /// @brief Get (or lazily build) the spatial index for a level.
-  [[nodiscard]] aifocore::Result<std::shared_ptr<czi::CziSpatialIndex>>
-  GetSpatialIndex(int level) const;
-
-  /// @brief Access a parsed subblock by index.
-  [[nodiscard]] SubblockInfo GetSubblockInfo(uint32_t index) const;
+  /// @brief Shared view of all parsed subblocks (used by scene images).
+  [[nodiscard]] std::span<const CziSubblockInfo> SubblockSpan() const {
+    return subblocks_;
+  }
 
  private:
   friend class ReaderFactory<CziReader>;
+  // Grants the Z/T plane-selection unit test access to build a reader with
+  // synthetic subblocks (no file I/O) so scene-level plane planning can be
+  // tested without a multi-Z/T sample file.
+  friend struct CziReaderTestAccess;
 
   using Subblock = CziSubblockInfo;
 
   struct AttachmentInfo {
-    std::string name;          // e.g. "Label"
-    std::string file_type;     // e.g. "JPG" or "CZI"
-    int64_t file_pos = 0;      // Segment start (file-relative).
-    uint32_t data_offset = 0;  // Offset from segment start to payload.
-    uint32_t data_size = 0;    // Payload size in bytes (if known).
+    std::string name;       ///< Native CZI attachment name (e.g. "Label").
+    std::string file_type;  ///< e.g. "JPG" or "CZI".
+    int64_t file_pos = 0;   ///< Segment start (file-relative).
   };
 
   explicit CziReader(std::string filename);
 
   static aifocore::Status ValidateInput(const fs::path& filename);
-
   static aifocore::Result<std::unique_ptr<CziReader>> CreateReaderImpl(
       const fs::path& filename);
 
   aifocore::Status Initialize();
 
-  // Parsing helpers
+  // Parsing helpers.
   aifocore::Status ParseFileHeader(FileReader& file);
   aifocore::Status ParseSubblockDirectory(FileReader& file);
   aifocore::Status ParseMetadataXml(FileReader& file);
   aifocore::Status ParseAttachmentDirectory(FileReader& file);
-  void FinalizeDerivedState();
+  void BuildSceneImages();
+
+  [[nodiscard]] const CziSceneImage& Primary() const {
+    return *images_[static_cast<size_t>(primary_index_)];
+  }
+
+  [[nodiscard]] const AttachmentInfo* FindAttachment(
+      std::string_view name) const;
 
   // Header-derived offsets.
   int64_t subblk_dir_pos_ = 0;
@@ -142,29 +166,20 @@ class CziReader : public SlideReader, public ReaderFactory<CziReader> {
   // Parsed data.
   std::string filename_;
   std::vector<Subblock> subblocks_;
-  std::vector<int32_t> downsamples_;  // Sorted unique downsamples; index=level.
 
-  // Derived slide properties and metadata.
-  SlideProperties properties_{};
+  // Metadata fields (whole file).
   std::optional<ImageDimensions> metadata_size_l0_;
   std::optional<std::pair<double, double>> metadata_mpp_;
   std::optional<double> metadata_objective_magnification_;
+  std::optional<double>
+      metadata_z_spacing_um_;  ///< Focal-plane step (microns).
+  std::optional<double> metadata_t_interval_s_;  ///< Time-point step (seconds).
   std::string metadata_xml_;
   std::vector<AttachmentInfo> attachments_;
 
-  // Full image size at level 0 (used for pyramid dimensions). This is distinct
-  // from `bounds_l0_`, which is the non-empty/content bounds.
-  ImageDimensions base_size_l0_{0, 0};
-
-  // Level bounds in level-0 coordinates (content bounding box).
-  SlideBounds bounds_l0_{};
-
-  // Spatial indices per level (lazy-built, thread-safe).
-  mutable std::mutex spatial_index_mutex_;
-  mutable std::vector<std::shared_ptr<czi::CziSpatialIndex>> spatial_indices_;
-
-  // Mapping from level index -> subblock indices belonging to that level.
-  std::vector<std::vector<uint32_t>> level_subblocks_;
+  // One image per scene; `primary_index_` is the lowest scene index.
+  std::vector<std::unique_ptr<CziSceneImage>> images_;
+  int primary_index_ = 0;
 };
 
 }  // namespace fastslide

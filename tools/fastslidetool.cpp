@@ -28,6 +28,7 @@
 #include "fastslide/fastslide.h"
 #include "fastslide/readers/mrxs/mrxs.h"
 #include "fastslide/runtime/decoders/png_decoder.h"
+#include "fastslide/slide_image.h"
 
 namespace {
 
@@ -69,15 +70,16 @@ void PrintKeyValue(const std::string& key, size_t value, int width = 30) {
   std::cout << std::left << std::setw(width) << (key + ":") << value << '\n';
 }
 
-void PrintSlideInfo(const fastslide::SlideReader& reader) {
+void PrintSlideInfo(const fastslide::SlideReader& reader,
+                    const fastslide::SlideImage& image) {
   PrintHeader("Slide Information");
 
-  // Format
+  // Reader-level
   PrintKeyValue("Format", reader.GetFormatName());
-  PrintKeyValue("Image Format", fastslide::GetName(reader.GetImageFormat()));
+  PrintKeyValue("Image Format", fastslide::GetName(image.GetImageFormat()));
 
-  // Properties
-  const auto& props = reader.GetProperties();
+  // Per-image properties
+  const auto& props = image.GetProperties();
   PrintKeyValue("MPP X", props.mpp[0]);
   PrintKeyValue("MPP Y", props.mpp[1]);
   PrintKeyValue("Objective Magnification", props.objective_magnification);
@@ -92,21 +94,61 @@ void PrintSlideInfo(const fastslide::SlideReader& reader) {
     PrintKeyValue("Scan Date", *props.scan_date);
   }
 
-  // Tile size
-  auto tile_size = reader.GetTileSize();
+  // Tile size (per-image)
+  auto tile_size = image.GetTileSize();
   std::string tile_str =
       std::to_string(tile_size[0]) + " x " + std::to_string(tile_size[1]);
   PrintKeyValue("Tile Size", tile_str);
 }
 
-void PrintLevelInfo(const fastslide::SlideReader& reader) {
+void PrintImages(const fastslide::SlideReader& reader) {
+  const int count = reader.GetImageCount();
+  // Always show this section so users know the file is single- or
+  // multi-image.
+  PrintHeader("Images");
+  PrintKeyValue("Number of Images", count);
+  PrintKeyValue("Primary Image Index", reader.GetPrimaryImageIndex());
+
+  const auto names = reader.GetImageNames();
+  for (int i = 0; i < count; ++i) {
+    auto image_or = reader.GetImage(i);
+    if (!image_or.ok()) {
+      PrintSubHeader("Image " + std::to_string(i));
+      PrintKeyValue("  Error", image_or.status().ToString(), 25);
+      continue;
+    }
+    const auto* image = image_or.value();
+    const std::string name =
+        i < static_cast<int>(names.size()) ? names[i] : std::string{};
+
+    PrintSubHeader("Image " + std::to_string(i) +
+                   (name.empty() ? "" : " (" + name + ")"));
+
+    auto level0 = image->GetLevelInfo(0);
+    if (level0.ok()) {
+      std::string dims = std::to_string(level0->dimensions[0]) + " x " +
+                         std::to_string(level0->dimensions[1]);
+      PrintKeyValue("  Level 0 Dimensions", dims, 25);
+    }
+    PrintKeyValue("  Levels", image->GetLevelCount(), 25);
+    auto tile = image->GetTileSize();
+    PrintKeyValue("  Tile Size",
+                  std::to_string(tile[0]) + " x " + std::to_string(tile[1]),
+                  25);
+    const auto& props = image->GetProperties();
+    PrintKeyValue("  MPP X", props.mpp[0], 25);
+    PrintKeyValue("  MPP Y", props.mpp[1], 25);
+  }
+}
+
+void PrintLevelInfo(const fastslide::SlideImage& image) {
   PrintHeader("Pyramid Levels");
 
-  int level_count = reader.GetLevelCount();
+  int level_count = image.GetLevelCount();
   PrintKeyValue("Number of Levels", level_count);
 
   for (int level = 0; level < level_count; ++level) {
-    auto level_info_or = reader.GetLevelInfo(level);
+    auto level_info_or = image.GetLevelInfo(level);
     if (!level_info_or.ok()) {
       std::cerr << "Error reading level " << level << ": "
                 << level_info_or.status().ToString() << '\n';
@@ -121,8 +163,7 @@ void PrintLevelInfo(const fastslide::SlideReader& reader) {
     PrintKeyValue("  Dimensions", dims_str, 25);
     PrintKeyValue("  Downsample Factor", info.downsample_factor, 25);
 
-    // Calculate approximate MPP for this level
-    const auto& props = reader.GetProperties();
+    const auto& props = image.GetProperties();
     double level_mpp_x = props.mpp[0] * info.downsample_factor;
     double level_mpp_y = props.mpp[1] * info.downsample_factor;
 
@@ -130,7 +171,6 @@ void PrintLevelInfo(const fastslide::SlideReader& reader) {
         std::to_string(level_mpp_x) + " x " + std::to_string(level_mpp_y);
     PrintKeyValue("  Approx MPP", mpp_str, 25);
 
-    // Calculate physical size in mm
     double width_mm = info.dimensions[0] * level_mpp_x / 1000.0;
     double height_mm = info.dimensions[1] * level_mpp_y / 1000.0;
     std::string size_mm =
@@ -139,8 +179,8 @@ void PrintLevelInfo(const fastslide::SlideReader& reader) {
   }
 }
 
-void PrintChannelInfo(const fastslide::SlideReader& reader) {
-  auto channels = reader.GetChannelMetadata();
+void PrintChannelInfo(const fastslide::SlideImage& image) {
+  auto channels = image.GetChannelMetadata();
   if (channels.empty()) {
     return;
   }
@@ -278,17 +318,45 @@ void PrintMetadata(const fastslide::SlideReader& reader) {
   }
 }
 
+// Save a separate-planar (spectral) image as one grayscale PNG per
+// channel. Used for multi-channel 16-bit fluorescence, where a single
+// interleaved PNG would not represent the independent fluorophore
+// planes. Output files are suffixed ``_cN`` before the extension.
+aifocore::Status SaveSpectralImagePNGs(const fastslide::Image& image,
+                                       const std::string& filename) {
+  const uint32_t channels = image.GetChannels();
+  const auto dtype = image.GetDataType();
+  const uint32_t bit_depth = dtype == fastslide::DataType::kUInt16 ? 16U : 8U;
+  const std::size_t bytes_per_sample = bit_depth / 8U;
+  const std::size_t plane_samples =
+      static_cast<std::size_t>(image.GetWidth()) * image.GetHeight();
+  const std::size_t plane_bytes = plane_samples * bytes_per_sample;
+
+  const auto dot = filename.find_last_of('.');
+  const std::string stem =
+      dot == std::string::npos ? filename : filename.substr(0, dot);
+  const std::string ext =
+      dot == std::string::npos ? ".png" : filename.substr(dot);
+
+  for (uint32_t c = 0; c < channels; ++c) {
+    const std::string out = stem + "_c" + std::to_string(c) + ext;
+    const std::span<const uint8_t> plane(image.GetData() + c * plane_bytes,
+                                         plane_bytes);
+    AIFOCORE_RETURN_IF_ERROR(fastslide::runtime::decoders::EncodePngToFile(
+        out, plane, image.GetWidth(), image.GetHeight(), /*channels=*/1U,
+        bit_depth));
+    std::cout << "  wrote channel " << c << " -> " << out << '\n';
+  }
+  return aifocore::Status::OkStatus();
+}
+
 aifocore::Status SaveImagePNG(const fastslide::Image& image,
                               const std::string& filename) {
-  if (image.GetFormat() != fastslide::ImageFormat::kRGB &&
-      image.GetFormat() != fastslide::ImageFormat::kRGBA) {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                "Only RGB/RGBA images can be saved");
-  }
-
-  if (image.GetDataType() != fastslide::DataType::kUInt8) {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                "Only uint8 images can be saved");
+  // Separate-planar images (multi-channel fluorescence) are written as
+  // one grayscale PNG per channel.
+  if (image.GetPlanarConfig() == fastslide::PlanarConfig::kSeparate &&
+      image.GetChannels() > 1U) {
+    return SaveSpectralImagePNGs(image, filename);
   }
 
   if (image.GetPlanarConfig() != fastslide::PlanarConfig::kContiguous) {
@@ -296,16 +364,33 @@ aifocore::Status SaveImagePNG(const fastslide::Image& image,
                                 "Only contiguous images can be saved");
   }
 
+  const auto format = image.GetFormat();
+  if (format != fastslide::ImageFormat::kRGB &&
+      format != fastslide::ImageFormat::kRGBA &&
+      format != fastslide::ImageFormat::kGray) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Only Gray/RGB/RGBA images can be saved");
+  }
+
+  const auto dtype = image.GetDataType();
+  if (dtype != fastslide::DataType::kUInt8 &&
+      dtype != fastslide::DataType::kUInt16) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "Only uint8 and uint16 images can be saved");
+  }
+
   const uint32_t channels = image.GetChannels();
-  const std::size_t pixel_bytes =
-      static_cast<std::size_t>(channels) * image.GetWidth() * image.GetHeight();
+  const uint32_t bit_depth = dtype == fastslide::DataType::kUInt16 ? 16U : 8U;
+  const std::size_t bytes_per_sample = bit_depth / 8U;
+  const std::size_t pixel_bytes = static_cast<std::size_t>(channels) *
+                                  image.GetWidth() * image.GetHeight() *
+                                  bytes_per_sample;
   return fastslide::runtime::decoders::EncodePngToFile(
       filename, std::span<const uint8_t>(image.GetData(), pixel_bytes),
-      image.GetWidth(), image.GetHeight(), channels);
+      image.GetWidth(), image.GetHeight(), channels, bit_depth);
 }
 
-int InfoCommand(const std::string& input_file, bool verbose) {
-  // Create reader using global registry
+int InfoCommand(const std::string& input_file, bool verbose, int image_index) {
   std::cout << "Opening slide: " << input_file << '\n';
   auto reader_or = fastslide::GetGlobalRegistry().CreateReader(input_file);
 
@@ -317,10 +402,21 @@ int InfoCommand(const std::string& input_file, bool verbose) {
 
   auto& reader = *reader_or;
 
-  // Print information
-  PrintSlideInfo(*reader);
-  PrintLevelInfo(*reader);
-  PrintChannelInfo(*reader);
+  // Negative index means "use the primary image".
+  const int resolved_index =
+      image_index < 0 ? reader->GetPrimaryImageIndex() : image_index;
+  auto image_or = reader->GetImage(resolved_index);
+  if (!image_or.ok()) {
+    std::cerr << "Error: invalid --image index " << resolved_index << ": "
+              << image_or.status().ToString() << '\n';
+    return 1;
+  }
+  const auto& image = *image_or.value();
+
+  PrintSlideInfo(*reader, image);
+  PrintImages(*reader);
+  PrintLevelInfo(image);
+  PrintChannelInfo(image);
   PrintAssociatedImages(*reader);
   PrintAssociatedData(*reader);
 
@@ -339,8 +435,7 @@ int InfoCommand(const std::string& input_file, bool verbose) {
 
 int RegionCommand(const std::string& input_file, double x, double y,
                   uint32_t width, uint32_t height, int level,
-                  const std::string& output_file) {
-  // Create reader using global registry
+                  const std::string& output_file, int image_index) {
   std::cout << "Opening slide: " << input_file << '\n';
   auto reader_or = fastslide::GetGlobalRegistry().CreateReader(input_file);
 
@@ -352,18 +447,32 @@ int RegionCommand(const std::string& input_file, double x, double y,
 
   auto& reader = *reader_or;
 
+  const int resolved_index =
+      image_index < 0 ? reader->GetPrimaryImageIndex() : image_index;
+
   std::cout << "Reading region:\n";
   std::cout << "  Position: (" << std::fixed << std::setprecision(2) << x
             << ", " << y << ") [FRACTIONAL]\n";
   std::cout << "  Size: " << width << " x " << height << " pixels\n";
   std::cout << "  Level: " << level << '\n';
   std::cout << "  Format: " << reader->GetFormatName() << '\n';
+  std::cout << "  Image Index: " << resolved_index;
+  if (image_index < 0) {
+    std::cout << " (primary)";
+  }
+  std::cout << '\n';
 
-  // For MRXS, use ReadRegionFractional to preserve fractional coordinates
   aifocore::Result<fastslide::Image> image_or =
       aifocore::Status(aifocore::StatusCode::kUnknown, "Uninitialized");
 
+  // MRXS keeps its fractional fast path, and is single-image, so the
+  // --image flag is only meaningful for multi-image formats like VSI.
   if (reader->GetFormatName() == "MRXS") {
+    if (image_index > 0) {
+      std::cerr << "Error: MRXS only exposes a single image (got --image "
+                << image_index << ")\n";
+      return 1;
+    }
     std::cout << "  Using MRXS fractional coordinate path...\n";
     auto* mrxs_reader = dynamic_cast<fastslide::MrxsReader*>(reader.get());
     if (mrxs_reader) {
@@ -379,12 +488,17 @@ int RegionCommand(const std::string& input_file, double x, double y,
       return 1;
     }
   } else {
-    // For other formats, use standard RegionSpec (truncates to uint32)
+    auto target_or = reader->GetImage(resolved_index);
+    if (!target_or.ok()) {
+      std::cerr << "Error: invalid --image index " << resolved_index << ": "
+                << target_or.status().ToString() << '\n';
+      return 1;
+    }
     fastslide::RegionSpec region{
         .top_left = {static_cast<uint32_t>(x), static_cast<uint32_t>(y)},
         .size = {width, height},
         .level = level};
-    image_or = reader->ReadRegion(region);
+    image_or = target_or.value()->ReadRegion(region);
   }
 
   if (!image_or.ok()) {
@@ -420,6 +534,9 @@ int main(int argc, char* argv[]) {
   bool verbose = false;
   bool dump_associated_images = false;
   std::string associated_images_dir = ".";
+  // Default -1 means "use the primary image". Files like Olympus VSI can
+  // expose several pyramids; this flag picks which one to operate on.
+  int image_index = -1;
 
   // Region flags
   double x = 0.0;
@@ -445,6 +562,10 @@ int main(int argc, char* argv[]) {
   info_cmd->add_option(
       "--associated-images-dir", associated_images_dir,
       "Output directory for --dump-associated-images (default: current dir)");
+  info_cmd->add_option(
+      "--image", image_index,
+      "Image index to inspect (default: primary). Use the 'Images' section "
+      "to list available indices for multi-image formats like Olympus VSI.");
 
   // Region command
   auto* region_cmd =
@@ -466,11 +587,15 @@ int main(int argc, char* argv[]) {
   region_cmd
       ->add_option("--output,-o", output_file, "Output file path (PNG or JPEG)")
       ->default_val("output.png");
+  region_cmd->add_option(
+      "--image", image_index,
+      "Image index to read from (default: primary). Use 'info' to list "
+      "available indices for multi-image formats like Olympus VSI.");
 
   CLI11_PARSE(app, argc, argv);
 
   if (info_cmd->parsed()) {
-    int rc = InfoCommand(input_file, verbose);
+    int rc = InfoCommand(input_file, verbose, image_index);
     if (rc != 0) {
       return rc;
     }
@@ -488,7 +613,8 @@ int main(int argc, char* argv[]) {
   }
 
   if (region_cmd->parsed()) {
-    return RegionCommand(input_file, x, y, width, height, level, output_file);
+    return RegionCommand(input_file, x, y, width, height, level, output_file,
+                         image_index);
   }
 
   return 0;

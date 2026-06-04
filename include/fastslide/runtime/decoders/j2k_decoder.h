@@ -19,7 +19,7 @@
 #include <span>
 
 #include "aifocore/status/result.h"
-#include "fastslide/runtime/decoders/jpeg_decoder.h"
+#include "fastslide/runtime/decoders/decoded_image.h"
 
 namespace fastslide::runtime::decoders {
 
@@ -43,6 +43,23 @@ struct J2kDecodeOptions {
 /// Handles arbitrary horizontal/vertical chroma subsampling; for YCbCr input
 /// the conversion uses the JPEG/ITU-R BT.601 coefficients
 [[nodiscard]] aifocore::Result<DecodedRgb> DecodeJ2kToRgb(
+    std::span<const uint8_t> j2k_bytes, const J2kDecodeOptions& options = {});
+
+/// @brief Decode a JPEG 2000 codestream (J2K or JP2) at native 16-bit
+/// precision into interleaved samples.
+///
+/// Accepts both single-component (Olympus VSI fluorescence sub-stacks,
+/// one filter per stack) and three-component (brightfield-style RGB)
+/// codestreams; the result's ``channels`` field tells the caller which
+/// is which. Preserves the codestream's native sample precision:
+/// 12/14/16-bit components are linearly rescaled into the full
+/// ``[0, 65535]`` range (left-shifted by ``16 - prec``) rather than
+/// quantised to 8 bits.
+///
+/// YCbCr -> RGB conversion is not supported for the 16-bit path because
+/// the fluorescence slides we target are always stored as RGB or mono;
+/// only ``J2kColorspace::kRgb`` is accepted here.
+[[nodiscard]] aifocore::Result<DecodedRgb16> DecodeJ2k16(
     std::span<const uint8_t> j2k_bytes, const J2kDecodeOptions& options = {});
 
 }  // namespace fastslide::runtime::decoders

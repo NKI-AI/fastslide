@@ -30,6 +30,7 @@
 #include "fastslide/readers/dicom/dicom_format_plugin.h"
 #include "fastslide/readers/generictiff/generictiff_format_plugin.h"
 #include "fastslide/readers/ndpitiff/ndpitiff_format_plugin.h"
+#include "fastslide/readers/olympusvsi/olympusvsi_format_plugin.h"
 
 /**
  * @file readers.h
@@ -66,6 +67,7 @@ inline std::vector<FormatDescriptor> GetBuiltinFormats() {
       formats::ndpitiff::CreateNdpiTiffFormatDescriptor(),
       formats::bif::CreateBifFormatDescriptor(),
       formats::dicom::CreateDicomFormatDescriptor(),
+      formats::olympusvsi::CreateOlympusVsiFormatDescriptor(),
   };
 
   // iSyntax format

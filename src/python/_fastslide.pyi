@@ -184,6 +184,90 @@ class AssociatedData:
     def clear_cache(self) -> None:
         """Clear the associated data cache"""
 
+class SlideImageView:
+    """One navigable pyramid (image) inside a slide file.
+
+    Returned by ``slide.images[i]``. Stateless except for the (weak) reader
+    handle, so it can be safely passed across threads.
+    """
+
+    @property
+    def name(self) -> str:
+        """Image name (e.g. 'navigator', 'region 0')."""
+
+    @property
+    def index(self) -> int:
+        """Image index inside the container."""
+
+    @property
+    def level_count(self) -> int:
+        """Number of pyramid levels in this image."""
+
+    @property
+    def dimensions(self) -> tuple[int, int]:
+        """(width, height) at level 0."""
+
+    @property
+    def level_dimensions(self) -> tuple[tuple[int, int], ...]:
+        """Tuple of (width, height) per level."""
+
+    @property
+    def level_downsamples(self) -> tuple[float, ...]:
+        """Tuple of downsample factors per level."""
+
+    @property
+    def mpp(self) -> tuple[float, float]:
+        """Microns-per-pixel as (mpp_x, mpp_y)."""
+
+    @property
+    def z_count(self) -> int:
+        """Number of focal planes (Z) in this image."""
+
+    @property
+    def t_count(self) -> int:
+        """Number of time points (T) in this image."""
+
+    @property
+    def z_spacing_um(self) -> float | None:
+        """Focal-plane spacing in microns, or None if unknown."""
+
+    @property
+    def t_interval_s(self) -> float | None:
+        """Time-point interval in seconds, or None if unknown."""
+
+    def read_region(
+        self,
+        location: tuple[int, int],
+        level: int,
+        size: tuple[int, int],
+        z: int = 0,
+        t: int = 0,
+    ) -> Image:
+        """Read a region from this image using level-native coordinates."""
+
+    def get_stack_info(self) -> dict:
+        """Z/T stack extent and spacing as a dict."""
+
+    def get_best_level_for_downsample(self, downsample: float) -> int:
+        """Best level for a given downsample factor."""
+
+class SlideImages:
+    """Sequence of ``SlideImageView``s exposed as ``slide.images``."""
+
+    def __len__(self) -> int: ...
+    def __getitem__(self, index: int) -> SlideImageView: ...
+    def __iter__(self) -> object: ...
+    @property
+    def primary_index(self) -> int:
+        """Index of the primary (largest) image."""
+
+    @property
+    def primary(self) -> SlideImageView:
+        """The primary ``SlideImageView``."""
+
+    def names(self) -> list[str]:
+        """Names of all images, in order."""
+
 class FastSlide:
     @staticmethod
     def from_file_path(file_path: object) -> FastSlide:
@@ -193,7 +277,14 @@ class FastSlide:
     def from_uri(uri: str) -> FastSlide:
         """Create FastSlide from URI (future)"""
 
-    def read_region(self, location: tuple[int, int], level: int, size: tuple[int, int]) -> Image:
+    def read_region(
+        self,
+        location: tuple[int, int],
+        level: int,
+        size: tuple[int, int],
+        z: int = 0,
+        t: int = 0,
+    ) -> Image:
         """
         Read a region from the slide using level-native coordinates
 
@@ -201,6 +292,8 @@ class FastSlide:
             location: Tuple (x, y) coordinates in level-native space
             level: Pyramid level (0=highest resolution)
             size: Tuple (width, height) of region
+            z: Focal-plane index (0=first plane)
+            t: Time-point index (0=first time point)
 
         Returns:
             fastslide.Image: Image object. Call .numpy() to get array view.
@@ -208,6 +301,25 @@ class FastSlide:
         Note: Coordinates are in level-native space. To convert from level-0
         coordinates, use convert_level0_to_level_native().
         """
+
+    def get_stack_info(self) -> dict:
+        """Z/T stack extent and spacing of the primary image as a dict."""
+
+    @property
+    def z_count(self) -> int:
+        """Number of focal planes (Z) in the primary image."""
+
+    @property
+    def t_count(self) -> int:
+        """Number of time points (T) in the primary image."""
+
+    @property
+    def z_spacing_um(self) -> float | None:
+        """Focal-plane spacing in microns, or None if unknown."""
+
+    @property
+    def t_interval_s(self) -> float | None:
+        """Time-point interval in seconds, or None if unknown."""
 
     def convert_level0_to_level_native(self, x: int, y: int, level: int) -> tuple:
         """
@@ -284,6 +396,24 @@ class FastSlide:
     @property
     def channel_metadata(self) -> list:
         """List of channel metadata dictionaries"""
+
+    @property
+    def images(self) -> SlideImages:
+        """Sequence of navigable images (pyramids) in this file.
+
+        For most slides this has length 1. Olympus VSI files can expose a
+        low-resolution 'navigator' image alongside one or more
+        high-resolution 'region' images. The top-level ``FastSlide``
+        properties (``dimensions``, ``level_count``, ``read_region``, ...)
+        forward to ``slide.images.primary``.
+        """
+
+    @property
+    def num_images(self) -> int:
+        """Number of navigable images (pyramids) in this file.
+
+        Equivalent to ``len(slide.images)``.
+        """
 
     @property
     def associated_images(self) -> AssociatedImages:

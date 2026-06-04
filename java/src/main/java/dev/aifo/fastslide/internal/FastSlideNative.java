@@ -477,6 +477,286 @@ public final class FastSlideNative {
   }
 
   // -----------------------------------------------------------------------
+  // Multi-image container API
+  // -----------------------------------------------------------------------
+  private static final MethodHandle READER_GET_IMAGE_COUNT =
+      downcall("fastslide_slide_reader_get_image_count", FunctionDescriptor.of(JAVA_INT, ADDRESS));
+  private static final MethodHandle READER_GET_PRIMARY_IMAGE_INDEX =
+      downcall(
+          "fastslide_slide_reader_get_primary_image_index",
+          FunctionDescriptor.of(JAVA_INT, ADDRESS));
+  private static final MethodHandle READER_GET_IMAGE_NAMES =
+      downcall(
+          "fastslide_slide_reader_get_image_names",
+          FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
+  private static final MethodHandle READER_FREE_IMAGE_NAMES =
+      downcall(
+          "fastslide_slide_reader_free_image_names", FunctionDescriptor.ofVoid(ADDRESS, JAVA_INT));
+  private static final MethodHandle READER_GET_IMAGE =
+      downcall(
+          "fastslide_slide_reader_get_image", FunctionDescriptor.of(ADDRESS, ADDRESS, JAVA_INT));
+
+  public static int readerGetImageCount(MemorySegment reader) {
+    try {
+      clearLastError();
+      int count = (int) READER_GET_IMAGE_COUNT.invokeExact(reader);
+      if (count < 0)
+        throw new FastSlideException(
+            "fastslide_slide_reader_get_image_count: " + lastErrorOr("failed"));
+      return count;
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  public static int readerGetPrimaryImageIndex(MemorySegment reader) {
+    try {
+      clearLastError();
+      int index = (int) READER_GET_PRIMARY_IMAGE_INDEX.invokeExact(reader);
+      if (index < 0)
+        throw new FastSlideException(
+            "fastslide_slide_reader_get_primary_image_index: " + lastErrorOr("failed"));
+      return index;
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  public static String[] readerGetImageNames(Arena arena, MemorySegment reader) {
+    try {
+      MemorySegment pNames = arena.allocate(ADDRESS);
+      MemorySegment pCount = arena.allocate(JAVA_INT);
+      clearLastError();
+      checkSuccess(
+          (int) READER_GET_IMAGE_NAMES.invokeExact(reader, pNames, pCount),
+          "fastslide_slide_reader_get_image_names");
+      int count = pCount.get(JAVA_INT, 0);
+      MemorySegment arrayPtr =
+          pNames.get(ADDRESS, 0).reinterpret((long) count * ADDRESS.byteSize());
+      String[] result = new String[count];
+      for (int i = 0; i < count; i++) {
+        result[i] = arrayPtr.getAtIndex(ADDRESS, i).reinterpret(Long.MAX_VALUE).getString(0);
+      }
+      READER_FREE_IMAGE_NAMES.invokeExact(pNames.get(ADDRESS, 0), count);
+      return result;
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  public static MemorySegment readerGetImage(MemorySegment reader, int index) {
+    try {
+      clearLastError();
+      MemorySegment image = (MemorySegment) READER_GET_IMAGE.invokeExact(reader, index);
+      return checkNonNull(image, "fastslide_slide_reader_get_image");
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // Per-image (per-series) API
+  // -----------------------------------------------------------------------
+  private static final MethodHandle SLIDE_IMAGE_FREE =
+      downcall("fastslide_slide_image_free", FunctionDescriptor.ofVoid(ADDRESS));
+  private static final MethodHandle SLIDE_IMAGE_GET_LEVEL_COUNT =
+      downcall("fastslide_slide_image_get_level_count", FunctionDescriptor.of(JAVA_INT, ADDRESS));
+  private static final MethodHandle SLIDE_IMAGE_GET_LEVEL_DIMS =
+      downcall(
+          "fastslide_slide_image_get_level_dimensions",
+          FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, ADDRESS));
+  private static final MethodHandle SLIDE_IMAGE_GET_LEVEL_DOWNSAMPLE =
+      downcall(
+          "fastslide_slide_image_get_level_downsample",
+          FunctionDescriptor.of(JAVA_DOUBLE, ADDRESS, JAVA_INT));
+  private static final MethodHandle SLIDE_IMAGE_GET_BASE_DIMS =
+      downcall(
+          "fastslide_slide_image_get_base_dimensions",
+          FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
+  private static final MethodHandle SLIDE_IMAGE_GET_TILE_SIZE =
+      downcall(
+          "fastslide_slide_image_get_tile_size", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
+  private static final MethodHandle SLIDE_IMAGE_GET_IMAGE_FORMAT =
+      downcall("fastslide_slide_image_get_image_format", FunctionDescriptor.of(JAVA_INT, ADDRESS));
+  private static final MethodHandle SLIDE_IMAGE_GET_DATA_TYPE =
+      downcall("fastslide_slide_image_get_data_type", FunctionDescriptor.of(JAVA_INT, ADDRESS));
+  private static final MethodHandle SLIDE_IMAGE_GET_CHANNEL_METADATA =
+      downcall(
+          "fastslide_slide_image_get_channel_metadata",
+          FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS, ADDRESS));
+  private static final MethodHandle SLIDE_IMAGE_GET_PROPERTIES =
+      downcall(
+          "fastslide_slide_image_get_properties",
+          FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
+  private static final MethodHandle SLIDE_IMAGE_READ_REGION_COORDS =
+      downcall(
+          "fastslide_slide_image_read_region_coords",
+          FunctionDescriptor.of(
+              ADDRESS, ADDRESS, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT));
+
+  public static void slideImageFree(MemorySegment image) {
+    try {
+      SLIDE_IMAGE_FREE.invokeExact(image);
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  public static int slideImageGetLevelCount(MemorySegment image) {
+    try {
+      clearLastError();
+      int count = (int) SLIDE_IMAGE_GET_LEVEL_COUNT.invokeExact(image);
+      if (count < 0)
+        throw new FastSlideException(
+            "fastslide_slide_image_get_level_count: " + lastErrorOr("failed"));
+      return count;
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  public static int[] slideImageGetLevelDimensions(Arena arena, MemorySegment image, int level) {
+    try {
+      MemorySegment dims = arena.allocate(DIMS_SIZE);
+      clearLastError();
+      checkSuccess(
+          (int) SLIDE_IMAGE_GET_LEVEL_DIMS.invokeExact(image, level, dims),
+          "fastslide_slide_image_get_level_dimensions");
+      return new int[] {dims.get(JAVA_INT, 0), dims.get(JAVA_INT, 4)};
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  public static double slideImageGetLevelDownsample(MemorySegment image, int level) {
+    try {
+      clearLastError();
+      double d = (double) SLIDE_IMAGE_GET_LEVEL_DOWNSAMPLE.invokeExact(image, level);
+      if (d < 0.0)
+        throw new FastSlideException(
+            "fastslide_slide_image_get_level_downsample: " + lastErrorOr("failed"));
+      return d;
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  public static int[] slideImageGetBaseDimensions(Arena arena, MemorySegment image) {
+    try {
+      MemorySegment dims = arena.allocate(DIMS_SIZE);
+      clearLastError();
+      checkSuccess(
+          (int) SLIDE_IMAGE_GET_BASE_DIMS.invokeExact(image, dims),
+          "fastslide_slide_image_get_base_dimensions");
+      return new int[] {dims.get(JAVA_INT, 0), dims.get(JAVA_INT, 4)};
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  public static int[] slideImageGetTileSize(Arena arena, MemorySegment image) {
+    try {
+      MemorySegment dims = arena.allocate(DIMS_SIZE);
+      clearLastError();
+      checkSuccess(
+          (int) SLIDE_IMAGE_GET_TILE_SIZE.invokeExact(image, dims),
+          "fastslide_slide_image_get_tile_size");
+      return new int[] {dims.get(JAVA_INT, 0), dims.get(JAVA_INT, 4)};
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  public static int slideImageGetImageFormat(MemorySegment image) {
+    try {
+      clearLastError();
+      return (int) SLIDE_IMAGE_GET_IMAGE_FORMAT.invokeExact(image);
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  public static int slideImageGetDataType(MemorySegment image) {
+    try {
+      clearLastError();
+      return (int) SLIDE_IMAGE_GET_DATA_TYPE.invokeExact(image);
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  /**
+   * Returns channel metadata as Object[][count], each row: [String name, String biomarker, int r,
+   * int g, int b, int exposureTime, int signalUnits]
+   */
+  public static Object[][] slideImageGetChannelMetadata(Arena arena, MemorySegment image) {
+    try {
+      MemorySegment pMeta = arena.allocate(ADDRESS);
+      MemorySegment pCount = arena.allocate(JAVA_INT);
+      clearLastError();
+      checkSuccess(
+          (int) SLIDE_IMAGE_GET_CHANNEL_METADATA.invokeExact(image, pMeta, pCount),
+          "fastslide_slide_image_get_channel_metadata");
+      int count = pCount.get(JAVA_INT, 0);
+      MemorySegment arrayBase = pMeta.get(ADDRESS, 0).reinterpret(count * CHANNEL_META_SIZE);
+      Object[][] result = new Object[count][];
+      for (int i = 0; i < count; i++) {
+        long base = i * CHANNEL_META_SIZE;
+        String name = readNullableString(arrayBase.get(ADDRESS, base));
+        String biomarker = readNullableString(arrayBase.get(ADDRESS, base + 8));
+        int r = Byte.toUnsignedInt(arrayBase.get(JAVA_BYTE, base + 16));
+        int g = Byte.toUnsignedInt(arrayBase.get(JAVA_BYTE, base + 17));
+        int b = Byte.toUnsignedInt(arrayBase.get(JAVA_BYTE, base + 18));
+        int exposureTime = arrayBase.get(JAVA_INT, base + 20);
+        int signalUnits = arrayBase.get(JAVA_INT, base + 24);
+        result[i] = new Object[] {name, biomarker, r, g, b, exposureTime, signalUnits};
+      }
+      // Shared free helper with the reader-level channel metadata.
+      READER_FREE_CHANNEL_METADATA.invokeExact(pMeta.get(ADDRESS, 0), count);
+      return result;
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  /** Returns [mpp_x, mpp_y, objective_magnification, objective_name, scanner_model, scan_date]. */
+  public static Object[] slideImageGetProperties(Arena arena, MemorySegment image) {
+    try {
+      MemorySegment props = arena.allocate(PROPS_SIZE);
+      clearLastError();
+      checkSuccess(
+          (int) SLIDE_IMAGE_GET_PROPERTIES.invokeExact(image, props),
+          "fastslide_slide_image_get_properties");
+
+      double mppX = props.get(JAVA_DOUBLE, 0);
+      double mppY = props.get(JAVA_DOUBLE, 8);
+      double magnification = props.get(JAVA_DOUBLE, 16);
+
+      String objectiveName = readNullableString(props.get(ADDRESS, 24));
+      String scannerModel = readNullableString(props.get(ADDRESS, 32));
+      String scanDate = readNullableString(props.get(ADDRESS, 40));
+
+      // Shared free helper with the reader-level properties.
+      READER_FREE_PROPERTIES.invokeExact(props);
+      return new Object[] {mppX, mppY, magnification, objectiveName, scannerModel, scanDate};
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  public static MemorySegment slideImageReadRegionCoords(
+      MemorySegment image, int x, int y, int w, int h, int level) {
+    try {
+      clearLastError();
+      MemorySegment img =
+          (MemorySegment) SLIDE_IMAGE_READ_REGION_COORDS.invokeExact(image, x, y, w, h, level);
+      return checkNonNull(img, "fastslide_slide_image_read_region_coords");
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // Image
   // -----------------------------------------------------------------------
   private static final MethodHandle IMAGE_FREE =

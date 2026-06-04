@@ -533,7 +533,7 @@ decode. The discrepancies below were established from the bundled sample files (
    in ``OS-1.bif`` only ``124`` of ``7035`` joined joints are exactly ``100`` and the
    rest spread down to ``84``, so an equality test would discard ~98% of the usable
    geometry and the file could not be stitched. This decoder keeps joints at or above
-   an empirical high-confidence floor (``>= 98``).
+   an empirical high-confidence floor (``>= 95``).
 
 5. **Vertical overlap is real and must be applied.** The whitepaper says DP 200 files
    never have vertical overlap (``OverlapY`` must be 0 and decoders should stop

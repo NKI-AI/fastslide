@@ -16,12 +16,46 @@
 
 #include <algorithm>
 #include <cstring>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <vector>
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/runtime/tile_writer.h"
+#include "fastslide/self_image_view.h"
 
 namespace fastslide {
+
+SlideReader::SlideReader() = default;
+SlideReader::~SlideReader() = default;
+
+std::vector<std::string> SlideReader::GetImageNames() const {
+  std::vector<std::string> names;
+  const int count = GetImageCount();
+  names.reserve(static_cast<size_t>(std::max(count, 0)));
+  for (int i = 0; i < count; ++i) {
+    names.emplace_back("image " + std::to_string(i));
+  }
+  return names;
+}
+
+aifocore::Result<const SlideImage*> SlideReader::GetImage(int index) const {
+  if (index < 0 || index >= GetImageCount()) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kNotFound,
+        aifocore::fmt::format("Image index {} out of range [0, {})", index,
+                              GetImageCount()));
+  }
+  // Default container behaviour: lazily create a `SelfImageView` that
+  // forwards back to this reader. Multi-image readers override `GetImage`
+  // entirely and never reach this code path.
+  std::call_once(self_image_view_once_, [this]() {
+    self_image_view_ = std::make_unique<SelfImageView>(*this);
+  });
+  return self_image_view_.get();
+}
 
 RegionSpec SlideReader::ClampRegion(const RegionSpec& region,
                                     const ImageDimensions& image_dims) {
@@ -52,6 +86,14 @@ RegionSpec SlideReader::ClampRegion(const RegionSpec& region,
   clamped.size[1] = std::min(clamped.size[1], remaining_height);
 
   return clamped;
+}
+
+StackInfo SlideReader::GetStackInfo() const {
+  auto image = GetImage(GetPrimaryImageIndex());
+  if (!image.ok()) {
+    return {};
+  }
+  return (*image)->GetStackInfo();
 }
 
 int SlideReader::GetBestLevelForDownsample(double downsample) const {
@@ -133,6 +175,9 @@ aifocore::Result<core::TileRequest> SlideReader::RegionToTileRequest(
 
   // Include visible channel indices if set
   request.channel_indices = visible_channels_;
+
+  // Forward the focal/time plane selector to the format's PrepareRequest.
+  request.plane = region.plane;
 
   return request;
 }

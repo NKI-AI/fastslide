@@ -71,110 +71,127 @@ namespace {
 constexpr const char* kVLWholeSlideMicroscopyImageStorage =
     "1.2.840.10008.5.1.4.1.1.77.1.6";
 
-// Resolve a DICOM keyword to its numeric tag.
-uint32_t TagFromKeyword(const char* keyword) {
-  return dcm_dict_tag_from_keyword(keyword);
+// ---------------------------------------------------------------------------
+// libdicom metadata access
+//
+// Every read below is a thin adapter over libdicom's public element API
+// (declared in <dicom/dicom.h>). libdicom prescribes a fixed access sequence:
+// resolve a keyword to a numeric tag (dcm_dict_tag_from_keyword), look the tag
+// up in the dataset (dcm_dataset_get), then pull the typed payload out with
+// the matching dcm_element_get_value_* accessor. These helpers add no logic of
+// their own beyond funnelling that sequence through the single FindElement()
+// primitive and translating libdicom's GError-style out-parameters into
+// std::optional / aifocore::Status.
+// ---------------------------------------------------------------------------
+
+// Resolve `keyword` to its element in `dataset`, or nullptr if absent.
+DcmElement* FindElement(const DcmDataSet* dataset, const char* keyword) {
+  if (dataset == nullptr) {
+    return nullptr;
+  }
+  return dcm_dataset_get(nullptr, dataset, dcm_dict_tag_from_keyword(keyword));
 }
 
-// Get an integer value from a dataset by keyword.
-std::optional<int64_t> GetTagInt(const DcmDataSet* dataset,
-                                 const char* keyword) {
-  uint32_t tag = TagFromKeyword(keyword);
-  DcmElement* element = dcm_dataset_get(nullptr, dataset, tag);
-  if (!element)
-    return std::nullopt;
-  int64_t result = 0;
-  if (!dcm_element_get_value_integer(nullptr, element, 0, &result)) {
+// Typed metadata read. Instantiated only for the three value shapes the
+// reader needs (int64_t, std::string_view, double) via the explicit
+// specialisations below; any other T fails to link by design.
+template <typename T>
+[[nodiscard]] std::optional<T> GetTag(const DcmDataSet* dataset,
+                                      const char* keyword, int index = 0);
+
+template <>
+std::optional<int64_t> GetTag<int64_t>(const DcmDataSet* dataset,
+                                       const char* keyword, int index) {
+  DcmElement* element = FindElement(dataset, keyword);
+  int64_t value = 0;
+  if (element == nullptr ||
+      !dcm_element_get_value_integer(nullptr, element, index, &value)) {
     return std::nullopt;
   }
-  return result;
+  return value;
 }
 
-// Get a string value from a dataset by keyword.
-std::optional<std::string_view> GetTagStr(const DcmDataSet* dataset,
-                                          const char* keyword, int index = 0) {
-  uint32_t tag = TagFromKeyword(keyword);
-  DcmElement* element = dcm_dataset_get(nullptr, dataset, tag);
-  if (!element)
-    return std::nullopt;
+template <>
+std::optional<std::string_view> GetTag<std::string_view>(
+    const DcmDataSet* dataset, const char* keyword, int index) {
+  DcmElement* element = FindElement(dataset, keyword);
   const char* value = nullptr;
-  if (!dcm_element_get_value_string(nullptr, element, index, &value) ||
-      !value) {
+  if (element == nullptr ||
+      !dcm_element_get_value_string(nullptr, element, index, &value) ||
+      value == nullptr) {
     return std::nullopt;
   }
   return std::string_view(value);
 }
 
-// Get a decimal string value as double.
-std::optional<double> GetTagDecimalStr(const DcmDataSet* dataset,
-                                       const char* keyword, int index = 0) {
-  auto str = GetTagStr(dataset, keyword, index);
-  if (!str)
+template <>
+std::optional<double> GetTag<double>(const DcmDataSet* dataset,
+                                     const char* keyword, int index) {
+  // DICOM Decimal Strings (VR `DS`) are transported as text and parsed here.
+  auto text = GetTag<std::string_view>(dataset, keyword, index);
+  if (!text) {
     return std::nullopt;
+  }
   char* end = nullptr;
-  double value = std::strtod(str->data(), &end);
-  if (end == str->data() || std::isnan(value))
+  const double value = std::strtod(text->data(), &end);
+  if (end == text->data() || std::isnan(value)) {
     return std::nullopt;
+  }
   return value;
 }
 
-// Read a tag whose value may be encoded numerically (UL/US/SL/SS/...) or
-// as a DICOM Integer String (VR `IS`). libdicom's get_value_integer only
-// accepts numeric VRs, so we transparently fall back to string parsing.
-std::optional<int64_t> GetTagIntOrStr(const DcmDataSet* dataset,
-                                      const char* keyword) {
-  if (auto numeric = GetTagInt(dataset, keyword)) {
+// Some integer-valued attributes (e.g. NumberOfFrames) use VR `IS` (Integer
+// String), which libdicom's numeric accessor rejects. Prefer the numeric
+// form, then fall back to parsing the textual form.
+std::optional<int64_t> GetTagAsInteger(const DcmDataSet* dataset,
+                                       const char* keyword) {
+  if (auto numeric = GetTag<int64_t>(dataset, keyword)) {
     return numeric;
   }
-  auto str = GetTagStr(dataset, keyword);
-  if (!str)
+  auto text = GetTag<std::string_view>(dataset, keyword);
+  if (!text) {
     return std::nullopt;
+  }
   char* end = nullptr;
   errno = 0;
-  long long value = std::strtoll(str->data(), &end, 10);
-  if (end == str->data() || errno != 0)
+  const long long value = std::strtoll(text->data(), &end, 10);
+  if (end == text->data() || errno != 0) {
     return std::nullopt;
+  }
   return static_cast<int64_t>(value);
 }
 
-// Get a sequence from a dataset.
-DcmSequence* GetTagSeq(const DcmDataSet* dataset, const char* keyword) {
-  uint32_t tag = TagFromKeyword(keyword);
-  DcmElement* element = dcm_dataset_get(nullptr, dataset, tag);
-  if (!element)
-    return nullptr;
-  DcmSequence* seq = nullptr;
-  if (!dcm_element_get_value_sequence(nullptr, element, &seq)) {
+// Resolve `keyword` to a sequence and return its `index`-th item dataset, or
+// nullptr if the tag is absent or has no such item.
+DcmDataSet* GetSequenceItem(const DcmDataSet* dataset, const char* keyword,
+                            uint32_t index) {
+  DcmElement* element = FindElement(dataset, keyword);
+  DcmSequence* sequence = nullptr;
+  if (element == nullptr ||
+      !dcm_element_get_value_sequence(nullptr, element, &sequence) ||
+      sequence == nullptr) {
     return nullptr;
   }
-  return seq;
+  return dcm_sequence_get(nullptr, sequence, index);
 }
 
-// Get a sequence item dataset.
-DcmDataSet* GetTagSeqItem(const DcmDataSet* dataset, const char* keyword,
-                          uint32_t index) {
-  DcmSequence* seq = GetTagSeq(dataset, keyword);
-  if (!seq)
-    return nullptr;
-  return dcm_sequence_get(nullptr, seq, index);
-}
-
-// Verify an integer tag has the expected value.
-aifocore::Status VerifyTagInt(const DcmDataSet* dataset,
-                              const char* tag_description, int64_t expected,
-                              bool required) {
-  auto value = GetTagInt(dataset, tag_description);
+// Require an integer attribute to equal `expected`. A missing optional tag
+// passes; a missing required tag or a value mismatch fails.
+aifocore::Status VerifyTag(const DcmDataSet* dataset, const char* keyword,
+                           int64_t expected, bool required) {
+  auto value = GetTag<int64_t>(dataset, keyword);
   if (!value) {
-    if (!required)
+    if (!required) {
       return aifocore::Status::OkStatus();
+    }
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
-        aifocore::fmt::format("Missing tag: {}", tag_description));
+        aifocore::fmt::format("Missing tag: {}", keyword));
   }
   if (*value != expected) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
-        aifocore::fmt::format("{} = {} (expected {})", tag_description, *value,
+        aifocore::fmt::format("{} = {} (expected {})", keyword, *value,
                               expected));
   }
   return aifocore::Status::OkStatus();
@@ -193,8 +210,7 @@ enum class DicomImagePurpose {
 // Classify a DICOM file's purpose from its ImageType attribute.
 // ImageType has value multiplicity 4 for WSI: derivation\primary\type\detail.
 DicomImagePurpose ClassifyImageType(const DcmDataSet* metadata) {
-  uint32_t tag = TagFromKeyword("ImageType");
-  DcmElement* element = dcm_dataset_get(nullptr, metadata, tag);
+  DcmElement* element = FindElement(metadata, "ImageType");
   if (!element)
     return DicomImagePurpose::kUnknown;
 
@@ -340,7 +356,8 @@ aifocore::Result<std::shared_ptr<DicomFile>> DicomReader::OpenDicomFile(
   }
 
   // Check MediaStorageSOPClassUID == VL Whole Slide Microscopy.
-  auto sop_class = GetTagStr(file_meta, "MediaStorageSOPClassUID");
+  auto sop_class =
+      GetTag<std::string_view>(file_meta, "MediaStorageSOPClassUID");
   if (!sop_class || *sop_class != kVLWholeSlideMicroscopyImageStorage) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
@@ -364,7 +381,7 @@ aifocore::Result<std::shared_ptr<DicomFile>> DicomReader::OpenDicomFile(
     }
 
     // SeriesInstanceUID = slide identity.
-    auto series_uid = GetTagStr(metadata, "SeriesInstanceUID");
+    auto series_uid = GetTag<std::string_view>(metadata, "SeriesInstanceUID");
     if (!series_uid) {
       return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
                                   "Missing SeriesInstanceUID");
@@ -372,40 +389,42 @@ aifocore::Result<std::shared_ptr<DicomFile>> DicomReader::OpenDicomFile(
     file->slide_id = std::string(*series_uid);
 
     // SOPInstanceUID for duplicate detection.
-    if (auto sop_uid = GetTagStr(metadata, "SOPInstanceUID")) {
+    if (auto sop_uid = GetTag<std::string_view>(metadata, "SOPInstanceUID")) {
       file->sop_instance_uid = std::string(*sop_uid);
     }
 
     // Dimensions.
-    if (auto total_cols = GetTagInt(metadata, "TotalPixelMatrixColumns")) {
+    if (auto total_cols =
+            GetTag<int64_t>(metadata, "TotalPixelMatrixColumns")) {
       file->total_pixel_matrix_columns = static_cast<uint32_t>(*total_cols);
     }
-    if (auto total_rows = GetTagInt(metadata, "TotalPixelMatrixRows")) {
+    if (auto total_rows = GetTag<int64_t>(metadata, "TotalPixelMatrixRows")) {
       file->total_pixel_matrix_rows = static_cast<uint32_t>(*total_rows);
     }
-    if (auto cols = GetTagInt(metadata, "Columns")) {
+    if (auto cols = GetTag<int64_t>(metadata, "Columns")) {
       file->columns = static_cast<uint32_t>(*cols);
     }
-    if (auto rows = GetTagInt(metadata, "Rows")) {
+    if (auto rows = GetTag<int64_t>(metadata, "Rows")) {
       file->rows = static_cast<uint32_t>(*rows);
     }
 
     // Concatenation metadata (PS3.3 §C.7.6.16.2.2.4). All four tags are
     // optional; when ConcatenationUID is absent the file represents a
     // standalone, unsegmented level.
-    if (auto concat_uid = GetTagStr(metadata, "ConcatenationUID")) {
+    if (auto concat_uid =
+            GetTag<std::string_view>(metadata, "ConcatenationUID")) {
       file->concatenation_uid = std::string(*concat_uid);
     }
-    if (auto in_concat = GetTagInt(metadata, "InConcatenationNumber")) {
+    if (auto in_concat = GetTag<int64_t>(metadata, "InConcatenationNumber")) {
       file->in_concatenation_number = static_cast<uint32_t>(*in_concat);
     }
     if (auto frame_offset =
-            GetTagInt(metadata, "ConcatenationFrameOffsetNumber")) {
+            GetTag<int64_t>(metadata, "ConcatenationFrameOffsetNumber")) {
       file->concatenation_frame_offset = static_cast<uint32_t>(*frame_offset);
     }
     // NumberOfFrames is VR `IS` (Integer String) per PS3.3 C.7.6.6, so it
     // requires the string-aware integer reader.
-    if (auto num_frames = GetTagIntOrStr(metadata, "NumberOfFrames")) {
+    if (auto num_frames = GetTagAsInteger(metadata, "NumberOfFrames")) {
       file->number_of_frames = static_cast<uint32_t>(*num_frames);
     }
   }
@@ -446,24 +465,23 @@ aifocore::Status DicomReader::AddFile(std::shared_ptr<DicomFile> file) {
 
   // Verify pixel format: 8-bit unsigned RGB, interleaved (PS3.3 C.7.6.3).
   // Sample description.
-  AIFOCORE_RETURN_IF_ERROR(VerifyTagInt(metadata, "SamplesPerPixel", 3, true));
-  AIFOCORE_RETURN_IF_ERROR(VerifyTagInt(metadata, "BitsAllocated", 8, true));
-  AIFOCORE_RETURN_IF_ERROR(VerifyTagInt(metadata, "BitsStored", 8, true));
-  AIFOCORE_RETURN_IF_ERROR(VerifyTagInt(metadata, "HighBit", 7, true));
-  AIFOCORE_RETURN_IF_ERROR(
-      VerifyTagInt(metadata, "PixelRepresentation", 0, true));
+  AIFOCORE_RETURN_IF_ERROR(VerifyTag(metadata, "SamplesPerPixel", 3, true));
+  AIFOCORE_RETURN_IF_ERROR(VerifyTag(metadata, "BitsAllocated", 8, true));
+  AIFOCORE_RETURN_IF_ERROR(VerifyTag(metadata, "BitsStored", 8, true));
+  AIFOCORE_RETURN_IF_ERROR(VerifyTag(metadata, "HighBit", 7, true));
+  AIFOCORE_RETURN_IF_ERROR(VerifyTag(metadata, "PixelRepresentation", 0, true));
   // Memory layout.
-  AIFOCORE_RETURN_IF_ERROR(
-      VerifyTagInt(metadata, "PlanarConfiguration", 0, true));
+  AIFOCORE_RETURN_IF_ERROR(VerifyTag(metadata, "PlanarConfiguration", 0, true));
   // Single focal plane only (optional tag).
   AIFOCORE_RETURN_IF_ERROR(
-      VerifyTagInt(metadata, "TotalPixelMatrixFocalPlanes", 1, false));
+      VerifyTag(metadata, "TotalPixelMatrixFocalPlanes", 1, false));
 
   // Validate PhotometricInterpretation against the transfer syntax
   // (PS3.3 C.7.6.3.1.2). The allowed interpretations depend on the
   // compression scheme.
   {
-    auto photometric = GetTagStr(metadata, "PhotometricInterpretation");
+    auto photometric =
+        GetTag<std::string_view>(metadata, "PhotometricInterpretation");
     if (!photometric) {
       return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
                                   "Missing PhotometricInterpretation");
@@ -648,28 +666,29 @@ aifocore::Status DicomReader::AddFile(std::shared_ptr<DicomFile> file) {
 void DicomReader::ExtractPixelSpacing(const DcmDataSet* metadata,
                                       DicomLevel& level) {
   DcmDataSet* shared_fg =
-      GetTagSeqItem(metadata, "SharedFunctionalGroupsSequence", 0);
+      GetSequenceItem(metadata, "SharedFunctionalGroupsSequence", 0);
   if (!shared_fg)
     return;
   DcmDataSet* pixel_measures =
-      GetTagSeqItem(shared_fg, "PixelMeasuresSequence", 0);
+      GetSequenceItem(shared_fg, "PixelMeasuresSequence", 0);
   if (!pixel_measures)
     return;
 
-  if (auto spacing_x = GetTagDecimalStr(pixel_measures, "PixelSpacing", 0)) {
+  if (auto spacing_x = GetTag<double>(pixel_measures, "PixelSpacing", 0)) {
     level.pixel_spacing_x = *spacing_x;
   }
-  if (auto spacing_y = GetTagDecimalStr(pixel_measures, "PixelSpacing", 1)) {
+  if (auto spacing_y = GetTag<double>(pixel_measures, "PixelSpacing", 1)) {
     level.pixel_spacing_y = *spacing_y;
   }
 }
 
 void DicomReader::ExtractObjectiveLensPower(const DcmDataSet* metadata,
                                             DicomLevel& level) {
-  DcmDataSet* optical_path = GetTagSeqItem(metadata, "OpticalPathSequence", 0);
+  DcmDataSet* optical_path =
+      GetSequenceItem(metadata, "OpticalPathSequence", 0);
   if (!optical_path)
     return;
-  if (auto power = GetTagDecimalStr(optical_path, "ObjectiveLensPower")) {
+  if (auto power = GetTag<double>(optical_path, "ObjectiveLensPower")) {
     level.objective_lens_power = *power;
   }
 }

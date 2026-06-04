@@ -9,6 +9,7 @@ This section provides comprehensive documentation for both the C++ and Python AP
 
    python_api
    cpp_api
+   multiple_images
    cross_reference
 
 Overview
@@ -24,17 +25,29 @@ The APIs are designed to be consistent - most operations are available in both l
 Key Concepts
 ~~~~~~~~~~~~
 
-**Slide Reader**
-   Central class for reading whole slide images. Supports multiple formats (MRXS, Aperio SVS, QPTIFF).
+**Slide Reader (the container)**
+   Central class for opening a slide file. Owns the file handles, the
+   tile cache, and any associated images. Supports MRXS, Aperio SVS,
+   QPTIFF, Olympus VSI, NDPI, BIF, DICOM, OME-TIFF / OME-Zarr, and
+   generic TIFF.
+
+**Slide Image (one navigable pyramid)**
+   A single navigable pyramid inside a slide file. Most formats expose
+   exactly one. Formats like Olympus VSI expose several (e.g. a
+   ``navigator`` plus one ``region`` per imaged area). See
+   :doc:`multiple_images`.
 
 **Tile Cache**
    Memory-efficient caching system to speed up repeated tile access.
 
 **Associated Data**
    Additional data embedded in slides (thumbnails, labels, metadata).
+   Distinct from ``slide.images``: associated images are static
+   thumbnails, not navigable pyramids.
 
 **Multi-level Pyramids**
-   Slides contain multiple resolution levels for efficient zooming.
+   Each Slide Image contains multiple resolution levels for efficient
+   zooming.
 
 Performance Notes
 ~~~~~~~~~~~~~~~~~

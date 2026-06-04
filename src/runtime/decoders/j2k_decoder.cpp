@@ -93,10 +93,15 @@ struct OpjImageDeleter {
   }
 };
 
-}  // namespace
+using OpjImagePtr = std::unique_ptr<opj_image_t, OpjImageDeleter>;
 
-aifocore::Result<DecodedRgb> DecodeJ2kToRgb(std::span<const uint8_t> j2k_bytes,
-                                            const J2kDecodeOptions& options) {
+/// @brief Open the codestream, decode all components, and hand back the image.
+///
+/// The keeper objects (codec, stream, stream_data) only need to live until
+/// `opj_decode` returns, so this helper drops them on success and returns
+/// just the decoded image (kept alive by the caller).
+aifocore::Result<OpjImagePtr> OpenAndDecodeJ2k(
+    std::span<const uint8_t> j2k_bytes) {
   OPJ_CODEC_FORMAT fmt = OPJ_CODEC_J2K;
   if (j2k_bytes.size() >= 12) {
     static constexpr uint8_t kJp2Sig[] = {0x00, 0x00, 0x00, 0x0C,
@@ -138,28 +143,46 @@ aifocore::Result<DecodedRgb> DecodeJ2kToRgb(std::span<const uint8_t> j2k_bytes,
     return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
                                 "Failed to read JPEG 2000 header");
   }
-  std::unique_ptr<opj_image_t, OpjImageDeleter> image(raw_image);
+  OpjImagePtr image(raw_image);
 
   if (!opj_decode(codec.get(), stream.get(), image.get())) {
     return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
                                 "Failed to decode JPEG 2000 image");
   }
+  return image;
+}
 
-  if (image->numcomps < 3) {
+/// @brief Resolve the output canvas size from an OpenJPEG image.
+struct J2kCanvas {
+  uint32_t width = 0;
+  uint32_t height = 0;
+};
+
+aifocore::Result<J2kCanvas> ResolveJ2kCanvas(const opj_image_t& image,
+                                             uint32_t min_components = 3) {
+  if (image.numcomps < min_components) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
-        aifocore::fmt::format("Expected >= 3 components, got {}",
-                              image->numcomps));
+        aifocore::fmt::format("Expected >= {} components, got {}",
+                              min_components, image.numcomps));
   }
-
-  // Use the canvas dimensions (image->x1/y1) so the output matches the slide's
-  // declared tile geometry even when component planes are subsampled.
-  const uint32_t w = image->x1 - image->x0;
-  const uint32_t h = image->y1 - image->y0;
+  const uint32_t w = image.x1 - image.x0;
+  const uint32_t h = image.y1 - image.y0;
   if (w == 0 || h == 0) {
     return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
                                 "JPEG 2000 image has zero extent");
   }
+  return J2kCanvas{w, h};
+}
+
+}  // namespace
+
+aifocore::Result<DecodedRgb> DecodeJ2kToRgb(std::span<const uint8_t> j2k_bytes,
+                                            const J2kDecodeOptions& options) {
+  AIFOCORE_ASSIGN_OR_RETURN(auto image, OpenAndDecodeJ2k(j2k_bytes));
+  AIFOCORE_ASSIGN_OR_RETURN(auto canvas, ResolveJ2kCanvas(*image));
+  const uint32_t w = canvas.width;
+  const uint32_t h = canvas.height;
 
   DecodedRgb result;
   result.width = w;
@@ -245,6 +268,97 @@ aifocore::Result<DecodedRgb> DecodeJ2kToRgb(std::span<const uint8_t> j2k_bytes,
             normalize(g_row[x / sub_x[1]], image->comps[1]));
         dst[x * 3 + 2] = static_cast<uint8_t>(
             normalize(b_row[x / sub_x[2]], image->comps[2]));
+      }
+    }
+  }
+
+  return result;
+}
+
+aifocore::Result<DecodedRgb16> DecodeJ2k16(std::span<const uint8_t> j2k_bytes,
+                                           const J2kDecodeOptions& options) {
+  // 16-bit Olympus VSI fluorescence tiles are RGB; YCbCr is never used at
+  // this precision in the slides we target. Fail loudly if a caller asks
+  // for that conversion rather than silently producing wrong colours.
+  if (options.colorspace != J2kColorspace::kRgb) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kUnimplemented,
+        "16-bit JPEG 2000 YCbCr -> RGB conversion is not supported");
+  }
+
+  AIFOCORE_ASSIGN_OR_RETURN(auto image, OpenAndDecodeJ2k(j2k_bytes));
+  // Single-component (Olympus VSI fluorescence) and three-component
+  // (brightfield-style) codestreams are both supported. ``min_components
+  // = 1`` here; the caller decides whether the resulting ``channels``
+  // matches its expected layout.
+  AIFOCORE_ASSIGN_OR_RETURN(auto canvas,
+                            ResolveJ2kCanvas(*image, /*min_components=*/1));
+  const uint32_t w = canvas.width;
+  const uint32_t h = canvas.height;
+  const uint32_t numcomps = image->numcomps;
+  if (numcomps != 1 && numcomps != 3) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kUnimplemented,
+        aifocore::fmt::format(
+            "JPEG 2000 16-bit decoder supports 1 or 3 components, got {}",
+            numcomps));
+  }
+
+  DecodedRgb16 result;
+  result.width = w;
+  result.height = h;
+  result.channels = numcomps;
+  result.rgb.resize(static_cast<size_t>(w) * h * numcomps);
+
+  // Per-component sub-sampling factors. Same integer-ratio constraint
+  // as the 8-bit path; non-integer ratios are vanishingly rare for
+  // single-channel fluorescence and would fail loudly here.
+  std::array<uint32_t, 3> sub_x{};
+  std::array<uint32_t, 3> sub_y{};
+  for (uint32_t c = 0; c < numcomps; ++c) {
+    const auto& comp = image->comps[c];
+    if (comp.w == 0 || comp.h == 0) {
+      return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
+                                  "JPEG 2000 component has zero extent");
+    }
+    if (w % comp.w != 0 || h % comp.h != 0) {
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kUnimplemented,
+          aifocore::fmt::format(
+              "Non-integer JPEG 2000 chroma subsampling: image {}x{}, "
+              "component {} {}x{}",
+              w, h, c, comp.w, comp.h));
+    }
+    sub_x[c] = w / comp.w;
+    sub_y[c] = h / comp.h;
+  }
+
+  // Normalize an OpenJPEG sample to the full uint16 range. Signed samples
+  // are recentred to unsigned first; precisions different from 16 are
+  // power-of-two rescaled so a 12-bit value maps to its equivalent
+  // ``[0, 65535]`` range (the Bio-Formats / lodepng convention).
+  auto normalize16 = [](OPJ_INT32 val,
+                        const opj_image_comp_t& comp) -> uint16_t {
+    if (comp.sgnd) {
+      val += (1 << (comp.prec - 1));
+    }
+    if (comp.prec > 16) {
+      val >>= (comp.prec - 16);
+    } else if (comp.prec < 16) {
+      val <<= (16 - comp.prec);
+    }
+    return static_cast<uint16_t>(
+        std::clamp(val, OPJ_INT32{0}, OPJ_INT32{65535}));
+  };
+
+  for (uint32_t y = 0; y < h; ++y) {
+    uint16_t* dst = result.rgb.data() + static_cast<size_t>(y) * w * numcomps;
+    for (uint32_t x = 0; x < w; ++x) {
+      for (uint32_t c = 0; c < numcomps; ++c) {
+        const auto& comp = image->comps[c];
+        const OPJ_INT32* row =
+            comp.data + static_cast<size_t>(y / sub_y[c]) * comp.w;
+        dst[x * numcomps + c] = normalize16(row[x / sub_x[c]], comp);
       }
     }
   }

@@ -20,20 +20,25 @@
 namespace fastslide {
 
 /// @brief Parsed CZI subblock metadata used by planning and execution.
+///
+/// Coordinates (`x`, `y`) are stored in absolute level-0 pixel coordinates as
+/// read from the file. Per-scene origin normalisation is applied by
+/// `CziSceneImage` when it builds its spatial index, not by mutating these
+/// records, so a single shared subblock array can back every scene image.
 struct CziSubblockInfo {
-  uint32_t index = 0;
-  int64_t file_pos = 0;
-  int32_t pixel_type = 0;
-  int32_t compression = 0;
-  int32_t pyramid_type = 0;
-  int32_t x = 0;
-  int32_t y = 0;
-  uint32_t w = 0;
-  uint32_t h = 0;
-  int32_t scene = 0;
-  int32_t channel = 0;
-  int32_t z_index = 0;
-  int32_t downsample = 1;
+  uint32_t index = 0;       ///< Position in the reader's subblock array.
+  int64_t file_pos = 0;     ///< Subblock segment offset within the file.
+  int32_t pixel_type = 0;   ///< CZI pixel type code.
+  int32_t compression = 0;  ///< CZI compression code.
+  int32_t x = 0;            ///< Absolute X origin (level-0 pixels).
+  int32_t y = 0;            ///< Absolute Y origin (level-0 pixels).
+  uint32_t w = 0;           ///< Stored width in pixels.
+  uint32_t h = 0;           ///< Stored height in pixels.
+  int32_t scene = 0;        ///< Scene index (CZI "S" dimension start).
+  int32_t z = 0;            ///< Focal-plane index (CZI "Z" dimension start).
+  int32_t t = 0;            ///< Time-point index (CZI "T" dimension start).
+  int32_t downsample = 1;   ///< Integer downsample factor (level-0 = 1).
+  int32_t dim_count = 0;    ///< Directory entry's DimensionEntryDV count.
 };
 
 }  // namespace fastslide

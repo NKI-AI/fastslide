@@ -7,7 +7,7 @@ local_path_override.
 
 module(
     name = "fastslide",
-    version = "0.6.0",
+    version = "0.7.0",
 )
 
 bazel_dep(name = "rules_cc", version = "0.2.17")
@@ -37,11 +37,11 @@ git_override(
     remote = "https://github.com/NKI-AI/aifocore.git",
 )
 
-# simpletiff is not on the Bazel Central Registry. In the monorepo this
+# jpeg-compressor is not on the Bazel Central Registry. In the monorepo this
 # bazel_dep is satisfied by the root module's local_path_override; the
 # git_override below is silently ignored in that context (Bazel only honors
 # *_override directives in the root module). When this MODULE.bazel is the
-# root (i.e. the standalone NKI-AI/simpletiff checkout), the git_override
+# root (i.e. the standalone NKI-AI/jpeg-compressor checkout), the git_override
 # resolves the dep from GitHub instead.
 bazel_dep(name = "jpeg-compressor", version = "0.0.1")
 git_override(
@@ -59,7 +59,7 @@ git_override(
 bazel_dep(name = "simpletiff", version = "0.0.1")
 git_override(
     module_name = "simpletiff",
-    commit = "8bce3705e7a2c4d6bc864a5e7390f4dd70b7f455",
+    commit = "94439833674040add3d641ac1f98cc595c1a9308",
     remote = "https://github.com/NKI-AI/simpletiff.git",
 )
 

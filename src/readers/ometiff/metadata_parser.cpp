@@ -68,6 +68,10 @@ aifocore::Result<OmeMetadata> OmeMetadataParser::Parse(std::string_view xml) {
                                 "OME-XML: missing <OME> root");
   }
 
+  // The root UUID identifies *this* file within a multi-file dataset; planes
+  // whose <TiffData> references a different UUID live in sibling files.
+  out.self_uuid = ome_root.attribute("UUID").as_string();
+
   // Find first Image/Pixels.
   pugi::xml_node image = ome_root.child("Image");
   if (image.empty()) {
@@ -119,6 +123,12 @@ aifocore::Status OmeMetadataParser::ParsePixels(
   if (auto psy = pixels_node.attribute("PhysicalSizeY"); !psy.empty()) {
     out.pixels.physical_size_y = psy.as_double();
   }
+  if (auto psz = pixels_node.attribute("PhysicalSizeZ"); !psz.empty()) {
+    out.pixels.physical_size_z = psz.as_double();
+  }
+  if (auto ti = pixels_node.attribute("TimeIncrement"); !ti.empty()) {
+    out.pixels.time_increment = ti.as_double();
+  }
 
   return aifocore::Status::OkStatus();
 }
@@ -154,6 +164,10 @@ aifocore::Status OmeMetadataParser::ParseTiffData(
     d.first_t = td.attribute("FirstT").as_uint();
     d.ifd = td.attribute("IFD").as_uint();
     d.plane_count = td.attribute("PlaneCount").as_uint(1);
+    if (pugi::xml_node uuid = td.child("UUID"); uuid) {
+      d.uuid = uuid.text().as_string();
+      d.file_name = uuid.attribute("FileName").as_string();
+    }
     out.tiff_data.push_back(d);
   }
   return aifocore::Status::OkStatus();

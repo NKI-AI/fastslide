@@ -240,12 +240,160 @@ void AssociatedData::ClearCache() const {
   cache_.clear();
 }
 
+// ---------------------------------------------------------------------
+// SlideImageView (one image inside a slide)
+// ---------------------------------------------------------------------
+
+SlideImageView::SlideImageView(std::weak_ptr<SlideReader> reader, int index)
+    : reader_(std::move(reader)), index_(index) {}
+
+std::shared_ptr<SlideReader> SlideImageView::GetReader() const {
+  auto reader = reader_.lock();
+  if (!reader) {
+    throw std::runtime_error("Cannot access image: slide reader is closed");
+  }
+  return reader;
+}
+
+const SlideImage* SlideImageView::GetImage() const {
+  auto reader = GetReader();
+  auto image_or = reader->GetImage(index_);
+  if (!image_or.ok()) {
+    throw std::runtime_error("Failed to access image " +
+                             std::to_string(index_) + ": " +
+                             std::string(image_or.status().message()));
+  }
+  return image_or.value();
+}
+
+std::string SlideImageView::GetName() const {
+  return GetImage()->GetName();
+}
+
+int SlideImageView::GetLevelCount() const {
+  return GetImage()->GetLevelCount();
+}
+
+nb::tuple SlideImageView::GetDimensions() const {
+  const auto* image = GetImage();
+  auto level_info_or = image->GetLevelInfo(0);
+  if (!level_info_or.ok()) {
+    throw std::runtime_error("Failed to get level 0 info for image " +
+                             std::to_string(index_));
+  }
+  const auto& info = level_info_or.value();
+  return nb::make_tuple(info.dimensions[0], info.dimensions[1]);
+}
+
+nb::tuple SlideImageView::GetLevelDimensions() const {
+  const auto* image = GetImage();
+  const int level_count = image->GetLevelCount();
+  nb::list result;
+  for (int i = 0; i < level_count; ++i) {
+    auto level_info_or = image->GetLevelInfo(i);
+    if (!level_info_or.ok()) {
+      throw std::runtime_error("Failed to get level " + std::to_string(i) +
+                               " info for image " + std::to_string(index_));
+    }
+    const auto& info = level_info_or.value();
+    result.append(nb::make_tuple(info.dimensions[0], info.dimensions[1]));
+  }
+  return nb::tuple(result);
+}
+
+nb::tuple SlideImageView::GetLevelDownsamples() const {
+  const auto* image = GetImage();
+  const int level_count = image->GetLevelCount();
+  nb::list result;
+  for (int i = 0; i < level_count; ++i) {
+    auto level_info_or = image->GetLevelInfo(i);
+    if (!level_info_or.ok()) {
+      throw std::runtime_error("Failed to get level " + std::to_string(i) +
+                               " info for image " + std::to_string(index_));
+    }
+    result.append(level_info_or.value().downsample_factor);
+  }
+  return nb::tuple(result);
+}
+
+nb::tuple SlideImageView::GetMpp() const {
+  const auto& props = GetImage()->GetProperties();
+  return nb::make_tuple(props.mpp[0], props.mpp[1]);
+}
+
+std::shared_ptr<fastslide::Image> SlideImageView::ReadRegion(
+    uint32_t x, uint32_t y, uint32_t width, uint32_t height, int level,
+    uint32_t z, uint32_t t) {
+  const auto* image = GetImage();
+  RegionSpec region{.top_left = {x, y},
+                    .size = {width, height},
+                    .level = level,
+                    .plane = {z, t}};
+  auto result = image->ReadRegion(region);
+  if (!result.ok()) {
+    throw std::runtime_error("Failed to read region from image " +
+                             std::to_string(index_) + ": " +
+                             std::string(result.status().message()));
+  }
+  return std::make_shared<fastslide::Image>(std::move(result.value()));
+}
+
+StackInfo SlideImageView::GetStackInfo() const {
+  return GetImage()->GetStackInfo();
+}
+
+int SlideImageView::GetBestLevelForDownsample(double downsample) const {
+  return GetImage()->GetBestLevelForDownsample(downsample);
+}
+
+// ---------------------------------------------------------------------
+// SlideImages (`slide.images`)
+// ---------------------------------------------------------------------
+
+SlideImages::SlideImages(std::weak_ptr<SlideReader> reader)
+    : reader_(std::move(reader)) {}
+
+std::shared_ptr<SlideReader> SlideImages::GetReader() const {
+  auto reader = reader_.lock();
+  if (!reader) {
+    throw std::runtime_error("Cannot access images: slide reader is closed");
+  }
+  return reader;
+}
+
+size_t SlideImages::Len() const {
+  return static_cast<size_t>(GetReader()->GetImageCount());
+}
+
+SlideImageView SlideImages::GetItem(int index) const {
+  auto reader = GetReader();
+  const int count = reader->GetImageCount();
+  // Pythonic negative indexing.
+  if (index < 0) {
+    index += count;
+  }
+  if (index < 0 || index >= count) {
+    throw nb::index_error(
+        ("Image index out of range: " + std::to_string(index)).c_str());
+  }
+  return SlideImageView(reader_, index);
+}
+
+int SlideImages::GetPrimaryIndex() const {
+  return GetReader()->GetPrimaryImageIndex();
+}
+
+std::vector<std::string> SlideImages::Names() const {
+  return GetReader()->GetImageNames();
+}
+
 // FastSlide implementation
 FastSlide::FastSlide(std::shared_ptr<SlideReader> reader,
                      const std::string& source_path)
     : reader_(std::move(reader)), is_closed_(false), source_path_(source_path) {
   associated_images_ = std::make_unique<AssociatedImages>(reader_);
   associated_data_ = std::make_unique<AssociatedData>(reader_);
+  images_ = std::make_unique<SlideImages>(reader_);
 }
 
 std::unique_ptr<FastSlide> FastSlide::FromFilePath(
@@ -280,6 +428,7 @@ void FastSlide::Close() {
     reader_.reset();
     associated_images_.reset();
     associated_data_.reset();
+    images_.reset();
     cache_.reset();
     is_closed_ = true;
   }
@@ -302,13 +451,16 @@ bool FastSlide::__exit__(nb::object exc_type, nb::object exc_value,
 std::shared_ptr<fastslide::Image> FastSlide::ReadRegion(uint32_t x, uint32_t y,
                                                         uint32_t width,
                                                         uint32_t height,
-                                                        int level) {
+                                                        int level, uint32_t z,
+                                                        uint32_t t) {
   if (is_closed_) {
     throw std::runtime_error("Cannot read region: slide reader is closed");
   }
 
-  RegionSpec region{
-      .top_left = {x, y}, .size = {width, height}, .level = level};
+  RegionSpec region{.top_left = {x, y},
+                    .size = {width, height},
+                    .level = level,
+                    .plane = {z, t}};
 
   auto result = reader_->ReadRegion(region);
   if (!result.ok()) {
@@ -317,6 +469,13 @@ std::shared_ptr<fastslide::Image> FastSlide::ReadRegion(uint32_t x, uint32_t y,
   }
 
   return std::make_shared<fastslide::Image>(std::move(result.value()));
+}
+
+StackInfo FastSlide::GetStackInfo() const {
+  if (is_closed_) {
+    throw std::runtime_error("Cannot get stack info: slide reader is closed");
+  }
+  return reader_->GetStackInfo();
 }
 
 AssociatedImages& FastSlide::GetAssociatedImages() {
@@ -333,6 +492,13 @@ AssociatedData& FastSlide::GetAssociatedData() {
         "Cannot access associated data: slide reader is closed");
   }
   return *associated_data_;
+}
+
+SlideImages& FastSlide::GetImages() {
+  if (is_closed_) {
+    throw std::runtime_error("Cannot access images: slide reader is closed");
+  }
+  return *images_;
 }
 
 nb::tuple FastSlide::GetDimensions() const {

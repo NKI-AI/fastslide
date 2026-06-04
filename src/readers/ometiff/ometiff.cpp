@@ -138,6 +138,14 @@ Metadata OmeTiffReader::GetMetadata() const {
   md[std::string(MetadataKeys::kChannels)] = channels_.size();
   md[std::string(MetadataKeys::kMppX)] = metadata_.mpp_x;
   md[std::string(MetadataKeys::kMppY)] = metadata_.mpp_y;
+  md["ometiff.z-count"] = static_cast<size_t>(metadata_.z_count);
+  md["ometiff.t-count"] = static_cast<size_t>(metadata_.t_count);
+  if (metadata_.z_spacing_um.has_value()) {
+    md["ometiff.z-spacing-um"] = *metadata_.z_spacing_um;
+  }
+  if (metadata_.t_interval_s.has_value()) {
+    md["ometiff.t-interval-s"] = *metadata_.t_interval_s;
+  }
   return md;
 }
 
@@ -157,14 +165,55 @@ ImageDimensions OmeTiffReader::GetTileSize() const {
   return ImageDimensions{512, 512};
 }
 
+StackInfo OmeTiffReader::GetStackInfo() const {
+  StackInfo info;
+  info.z_count = metadata_.z_count;
+  info.t_count = metadata_.t_count;
+  info.z_spacing_um = metadata_.z_spacing_um;
+  info.t_interval_s = metadata_.t_interval_s;
+  return info;
+}
+
 aifocore::Result<core::TilePlan> OmeTiffReader::PrepareRequest(
     const core::TileRequest& request) const {
+  if (request.plane.z >= metadata_.z_count) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("OME-TIFF: z index {} out of range [0,{})",
+                              request.plane.z, metadata_.z_count));
+  }
+  if (request.plane.t >= metadata_.t_count) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("OME-TIFF: t index {} out of range [0,{})",
+                              request.plane.t, metadata_.t_count));
+  }
+
+  // Build a per-request pyramid view whose channel pages point at the selected
+  // (z, t) plane. For 2D files this is identical to `pyramid_`.
+  std::vector<OmeTiffLevelInfo> plane_view = pyramid_;
+  for (auto& level : plane_view) {
+    const auto pages = level.PagesForPlane(request.plane.z, request.plane.t);
+    if (!pages.empty()) {
+      level.pages.assign(pages.begin(), pages.end());
+    }
+  }
+
   const OmetiffPlanContext context{
-      .pyramid = pyramid_,
+      .pyramid = plane_view,
       .output_planar_config = output_planar_config_,
       .tiff_index = *tiff_index_,
   };
-  return OmetiffPlanBuilder::BuildPlan(request, context);
+  AIFOCORE_ASSIGN_OR_RETURN(core::TilePlan plan,
+                            OmetiffPlanBuilder::BuildPlan(request, context));
+
+  // Fluorescence OME-TIFFs with 3 or 4 channels share RGB(A)'s buffer layout
+  // but carry independent fluorophores. Tag the output as spectral so the
+  // Canvas (and downstream FFI/viewers) take the multi-channel path instead of
+  // treating the planes as RGB; without this a 3-channel stack is mis-typed as
+  // RGB and rejected by the fluorescence renderer.
+  plan.output.force_spectral_image = (format_ == ImageFormat::kSpectral);
+  return plan;
 }
 
 aifocore::Status OmeTiffReader::ExecutePlan(const core::TilePlan& plan,

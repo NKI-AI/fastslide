@@ -22,6 +22,11 @@ extern "C" {
 /// @brief Opaque slide reader handle
 typedef struct FastSlideSlideReader FastSlideSlideReader;
 
+/// @brief Opaque per-image handle (one navigable pyramid in the file).
+/// Defined in fastslide/c/slide_image.h; forward-declared here so the
+/// container API can hand them out.
+typedef struct FastSlideSlideImage FastSlideSlideImage;
+
 /// @brief Property value types
 typedef enum {
   FASTSLIDE_PROPERTY_TYPE_STRING,
@@ -86,7 +91,22 @@ typedef struct {
   FastSlideImageCoordinate top_left;
   FastSlideImageDimensions size;
   int level;
+  uint32_t z;  ///< Focal-plane index (0 = first plane)
+  uint32_t t;  ///< Time-point index (0 = first time point)
 } FastSlideRegionSpec;
+
+/// @brief Z (focal) / T (time) stack extent for an image.
+///
+/// `z_count`/`t_count` are always >= 1. The spacings are optional: the
+/// `has_*` flag is 1 when the matching value is known, 0 otherwise.
+typedef struct {
+  uint32_t z_count;     ///< Number of focal planes (>= 1)
+  uint32_t t_count;     ///< Number of time points (>= 1)
+  int has_z_spacing;    ///< 1 if z_spacing_um is valid, 0 otherwise
+  double z_spacing_um;  ///< Focal-plane spacing in microns
+  int has_t_interval;   ///< 1 if t_interval_s is valid, 0 otherwise
+  double t_interval_s;  ///< Time-point interval in seconds
+} FastSlideStackInfo;
 
 // Basic slide properties
 
@@ -248,10 +268,64 @@ FASTSLIDE_API FastSlideImage* fastslide_slide_reader_read_region(
 /// @param width Region width
 /// @param height Region height
 /// @param level Pyramid level
+/// @param z Focal-plane index (0 = first plane)
+/// @param t Time-point index (0 = first time point)
 /// @return Image handle or NULL on failure
 FASTSLIDE_API FastSlideImage* fastslide_slide_reader_read_region_coords(
     const FastSlideSlideReader* reader, uint32_t x, uint32_t y, uint32_t width,
-    uint32_t height, int level);
+    uint32_t height, int level, uint32_t z, uint32_t t);
+
+/// @brief Get Z/T stack extent of the primary image.
+/// @param reader Slide reader handle
+/// @param info Output stack info
+/// @return 1 on success, 0 on failure
+FASTSLIDE_API int fastslide_slide_reader_get_stack_info(
+    const FastSlideSlideReader* reader, FastSlideStackInfo* info);
+
+// Multi-image container API
+//
+// A `FastSlideSlideReader` is the file/container; a `FastSlideSlideImage`
+// is one navigable pyramid inside it (a "series" / "scene"). Most formats
+// expose exactly one image; formats like Olympus VSI expose several (a
+// low-resolution navigator plus one main scan per imaged region). The
+// reader's own level/region functions target the primary image; use the
+// per-image handles (fastslide/c/slide_image.h) to navigate the others.
+
+/// @brief Number of navigable images (pyramids) in this file (always >= 1).
+/// @param reader Slide reader handle
+/// @return Image count, or -1 on failure
+FASTSLIDE_API int fastslide_slide_reader_get_image_count(
+    const FastSlideSlideReader* reader);
+
+/// @brief Index of the primary image (the one the reader's own
+/// level/region functions target).
+/// @param reader Slide reader handle
+/// @return Primary image index, or -1 on failure
+FASTSLIDE_API int fastslide_slide_reader_get_primary_image_index(
+    const FastSlideSlideReader* reader);
+
+/// @brief Get human-readable names for every image, in index order.
+/// @param reader Slide reader handle
+/// @param names Output array of names (allocated by function)
+/// @param num_names Output number of names
+/// @return 1 on success, 0 on failure
+FASTSLIDE_API int fastslide_slide_reader_get_image_names(
+    const FastSlideSlideReader* reader, char*** names, int* num_names);
+
+/// @brief Free an image-name array returned by
+/// fastslide_slide_reader_get_image_names.
+/// @param names Names array
+/// @param num_names Number of names
+FASTSLIDE_API void fastslide_slide_reader_free_image_names(char** names,
+                                                           int num_names);
+
+/// @brief Get a handle to the i-th navigable image.
+/// @param reader Slide reader handle
+/// @param index Image index in [0, get_image_count())
+/// @return Image handle (free with fastslide_slide_image_free) or NULL.
+/// @note The handle borrows the reader; it must not outlive @p reader.
+FASTSLIDE_API FastSlideSlideImage* fastslide_slide_reader_get_image(
+    const FastSlideSlideReader* reader, int index);
 
 // Associated images
 

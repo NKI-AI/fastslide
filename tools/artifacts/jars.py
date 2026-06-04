@@ -18,20 +18,22 @@ from pathlib import Path
 from . import common
 from .specs import PLATFORMS, PlatformSpec
 
-ARTIFACT_DIR = common.REPO_ROOT / "aifo" / "fastslide" / "artifacts" / "jars"
+# Mirror wheels.py: artifacts live under the FastSlide module workspace, and
+# Bazel runs from that workspace so targets are addressed with bare `//` labels.
+ARTIFACT_DIR = common.WORKSPACE_ROOT / "artifacts" / "jars"
 
 _JAR_TARGETS = [
-    "@fastslide//java:fastslide_java",
-    "@fastslide//java:fastslidetool_java_deploy.jar",
+    "//java:fastslide_java",
+    "//java:fastslidetool_java_deploy.jar",
 ]
 
 _NATIVE_TARGETS: dict[str, str] = {
-    "darwin_aarch64": "@fastslide//java:fastslide_native",
-    "darwin_x86_64": "@fastslide//java:fastslide_native",
-    "linux_x86_64": "@fastslide//java:fastslide_native",
-    "linux_arm64": "@fastslide//java:fastslide_native",
-    "windows_x86_64": "@fastslide//java:fastslide_native",
-    "windows_arm64": "@fastslide//java:fastslide_native",
+    "darwin_aarch64": "//java:fastslide_native",
+    "darwin_x86_64": "//java:fastslide_native",
+    "linux_x86_64": "//java:fastslide_native",
+    "linux_arm64": "//java:fastslide_native",
+    "windows_x86_64": "//java:fastslide_native",
+    "windows_arm64": "//java:fastslide_native",
 }
 
 
@@ -145,7 +147,7 @@ def build_jars(
         return 1
 
     bazel_bin_str = common.run_capture([bazel_cmd, "info", "bazel-bin"], env=env).strip()
-    java_out = Path(bazel_bin_str) / "aifo" / "fastslide" / "java"
+    java_out = Path(bazel_bin_str) / "java"
     wrapper_jar = _pick_single(list(java_out.glob("libfastslide_java.jar")), what="wrapper jar")
     tool_jar = _pick_single(list(java_out.glob("fastslidetool_java_deploy.jar")), what="tool deploy jar")
 

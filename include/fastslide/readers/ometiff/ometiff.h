@@ -19,6 +19,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -46,8 +47,12 @@ struct OmeTiffChannelInfo {
 
 /// @brief Minimal slide-level metadata for OME-TIFF
 struct OmeSlideMetadata {
-  double mpp_x = 0.0;  ///< PhysicalSizeX (µm/px)
-  double mpp_y = 0.0;  ///< PhysicalSizeY (µm/px)
+  double mpp_x = 0.0;                  ///< PhysicalSizeX (µm/px)
+  double mpp_y = 0.0;                  ///< PhysicalSizeY (µm/px)
+  uint32_t z_count = 1;                ///< Focal planes (SizeZ)
+  uint32_t t_count = 1;                ///< Time points (SizeT)
+  std::optional<double> z_spacing_um;  ///< PhysicalSizeZ (µm between planes)
+  std::optional<double> t_interval_s;  ///< TimeIncrement (seconds)
 };
 
 /// @brief OME-TIFF reader (multi-plane, pyramidal via SubIFDs)
@@ -84,6 +89,8 @@ class OmeTiffReader : public TiffBasedReader,
   [[nodiscard]] DataType GetDataType() const override { return data_type_; }
 
   [[nodiscard]] ImageDimensions GetTileSize() const override;
+
+  [[nodiscard]] StackInfo GetStackInfo() const override;
 
   [[nodiscard]] aifocore::Result<core::TilePlan> PrepareRequest(
       const core::TileRequest& request) const override;

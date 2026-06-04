@@ -49,6 +49,8 @@ using fastslide::SlideReader;
 using fastslide::python::AssociatedData;
 using fastslide::python::AssociatedImages;
 using fastslide::python::FastSlide;
+using fastslide::python::SlideImages;
+using fastslide::python::SlideImageView;
 
 namespace {
 
@@ -303,6 +305,111 @@ NB_MODULE(_fastslide, m) {
       .def("clear_cache", &AssociatedData::ClearCache,
            "Clear the associated data cache");
 
+  // One navigable pyramid (image) inside a slide file. Returned by
+  // ``slide.images[i]``. Stateless except for the (weak) reader handle, so
+  // it can be safely passed across threads.
+  nb::class_<SlideImageView>(m, "SlideImageView")
+      .def_prop_ro("name", &SlideImageView::GetName,
+                   "Image name (e.g. 'navigator', 'region 0').")
+      .def_prop_ro("index", &SlideImageView::GetIndex,
+                   "Image index inside the container.")
+      .def_prop_ro("level_count", &SlideImageView::GetLevelCount,
+                   "Number of pyramid levels in this image.")
+      .def_prop_ro("dimensions", &SlideImageView::GetDimensions,
+                   "(width, height) at level 0.")
+      .def_prop_ro("level_dimensions", &SlideImageView::GetLevelDimensions,
+                   "Tuple of (width, height) per level.")
+      .def_prop_ro("level_downsamples", &SlideImageView::GetLevelDownsamples,
+                   "Tuple of downsample factors per level.")
+      .def_prop_ro("mpp", &SlideImageView::GetMpp,
+                   "Microns-per-pixel as (mpp_x, mpp_y).")
+      .def(
+          "read_region",
+          [](SlideImageView& self,
+             const std::tuple<uint32_t, uint32_t>& location, int level,
+             const std::tuple<uint32_t, uint32_t>& size, uint32_t z,
+             uint32_t t) {
+            auto [x, y] = location;
+            auto [width, height] = size;
+            return self.ReadRegion(x, y, width, height, level, z, t);
+          },
+          "Read a region from this image using level-native coordinates.\n\n"
+          "Args:\n"
+          "    location: Tuple (x, y) in level-native space.\n"
+          "    level: Pyramid level (0=highest resolution).\n"
+          "    size: Tuple (width, height) of region in pixels.\n"
+          "    z: Focal-plane index (0=first plane).\n"
+          "    t: Time-point index (0=first time point).\n\n"
+          "The GIL is released during the read so concurrent Python threads\n"
+          "can perform overlapping reads in parallel.",
+          nb::arg("location"), nb::arg("level"), nb::arg("size"),
+          nb::arg("z") = 0, nb::arg("t") = 0,
+          nb::call_guard<nb::gil_scoped_release>())
+      .def_prop_ro(
+          "z_count",
+          [](const SlideImageView& self) {
+            return self.GetStackInfo().z_count;
+          },
+          "Number of focal planes (Z) in this image.")
+      .def_prop_ro(
+          "t_count",
+          [](const SlideImageView& self) {
+            return self.GetStackInfo().t_count;
+          },
+          "Number of time points (T) in this image.")
+      .def_prop_ro(
+          "z_spacing_um",
+          [](const SlideImageView& self) {
+            return self.GetStackInfo().z_spacing_um;
+          },
+          "Focal-plane spacing in microns, or None if unknown.")
+      .def_prop_ro(
+          "t_interval_s",
+          [](const SlideImageView& self) {
+            return self.GetStackInfo().t_interval_s;
+          },
+          "Time-point interval in seconds, or None if unknown.")
+      .def(
+          "get_stack_info",
+          [](const SlideImageView& self) {
+            const auto info = self.GetStackInfo();
+            nb::dict d;
+            d["z_count"] = info.z_count;
+            d["t_count"] = info.t_count;
+            d["z_spacing_um"] = info.z_spacing_um;
+            d["t_interval_s"] = info.t_interval_s;
+            return d;
+          },
+          "Z/T stack extent and spacing as a dict.")
+      .def("get_best_level_for_downsample",
+           &SlideImageView::GetBestLevelForDownsample,
+           "Best level for a given downsample factor.", nb::arg("downsample"));
+
+  // Indexable container of ``SlideImageView``s, exposed as ``slide.images``.
+  nb::class_<SlideImages>(m, "SlideImages")
+      .def("__len__", &SlideImages::Len)
+      .def("__getitem__", &SlideImages::GetItem, nb::arg("index"))
+      .def(
+          "__iter__",
+          [](SlideImages& self) {
+            const size_t n = self.Len();
+            nb::list items;
+            for (size_t i = 0; i < n; ++i) {
+              items.append(self.GetItem(static_cast<int>(i)));
+            }
+            return nb::iter(items);
+          },
+          "Iterate over images in order.")
+      .def_prop_ro("primary_index", &SlideImages::GetPrimaryIndex,
+                   "Index of the primary (largest) image.")
+      .def_prop_ro(
+          "primary",
+          [](SlideImages& self) {
+            return self.GetItem(self.GetPrimaryIndex());
+          },
+          "The primary ``SlideImageView``.")
+      .def("names", &SlideImages::Names, "Names of all images, in order.");
+
   // Main slide reader class with factory methods
   nb::class_<FastSlide>(m, "FastSlide")
       .def_static(
@@ -329,16 +436,19 @@ NB_MODULE(_fastslide, m) {
       .def(
           "read_region",
           [](FastSlide& self, const std::tuple<uint32_t, uint32_t>& location,
-             int level, const std::tuple<uint32_t, uint32_t>& size) {
+             int level, const std::tuple<uint32_t, uint32_t>& size, uint32_t z,
+             uint32_t t) {
             auto [x, y] = location;
             auto [width, height] = size;
-            return self.ReadRegion(x, y, width, height, level);
+            return self.ReadRegion(x, y, width, height, level, z, t);
           },
           "Read a region from the slide using level-native coordinates\n\n"
           "Args:\n"
           "    location: Tuple (x, y) coordinates in level-native space\n"
           "    level: Pyramid level (0=highest resolution)\n"
-          "    size: Tuple (width, height) of region\n\n"
+          "    size: Tuple (width, height) of region\n"
+          "    z: Focal-plane index (0=first plane)\n"
+          "    t: Time-point index (0=first time point)\n\n"
           "Returns:\n"
           "    fastslide.Image: Image object. Call .numpy() to get array "
           "view.\n\n"
@@ -349,7 +459,40 @@ NB_MODULE(_fastslide, m) {
           "concurrent\n"
           "Python threads can perform overlapping reads in parallel.",
           nb::arg("location"), nb::arg("level"), nb::arg("size"),
+          nb::arg("z") = 0, nb::arg("t") = 0,
           nb::call_guard<nb::gil_scoped_release>())
+      .def(
+          "get_stack_info",
+          [](const FastSlide& self) {
+            const auto info = self.GetStackInfo();
+            nb::dict d;
+            d["z_count"] = info.z_count;
+            d["t_count"] = info.t_count;
+            d["z_spacing_um"] = info.z_spacing_um;
+            d["t_interval_s"] = info.t_interval_s;
+            return d;
+          },
+          "Z/T stack extent and spacing of the primary image as a dict.")
+      .def_prop_ro(
+          "z_count",
+          [](const FastSlide& self) { return self.GetStackInfo().z_count; },
+          "Number of focal planes (Z) in the primary image.")
+      .def_prop_ro(
+          "t_count",
+          [](const FastSlide& self) { return self.GetStackInfo().t_count; },
+          "Number of time points (T) in the primary image.")
+      .def_prop_ro(
+          "z_spacing_um",
+          [](const FastSlide& self) {
+            return self.GetStackInfo().z_spacing_um;
+          },
+          "Focal-plane spacing in microns, or None if unknown.")
+      .def_prop_ro(
+          "t_interval_s",
+          [](const FastSlide& self) {
+            return self.GetStackInfo().t_interval_s;
+          },
+          "Time-point interval in seconds, or None if unknown.")
 
       // Coordinate conversion utilities
       .def("convert_level0_to_level_native",
@@ -400,6 +543,19 @@ NB_MODULE(_fastslide, m) {
           "SHA-256 quickhash (unique identifier, OpenSlide-compatible)")
       .def_prop_ro("channel_metadata", &FastSlide::GetChannelMetadata,
                    "List of channel metadata dictionaries")
+      .def_prop_ro(
+          "images", &FastSlide::GetImages,
+          "Sequence of navigable images (pyramids) in this file.\n\n"
+          "For most slides this has length 1. Olympus VSI files can\n"
+          "expose a low-resolution 'navigator' image alongside one or\n"
+          "more high-resolution 'region' images. The top-level\n"
+          "``FastSlide`` properties (``dimensions``, ``level_count``,\n"
+          "``read_region``, ...) forward to ``slide.images.primary``.",
+          nb::rv_policy::reference_internal)
+      .def_prop_ro(
+          "num_images", [](FastSlide& self) { return self.GetImages().Len(); },
+          "Number of navigable images (pyramids) in this file.\n\n"
+          "Equivalent to ``len(slide.images)``.")
       .def_prop_ro("associated_images", &FastSlide::GetAssociatedImages,
                    "Dictionary-like access to associated images (lazy loaded)",
                    nb::rv_policy::reference_internal)
@@ -548,5 +704,5 @@ NB_MODULE(_fastslide, m) {
       "Check if file format is supported", nb::arg("filename"));
 
   // Version and constants
-  m.attr("__version__") = "0.6.0";
+  m.attr("__version__") = "0.7.0";
 }

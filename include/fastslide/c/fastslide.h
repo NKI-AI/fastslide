@@ -47,6 +47,7 @@
 #include "fastslide/c/api.h"
 #include "fastslide/c/image.h"
 #include "fastslide/c/registry.h"
+#include "fastslide/c/slide_image.h"
 #include "fastslide/c/slide_reader.h"
 #include "fastslide/c/utilities.h"
 

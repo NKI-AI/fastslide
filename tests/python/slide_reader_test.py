@@ -779,6 +779,71 @@ class TestErrorHandling:
 # Test fixtures and utilities
 
 
+class TestSlideImagesAccessor:
+    """Tests for the ``FastSlide.images`` multi-image accessor.
+
+    Single-image readers (SVS, MRXS, QPTIFF, ...) should still expose
+    exactly one ``SlideImageView`` whose dimensions match the top-level
+    ``slide.dimensions``. Multi-image readers (Olympus VSI) keep the same
+    contract: the primary image always matches the top-level view.
+    """
+
+    @pytest.fixture
+    def slide(self, sample_slide_path: str) -> Generator[fastslide.FastSlide, None, None]:
+        slide = fastslide.FastSlide.from_file_path(sample_slide_path)
+        yield slide
+        slide.close()
+
+    def test_images_attribute_exists(self, slide: fastslide.FastSlide) -> None:
+        images = slide.images
+        assert images is not None
+        assert len(images) >= 1
+
+    def test_primary_index_in_range(self, slide: fastslide.FastSlide) -> None:
+        images = slide.images
+        assert 0 <= images.primary_index < len(images)
+
+    def test_primary_matches_top_level(self, slide: fastslide.FastSlide) -> None:
+        """``slide.images.primary`` forwards the same view as ``slide.*``."""
+        primary = slide.images.primary
+        assert primary.dimensions == slide.dimensions
+        assert primary.level_count == slide.level_count
+        assert primary.level_dimensions == slide.level_dimensions
+
+    def test_names_length_matches(self, slide: fastslide.FastSlide) -> None:
+        images = slide.images
+        names = images.names()
+        assert isinstance(names, list)
+        assert len(names) == len(images)
+        for name in names:
+            assert isinstance(name, str)
+            assert name  # names should be non-empty
+
+    def test_iteration_visits_each_image_once(self, slide: fastslide.FastSlide) -> None:
+        images = slide.images
+        seen = [img.index for img in images]
+        assert seen == list(range(len(images)))
+
+    def test_read_region_from_primary_matches_top_level(self, slide: fastslide.FastSlide) -> None:
+        """Reading via ``slide.read_region`` and ``slide.images.primary.read_region`` should agree."""
+        top_level = slide.read_region(location=(0, 0), level=0, size=(64, 64))
+        per_image = slide.images.primary.read_region(location=(0, 0), level=0, size=(64, 64))
+        assert top_level.width == per_image.width
+        assert top_level.height == per_image.height
+        np.testing.assert_array_equal(top_level.numpy(), per_image.numpy())
+
+    def test_invalid_image_index_raises(self, slide: fastslide.FastSlide) -> None:
+        with pytest.raises(IndexError):
+            _ = slide.images[len(slide.images)]
+
+    def test_negative_indexing(self, slide: fastslide.FastSlide) -> None:
+        """``slide.images[-1]`` should resolve to the last image."""
+        last_by_neg = slide.images[-1]
+        last_by_pos = slide.images[len(slide.images) - 1]
+        assert last_by_neg.index == last_by_pos.index
+        assert last_by_neg.dimensions == last_by_pos.dimensions
+
+
 @pytest.fixture(scope="session")
 def sample_slide_path() -> str:
     """

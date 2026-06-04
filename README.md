@@ -13,17 +13,20 @@ FastSlide is a modern C++20 library for reading whole slide images (WSI) with fi
 - 🚀 **High Performance** - Thread-safe design
 - 🐍 **Python & C++** - Complete APIs for both languages
 - 🔧 **PyTorch Ready** - Works seamlessly with DataLoader multi-worker loading
+- 🔬 **Multi-dimensional** - Channels, focal planes (Z) and time points (T): full `C·X·Y·Z·T` selection for OME-TIFF and CZI
+- 🖼️ **Multiple images / scenes** - Zeiss CZI scenes and Olympus VSI navigator/region images exposed via `slide.images`
 - 📁 **Multiple Formats**:
   - SVS (Aperio)
   - QPTIFF (including mIF)
-  - OME-TIFF
+  - OME-TIFF (including Z/T stacks)
   - OME.ZARR (CXY, XYC only)
   - MRXS (3DHISTECH, including mIF)
   - iSyntax (Philips)
   - Philips TIFF
   - Generic TIFF
-  - CZI (Zeiss)
+  - CZI (Zeiss, including Z/T stacks)
   - Ventana (BIF)
+  - Olympus (VSI)
 
 ## Quick Start
 
@@ -105,7 +108,7 @@ Run `python tools/build_wheels.py --help` for the full option list.
 To consume FastSlide from another Bazel module, add it to your `MODULE.bazel`:
 
 ```python
-bazel_dep(name = "fastslide", version = "0.6.0")
+bazel_dep(name = "fastslide", version = "0.7.0")
 git_override(
     module_name = "fastslide",
     remote = "https://github.com/NKI-AI/fastslide.git",
@@ -191,6 +194,114 @@ with fastslide.FastSlide.from_file_path('slide.tiff') as slide:
     print(f"Best level for 8× downsample: {best_level}")
 ```
 
+#### Example: Multi-dimensional Reading (Channels, Z focal planes, T time points)
+
+OME-TIFF and CZI files can store more than a single 2D plane: multiple
+fluorescence **channels** (C), a **Z** focal stack, and a **T** time series.
+FastSlide exposes these as a `C·X·Y·Z·T` hyper-volume. Each `read_region`
+selects one `(z, t)` plane and returns all channels of that plane; `z` and `t`
+default to `0`, so 2D/brightfield code keeps working unchanged.
+
+```python
+import fastslide
+
+with fastslide.FastSlide.from_file_path('stack.ome.tiff') as slide:
+    # Inspect the stack extent.
+    print(f"Focal planes (Z): {slide.z_count}")
+    print(f"Time points (T):  {slide.t_count}")
+    print(f"Z spacing: {slide.z_spacing_um} µm")   # None if unknown
+    print(f"T interval: {slide.t_interval_s} s")   # None if unknown
+
+    # Or as a single dict.
+    print(slide.get_stack_info())
+    # {'z_count': 5, 't_count': 7, 'z_spacing_um': 0.5, 't_interval_s': 10.0}
+
+    # Read the 3rd focal plane at the 2nd time point.
+    region = slide.read_region(
+        location=(0, 0),
+        level=0,
+        size=(512, 512),
+        z=2,   # focal-plane index (0 = first plane)
+        t=1,   # time-point index (0 = first time point)
+    ).numpy()
+
+    # Fluorescence planes carry independent channels (not RGB). The numpy
+    # shape depends on the image's internal layout (see "Pixel layout" below):
+    #   - interleaved / CONTIGUOUS -> (height, width, channels)  [HWC]
+    #   - band-separate / SEPARATE -> (channels, height, width)  [CHW]
+    for t in range(slide.t_count):
+        for z in range(slide.z_count):
+            img = slide.read_region((0, 0), level=0, size=(512, 512), z=z, t=t)
+            # Normalize to a known layout instead of assuming one:
+            arr = img.to_interleaved().numpy()  # (512, 512, channels), HWC
+```
+
+Per-image stacks are also available on individual images of a multi-image
+slide via `slide.images[i].read_region(..., z=, t=)` and
+`slide.images[i].get_stack_info()`.
+
+##### Pixel layout (interleaved vs. band-separate)
+
+The byte layout of a returned `Image` is not fixed — it follows the source's
+internal organization, exposed via `image.planar_config`:
+
+| `planar_config`           | Memory layout     | `numpy()` shape             |
+| ------------------------- | ----------------- | --------------------------- |
+| `PlanarConfig.CONTIGUOUS` | interleaved, HWC  | `(height, width, channels)` |
+| `PlanarConfig.SEPARATE`   | band-separate,CHW | `(channels, height, width)` |
+
+Brightfield RGB is typically `CONTIGUOUS`; multi-channel fluorescence is
+typically `SEPARATE`. Don't assume an axis order — inspect it, or normalize:
+
+```python
+img = slide.read_region((0, 0), level=0, size=(512, 512))
+
+img.planar_config   # PlanarConfig.CONTIGUOUS or PlanarConfig.SEPARATE
+img.is_interleaved  # True for HWC
+img.is_separate     # True for CHW
+
+# Force a specific layout (no-op + zero-copy if already in that layout).
+hwc = img.to_interleaved().numpy()  # (H, W, C)
+chw = img.to_separate().numpy()     # (C, H, W)
+```
+
+#### Example: Multiple Images / Scenes (Zeiss CZI, Olympus VSI)
+
+Some files hold more than one navigable image. Zeiss CZI files expose each
+acquisition **scene** as its own image; Olympus VSI files expose a
+low-resolution "navigator" alongside one or more high-resolution "region"
+images. FastSlide surfaces these through `slide.images`, an indexable sequence
+of `SlideImageView`s. The top-level `FastSlide` accessors (`dimensions`,
+`level_count`, `read_region`, ...) always forward to the **primary** image, so
+single-image code is unaffected.
+
+```python
+import fastslide
+
+with fastslide.FastSlide.from_file_path('scan.czi') as slide:
+    print(f"Number of images: {slide.num_images}")  # == len(slide.images)
+    print(f"Image names: {slide.images.names()}")    # e.g. ['scene 0', 'scene 1']
+    print(f"Primary index: {slide.images.primary_index}")
+
+    # Iterate every image (scene) and read each independently.
+    for img in slide.images:
+        print(f"[{img.index}] {img.name}: {img.dimensions}, "
+              f"{img.level_count} levels, Z={img.z_count}, T={img.t_count}")
+        region = img.read_region(location=(0, 0), level=0, size=(512, 512)).numpy()
+
+    # Address a specific image by index, with full level + Z/T selection.
+    scene1 = slide.images[1]
+    tile = scene1.read_region((0, 0), level=0, size=(1024, 1024), z=0, t=0).numpy()
+
+    # The primary image is also directly accessible.
+    primary = slide.images.primary
+```
+
+Each `SlideImageView` is a full navigator with its own pyramid (`level_count`,
+`level_dimensions`, `level_downsamples`), resolution (`mpp`), and Z/T stack
+(`z_count`, `t_count`, `get_stack_info()`) — so an individual scene can itself
+be a `C·X·Y·Z·T` volume.
+
 #### Example: Accessing Associated Images
 
 ```python
@@ -232,6 +343,68 @@ fastslide::RegionSpec spec{
     .level = 0
 };
 auto image = reader->ReadRegion(spec);
+```
+
+#### Multi-dimensional Reading (Channels, Z focal planes, T time points)
+
+For OME-TIFF and CZI stacks, `RegionSpec::plane` selects the focal plane (Z)
+and time point (T); both default to the first plane, so 2D reads are
+unaffected. Query the stack extent with `GetStackInfo()`.
+
+```cpp
+// Stack extent and physical spacing.
+const fastslide::StackInfo stack = reader->GetStackInfo();
+// stack.z_count, stack.t_count          : number of selectable planes (>= 1)
+// stack.z_spacing_um, stack.t_interval_s : std::optional<double> (physical step)
+
+// Read the 3rd focal plane at the 2nd time point.
+fastslide::RegionSpec spec{
+    .top_left = {0, 0},
+    .size = {512, 512},
+    .level = 0,
+    .plane = {.z = 2, .t = 1},
+};
+auto result = reader->ReadRegion(spec);  // aifocore::Result<Image>
+const fastslide::Image& image = result.value();  // check result.ok() first
+
+// Channel memory layout follows the source and is reported per Image; do not
+// assume interleaved vs. band-separate. Normalize when you need a fixed order.
+const fastslide::PlanarConfig layout = image.GetPlanarConfig();
+const bool interleaved = image.IsInterleaved();  // kContiguous (HWC)
+const bool separate    = image.IsSeparate();     // kSeparate   (CHW)
+auto hwc = image.ToInterleaved();  // zero-copy/no-op if already interleaved
+auto chw = image.ToPlanar();       // zero-copy/no-op if already separate
+```
+
+#### Multiple Images / Scenes
+
+`GetImageCount()`, `GetImageNames()` and `GetImage(index)` expose every
+navigable image (Zeiss CZI scenes, Olympus VSI navigator/region images). The
+reader's own `ReadRegion`/`GetStackInfo` forward to `GetPrimaryImageIndex()`.
+
+```cpp
+const int count = reader->GetImageCount();
+const std::vector<std::string> names = reader->GetImageNames();
+
+for (int i = 0; i < count; ++i) {
+  auto image_or = reader->GetImage(i);  // aifocore::Result<const SlideImage*>
+  if (!image_or.ok()) {
+    continue;
+  }
+  const fastslide::SlideImage& image = *image_or.value();
+
+  // Each image has its own name, pyramid, channels and Z/T stack.
+  const std::string name = image.GetName();
+  const fastslide::StackInfo stack = image.GetStackInfo();
+
+  fastslide::RegionSpec spec{
+      .top_left = {0, 0},
+      .size = {512, 512},
+      .level = 0,
+      .plane = {.z = 0, .t = 0},
+  };
+  auto region = image.ReadRegion(spec);  // aifocore::Result<Image>
+}
 ```
 
 ## Key Features

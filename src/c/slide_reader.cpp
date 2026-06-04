@@ -22,6 +22,11 @@
 extern "C" FastSlideImage* fastslide_image_create_from_cpp(
     fastslide::Image image);
 
+// Internal factory implemented in slide_image.cpp (where the
+// FastSlideSlideImage handle is defined). Not part of any public header.
+extern "C" FastSlideSlideImage* fastslide_slide_image_create_internal(
+    const fastslide::SlideReader* reader, int index);
+
 // Wrapper struct to hold the C++ SlideReader
 struct FastSlideSlideReader {
   std::unique_ptr<fastslide::SlideReader> reader;
@@ -470,7 +475,8 @@ FastSlideImage* fastslide_slide_reader_read_region(
   fastslide::RegionSpec cpp_region{
       .top_left = {region->top_left.x, region->top_left.y},
       .size = {region->size.width, region->size.height},
-      .level = region->level};
+      .level = region->level,
+      .plane = {region->z, region->t}};
 
   FASTSLIDE_DEBUG_PRINT("[FastSlide C] DEBUG: Calling C++ ReadRegion\n");
   auto image_or = reader->reader->ReadRegion(cpp_region);
@@ -526,12 +532,12 @@ FastSlideImage* fastslide_slide_reader_read_region(
 
 FastSlideImage* fastslide_slide_reader_read_region_coords(
     const FastSlideSlideReader* reader, uint32_t x, uint32_t y, uint32_t width,
-    uint32_t height, int level) {
+    uint32_t height, int level, uint32_t z, uint32_t t) {
 
   FASTSLIDE_DEBUG_PRINT(
       "[FastSlide C] DEBUG: read_region_coords called with x=%u, y=%u, w=%u, "
-      "h=%u, level=%d\n",
-      x, y, width, height, level);
+      "h=%u, level=%d, z=%u, t=%u\n",
+      x, y, width, height, level, z, t);
 
   // Validate inputs
   if (width == 0 || height == 0) {
@@ -549,10 +555,117 @@ FastSlideImage* fastslide_slide_reader_read_region_coords(
     return nullptr;
   }
 
-  FastSlideRegionSpec region = {
-      .top_left = {x, y}, .size = {width, height}, .level = level};
+  FastSlideRegionSpec region = {.top_left = {x, y},
+                                .size = {width, height},
+                                .level = level,
+                                .z = z,
+                                .t = t};
 
   return fastslide_slide_reader_read_region(reader, &region);
+}
+
+int fastslide_slide_reader_get_stack_info(const FastSlideSlideReader* reader,
+                                          FastSlideStackInfo* info) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+  if (!info) {
+    SetLastError("info cannot be null");
+    return 0;
+  }
+  const fastslide::StackInfo stack = reader->reader->GetStackInfo();
+  info->z_count = stack.z_count;
+  info->t_count = stack.t_count;
+  info->has_z_spacing = stack.z_spacing_um.has_value() ? 1 : 0;
+  info->z_spacing_um = stack.z_spacing_um.value_or(0.0);
+  info->has_t_interval = stack.t_interval_s.has_value() ? 1 : 0;
+  info->t_interval_s = stack.t_interval_s.value_or(0.0);
+  return 1;
+}
+
+// Multi-image container API
+
+int fastslide_slide_reader_get_image_count(const FastSlideSlideReader* reader) {
+  FASTSLIDE_REQUIRE_READER(reader, -1);
+
+  return reader->reader->GetImageCount();
+}
+
+int fastslide_slide_reader_get_primary_image_index(
+    const FastSlideSlideReader* reader) {
+  FASTSLIDE_REQUIRE_READER(reader, -1);
+
+  return reader->reader->GetPrimaryImageIndex();
+}
+
+int fastslide_slide_reader_get_image_names(const FastSlideSlideReader* reader,
+                                           char*** names, int* num_names) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+
+  if (!names || !num_names) {
+    SetLastError("names and num_names cannot be null");
+    return 0;
+  }
+
+  auto name_list = reader->reader->GetImageNames();
+  *num_names = static_cast<int>(name_list.size());
+
+  if (*num_names == 0) {
+    *names = nullptr;
+    return 1;
+  }
+
+  *names = static_cast<char**>(malloc(*num_names * sizeof(char*)));
+  if (!*names) {
+    SetLastError("failed to allocate memory for names array");
+    return 0;
+  }
+
+  for (int i = 0; i < *num_names; ++i) {
+    (*names)[i] = static_cast<char*>(malloc(name_list[i].length() + 1));
+    if (!(*names)[i]) {
+      for (int j = 0; j < i; ++j) {
+        free((*names)[j]);
+      }
+      free(*names);
+      *names = nullptr;
+      SetLastError("failed to allocate memory for name string");
+      return 0;
+    }
+    snprintf((*names)[i], name_list[i].length() + 1, "%s",
+             name_list[i].c_str());
+  }
+
+  return 1;
+}
+
+void fastslide_slide_reader_free_image_names(char** names, int num_names) {
+  if (!names || num_names <= 0) {
+    return;
+  }
+
+  for (int i = 0; i < num_names; ++i) {
+    free(names[i]);
+  }
+  free(names);
+}
+
+FastSlideSlideImage* fastslide_slide_reader_get_image(
+    const FastSlideSlideReader* reader, int index) {
+  FASTSLIDE_REQUIRE_READER(reader, nullptr);
+
+  const int count = reader->reader->GetImageCount();
+  if (index < 0 || index >= count) {
+    SetLastError("image index out of range");
+    return nullptr;
+  }
+
+  // Validate that the underlying image resolves before handing out a handle.
+  auto image_or = reader->reader->GetImage(index);
+  if (!image_or.ok()) {
+    SetLastError(std::string(image_or.status().message()).c_str());
+    return nullptr;
+  }
+
+  return fastslide_slide_image_create_internal(reader->reader.get(), index);
 }
 
 // Associated images

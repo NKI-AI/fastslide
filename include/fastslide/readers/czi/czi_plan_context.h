@@ -17,6 +17,7 @@
 
 #include <memory>
 
+#include "fastslide/image.h"
 #include "fastslide/readers/czi/czi_spatial_index.h"
 #include "fastslide/slide_reader.h"
 
@@ -27,6 +28,8 @@ struct CziPlanContext {
   int level_count = 0;
   LevelInfo level_info;
   std::shared_ptr<const czi::CziSpatialIndex> spatial_index;
+  /// Native output sample type for this scene (kUInt8 or kUInt16).
+  DataType data_type = DataType::kUInt8;
 };
 
 }  // namespace fastslide

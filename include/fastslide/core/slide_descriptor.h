@@ -129,6 +129,21 @@ struct SlideProperties {
   SlideProperties() : mpp{0.0, 0.0}, objective_magnification(0.0), bounds() {}
 };
 
+/// @brief Z (focal) / T (time) stack extent for one image.
+///
+/// Describes the non-spatial stack axes of a single `SlideImage`. Every plane
+/// of the stack shares the image's X/Y extent, pyramid levels, channels and
+/// MPP; `z_count`/`t_count` give the number of selectable planes, and the
+/// optional spacings give their physical step. The defaults describe a plain
+/// 2D image (a single plane), so formats without focal/time stacks need not
+/// populate this.
+struct StackInfo {
+  uint32_t z_count = 1;                ///< Number of focal planes (>= 1)
+  uint32_t t_count = 1;                ///< Number of time points (>= 1)
+  std::optional<double> z_spacing_um;  ///< Focal-plane spacing in microns
+  std::optional<double> t_interval_s;  ///< Time-point interval in seconds
+};
+
 // Note: ImageFormat is defined in fastslide/image.h, not duplicated here
 
 /// @brief Complete slide descriptor
@@ -190,6 +205,7 @@ using core::LevelInfo;
 using core::SlideBounds;
 using core::SlideDescriptor;
 using core::SlideProperties;
+using core::StackInfo;
 
 }  // namespace fastslide
 

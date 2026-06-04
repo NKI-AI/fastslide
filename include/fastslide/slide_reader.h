@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <shared_mutex>
 #include <span>
@@ -41,6 +42,8 @@ namespace fastslide {
 namespace runtime {
 class Canvas;
 }
+class SlideImage;
+class SelfImageView;
 }  // namespace fastslide
 
 namespace fastslide {
@@ -63,8 +66,9 @@ using core::SlideProperties;
 /// @brief Abstract base class for slide readers
 class SlideReader {
  public:
-  /// @brief Virtual destructor
-  virtual ~SlideReader() = default;
+  /// @brief Virtual destructor (out-of-line to allow `unique_ptr` to an
+  /// incomplete `SelfImageView`).
+  virtual ~SlideReader();
 
   /// @brief Delete copy constructor and assignment
   SlideReader(const SlideReader&) = delete;
@@ -108,6 +112,49 @@ class SlideReader {
   /// @param downsample Desired downsample factor
   /// @return Best matching level
   [[nodiscard]] virtual int GetBestLevelForDownsample(double downsample) const;
+
+  // =========================================================================
+  // Multi-image container API
+  // =========================================================================
+  //
+  // A `SlideReader` is the file/container; a `SlideImage` is one navigable
+  // pyramid inside it. Most formats expose exactly one image; formats like
+  // Olympus VSI expose several (navigator + per-region scans).
+  //
+  // The default implementations below make every existing reader report a
+  // single image (`GetImage(0)` returns a `SelfImageView` that forwards
+  // back to the reader's existing virtuals). Multi-image readers override
+  // these four methods and own their own `SlideImage` instances.
+  //
+  // Note: associated images (label, macro, thumbnail) are a separate
+  // concept exposed by `GetAssociatedImageNames`/`ReadAssociatedImage`;
+  // they are not `SlideImage`s.
+
+  /// @brief Number of navigable images (pyramids) in this file.
+  ///
+  /// Always >= 1. Default implementation returns 1 (single-image readers).
+  [[nodiscard]] virtual int GetImageCount() const { return 1; }
+
+  /// @brief Index of the "primary" image. The container's own
+  /// `ReadRegion`, `GetLevelCount` etc. all target this image.
+  ///
+  /// Always a valid index in `[0, GetImageCount())`. Default returns 0.
+  [[nodiscard]] virtual int GetPrimaryImageIndex() const { return 0; }
+
+  /// @brief Human-readable name for each image, in index order.
+  ///
+  /// Default produces `{"image 0"}`; multi-image readers override to
+  /// surface format-specific names (e.g. "navigator", "region 0").
+  [[nodiscard]] virtual std::vector<std::string> GetImageNames() const;
+
+  /// @brief Get a stable, non-owning handle to the i-th image.
+  ///
+  /// The returned pointer is owned by the reader and lives for as long
+  /// as the reader does. Default implementation returns a lazily
+  /// constructed `SelfImageView` for index 0 and `kNotFound` otherwise.
+  /// Multi-image readers override and return one entry per pyramid.
+  [[nodiscard]] virtual aifocore::Result<const SlideImage*> GetImage(
+      int index) const;
 
   // =========================================================================
   // Two-Stage Tile Reading Pipeline
@@ -226,6 +273,12 @@ class SlideReader {
   /// @return Tile size (width, height) in pixels, or {0, 0} if not tiled
   [[nodiscard]] virtual ImageDimensions GetTileSize() const = 0;
 
+  /// @brief Z (focal) / T (time) stack extent for the primary image.
+  /// @return Stack info; default forwards to the primary `SlideImage`
+  /// (`GetImage(GetPrimaryImageIndex())`), which reports a single plane for
+  /// 2D formats.
+  [[nodiscard]] virtual StackInfo GetStackInfo() const;
+
   /// @brief Get QuickHash (unique identifier for slide data)
   /// @return SHA-256 hash string (compatible with OpenSlide), or empty string
   /// if unavailable
@@ -282,8 +335,10 @@ class SlideReader {
                                 const ImageDimensions& image_dims);
 
  protected:
-  /// @brief Protected constructor (only derived classes can instantiate)
-  SlideReader() = default;
+  /// @brief Protected constructor (only derived classes can instantiate).
+  /// Defined out-of-line to keep `SelfImageView` an incomplete type at the
+  /// point of use here.
+  SlideReader();
 
   // =========================================================================
   // Protected Helpers
@@ -307,6 +362,14 @@ class SlideReader {
  private:
   /// @brief Optional tile cache for decoded internal tiles
   std::shared_ptr<ITileCache> cache_;
+
+  /// @brief Lazily constructed default adapter returned by `GetImage(0)`
+  /// when a reader does not override the multi-image API.
+  ///
+  /// Guarded by `self_image_view_once_` to keep `GetImage` thread-safe
+  /// even though the underlying storage is logically `const`.
+  mutable std::unique_ptr<SelfImageView> self_image_view_;
+  mutable std::once_flag self_image_view_once_;
 };
 
 // Format plugins and ReaderRegistry are defined in fastslide/runtime/ and

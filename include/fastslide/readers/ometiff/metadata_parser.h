@@ -42,6 +42,8 @@ struct OmePixels {
   bool interleaved = false;
   std::optional<double> physical_size_x;  // µm/px
   std::optional<double> physical_size_y;  // µm/px
+  std::optional<double> physical_size_z;  // µm between focal planes
+  std::optional<double> time_increment;   // seconds between time points
 };
 
 /// @brief OME Channel metadata
@@ -58,6 +60,12 @@ struct OmeTiffData {
   uint32_t first_t = 0;
   uint32_t ifd = 0;
   uint32_t plane_count = 1;
+  /// Optional `<UUID>` text of the file that physically holds these planes.
+  /// Empty when the `<TiffData>` has no `<UUID>` child (the plane lives in the
+  /// current file). Used to detect multi-file ("companion") datasets.
+  std::string uuid;
+  /// Optional `FileName` attribute of the `<UUID>` child (sibling file name).
+  std::string file_name;
 };
 
 /// @brief Parsed OME-XML subset used by the OME-TIFF reader
@@ -65,6 +73,9 @@ struct OmeMetadata {
   OmePixels pixels;
   std::vector<OmeChannel> channels;
   std::vector<OmeTiffData> tiff_data;
+  /// `UUID` attribute of the `<OME>` root, identifying the current file in a
+  /// multi-file dataset. Empty when the writer did not emit one.
+  std::string self_uuid;
   // Map K -> (size_x, size_y) for pyramid resolutions.
   std::map<int, std::pair<uint32_t, uint32_t>> pyramid_resolutions;
 };

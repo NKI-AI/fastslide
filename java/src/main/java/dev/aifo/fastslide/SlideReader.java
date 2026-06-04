@@ -121,6 +121,42 @@ public final class SlideReader implements AutoCloseable {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // Multi-image container API
+  //
+  // A SlideReader is the file/container; a SlideImage is one navigable
+  // pyramid inside it. The reader's own level/region methods target the
+  // primary image; use getImage() to navigate the others.
+  // ---------------------------------------------------------------------
+
+  /** Number of navigable images (pyramids) in this file; always {@code >= 1}. */
+  public int getImageCount() {
+    return FastSlideNative.readerGetImageCount(requireHandle());
+  }
+
+  /** Index of the primary image (the one the reader's own methods target). */
+  public int getPrimaryImageIndex() {
+    return FastSlideNative.readerGetPrimaryImageIndex(requireHandle());
+  }
+
+  /** Human-readable names for every image, in index order. */
+  public String[] getImageNames() {
+    try (Arena arena = Arena.ofConfined()) {
+      return FastSlideNative.readerGetImageNames(arena, requireHandle());
+    }
+  }
+
+  /**
+   * Returns a handle to the {@code index}-th navigable image. The handle borrows this reader and
+   * must be {@linkplain SlideImage#close() closed} before, and not used after, the reader is
+   * closed.
+   *
+   * @param index image index in {@code [0, getImageCount())}
+   */
+  public SlideImage getImage(int index) {
+    return new SlideImage(FastSlideNative.readerGetImage(requireHandle(), index));
+  }
+
   public Image readRegion(int x, int y, int width, int height, int level) {
     if (x < 0 || y < 0 || width < 0 || height < 0) {
       throw new IllegalArgumentException("x/y/width/height must be non-negative");

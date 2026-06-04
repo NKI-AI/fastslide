@@ -43,7 +43,7 @@ WHEEL_PLATFORM = select({
     "//conditions:default": "any",
 })
 
-FASTSLIDE_VERSION = "0.6.0"
+FASTSLIDE_VERSION = "0.7.0"
 # ==============================================================================
 # Copy extension binary
 # ==============================================================================

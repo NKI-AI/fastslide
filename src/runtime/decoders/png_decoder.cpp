@@ -147,15 +147,30 @@ aifocore::Status EncodePngToFile(std::string_view path,
                                  std::span<const uint8_t> pixels,
                                  uint32_t width, uint32_t height,
                                  uint32_t channels) {
-  if (channels != 3U && channels != 4U) {
+  return EncodePngToFile(path, pixels, width, height, channels, 8U);
+}
+
+aifocore::Status EncodePngToFile(std::string_view path,
+                                 std::span<const uint8_t> pixels,
+                                 uint32_t width, uint32_t height,
+                                 uint32_t channels, uint32_t bit_depth) {
+  if (channels != 1U && channels != 3U && channels != 4U) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("PNG encode: unsupported channel count {} "
-                              "(must be 3 or 4)",
+                              "(must be 1, 3, or 4)",
                               channels));
   }
+  if (bit_depth != 8U && bit_depth != 16U) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format(
+            "PNG encode: unsupported bit_depth {} (must be 8 or 16)",
+            bit_depth));
+  }
+  const std::size_t bytes_per_sample = bit_depth / 8U;
   const std::size_t expected =
-      static_cast<std::size_t>(width) * height * channels;
+      static_cast<std::size_t>(width) * height * channels * bytes_per_sample;
   if (pixels.size() != expected) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
@@ -164,14 +179,39 @@ aifocore::Status EncodePngToFile(std::string_view path,
             expected, pixels.size()));
   }
 
-  const std::string path_str(path);
+  // PNG stores 16-bit channels in big-endian on disk. ``lodepng_encode``
+  // honours the host endianness when the input is interpreted as raw
+  // bytes, so we byte-swap a little-endian uint16 source into a scratch
+  // buffer first.
+  std::vector<unsigned char> swapped;
+  const unsigned char* src_data = pixels.data();
+  if (bit_depth == 16U) {
+    swapped.resize(pixels.size());
+    for (std::size_t i = 0; i < pixels.size(); i += 2) {
+      swapped[i] = pixels[i + 1];
+      swapped[i + 1] = pixels[i];
+    }
+    src_data = swapped.data();
+  }
+
+  LodePNGColorType color_type = LCT_RGB;
+  if (channels == 1U) {
+    color_type = LCT_GREY;
+  } else if (channels == 4U) {
+    color_type = LCT_RGBA;
+  }
+
+  std::vector<unsigned char> png_bytes;
   const unsigned int err =
-      (channels == 3U) ? lodepng_encode24_file(path_str.c_str(), pixels.data(),
-                                               width, height)
-                       : lodepng_encode32_file(path_str.c_str(), pixels.data(),
-                                               width, height);
+      lodepng::encode(png_bytes, src_data, width, height, color_type,
+                      static_cast<unsigned int>(bit_depth));
   if (err != 0U) {
     return MakePngError(err, "encode");
+  }
+  const std::string path_str(path);
+  const unsigned int save_err = lodepng::save_file(png_bytes, path_str);
+  if (save_err != 0U) {
+    return MakePngError(save_err, "save");
   }
   return aifocore::Status::OkStatus();
 }

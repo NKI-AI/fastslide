@@ -17,18 +17,12 @@
 
 #include <cstdint>
 #include <span>
-#include <vector>
 
 #include "aifocore/status/result.h"
 #include "fastslide/image.h"
+#include "fastslide/runtime/decoders/decoded_image.h"
 
 namespace fastslide::runtime::decoders {
-
-struct DecodedRgb {
-  uint32_t width = 0;
-  uint32_t height = 0;
-  std::vector<uint8_t> rgb;
-};
 
 struct JpegDecodeOptions {
   // When using the jpgd backend, MRXS needs to skip YCbCr->RGB conversion for

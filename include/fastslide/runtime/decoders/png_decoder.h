@@ -18,31 +18,11 @@
 #include <cstdint>
 #include <span>
 #include <string_view>
-#include <vector>
 
 #include "aifocore/status/result.h"
-#include "fastslide/runtime/decoders/jpeg_decoder.h"
+#include "fastslide/runtime/decoders/decoded_image.h"
 
 namespace fastslide::runtime::decoders {
-
-/// @brief Result of decoding a PNG into 8-bit RGBA pixels.
-struct DecodedRgba {
-  uint32_t width = 0;
-  uint32_t height = 0;
-  /// Interleaved RGBA8 pixels, size = width * height * 4.
-  std::vector<uint8_t> rgba;
-};
-
-/// @brief Result of decoding a PNG into 16-bit per channel RGB pixels.
-///
-/// Values are stored in host endianness (lodepng's big-endian PNG output is
-/// byte-swapped on little-endian platforms by `DecodePng16ToRgb`).
-struct DecodedRgb16 {
-  uint32_t width = 0;
-  uint32_t height = 0;
-  /// Interleaved RGB16 pixels, size = width * height * 3.
-  std::vector<uint16_t> rgb;
-};
 
 /// @brief Decode a PNG bitstream to 8-bit RGB pixels (alpha dropped).
 ///
@@ -100,6 +80,27 @@ struct DecodedRgb16 {
                                                std::span<const uint8_t> pixels,
                                                uint32_t width, uint32_t height,
                                                uint32_t channels);
+
+/// @brief Encode an interleaved pixel buffer as a PNG file.
+///
+/// Supports 1/3/4 channels at 8 or 16 bits per channel. For 16-bit input
+/// the pixel data must be little-endian uint16 (host order on common
+/// platforms); the encoder byte-swaps internally so the on-disk PNG is
+/// always written in the standard big-endian form.
+///
+/// @param path        Destination path.
+/// @param pixels      Interleaved raw byte buffer. Length must equal
+///                    ``width * height * channels * (bit_depth / 8)``.
+/// @param width       Image width in pixels.
+/// @param height      Image height in pixels.
+/// @param channels    Components per pixel: 1 (gray), 3 (RGB), 4 (RGBA).
+/// @param bit_depth   Bits per channel; must be 8 or 16.
+/// @return Status, either ok or describing the failure.
+[[nodiscard]] aifocore::Status EncodePngToFile(std::string_view path,
+                                               std::span<const uint8_t> pixels,
+                                               uint32_t width, uint32_t height,
+                                               uint32_t channels,
+                                               uint32_t bit_depth);
 
 }  // namespace fastslide::runtime::decoders
 

@@ -29,13 +29,16 @@
 
 #include "fastslide/image.h"
 #include "fastslide/python/cache.h"
+#include "fastslide/slide_image.h"
 #include "fastslide/slide_reader.h"
 
 namespace nb = nanobind;
 
 namespace fastslide::python {
 
+using fastslide::SlideImage;
 using fastslide::SlideReader;
+using fastslide::StackInfo;
 
 /// @brief Lazy-loading dictionary-like wrapper for associated images
 class AssociatedImages {
@@ -106,12 +109,79 @@ class AssociatedData {
   void ClearCache() const;
 };
 
+/// @brief Lightweight Python view of one `SlideImage` inside a slide.
+///
+/// Holds a weak reference to the owning reader and the image index, so
+/// the C++ side stays the source of truth. Methods raise `RuntimeError`
+/// if the underlying slide has been closed.
+class SlideImageView {
+ public:
+  SlideImageView(std::weak_ptr<SlideReader> reader, int index);
+
+  /// @brief Image name (e.g. "navigator", "region 0").
+  [[nodiscard]] std::string GetName() const;
+
+  /// @brief Number of pyramid levels.
+  [[nodiscard]] int GetLevelCount() const;
+
+  /// @brief Level-0 dimensions as `(width, height)`.
+  [[nodiscard]] nb::tuple GetDimensions() const;
+
+  /// @brief Tuple of `(width, height)` for each level.
+  [[nodiscard]] nb::tuple GetLevelDimensions() const;
+
+  /// @brief Tuple of downsample factors for each level.
+  [[nodiscard]] nb::tuple GetLevelDownsamples() const;
+
+  /// @brief Microns-per-pixel as `(mpp_x, mpp_y)`.
+  [[nodiscard]] nb::tuple GetMpp() const;
+
+  /// @brief Read a region using level-native coordinates.
+  /// @param z Focal-plane index (0 = first plane).
+  /// @param t Time-point index (0 = first time point).
+  [[nodiscard]] std::shared_ptr<fastslide::Image> ReadRegion(
+      uint32_t x, uint32_t y, uint32_t width, uint32_t height, int level,
+      uint32_t z = 0, uint32_t t = 0);
+
+  /// @brief Z (focal) / T (time) stack extent and spacing for this image.
+  [[nodiscard]] StackInfo GetStackInfo() const;
+
+  /// @brief Pick the level closest to a desired downsample factor.
+  [[nodiscard]] int GetBestLevelForDownsample(double downsample) const;
+
+  /// @brief Image index inside the container.
+  [[nodiscard]] int GetIndex() const { return index_; }
+
+ private:
+  [[nodiscard]] std::shared_ptr<SlideReader> GetReader() const;
+  [[nodiscard]] const SlideImage* GetImage() const;
+
+  std::weak_ptr<SlideReader> reader_;
+  int index_;
+};
+
+/// @brief Indexable collection of `SlideImageView`s, like `slide.images`.
+class SlideImages {
+ public:
+  explicit SlideImages(std::weak_ptr<SlideReader> reader);
+
+  [[nodiscard]] size_t Len() const;
+  [[nodiscard]] SlideImageView GetItem(int index) const;
+  [[nodiscard]] int GetPrimaryIndex() const;
+  [[nodiscard]] std::vector<std::string> Names() const;
+
+ private:
+  [[nodiscard]] std::shared_ptr<SlideReader> GetReader() const;
+  std::weak_ptr<SlideReader> reader_;
+};
+
 /// @brief Main slide reader class with pythonic interface
 class FastSlide {
  private:
   std::shared_ptr<SlideReader> reader_;
   std::unique_ptr<AssociatedImages> associated_images_;
   std::unique_ptr<AssociatedData> associated_data_;
+  std::unique_ptr<SlideImages> images_;
   std::shared_ptr<fastslide::runtime::ITileCache> cache_;
   bool is_closed_;
   std::string source_path_;
@@ -141,14 +211,23 @@ class FastSlide {
                 nb::object traceback);
 
   /// @brief Read a region from the slide using level-native coordinates
+  /// @param z Focal-plane index (0 = first plane).
+  /// @param t Time-point index (0 = first time point).
   [[nodiscard]] std::shared_ptr<fastslide::Image> ReadRegion(
-      uint32_t x, uint32_t y, uint32_t width, uint32_t height, int level = 0);
+      uint32_t x, uint32_t y, uint32_t width, uint32_t height, int level = 0,
+      uint32_t z = 0, uint32_t t = 0);
+
+  /// @brief Z (focal) / T (time) stack extent of the primary image.
+  [[nodiscard]] StackInfo GetStackInfo() const;
 
   /// @brief Get associated images accessor
   [[nodiscard]] AssociatedImages& GetAssociatedImages();
 
   /// @brief Get associated data accessor
   [[nodiscard]] AssociatedData& GetAssociatedData();
+
+  /// @brief Navigable pyramids inside the file (`slide.images`).
+  [[nodiscard]] SlideImages& GetImages();
 
   // Properties (pythonic getters)
   [[nodiscard]] nb::tuple GetDimensions() const;
