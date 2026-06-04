@@ -112,12 +112,28 @@ public final class SlideImage implements AutoCloseable {
     }
   }
 
+  /** Z/T stack extent of this image. */
+  public StackInfo getStackInfo() {
+    try (Arena arena = Arena.ofConfined()) {
+      Object[] raw = FastSlideNative.slideImageGetStackInfo(arena, requireHandle());
+      return SlideReader.toStackInfo(raw);
+    }
+  }
+
   public Image readRegion(int x, int y, int width, int height, int level) {
+    return readRegion(x, y, width, height, level, 0, 0);
+  }
+
+  public Image readRegion(int x, int y, int width, int height, int level, int z, int t) {
     if (x < 0 || y < 0 || width < 0 || height < 0) {
       throw new IllegalArgumentException("x/y/width/height must be non-negative");
     }
+    if (z < 0 || t < 0) {
+      throw new IllegalArgumentException("z/t must be non-negative");
+    }
     MemorySegment img =
-        FastSlideNative.slideImageReadRegionCoords(requireHandle(), x, y, width, height, level);
+        FastSlideNative.slideImageReadRegionCoords(
+            requireHandle(), x, y, width, height, level, z, t);
     return new Image(img);
   }
 

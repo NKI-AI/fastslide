@@ -12,6 +12,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.OptionalDouble;
 
 /** Wraps a native {@code FastSlideSlideReader*}. */
 public final class SlideReader implements AutoCloseable {
@@ -157,12 +158,41 @@ public final class SlideReader implements AutoCloseable {
     return new SlideImage(FastSlideNative.readerGetImage(requireHandle(), index));
   }
 
+  /** Z/T stack extent of the primary image. */
+  public StackInfo getStackInfo() {
+    try (Arena arena = Arena.ofConfined()) {
+      Object[] raw = FastSlideNative.readerGetStackInfo(arena, requireHandle());
+      return toStackInfo(raw);
+    }
+  }
+
+  static StackInfo toStackInfo(Object[] raw) {
+    int zCount = (int) raw[0];
+    int tCount = (int) raw[1];
+    boolean hasZSpacing = (boolean) raw[2];
+    double zSpacingUm = (double) raw[3];
+    boolean hasTInterval = (boolean) raw[4];
+    double tIntervalS = (double) raw[5];
+    return new StackInfo(
+        zCount,
+        tCount,
+        hasZSpacing ? OptionalDouble.of(zSpacingUm) : OptionalDouble.empty(),
+        hasTInterval ? OptionalDouble.of(tIntervalS) : OptionalDouble.empty());
+  }
+
   public Image readRegion(int x, int y, int width, int height, int level) {
+    return readRegion(x, y, width, height, level, 0, 0);
+  }
+
+  public Image readRegion(int x, int y, int width, int height, int level, int z, int t) {
     if (x < 0 || y < 0 || width < 0 || height < 0) {
       throw new IllegalArgumentException("x/y/width/height must be non-negative");
     }
+    if (z < 0 || t < 0) {
+      throw new IllegalArgumentException("z/t must be non-negative");
+    }
     MemorySegment img =
-        FastSlideNative.readerReadRegionCoords(requireHandle(), x, y, width, height, level);
+        FastSlideNative.readerReadRegionCoords(requireHandle(), x, y, width, height, level, z, t);
     return new Image(img);
   }
 
