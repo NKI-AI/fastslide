@@ -56,13 +56,12 @@ ImageDimensions SelfImageView::GetTileSize() const {
 }
 
 StackInfo SelfImageView::GetStackInfo() const {
-  // This adapter carries no data of its own, and `SlideReader::GetStackInfo()`
-  // delegates back to the primary image (i.e. this view) -- forwarding here
-  // would recurse forever. A single-image reader exposed through the default
-  // self-view has no Z/T stack, so report the empty default (matching
-  // `SlideImage::GetStackInfo()`). Readers that genuinely expose a stack
-  // provide their own `SlideImage` and never use this adapter.
-  return {};
+  // Forward to the owning reader, which is authoritative for single-image
+  // formats. `SlideReader::GetStackInfo()` returns an empty stack by default
+  // (no delegation back to the primary image), so this does not recurse;
+  // readers with real Z/T stacks (e.g. OME-TIFF) override the reader method
+  // and their counts surface here.
+  return reader_.GetStackInfo();
 }
 
 aifocore::Result<core::TilePlan> SelfImageView::PrepareRequest(

@@ -234,7 +234,12 @@ public final class FastSlideNative {
       downcall(
           "fastslide_slide_reader_read_region_coords",
           FunctionDescriptor.of(
-              ADDRESS, ADDRESS, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT));
+              ADDRESS, ADDRESS, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT,
+              JAVA_INT));
+  private static final MethodHandle READER_GET_STACK_INFO =
+      downcall(
+          "fastslide_slide_reader_get_stack_info",
+          FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
 
   // FastSlideImageDimensions layout: { uint32_t width; uint32_t height; }
   static final long DIMS_SIZE = 8;
@@ -243,6 +248,12 @@ public final class FastSlideNative {
   //   double mpp_x (0), double mpp_y (8), double objective_magnification (16),
   //   char* objective_name (24), char* scanner_model (32), char* scan_date (40)
   static final long PROPS_SIZE = 48;
+
+  // FastSlideStackInfo layout (doubles are 8-byte aligned):
+  //   uint32_t z_count (0), uint32_t t_count (4), int has_z_spacing (8),
+  //   [4 pad], double z_spacing_um (16), int has_t_interval (24),
+  //   [4 pad], double t_interval_s (32) => 40 bytes total
+  static final long STACK_INFO_SIZE = 40;
 
   public static void readerFree(MemorySegment reader) {
     try {
@@ -413,12 +424,26 @@ public final class FastSlideNative {
   }
 
   public static MemorySegment readerReadRegionCoords(
-      MemorySegment reader, int x, int y, int w, int h, int level) {
+      MemorySegment reader, int x, int y, int w, int h, int level, int z, int t) {
     try {
       clearLastError();
       MemorySegment img =
-          (MemorySegment) READER_READ_REGION_COORDS.invokeExact(reader, x, y, w, h, level);
+          (MemorySegment) READER_READ_REGION_COORDS.invokeExact(reader, x, y, w, h, level, z, t);
       return checkNonNull(img, "fastslide_slide_reader_read_region_coords");
+    } catch (Throwable t2) {
+      throw wrap(t2);
+    }
+  }
+
+  /** Returns [zCount, tCount, hasZSpacing, zSpacingUm, hasTInterval, tIntervalS]. */
+  public static Object[] readerGetStackInfo(Arena arena, MemorySegment reader) {
+    try {
+      MemorySegment info = arena.allocate(STACK_INFO_SIZE);
+      clearLastError();
+      checkSuccess(
+          (int) READER_GET_STACK_INFO.invokeExact(reader, info),
+          "fastslide_slide_reader_get_stack_info");
+      return parseStackInfo(info);
     } catch (Throwable t) {
       throw wrap(t);
     }
@@ -592,7 +617,12 @@ public final class FastSlideNative {
       downcall(
           "fastslide_slide_image_read_region_coords",
           FunctionDescriptor.of(
-              ADDRESS, ADDRESS, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT));
+              ADDRESS, ADDRESS, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT, JAVA_INT,
+              JAVA_INT));
+  private static final MethodHandle SLIDE_IMAGE_GET_STACK_INFO =
+      downcall(
+          "fastslide_slide_image_get_stack_info",
+          FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
 
   public static void slideImageFree(MemorySegment image) {
     try {
@@ -745,12 +775,27 @@ public final class FastSlideNative {
   }
 
   public static MemorySegment slideImageReadRegionCoords(
-      MemorySegment image, int x, int y, int w, int h, int level) {
+      MemorySegment image, int x, int y, int w, int h, int level, int z, int t) {
     try {
       clearLastError();
       MemorySegment img =
-          (MemorySegment) SLIDE_IMAGE_READ_REGION_COORDS.invokeExact(image, x, y, w, h, level);
+          (MemorySegment)
+              SLIDE_IMAGE_READ_REGION_COORDS.invokeExact(image, x, y, w, h, level, z, t);
       return checkNonNull(img, "fastslide_slide_image_read_region_coords");
+    } catch (Throwable t2) {
+      throw wrap(t2);
+    }
+  }
+
+  /** Returns [zCount, tCount, hasZSpacing, zSpacingUm, hasTInterval, tIntervalS]. */
+  public static Object[] slideImageGetStackInfo(Arena arena, MemorySegment image) {
+    try {
+      MemorySegment info = arena.allocate(STACK_INFO_SIZE);
+      clearLastError();
+      checkSuccess(
+          (int) SLIDE_IMAGE_GET_STACK_INFO.invokeExact(image, info),
+          "fastslide_slide_image_get_stack_info");
+      return parseStackInfo(info);
     } catch (Throwable t) {
       throw wrap(t);
     }
@@ -850,5 +895,19 @@ public final class FastSlideNative {
   private static String readNullableString(MemorySegment ptr) {
     if (ptr.equals(MemorySegment.NULL)) return "";
     return ptr.reinterpret(Long.MAX_VALUE).getString(0);
+  }
+
+  /**
+   * Decodes a FastSlideStackInfo struct into [zCount, tCount, hasZSpacing, zSpacingUm,
+   * hasTInterval, tIntervalS].
+   */
+  private static Object[] parseStackInfo(MemorySegment info) {
+    int zCount = info.get(JAVA_INT, 0);
+    int tCount = info.get(JAVA_INT, 4);
+    boolean hasZSpacing = info.get(JAVA_INT, 8) != 0;
+    double zSpacingUm = info.get(JAVA_DOUBLE, 16);
+    boolean hasTInterval = info.get(JAVA_INT, 24) != 0;
+    double tIntervalS = info.get(JAVA_DOUBLE, 32);
+    return new Object[] {zCount, tCount, hasZSpacing, zSpacingUm, hasTInterval, tIntervalS};
   }
 }

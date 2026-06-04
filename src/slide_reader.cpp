@@ -89,11 +89,12 @@ RegionSpec SlideReader::ClampRegion(const RegionSpec& region,
 }
 
 StackInfo SlideReader::GetStackInfo() const {
-  auto image = GetImage(GetPrimaryImageIndex());
-  if (!image.ok()) {
-    return {};
-  }
-  return (*image)->GetStackInfo();
+  // No Z/T stack by default. Readers that expose focal/time planes override
+  // this (e.g. OmeTiffReader from its parsed metadata, CziReader by forwarding
+  // to the primary scene image). The default single-image view
+  // (SelfImageView::GetStackInfo) forwards here, so this must not delegate back
+  // to the primary image or it would recurse for plain readers.
+  return {};
 }
 
 int SlideReader::GetBestLevelForDownsample(double downsample) const {

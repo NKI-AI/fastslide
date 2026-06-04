@@ -33,6 +33,7 @@ __attribute__((used)) static const fn_ptr fastslide_exports[] = {
     (fn_ptr)fastslide_slide_reader_free_associated_image_names,
     (fn_ptr)fastslide_slide_reader_get_associated_image_dimensions,
     (fn_ptr)fastslide_slide_reader_read_region_coords,
+    (fn_ptr)fastslide_slide_reader_get_stack_info,
     (fn_ptr)fastslide_slide_reader_get_channel_metadata,
     (fn_ptr)fastslide_slide_reader_free_channel_metadata,
     // Multi-image container API.
@@ -52,6 +53,7 @@ __attribute__((used)) static const fn_ptr fastslide_exports[] = {
     (fn_ptr)fastslide_slide_image_get_data_type,
     (fn_ptr)fastslide_slide_image_get_channel_metadata,
     (fn_ptr)fastslide_slide_image_get_properties,
+    (fn_ptr)fastslide_slide_image_get_stack_info,
     (fn_ptr)fastslide_slide_image_read_region_coords,
     (fn_ptr)fastslide_image_free,
     (fn_ptr)fastslide_image_get_info,

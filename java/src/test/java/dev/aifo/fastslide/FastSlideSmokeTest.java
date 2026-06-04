@@ -29,5 +29,31 @@ public final class FastSlideSmokeTest {
 
     // Should not throw.
     FastSlide.isSupported("this-file-does-not-exist.svs");
+
+    // When a slide path is provided, exercise the Z/T stack API end to end.
+    if (args.length > 0) {
+      checkStackInfo(args[0]);
+    }
+  }
+
+  private static void checkStackInfo(String path) {
+    try (SlideReader reader = FastSlide.open(path)) {
+      StackInfo readerStack = reader.getStackInfo();
+      if (readerStack.zCount() < 1 || readerStack.tCount() < 1) {
+        throw new AssertionError("Expected reader zCount/tCount >= 1, got " + readerStack);
+      }
+      try (SlideImage image = reader.getImage(reader.getPrimaryImageIndex())) {
+        StackInfo imageStack = image.getStackInfo();
+        if (imageStack.zCount() < 1 || imageStack.tCount() < 1) {
+          throw new AssertionError("Expected image zCount/tCount >= 1, got " + imageStack);
+        }
+        // Reading the first plane explicitly must succeed.
+        try (Image tile = image.readRegion(0, 0, 1, 1, 0, 0, 0)) {
+          if (tile.getSizeBytes() <= 0) {
+            throw new AssertionError("Expected non-empty tile for plane (z=0, t=0)");
+          }
+        }
+      }
+    }
   }
 }
