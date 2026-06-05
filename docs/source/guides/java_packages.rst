@@ -1,14 +1,19 @@
-Java Packages and Releases
-==========================
+Packages and Releases
+=====================
 
-FastSlide ships a small Java API plus per-platform native libraries as JARs.
-They are built with Bazel and published as **GitHub Release assets** on
-``NKI-AI/fastslide``, where downstream projects (notably the
-`QuPath FastSlide extension <https://github.com/NKI-AI/qupath-extension-fastslide>`_)
-consume them anonymously through a Gradle ``ivy``/url repository.
+A FastSlide release publishes two artifact families, all built with Bazel and
+tied together by a single GitHub Release on ``NKI-AI/fastslide``:
 
-Artifacts and coordinates
--------------------------
+- **Python wheels** -- published to **PyPI** (``pip install fastslide``) and also
+  attached to the GitHub Release.
+- **Java artifacts** -- a small Java API plus per-platform native libraries as
+  JARs, published as **GitHub Release assets** and consumed anonymously by
+  downstream projects (notably the
+  `QuPath FastSlide extension <https://github.com/NKI-AI/qupath-extension-fastslide>`_)
+  through a Gradle ``ivy``/url repository.
+
+Java artifacts and coordinates
+------------------------------
 
 A release contains:
 
@@ -22,7 +27,15 @@ A release contains:
 - ``SHA256SUMS`` -- checksums for every JAR.
 
 Supported ``<os>-<arch>`` classifiers: ``linux-x86_64``, ``linux-aarch64``,
-``darwin-x86_64``, ``darwin-aarch64``, ``windows-x86_64``, ``windows-aarch64``.
+``darwin-x86_64``, ``darwin-aarch64``, ``windows-x86_64``.
+
+.. note::
+
+   ``windows-aarch64`` is **not** published. The only available cross toolchain
+   (Zig) emits an arm64 Windows PE that the loader rejects (``LoadLibraryEx``
+   error 193), and we cannot build on a Windows host because ``rules_uv`` has no
+   Windows host support. It will be added once a native arm64 Windows build is
+   possible.
 
 The version is read from ``package/versions.json``. The release **tag equals the
 bare version** (e.g. ``0.7.0``) so the consumer's ``[revision]`` pattern resolves
@@ -51,13 +64,28 @@ release asset URL, then declares ordinary dependencies:
    dependencies {
        implementation("dev.aifo:fastslide-java:0.7.0")
        listOf("linux-x86_64", "linux-aarch64", "darwin-x86_64",
-              "darwin-aarch64", "windows-x86_64", "windows-aarch64")
+              "darwin-aarch64", "windows-x86_64")
            .forEach { runtimeOnly("dev.aifo:fastslide-native:0.7.0:$it") }
    }
 
 The native library loads itself off the classpath at runtime
 (``NativeLoader.tryLoadFromClasspath`` reads ``META-INF/native/<os>-<arch>/``),
 so no native path configuration is needed.
+
+Python wheels
+-------------
+
+The Python package is distributed as platform wheels (one per
+platform/CPython version, cp310--cp314) built with Bazel and **published to
+PyPI**, so consumers just::
+
+   pip install fastslide
+
+The same wheels are attached to the GitHub Release for convenience. Wheels are
+built for ``linux``/``darwin`` (x86_64 + aarch64) and ``windows`` (x86_64);
+``windows_arm64`` is skipped (``rules_python`` has no ``py_cc`` toolchain for it,
+matching the Java side). Build them locally with ``tools/build_wheels.py``
+(see below).
 
 .. _java-local-release:
 
@@ -100,48 +128,103 @@ offline.
 Because step 3 produces the identical layout CI publishes, a green local run is
 a faithful preview of the real release.
 
-Publishing a GitHub release
----------------------------
+To build wheels locally (optionally narrowing the platform/Python matrix)::
 
-Releases are cut by the **manual** ``Release Java artifacts`` workflow
-(``.github/workflows/release-java.yml``); it never fires automatically on a
-version bump. To publish:
+   python3 tools/build_wheels.py --platform darwin_aarch64 --python cp311
+   # -> artifacts/wheels/*.whl
+
+``publish_java_artifacts.py`` also attaches any wheels in ``artifacts/wheels``
+to the GitHub Release (its ``--wheels-dir`` defaults there); for a local
+``--dest local`` stage only the Java JARs are written.
+
+Publishing a release
+--------------------
+
+Releases are cut by the **manual** ``Release FastSlide`` workflow
+(``.github/workflows/release.yml``); it never fires automatically on a version
+bump. To publish:
 
 1. Bump ``version`` in ``package/versions.json``.
 2. From the ``NKI-AI/fastslide`` repo, run the workflow (Actions tab ->
-   *Release Java artifacts* -> *Run workflow*). Set ``release: true`` for a final
-   release, or leave it ``false`` for a prerelease/snapshot (tag
-   ``<version>-dev.<shortsha>``). The ``platforms`` input lets you build a
-   subset for a cheap trial run.
+   *Release FastSlide* -> *Run workflow*). Set ``release: true`` for a final
+   release (tag ``<version>``, marked latest, **wheels published to PyPI**), or
+   leave it ``false`` for a prerelease/snapshot (tag ``<version>-dev.<shortsha>``,
+   GitHub-only, no PyPI). The ``platforms`` input lets you build a subset for a
+   cheap trial run.
+
+You do **not** create the git tag or write release notes by hand: the workflow
+creates the tag via ``gh release create`` and auto-generates the notes
+(``--generate-notes``) from merged PRs since the previous tag.
 
 What the workflow does
 ~~~~~~~~~~~~~~~~~~~~~~~
 
+The workflow fans out into per-platform **build** jobs (Java JARs and Python
+wheels) plus on-target **smoke** jobs, then converges on PyPI publishing and a
+single aggregate **GitHub Release**:
+
 .. mermaid::
 
    flowchart TB
-       dispatch["workflow_dispatch (release bool)"] --> matrix
-       subgraph matrix [build-and-smoke: one native runner per platform]
-           lx["linux_x86_64 / ubuntu-24.04"]
-           la["linux_arm64 / ubuntu-24.04-arm"]
-           mx["darwin_x86_64 / macos-13"]
-           ma["darwin_aarch64 / macos-14"]
-           wx["windows_x86_64 / windows-2022"]
-           wa["windows_arm64 / windows-11-arm"]
+       dispatch["workflow_dispatch (release bool)"] --> bj & bw
+       subgraph bj [build-java: classifier JARs]
+           blx["linux_x86_64 / ubuntu-24.04"]
+           bla["linux_arm64 / ubuntu-24.04-arm"]
+           bmx["darwin_x86_64 / macos-14 (cross arm->x86_64)"]
+           bma["darwin_aarch64 / macos-14"]
+           bwx["windows_x86_64 / ubuntu-24.04 (cross, Zig)"]
        end
-       matrix --> rel["release job (needs all): provenance + gh release"]
-       rel --> ivy["consumers resolve dev.aifo:fastslide-* anonymously"]
+       subgraph sj [smoke-java: run JARs on the real target OS/arch]
+           slx["linux x86_64/arm64"]
+           smx["darwin x86_64 (Rosetta) / aarch64"]
+           swx["windows_x86_64 / windows-2022"]
+       end
+       subgraph bw [build-wheels: cp310-cp314 per platform]
+           wl["linux x86_64/arm64"]
+           wm["darwin x86_64/aarch64"]
+           ww["windows_x86_64"]
+       end
+       bj --> sj
+       bw --> pypi["publish-pypi (release only): Trusted Publishing"]
+       sj --> rel
+       bw --> rel
+       pypi --> rel["github-release (needs all): provenance + gh release (jars + wheels + SHA256SUMS, auto notes)"]
+       rel --> consumers["pip install fastslide / Gradle ivy resolves dev.aifo:fastslide-*"]
 
-Each platform is built on a runner matching its CPU/OS -- FastSlide does **not**
-cross-compile to macOS, and building natively lets every job smoke-test the
-exact artifact it produced. The matrix is ``fail-fast: false``; the ``release``
-job ``needs:`` every matrix job, so a release is only cut when all selected
-platforms succeed. Released JARs additionally get a SLSA build-provenance
+Why the split:
+
+- **macOS uses only the arm64 runner.** FastSlide does **not** cross-compile to
+  macOS from another OS, but the Apple toolchain on an arm64 Mac targets
+  ``x86_64`` cheaply, so ``darwin_x86_64`` is cross-compiled on ``macos-14`` (the
+  Intel runner is slow and frequently unavailable). Its smoke test also runs on
+  ``macos-14`` under **Rosetta**, using an x86_64 JDK so the JVM and the x86_64
+  ``.dylib`` it loads are actually executed (emulated), not skipped. Linux is
+  built natively on Linux.
+- **Windows x86_64 is cross-compiled on Linux** (hermetic Zig toolchain).
+  Windows cannot act as the Bazel *host* here: ``aspect_rules_py`` / ``rules_uv``
+  reject a Windows host (``Unsupported platform windows``), which aborts analysis
+  of even pure Java targets. Building with a Linux host (target = windows) avoids
+  that entirely. ``windows_arm64`` is not shipped (Zig emits an arm64 PE the
+  Windows loader rejects with error 193, and a native Windows host build is
+  blocked by ``rules_uv``).
+- **Smoke tests always run on the real target runner** (including native
+  Windows). They need only a JDK and the published JARs -- no Bazel -- so they
+  validate the exact artifact a consumer would load, regardless of where it was
+  built.
+
+All matrices are ``fail-fast: false``; the ``github-release`` job ``needs:`` the
+smoke phase, the wheel builds, and (on a full release) the PyPI publish, so a
+release is only cut when every selected platform built, smoke-tested, and
+published cleanly. Every released JAR and wheel gets a SLSA build-provenance
 attestation.
 
 .. note::
 
-   ``NKI-AI/fastslide`` must be public for anonymous consumption. The
-   ``windows-11-arm`` leg is the least battle-tested (Bazel/JDK availability on
-   Windows arm64); if it is flaky, omit ``windows_arm64`` from the ``platforms``
-   input -- the other platforms are unaffected.
+   ``NKI-AI/fastslide`` must be public for anonymous Java consumption.
+
+   **PyPI prerequisite (one-time).** Publishing wheels uses PyPI `Trusted
+   Publishing <https://docs.pypi.org/trusted-publishers/>`_ (OIDC, no API
+   token). On PyPI, add a trusted publisher for the project with owner
+   ``NKI-AI``, repository ``fastslide``, workflow ``release.yml``, and
+   environment ``pypi``. The ``publish-pypi`` job uses ``skip-existing`` so a
+   re-run won't fail if a version is already on PyPI.

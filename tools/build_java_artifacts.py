@@ -5,11 +5,12 @@ from __future__ import annotations
 
 import argparse
 
-from artifacts import jars
+from artifacts import common, jars
 from artifacts.specs import PLATFORMS
 
 
 def main() -> None:
+    common.force_utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--bazel",

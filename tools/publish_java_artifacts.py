@@ -39,6 +39,8 @@ def _short_sha() -> str:
 
 
 def main() -> None:
+    common.force_utf8_stdio()
+
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--dest",
@@ -86,6 +88,21 @@ def main() -> None:
         action="store_true",
         help="Fail unless the wrapper + all per-platform native JARs are present.",
     )
+    parser.add_argument(
+        "--wheels-dir",
+        type=Path,
+        default=common.WORKSPACE_ROOT / "artifacts" / "wheels",
+        help=(
+            "Directory of Python wheels (*.whl) to also attach to the GitHub "
+            "Release, so one release hubs both the Java and Python artifacts "
+            f"(default: {common.WORKSPACE_ROOT / 'artifacts' / 'wheels'})."
+        ),
+    )
+    parser.add_argument(
+        "--generate-notes",
+        action="store_true",
+        help="Let GitHub auto-generate the release notes from merged PRs.",
+    )
     args = parser.parse_args()
 
     version = common.read_fastslide_version()
@@ -119,12 +136,19 @@ def main() -> None:
     else:
         tag = f"{version}-dev.{_short_sha()}"
 
-    checksums = release.write_checksums(jars, args.jar_dir / release.CHECKSUMS_NAME)
-    title = f"FastSlide Java {tag}"
+    wheels = sorted(args.wheels_dir.glob("*.whl")) if args.wheels_dir.is_dir() else []
+    if wheels:
+        print(f"\u25b6\ufe0e Attaching {len(wheels)} wheel(s) from {args.wheels_dir}")
+    else:
+        print(f"\u26a0 No wheels found in {args.wheels_dir}; attaching JARs only.")
+
+    checksums = release.write_checksums(jars + wheels, args.jar_dir / release.CHECKSUMS_NAME)
+    title = f"FastSlide {tag}"
     notes = (
-        f"FastSlide Java artifacts for `{version}`.\n\n"
-        "Consumed as Gradle ivy/url dependencies "
-        "`dev.aifo:fastslide-java` and `dev.aifo:fastslide-native:<os>-<arch>`."
+        f"FastSlide artifacts for `{version}`.\n\n"
+        "Java: Gradle ivy/url dependencies `dev.aifo:fastslide-java` and "
+        "`dev.aifo:fastslide-native:<os>-<arch>`.\n"
+        "Python: wheels published to PyPI (also attached here)."
     )
     release.publish_github(
         jars,
@@ -134,6 +158,8 @@ def main() -> None:
         prerelease=not is_release,
         repo=args.repo,
         checksums=checksums,
+        extra_assets=wheels,
+        generate_notes=args.generate_notes,
     )
 
 

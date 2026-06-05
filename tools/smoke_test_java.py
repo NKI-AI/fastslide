@@ -58,6 +58,8 @@ def _resolve_jars(jar_dir: Path, version: str, platform_key: str) -> tuple[Path,
 
 
 def main() -> None:
+    common.force_utf8_stdio()
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--platform",

@@ -1,0 +1,362 @@
+# Build, test, and publish a full FastSlide release: the Java artifacts (wrapper
+# JAR + per-platform native classifier JARs) and the Python wheels, tied
+# together by one GitHub Release. Wheels are also published to PyPI.
+#
+# Design (see docs/source/guides/java_packages.rst):
+#   - build-java / build-wheels: produce each platform's artifacts where they
+#     CAN be built:
+#       * linux/darwin: built on a matching runner (darwin_x86_64 is cross-built
+#         on the arm64 Mac via the Apple toolchain).
+#       * windows_x86_64: CROSS-compiled on Linux via the hermetic Zig toolchain.
+#         Windows cannot be a Bazel *host* here because aspect_rules_py /
+#         rules_uv have no Windows host support ("Unsupported platform windows").
+#       * windows_arm64 is NOT shipped: Zig emits an arm64 PE the Windows loader
+#         rejects (error 193) and we can't build on a Windows host.
+#   - smoke-java: run the shipped JARs through fastslidetool on the REAL target
+#     runner (incl. native Windows), needing only a JDK -- no Bazel.
+#   - publish-pypi: upload wheels + to PyPI via Trusted Publishing (full release
+#     only). Requires a PyPI trusted publisher configured for this repo, this
+#     workflow file (release.yml), and the `pypi` environment.
+#   - github-release: needs every build/smoke job, so a release is only cut when
+#     all selected platforms succeed. Attaches every artifact + provenance.
+#
+# Trigger: manual only (`workflow_dispatch`). It does NOT run on a version bump.
+name: Release FastSlide
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish a full release (false = prerelease/snapshot, no PyPI)"
+        type: boolean
+        default: false
+      platforms:
+        description: "Comma-separated platform keys to build"
+        type: string
+        default: "linux_x86_64,linux_arm64,darwin_x86_64,darwin_aarch64,windows_x86_64"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+# Force UTF-8 for Python stdio so the build scripts' status glyphs do not crash
+# on Windows runners (default code page is cp1252). Run all JavaScript actions
+# on Node.js 24 (Node.js 20 is deprecated on the runners).
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  build-java:
+    name: Build Java ${{ matrix.platform }}
+    runs-on: ${{ matrix.builder }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux_x86_64
+            builder: ubuntu-24.04
+          - platform: linux_arm64
+            builder: ubuntu-24.04-arm
+          # Cross-compiled on the arm64 Mac (Apple toolchain targets x86_64):
+          # the Intel runner is far slower, and the artifact is still validated
+          # on a real Intel host in the smoke phase below.
+          - platform: darwin_x86_64
+            builder: macos-14
+          - platform: darwin_aarch64
+            builder: macos-14
+          # Windows x86_64 is cross-compiled on Linux (see header note).
+          - platform: windows_x86_64
+            builder: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Decide whether to build this platform
+        id: gate
+        shell: bash
+        run: |
+          selected=",${{ inputs.platforms }},"
+          selected="${selected// /}"
+          if [[ "${selected}" == *",${{ matrix.platform }},"* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false (not in inputs.platforms)"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Free disk space (Linux)
+        if: steps.gate.outputs.run == 'true' && runner.os == 'Linux'
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+
+      - name: Pin Bazel version
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: echo "USE_BAZEL_VERSION=$(tr -d '[:space:]' < .bazelversion)" >> "$GITHUB_ENV"
+
+      - name: Set up Bazel
+        if: steps.gate.outputs.run == 'true'
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          disk-cache: java-${{ matrix.platform }}
+
+      - name: Build native + JARs (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: python3 tools/build_java_artifacts.py --platform ${{ matrix.platform }} --bazel bazel
+
+      - name: Upload native classifier JAR
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: native-${{ matrix.platform }}
+          path: artifacts/jars/fastslide-native-*-*.jar
+          if-no-files-found: error
+          retention-days: 7
+
+      # The platform-independent wrapper JAR is identical from every build;
+      # upload it under a per-platform name so any single-platform run is
+      # self-sufficient (downloads dedupe by filename).
+      - name: Upload wrapper JAR
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: wrapper-${{ matrix.platform }}
+          path: artifacts/jars/fastslide-java-*.jar
+          if-no-files-found: error
+          retention-days: 7
+
+  smoke-java:
+    name: Smoke Java ${{ matrix.platform }}
+    needs: build-java
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux_x86_64
+            runner: ubuntu-24.04
+            java_arch: x64
+          - platform: linux_arm64
+            runner: ubuntu-24.04-arm
+            java_arch: aarch64
+          # No bootable Intel macOS runner; validate the x86_64 dylib under
+          # Rosetta on the arm64 runner with an x86_64 JDK.
+          - platform: darwin_x86_64
+            runner: macos-14
+            java_arch: x64
+            rosetta: true
+          - platform: darwin_aarch64
+            runner: macos-14
+            java_arch: aarch64
+          - platform: windows_x86_64
+            runner: windows-2022
+            java_arch: x64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Decide whether to smoke this platform
+        id: gate
+        shell: bash
+        run: |
+          selected=",${{ inputs.platforms }},"
+          selected="${selected// /}"
+          if [[ "${selected}" == *",${{ matrix.platform }},"* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rosetta
+        if: steps.gate.outputs.run == 'true' && matrix.rosetta
+        run: softwareupdate --install-rosetta --agree-to-license
+
+      # FastSlide's FFM code needs a JDK >= 22; 23 is the highest Temurin ships
+      # across every runner arch. Pin the architecture so the JVM matches the
+      # artifact under test (x64 runs via Rosetta on the arm runner).
+      - name: Set up JDK
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "23"
+          architecture: ${{ matrix.java_arch }}
+
+      - name: Download built JARs
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/download-artifact@v6
+        with:
+          path: artifacts/jars
+          pattern: "{native,wrapper}-*"
+          merge-multiple: true
+
+      - name: On-target smoke test (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: python3 tools/smoke_test_java.py --platform ${{ matrix.platform }}
+
+  build-wheels:
+    name: Build wheels ${{ matrix.platform }}
+    runs-on: ${{ matrix.builder }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # windows_arm64 has no rules_python py_cc toolchain, so wheels are not
+        # built for it (build_wheels.py skips it too).
+        include:
+          - platform: linux_x86_64
+            builder: ubuntu-24.04
+          - platform: linux_arm64
+            builder: ubuntu-24.04-arm
+          - platform: darwin_x86_64
+            builder: macos-14
+          - platform: darwin_aarch64
+            builder: macos-14
+          - platform: windows_x86_64
+            builder: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Decide whether to build this platform
+        id: gate
+        shell: bash
+        run: |
+          selected=",${{ inputs.platforms }},"
+          selected="${selected// /}"
+          if [[ "${selected}" == *",${{ matrix.platform }},"* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false (not in inputs.platforms)"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Free disk space (Linux)
+        if: steps.gate.outputs.run == 'true' && runner.os == 'Linux'
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+
+      - name: Pin Bazel version
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: echo "USE_BAZEL_VERSION=$(tr -d '[:space:]' < .bazelversion)" >> "$GITHUB_ENV"
+
+      - name: Set up Bazel
+        if: steps.gate.outputs.run == 'true'
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          disk-cache: wheels-${{ matrix.platform }}
+
+      - name: Build wheels (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: python3 tools/build_wheels.py --platform ${{ matrix.platform }} --bazel bazel
+
+      - name: Upload wheels
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: wheels-${{ matrix.platform }}
+          path: artifacts/wheels/*.whl
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-pypi:
+    name: Publish wheels to PyPI
+    # Only a full release publishes to PyPI; snapshots stay GitHub-only.
+    if: inputs.release == true
+    needs: build-wheels
+    runs-on: ubuntu-24.04
+    environment: pypi
+    permissions:
+      id-token: write # OIDC for PyPI Trusted Publishing (no API token)
+    steps:
+      - name: Download wheels
+        uses: actions/download-artifact@v6
+        with:
+          path: dist
+          pattern: "wheels-*"
+          merge-multiple: true
+
+      - name: List wheels
+        shell: bash
+        run: ls -l dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          skip-existing: true
+
+  github-release:
+    name: Publish GitHub Release
+    needs: [smoke-java, build-wheels, publish-pypi]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create the release
+      id-token: write # SLSA provenance signing
+      attestations: write # record the attestation
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Download JARs
+        uses: actions/download-artifact@v6
+        with:
+          path: artifacts/jars
+          pattern: "{native,wrapper}-*"
+          merge-multiple: true
+
+      - name: Download wheels
+        uses: actions/download-artifact@v6
+        with:
+          path: artifacts/wheels
+          pattern: "wheels-*"
+          merge-multiple: true
+
+      - name: List collected artifacts
+        shell: bash
+        run: |
+          echo "JARs:"; ls -l artifacts/jars
+          echo "Wheels:"; ls -l artifacts/wheels
+
+      - name: Generate build provenance attestation
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: |
+            artifacts/jars/*.jar
+            artifacts/wheels/*.whl
+
+      - name: Publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          channel="--snapshot"
+          require=""
+          if [[ "${{ inputs.release }}" == "true" ]]; then
+            channel="--release"
+            require="--require-all"
+          fi
+          python3 tools/publish_java_artifacts.py \
+            --dest github ${channel} ${require} \
+            --wheels-dir artifacts/wheels \
+            --generate-notes

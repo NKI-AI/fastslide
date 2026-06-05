@@ -12,4 +12,6 @@ bazel-fastslide
 tools/format/node_modules
 # Leftover Meson subprojects (the standalone repo is Bazel-only; these
 # directories are not generated, but the entry is harmless if absent).
-subprojects/*
+# NOTE: .bazelignore entries are literal directory paths -- wildcards are not
+# supported and Bazel 9.1+ errors on them (e.g. "Illegal char <*>").
+subprojects

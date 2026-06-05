@@ -161,15 +161,15 @@ def _collect_plans(*, current_version: str, new_version: str) -> list[PlannedEdi
             flags=re.MULTILINE,
         )
     )
-    plans.append(
-        _plan_regex_sub(
-            path=WORKSPACE_ROOT / "python" / "pyproject.toml",
-            description="Update version in python/pyproject.toml",
-            pattern=r'^(version\s*=\s*)"[^"]*"\s*$',
-            replacement=f'\\g<1>"{new_version}"',
-            flags=re.MULTILINE,
-        )
-    )
+    # plans.append(
+    #     _plan_regex_sub(
+    #         path=WORKSPACE_ROOT / "python" / "pyproject.toml",
+    #         description="Update version in python/pyproject.toml",
+    #         pattern=r'^(version\s*=\s*)"[^"]*"\s*$',
+    #         replacement=f'\\g<1>"{new_version}"',
+    #         flags=re.MULTILINE,
+    #     )
+    # )
     plans.append(
         _plan_regex_sub(
             path=WORKSPACE_ROOT / "python" / "fastslide" / "__init__.py",
