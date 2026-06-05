@@ -39,6 +39,8 @@ def _short_sha() -> str:
 
 
 def main() -> None:
+    common.force_utf8_stdio()
+
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--dest",

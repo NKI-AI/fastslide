@@ -7,7 +7,20 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 from pathlib import Path
+
+
+def force_utf8_stdio() -> None:
+    """Reconfigure stdout/stderr to UTF-8 (no-op where unsupported).
+
+    Prevents ``UnicodeEncodeError`` when printing status glyphs on Windows
+    consoles, whose default code page (cp1252) cannot encode them.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 def find_fastslide_workspace() -> Path:

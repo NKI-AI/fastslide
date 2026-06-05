@@ -31,6 +31,12 @@ concurrency:
   group: release-java-${{ github.ref }}
   cancel-in-progress: true
 
+# Force UTF-8 for Python stdio so the build scripts' status glyphs do not crash
+# on Windows runners (default code page is cp1252).
+env:
+  PYTHONUTF8: "1"
+  PYTHONIOENCODING: "utf-8"
+
 jobs:
   build-and-smoke:
     name: Build ${{ matrix.platform }}
@@ -80,18 +86,35 @@ jobs:
           large-packages: true
 
       # JDK to RUN the smoke test (the build itself uses Bazel's pinned
-      # remotejdk_25). 25 matches the runtime in .bazelrc and has stable FFM.
-      - name: Set up JDK 25
+      # remotejdk). FastSlide's FFM code needs a JDK >= 22 (stable
+      # java.lang.foreign); 23 is the highest version Temurin currently ships
+      # across every runner arch here, including windows-11-arm.
+      - name: Set up JDK
         if: steps.gate.outputs.run == 'true'
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "25"
+          java-version: "23"
 
-      - name: Install Bazelisk
+      # Prefer the preinstalled bazelisk/bazel; only fall back to installing it
+      # (arm runners may lack it). Avoids the EEXIST/EACCES failures from an
+      # unconditional `npm install -g`.
+      - name: Ensure Bazelisk
+        id: bzl
         if: steps.gate.outputs.run == 'true'
         shell: bash
-        run: npm install -g @bazel/bazelisk
+        run: |
+          if command -v bazelisk >/dev/null 2>&1; then
+            bin=bazelisk
+          elif command -v bazel >/dev/null 2>&1; then
+            bin=bazel
+          else
+            npm install -g @bazel/bazelisk || sudo npm install -g @bazel/bazelisk
+            bin=bazelisk
+          fi
+          echo "Using Bazel launcher: ${bin}"
+          echo "bin=${bin}" >> "$GITHUB_OUTPUT"
+          "${bin}" version || true
 
       - name: Cache Bazel repository/disk cache
         if: steps.gate.outputs.run == 'true'
@@ -118,7 +141,7 @@ jobs:
       - name: Build native + JARs (${{ matrix.platform }})
         if: steps.gate.outputs.run == 'true'
         shell: bash
-        run: python3 tools/build_java_artifacts.py --platform ${{ matrix.platform }}
+        run: python3 tools/build_java_artifacts.py --platform ${{ matrix.platform }} --bazel ${{ steps.bzl.outputs.bin }}
 
       - name: On-target smoke test (${{ matrix.platform }})
         if: steps.gate.outputs.run == 'true'
@@ -126,10 +149,13 @@ jobs:
         run: python3 tools/smoke_test_java.py --platform ${{ matrix.platform }}
 
       # Hermetic backstop: the in-tree java_test, run natively on this runner.
+      # Best-effort: remotejdk availability varies by arch (e.g. windows-arm64),
+      # and smoke_test_java.py above is the authoritative on-target check.
       - name: Bazel java smoke test
         if: steps.gate.outputs.run == 'true'
+        continue-on-error: true
         shell: bash
-        run: bazelisk test //java:fastslide_java_test --platforms=//platforms:${{ matrix.platform }}
+        run: ${{ steps.bzl.outputs.bin }} test //java:fastslide_java_test --platforms=//platforms:${{ matrix.platform }}
 
       - name: Upload native classifier JAR
         if: steps.gate.outputs.run == 'true'
