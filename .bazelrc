@@ -8,6 +8,14 @@ build --incompatible_autoload_externally=+@rules_cc,+@rules_python,+@rules_shell
 
 common --enable_platform_specific_config
 
+# Do NOT auto-synthesize empty __init__.py files into Python runfiles. The
+# legacy behavior turns every directory (including each wheel's `sphinxcontrib/`)
+# into a regular package, which shadows the PEP 420 `sphinxcontrib` namespace
+# shared across the `sphinxcontrib-*` wheels Sphinx depends on. The result is a
+# docs build failure (`No module named 'sphinxcontrib.devhelp'`). The monorepo
+# sets this already; the standalone fastslide build needs it too.
+build --incompatible_default_to_explicit_init_py
+
 # =============================================================================
 # C++ Compiler Settings
 # =============================================================================

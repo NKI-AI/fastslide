@@ -113,26 +113,20 @@ doxygen(
 
 # Create sphinx-build binary with all required dependencies.
 #
-# Tagged `manual` so `bazel build //...` does NOT pick it up. The Sphinx run
-# currently breaks at import time on the `sphinxcontrib.*` namespace siblings:
-# several wheels (notably `sphinxcontrib-jquery==4.1`) still ship a literal
-# `sphinxcontrib/__init__.py` instead of being PEP 420 namespace packages.
-# rules_python's per-wheel site-packages layout means two such wheels each
-# expose a different "real" `sphinxcontrib` package on `sys.path`, the first
-# one wins, and siblings like `sphinxcontrib.devhelp` become unreachable.
-# `enable_implicit_namespace_pkgs = True` only suppresses synthesized
-# `__init__.py` files; it cannot strip the ones inside the wheels themselves.
-# Fixing this requires either `pip.parse` `whl_modifications` patches per
-# wheel or a merged-venv setup -- both orthogonal to the standalone bzlmod
-# work. Build docs explicitly with `bazel build //docs:sphinx_html` once that
-# is sorted.
+# Tagged `manual` so a wildcard `bazel build //...` does not run the (heavy)
+# Sphinx + Doxygen toolchain; build docs explicitly with
+# `bazel build //docs:sphinx_html`. The `sphinxcontrib.*` namespace packages
+# Sphinx depends on are PEP 420 namespaces split across several wheels; they
+# only merge when Bazel does NOT synthesize empty `__init__.py` files into the
+# runfiles, so the standalone `.bazelrc` sets
+# `--incompatible_default_to_explicit_init_py` (the monorepo already does).
 sphinx_build_binary(
     name = "sphinx_build",
     tags = ["manual"],
     deps = [
         # Sphinx core and extensions
         "@fastslide_docs_pip//sphinx",
-        "@fastslide_docs_pip//sphinx_rtd_theme",
+        "@fastslide_docs_pip//furo",
         "@fastslide_docs_pip//breathe",
         "@fastslide_docs_pip//sphinx_design",
         "@fastslide_docs_pip//sphinx_copybutton",
@@ -189,9 +183,8 @@ sphinx_docs_library(
 # Following Pigweed pattern: list source files directly in srcs,
 # and add Doxygen XML/HTML via deps
 #
-# Tagged `manual` so a wildcard `bazel build //...` does not run sphinx; see
-# the longer note on `:sphinx_build` above for the underlying namespace
-# package issue.
+# Tagged `manual` so a wildcard `bazel build //...` does not run sphinx; build
+# explicitly with `bazel build //docs:sphinx_html`.
 sphinx_docs(
     name = "sphinx_html",
     srcs = glob([
@@ -216,8 +209,7 @@ sphinx_docs(
 )
 
 # Expose both Sphinx and Doxygen docs as separate targets.
-# Marked `manual` because `:sphinx_html` is currently broken under the
-# standalone fastslide build; see the comment on `:sphinx_build`.
+# Marked `manual` to keep the heavy docs toolchain out of wildcard builds.
 filegroup(
     name = "docs",
     srcs = [

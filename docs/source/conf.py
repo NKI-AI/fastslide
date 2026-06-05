@@ -52,20 +52,18 @@ suppress_warnings = [
 # Don't be strict about nitpicky warnings
 nitpicky = False
 
-# -- Read the Docs Theme Configuration ----------------------------------------
-html_theme = "sphinx_rtd_theme"
+# -- Theme Configuration (furo) -----------------------------------------------
+html_theme = "furo"
 html_theme_options = {
-    "logo_only": False,
-    "prev_next_buttons_location": "bottom",
-    "style_external_links": True,
-    "vcs_pageview_mode": "",
-    "style_nav_header_background": "#2980B9",
-    # Toc options
-    "collapse_navigation": False,
-    "sticky_navigation": True,
-    "navigation_depth": 4,
-    "includehidden": True,
-    "titles_only": False,
+    "navigation_with_keys": True,
+    "light_css_variables": {
+        "color-brand-primary": "#2980B9",
+        "color-brand-content": "#2980B9",
+    },
+    "dark_css_variables": {
+        "color-brand-primary": "#6cb6ff",
+        "color-brand-content": "#6cb6ff",
+    },
 }
 
 # Add custom CSS and JS

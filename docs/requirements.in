@@ -3,7 +3,12 @@
 
 # Core Sphinx
 sphinx>=7.0.0
-sphinx-rtd-theme>=2.0.0
+# furo (instead of sphinx-rtd-theme): a modern, PEP 420-clean theme. rtd-theme
+# pulls in sphinxcontrib-jquery==4.1, which ships a legacy
+# `sphinxcontrib/__init__.py` that shadows the PEP 420 `sphinxcontrib`
+# namespace under rules_python's per-wheel site-packages layout, breaking
+# imports of sphinxcontrib.{devhelp,applehelp,...}. furo has no such dep.
+furo>=2024.1.29
 
 # Breathe (Doxygen integration)
 breathe>=4.35.0
