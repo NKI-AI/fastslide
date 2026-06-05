@@ -416,6 +416,10 @@ jobs:
   github-release:
     name: Publish GitHub Release
     needs: [smoke-java, smoke-wheels, build-wheels, publish-pypi, publish-testpypi]
+    # publish-pypi / publish-testpypi are mutually exclusive, so one is always
+    # skipped. A skipped need is not success(), which would skip this job too;
+    # gate on "nothing failed/cancelled" instead so the skipped sibling is OK.
+    if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write # create the release
