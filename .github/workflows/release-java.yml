@@ -1,0 +1,192 @@
+# Build and publish the FastSlide Java artifacts (wrapper JAR + per-platform
+# native classifier JARs) as a GitHub Release.
+#
+# Design (see docs/source/guides/java_packages.rst):
+#   - Each platform is built on its OWN native runner. We never cross-compile to
+#     macOS (it does not work); building natively also lets us run an on-target
+#     smoke test of the exact bits we ship.
+#   - `fail-fast: false` so one platform's failure does not cancel the others.
+#   - The `release` job `needs:` every matrix job, so a release is only cut when
+#     all selected platforms built and smoke-tested successfully.
+#
+# Trigger: manual only (`workflow_dispatch`). It does NOT run on a version bump.
+name: Release Java artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish a full release (false = prerelease/snapshot)"
+        type: boolean
+        default: false
+      platforms:
+        description: "Comma-separated platform keys to build"
+        type: string
+        default: "linux_x86_64,linux_arm64,darwin_x86_64,darwin_aarch64,windows_x86_64,windows_arm64"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-java-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-smoke:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runs_on }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux_x86_64
+            runs_on: ubuntu-24.04
+          - platform: linux_arm64
+            runs_on: ubuntu-24.04-arm
+          - platform: darwin_x86_64
+            runs_on: macos-13
+          - platform: darwin_aarch64
+            runs_on: macos-14
+          - platform: windows_x86_64
+            runs_on: windows-2022
+          - platform: windows_arm64
+            runs_on: windows-11-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Decide whether to build this platform
+        id: gate
+        shell: bash
+        run: |
+          selected=",${{ inputs.platforms }},"
+          selected="${selected// /}"
+          if [[ "${selected}" == *",${{ matrix.platform }},"* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false (not in inputs.platforms)"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ubuntu images ship large SDKs; the C++ build + hermetic Zig toolchain
+      # need room. Mirrors format_check.yml.
+      - name: Free disk space (Linux)
+        if: steps.gate.outputs.run == 'true' && runner.os == 'Linux'
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+
+      # JDK to RUN the smoke test (the build itself uses Bazel's pinned
+      # remotejdk_25). 25 matches the runtime in .bazelrc and has stable FFM.
+      - name: Set up JDK 25
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - name: Install Bazelisk
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: npm install -g @bazel/bazelisk
+
+      - name: Cache Bazel repository/disk cache
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/cache@v4
+        with:
+          path: .bazel-cache
+          key: bazel-${{ matrix.platform }}-${{ hashFiles('.bazelversion', 'MODULE.bazel') }}
+          restore-keys: |
+            bazel-${{ matrix.platform }}-
+
+      - name: Configure Bazel cache
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          {
+            echo "build --repository_cache=.bazel-cache/repo"
+            echo "build --disk_cache=.bazel-cache/disk"
+          } > .bazelrc.local
+          # Keep the Windows output base short to avoid MAX_PATH issues.
+          if [[ "${RUNNER_OS}" == "Windows" ]]; then
+            echo "startup --output_user_root=C:/b" >> .bazelrc.local
+          fi
+
+      - name: Build native + JARs (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: python3 tools/build_java_artifacts.py --platform ${{ matrix.platform }}
+
+      - name: On-target smoke test (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: python3 tools/smoke_test_java.py --platform ${{ matrix.platform }}
+
+      # Hermetic backstop: the in-tree java_test, run natively on this runner.
+      - name: Bazel java smoke test
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: bazelisk test //java:fastslide_java_test --platforms=//platforms:${{ matrix.platform }}
+
+      - name: Upload native classifier JAR
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.platform }}
+          path: artifacts/jars/fastslide-native-*-*.jar
+          if-no-files-found: error
+          retention-days: 7
+
+      # The platform-independent wrapper JAR is identical everywhere; publish it
+      # once from the linux_x86_64 job.
+      - name: Upload wrapper JAR
+        if: steps.gate.outputs.run == 'true' && matrix.platform == 'linux_x86_64'
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrapper
+          path: artifacts/jars/fastslide-java-*.jar
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    needs: build-and-smoke
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create the release
+      id-token: write # SLSA provenance signing
+      attestations: write # record the attestation
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all built JARs
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/jars
+          merge-multiple: true
+
+      - name: List collected artifacts
+        shell: bash
+        run: ls -l artifacts/jars
+
+      - name: Generate build provenance attestation
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: artifacts/jars/*.jar
+
+      - name: Publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          channel="--snapshot"
+          require=""
+          if [[ "${{ inputs.release }}" == "true" ]]; then
+            channel="--release"
+            require="--require-all"
+          fi
+          python3 tools/publish_java_artifacts.py --dest github ${channel} ${require}

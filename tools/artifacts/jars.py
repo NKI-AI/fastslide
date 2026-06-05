@@ -41,15 +41,42 @@ def _is_macos_host() -> bool:
     return host_platform.system().lower() == "darwin"
 
 
+def host_platform_key() -> str | None:
+    """Return the PLATFORMS key matching the current host, or None if unknown."""
+    system = host_platform.system().lower()
+    os_name = {"darwin": "darwin", "linux": "linux", "windows": "windows"}.get(system)
+    if os_name is None:
+        return None
+
+    machine = host_platform.machine().lower()
+    if machine in ("x86_64", "amd64"):
+        arch = "x86_64"
+    elif machine in ("arm64", "aarch64"):
+        arch = "aarch64"
+    else:
+        return None
+
+    for key, spec in PLATFORMS.items():
+        if spec.os_name == os_name and spec.arch == arch:
+            return key
+    return None
+
+
 def _platform_bazel_flags(
     spec: PlatformSpec,
     platform_key: str,
     *,
     is_macos: bool,
+    native_host: bool,
     extra_bazel_args: list[str],
 ) -> list[str]:
     flags = [f"--platforms={spec.bazel_platform}"]
     should_use_hermetic = spec.use_hermetic and not (is_macos and platform_key.startswith("darwin_"))
+    # In native-host mode the target is the runner itself: build with the
+    # platform's own toolchain (no Zig cross-compilation) so the smoke test
+    # validates exactly what that native toolchain produces.
+    if native_host and platform_key == host_platform_key():
+        should_use_hermetic = False
     if should_use_hermetic:
         flags.append("--config=hermetic")
     flags.extend(extra_bazel_args)
@@ -126,8 +153,22 @@ def build_jars(
     platforms: list[str],
     keep_going: bool,
     extra_bazel_args: list[str],
+    native_host: bool = False,
+    with_tool_jar: bool = False,
 ) -> int:
-    """Build Java JARs and per-platform classifier JARs, copying them to ARTIFACT_DIR."""
+    """Build Java JARs and per-platform classifier JARs, copying them to ARTIFACT_DIR.
+
+    Args:
+        bazel_cmd: Bazel/Bazelisk command to invoke.
+        platforms: Platform keys to build native libraries for.
+        keep_going: Continue building other platforms after a failure.
+        extra_bazel_args: Extra args passed through to every Bazel build.
+        native_host: Build the host platform with its own toolchain instead of
+            the hermetic Zig toolchain (no cross-compilation for the host).
+        with_tool_jar: Also emit a self-contained ``fastslidetool`` JAR per
+            platform (deploy JAR + injected native library) runnable via
+            ``java -jar``.
+    """
     env = os.environ.copy()
     common.ensure_dir(ARTIFACT_DIR)
     is_macos = _is_macos_host()
@@ -169,7 +210,13 @@ def build_jars(
 
         spec = PLATFORMS[platform_key]
         native_target = _NATIVE_TARGETS[platform_key]
-        bazel_flags = _platform_bazel_flags(spec, platform_key, is_macos=is_macos, extra_bazel_args=extra_bazel_args)
+        bazel_flags = _platform_bazel_flags(
+            spec,
+            platform_key,
+            is_macos=is_macos,
+            native_host=native_host,
+            extra_bazel_args=extra_bazel_args,
+        )
 
         print(f"\n\u25b6\ufe0e Building native library for {platform_key} with {bazel_cmd}")
         try:
@@ -186,6 +233,10 @@ def build_jars(
 
             classifier_jar = _create_classifier_jar(native_lib, spec, version, ARTIFACT_DIR)
             print(f"\u2714 {classifier_jar.name}")
+
+            if with_tool_jar:
+                tool_platform_jar = _create_platform_tool_jar(versioned_tool, native_lib, spec, version, ARTIFACT_DIR)
+                print(f"\u2714 {tool_platform_jar.name}")
 
         except subprocess.CalledProcessError:
             print(f"\u274c Build failed for {platform_key}.")
