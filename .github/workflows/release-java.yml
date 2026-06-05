@@ -96,52 +96,22 @@ jobs:
           distribution: temurin
           java-version: "23"
 
-      # Prefer the preinstalled bazelisk/bazel; only fall back to installing it
-      # (arm runners may lack it). Avoids the EEXIST/EACCES failures from an
-      # unconditional `npm install -g`.
-      - name: Ensure Bazelisk
-        id: bzl
+      # Installs a real cross-OS `bazel` launcher (a proper .exe on Windows, so
+      # Python's subprocess can spawn it) and manages Bazel caches in default
+      # locations OUTSIDE the workspace -- which Bazel 9 requires for the
+      # repo-contents cache. Replaces the fragile manual bazelisk/cache setup.
+      - name: Set up Bazel
         if: steps.gate.outputs.run == 'true'
-        shell: bash
-        run: |
-          if command -v bazelisk >/dev/null 2>&1; then
-            bin=bazelisk
-          elif command -v bazel >/dev/null 2>&1; then
-            bin=bazel
-          else
-            npm install -g @bazel/bazelisk || sudo npm install -g @bazel/bazelisk
-            bin=bazelisk
-          fi
-          echo "Using Bazel launcher: ${bin}"
-          echo "bin=${bin}" >> "$GITHUB_OUTPUT"
-          "${bin}" version || true
-
-      - name: Cache Bazel repository/disk cache
-        if: steps.gate.outputs.run == 'true'
-        uses: actions/cache@v4
+        uses: bazel-contrib/setup-bazel@0.19.0
         with:
-          path: .bazel-cache
-          key: bazel-${{ matrix.platform }}-${{ hashFiles('.bazelversion', 'MODULE.bazel') }}
-          restore-keys: |
-            bazel-${{ matrix.platform }}-
-
-      - name: Configure Bazel cache
-        if: steps.gate.outputs.run == 'true'
-        shell: bash
-        run: |
-          {
-            echo "build --repository_cache=.bazel-cache/repo"
-            echo "build --disk_cache=.bazel-cache/disk"
-          } > .bazelrc.local
-          # Keep the Windows output base short to avoid MAX_PATH issues.
-          if [[ "${RUNNER_OS}" == "Windows" ]]; then
-            echo "startup --output_user_root=C:/b" >> .bazelrc.local
-          fi
+          bazelisk-cache: true
+          repository-cache: true
+          disk-cache: ${{ matrix.platform }}
 
       - name: Build native + JARs (${{ matrix.platform }})
         if: steps.gate.outputs.run == 'true'
         shell: bash
-        run: python3 tools/build_java_artifacts.py --platform ${{ matrix.platform }} --bazel ${{ steps.bzl.outputs.bin }}
+        run: python3 tools/build_java_artifacts.py --platform ${{ matrix.platform }} --bazel bazel
 
       - name: On-target smoke test (${{ matrix.platform }})
         if: steps.gate.outputs.run == 'true'
@@ -155,7 +125,7 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         continue-on-error: true
         shell: bash
-        run: ${{ steps.bzl.outputs.bin }} test //java:fastslide_java_test --platforms=//platforms:${{ matrix.platform }}
+        run: bazel test //java:fastslide_java_test --platforms=//platforms:${{ matrix.platform }}
 
       - name: Upload native classifier JAR
         if: steps.gate.outputs.run == 'true'
