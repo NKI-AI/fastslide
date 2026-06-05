@@ -218,6 +218,41 @@ jobs:
         shell: bash
         run: python3 tools/smoke_test_java.py --platform ${{ matrix.platform }}
 
+      # FFM's "Cannot open library" hides the OS error; surface the real
+      # LoadLibraryEx Win32 code (126=missing dependent DLL, 127=missing
+      # procedure, 193=bad image/arch, 1114=DllMain failed) to diagnose the
+      # arm64 load failure.
+      - name: Diagnose Windows load failure
+        if: failure() && steps.gate.outputs.run == 'true' && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $arch = if ("${{ matrix.platform }}" -eq "windows_arm64") { "aarch64" } else { "x86_64" }
+          $jar = Get-ChildItem artifacts/jars -Filter "fastslide-native-*-windows-$arch.jar" | Select-Object -First 1
+          if (-not $jar) { Write-Host "No classifier JAR found for $arch"; exit 0 }
+          Write-Host "Inspecting $($jar.Name)"
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $dll = Join-Path $env:RUNNER_TEMP "fsdiag.dll"
+          $zip = [IO.Compression.ZipFile]::OpenRead($jar.FullName)
+          $entry = $zip.Entries | Where-Object { $_.FullName -like "*fastslide.dll" } | Select-Object -First 1
+          [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $dll, $true)
+          $zip.Dispose()
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class Loader {
+            [DllImport("kernel32", SetLastError=true, CharSet=CharSet.Unicode)]
+            public static extern IntPtr LoadLibraryEx(string path, IntPtr h, uint flags);
+          }
+          '@
+          $h = [Loader]::LoadLibraryEx($dll, [IntPtr]::Zero, 0)
+          if ($h -eq [IntPtr]::Zero) {
+            $err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+            $msg = (New-Object ComponentModel.Win32Exception($err)).Message
+            Write-Host "LoadLibraryEx FAILED: Win32 error $err -- $msg"
+          } else {
+            Write-Host "LoadLibraryEx succeeded (handle=$h); failure is elsewhere."
+          }
+
   release:
     name: Publish GitHub Release
     needs: smoke
