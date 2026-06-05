@@ -12,7 +12,7 @@ Step-by-step guides for extending and integrating FastSlide.
    custom_cache
    performance_tuning
    testing
-   java_packages
+   packages_and_releases
 
 Quick Navigation
 ----------------
@@ -38,8 +38,8 @@ Before You Begin
 
 **Prerequisites:**
 - C++20 compatible compiler (GCC 10+, Clang 12+, MSVC 2019+)
-- Bazel 7+ for building
-- Python 3.11+ for Python bindings
+- Bazel 9+ for building
+- Python 3.10+ for Python bindings
 - Basic understanding of digital pathology formats
 
 **Development Environment:**

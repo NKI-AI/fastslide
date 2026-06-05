@@ -149,8 +149,9 @@ bump. To publish:
    *Release FastSlide* -> *Run workflow*). Set ``release: true`` for a final
    release (tag ``<version>``, marked latest, **wheels published to PyPI**), or
    leave it ``false`` for a prerelease/snapshot (tag ``<version>-dev.<shortsha>``,
-   GitHub-only, no PyPI). The ``platforms`` input lets you build a subset for a
-   cheap trial run.
+   GitHub prerelease, **wheels published to TestPyPI** so the publish path is
+   exercised without touching the real index). The ``platforms`` input lets you
+   build a subset for a cheap trial run.
 
 You do **not** create the git tag or write release notes by hand: the workflow
 creates the tag via ``gh release create`` and auto-generates the notes
@@ -184,10 +185,16 @@ single aggregate **GitHub Release**:
            wm["darwin x86_64/aarch64"]
            ww["windows_x86_64"]
        end
+       subgraph sw [smoke-wheels: import + open sample, every platform x cp310-cp314]
+           swl["linux x86_64/arm64"]
+           swm["darwin x86_64 (Rosetta) / aarch64"]
+           sww["windows_x86_64 / windows-2022"]
+       end
        bj --> sj
-       bw --> pypi["publish-pypi (release only): Trusted Publishing"]
+       bw --> sw
+       sw --> pypi["publish wheels (Trusted Publishing): PyPI if release, else TestPyPI"]
        sj --> rel
-       bw --> rel
+       sw --> rel
        pypi --> rel["github-release (needs all): provenance + gh release (jars + wheels + SHA256SUMS, auto notes)"]
        rel --> consumers["pip install fastslide / Gradle ivy resolves dev.aifo:fastslide-*"]
 
@@ -208,9 +215,12 @@ Why the split:
   Windows loader rejects with error 193, and a native Windows host build is
   blocked by ``rules_uv``).
 - **Smoke tests always run on the real target runner** (including native
-  Windows). They need only a JDK and the published JARs -- no Bazel -- so they
-  validate the exact artifact a consumer would load, regardless of where it was
-  built.
+  Windows). The Java smoke needs only a JDK + the JARs; the wheel smoke
+  (``smoke-wheels``) installs the built wheel into a fresh ``uv`` venv on each
+  platform x CPython (3.10--3.14), then ``import fastslide`` and opens the
+  bundled sample (``tools/smoke_test_python.py``). No Bazel -- so both validate
+  the exact artifact a consumer would load. PyPI/TestPyPI publishing
+  ``needs:`` the wheel smoke, so broken wheels never reach an index.
 
 All matrices are ``fail-fast: false``; the ``github-release`` job ``needs:`` the
 smoke phase, the wheel builds, and (on a full release) the PyPI publish, so a
@@ -222,9 +232,15 @@ attestation.
 
    ``NKI-AI/fastslide`` must be public for anonymous Java consumption.
 
-   **PyPI prerequisite (one-time).** Publishing wheels uses PyPI `Trusted
-   Publishing <https://docs.pypi.org/trusted-publishers/>`_ (OIDC, no API
-   token). On PyPI, add a trusted publisher for the project with owner
-   ``NKI-AI``, repository ``fastslide``, workflow ``release.yml``, and
-   environment ``pypi``. The ``publish-pypi`` job uses ``skip-existing`` so a
-   re-run won't fail if a version is already on PyPI.
+   **PyPI prerequisite (one-time).** Publishing wheels uses `Trusted Publishing
+   <https://docs.pypi.org/trusted-publishers/>`_ (OIDC, no API token). Add a
+   trusted publisher on **both** indexes for the project (owner ``NKI-AI``,
+   repository ``fastslide``, workflow ``release.yml``):
+
+   - On `PyPI <https://pypi.org/manage/account/publishing/>`_ with environment
+     ``pypi`` (used by full releases).
+   - On `TestPyPI <https://test.pypi.org/manage/account/publishing/>`_ with
+     environment ``testpypi`` (used by snapshot dry-runs).
+
+   Both publish jobs use ``skip-existing`` so a re-run of the same version is a
+   no-op rather than a failure.
