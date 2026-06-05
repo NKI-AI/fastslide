@@ -22,7 +22,15 @@ A release contains:
 - ``SHA256SUMS`` -- checksums for every JAR.
 
 Supported ``<os>-<arch>`` classifiers: ``linux-x86_64``, ``linux-aarch64``,
-``darwin-x86_64``, ``darwin-aarch64``, ``windows-x86_64``, ``windows-aarch64``.
+``darwin-x86_64``, ``darwin-aarch64``, ``windows-x86_64``.
+
+.. note::
+
+   ``windows-aarch64`` is **not** published. The only available cross toolchain
+   (Zig) emits an arm64 Windows PE that the loader rejects (``LoadLibraryEx``
+   error 193), and we cannot build on a Windows host because ``rules_uv`` has no
+   Windows host support. It will be added once a native arm64 Windows build is
+   possible.
 
 The version is read from ``package/versions.json``. The release **tag equals the
 bare version** (e.g. ``0.7.0``) so the consumer's ``[revision]`` pattern resolves
@@ -51,7 +59,7 @@ release asset URL, then declares ordinary dependencies:
    dependencies {
        implementation("dev.aifo:fastslide-java:0.7.0")
        listOf("linux-x86_64", "linux-aarch64", "darwin-x86_64",
-              "darwin-aarch64", "windows-x86_64", "windows-aarch64")
+              "darwin-aarch64", "windows-x86_64")
            .forEach { runtimeOnly("dev.aifo:fastslide-native:0.7.0:$it") }
    }
 
@@ -131,7 +139,6 @@ followed by an aggregate **release** job:
            bmx["darwin_x86_64 / macos-14 (cross, Apple arm->x86_64)"]
            bma["darwin_aarch64 / macos-14 (native)"]
            bwx["windows_x86_64 / ubuntu-24.04 (cross, Zig)"]
-           bwa["windows_arm64 / ubuntu-24.04 (cross, Zig)"]
        end
        subgraph smoke [smoke: run JARs on the real target runner]
            slx["linux_x86_64 / ubuntu-24.04"]
@@ -139,7 +146,6 @@ followed by an aggregate **release** job:
            smx["darwin_x86_64 / macos-14 (x64 JDK via Rosetta)"]
            sma["darwin_aarch64 / macos-14"]
            swx["windows_x86_64 / windows-2022"]
-           swa["windows_arm64 / windows-11-arm"]
        end
        build --> smoke
        smoke --> rel["release job (needs all): provenance + gh release"]
@@ -154,11 +160,13 @@ Why the split:
   ``macos-14`` under **Rosetta**, using an x86_64 JDK so the JVM and the x86_64
   ``.dylib`` it loads are actually executed (emulated), not skipped. Linux is
   built natively on Linux.
-- **Windows is cross-compiled on Linux** (hermetic Zig toolchain). Windows
-  cannot act as the Bazel *host* here: ``aspect_rules_py`` / ``rules_uv`` reject
-  a Windows host (``Unsupported platform windows``), which aborts analysis of
-  even pure Java targets. Building with a Linux host (target = windows) avoids
-  that entirely.
+- **Windows x86_64 is cross-compiled on Linux** (hermetic Zig toolchain).
+  Windows cannot act as the Bazel *host* here: ``aspect_rules_py`` / ``rules_uv``
+  reject a Windows host (``Unsupported platform windows``), which aborts analysis
+  of even pure Java targets. Building with a Linux host (target = windows) avoids
+  that entirely. ``windows_arm64`` is not shipped (Zig emits an arm64 PE the
+  Windows loader rejects with error 193, and a native Windows host build is
+  blocked by ``rules_uv``).
 - **Smoke tests always run on the real target runner** (including native
   Windows). They need only a JDK and the published JARs -- no Bazel -- so they
   validate the exact artifact a consumer would load, regardless of where it was
@@ -171,7 +179,4 @@ SLSA build-provenance attestation.
 
 .. note::
 
-   ``NKI-AI/fastslide`` must be public for anonymous consumption. The
-   ``windows-11-arm`` smoke leg is the least battle-tested (JDK availability on
-   Windows arm64); if it is flaky, omit ``windows_arm64`` from the ``platforms``
-   input -- the other platforms are unaffected.
+   ``NKI-AI/fastslide`` must be public for anonymous consumption.
