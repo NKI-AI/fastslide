@@ -2,12 +2,18 @@
 # native classifier JARs) as a GitHub Release.
 #
 # Design (see docs/source/guides/java_packages.rst):
-#   - Each platform is built on its OWN native runner. We never cross-compile to
-#     macOS (it does not work); building natively also lets us run an on-target
-#     smoke test of the exact bits we ship.
-#   - `fail-fast: false` so one platform's failure does not cancel the others.
-#   - The `release` job `needs:` every matrix job, so a release is only cut when
-#     all selected platforms built and smoke-tested successfully.
+#   - `build`: produce each platform's classifier JAR where it CAN be built.
+#       * linux/darwin: built natively on a matching runner.
+#       * windows: CROSS-compiled on Linux via the hermetic Zig toolchain.
+#         Windows cannot be a Bazel *host* here because aspect_rules_py /
+#         rules_uv have no Windows host support ("Unsupported platform
+#         windows"), which breaks analysis of even pure Java targets. Building
+#         on a Linux host (target=windows) avoids that.
+#   - `smoke`: run the shipped JARs through fastslidetool on the REAL target
+#       runner (incl. native Windows), needing only a JDK -- no Bazel. This is
+#       what validates the artifact on-target.
+#   - `release`: needs every smoke job, so a release is only cut when all
+#       selected platforms built and smoke-tested successfully.
 #
 # Trigger: manual only (`workflow_dispatch`). It does NOT run on a version bump.
 name: Release Java artifacts
@@ -38,25 +44,26 @@ env:
   PYTHONIOENCODING: "utf-8"
 
 jobs:
-  build-and-smoke:
+  build:
     name: Build ${{ matrix.platform }}
-    runs-on: ${{ matrix.runs_on }}
+    runs-on: ${{ matrix.builder }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: linux_x86_64
-            runs_on: ubuntu-24.04
+            builder: ubuntu-24.04
           - platform: linux_arm64
-            runs_on: ubuntu-24.04-arm
+            builder: ubuntu-24.04-arm
           - platform: darwin_x86_64
-            runs_on: macos-13
+            builder: macos-13
           - platform: darwin_aarch64
-            runs_on: macos-14
+            builder: macos-14
+          # Windows is cross-compiled on Linux (see header note).
           - platform: windows_x86_64
-            runs_on: windows-2022
+            builder: ubuntu-24.04
           - platform: windows_arm64
-            runs_on: windows-11-arm
+            builder: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -85,29 +92,16 @@ jobs:
           haskell: true
           large-packages: true
 
-      # JDK to RUN the smoke test (the build itself uses Bazel's pinned
-      # remotejdk). FastSlide's FFM code needs a JDK >= 22 (stable
-      # java.lang.foreign); 23 is the highest version Temurin currently ships
-      # across every runner arch here, including windows-11-arm.
-      - name: Set up JDK
-        if: steps.gate.outputs.run == 'true'
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "23"
-
-      # Pin the exact Bazel version from .bazelversion. bazelisk honors
-      # USE_BAZEL_VERSION above all else, so this guarantees the repo's pinned
-      # version (9.0.0) instead of bazelisk silently resolving to "latest".
+      # bazelisk honors USE_BAZEL_VERSION above all else; pin the repo's exact
+      # version (.bazelversion) instead of letting it resolve to "latest".
       - name: Pin Bazel version
         if: steps.gate.outputs.run == 'true'
         shell: bash
         run: echo "USE_BAZEL_VERSION=$(tr -d '[:space:]' < .bazelversion)" >> "$GITHUB_ENV"
 
-      # Installs a real cross-OS `bazel` launcher (a proper .exe on Windows, so
-      # Python's subprocess can spawn it) and manages Bazel caches in default
-      # locations OUTSIDE the workspace -- which Bazel 9 requires for the
-      # repo-contents cache. Replaces the fragile manual bazelisk/cache setup.
+      # Installs a real cross-OS `bazel` launcher and manages Bazel caches in
+      # default locations OUTSIDE the workspace (Bazel 9 requires this for the
+      # repo-contents cache).
       - name: Set up Bazel
         if: steps.gate.outputs.run == 'true'
         uses: bazel-contrib/setup-bazel@0.19.0
@@ -121,20 +115,6 @@ jobs:
         shell: bash
         run: python3 tools/build_java_artifacts.py --platform ${{ matrix.platform }} --bazel bazel
 
-      - name: On-target smoke test (${{ matrix.platform }})
-        if: steps.gate.outputs.run == 'true'
-        shell: bash
-        run: python3 tools/smoke_test_java.py --platform ${{ matrix.platform }}
-
-      # Hermetic backstop: the in-tree java_test, run natively on this runner.
-      # Best-effort: remotejdk availability varies by arch (e.g. windows-arm64),
-      # and smoke_test_java.py above is the authoritative on-target check.
-      - name: Bazel java smoke test
-        if: steps.gate.outputs.run == 'true'
-        continue-on-error: true
-        shell: bash
-        run: bazel test //java:fastslide_java_test --platforms=//platforms:${{ matrix.platform }}
-
       - name: Upload native classifier JAR
         if: steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v4
@@ -144,20 +124,79 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      # The platform-independent wrapper JAR is identical everywhere; publish it
-      # once from the linux_x86_64 job.
+      # The platform-independent wrapper JAR is identical from every build;
+      # upload it under a per-platform name so any single-platform run is
+      # self-sufficient (downloads dedupe by filename).
       - name: Upload wrapper JAR
-        if: steps.gate.outputs.run == 'true' && matrix.platform == 'linux_x86_64'
+        if: steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: wrapper
+          name: wrapper-${{ matrix.platform }}
           path: artifacts/jars/fastslide-java-*.jar
           if-no-files-found: error
           retention-days: 7
 
+  smoke:
+    name: Smoke ${{ matrix.platform }}
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux_x86_64
+            runner: ubuntu-24.04
+          - platform: linux_arm64
+            runner: ubuntu-24.04-arm
+          - platform: darwin_x86_64
+            runner: macos-13
+          - platform: darwin_aarch64
+            runner: macos-14
+          - platform: windows_x86_64
+            runner: windows-2022
+          - platform: windows_arm64
+            runner: windows-11-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Decide whether to smoke this platform
+        id: gate
+        shell: bash
+        run: |
+          selected=",${{ inputs.platforms }},"
+          selected="${selected// /}"
+          if [[ "${selected}" == *",${{ matrix.platform }},"* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # JDK to RUN the smoke test. FastSlide's FFM code needs a JDK >= 22
+      # (stable java.lang.foreign); 23 is the highest Temurin ships across
+      # every runner arch here, including windows-11-arm.
+      - name: Set up JDK
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "23"
+
+      - name: Download built JARs
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/jars
+          merge-multiple: true
+
+      - name: On-target smoke test (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: python3 tools/smoke_test_java.py --platform ${{ matrix.platform }}
+
   release:
     name: Publish GitHub Release
-    needs: build-and-smoke
+    needs: smoke
     runs-on: ubuntu-24.04
     permissions:
       contents: write # create the release

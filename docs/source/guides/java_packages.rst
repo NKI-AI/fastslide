@@ -117,31 +117,57 @@ version bump. To publish:
 What the workflow does
 ~~~~~~~~~~~~~~~~~~~~~~~
 
+The workflow runs in two phases -- **build** (produce each classifier JAR where
+it can be built) and **smoke** (run every JAR on its real target OS/arch) --
+followed by an aggregate **release** job:
+
 .. mermaid::
 
    flowchart TB
-       dispatch["workflow_dispatch (release bool)"] --> matrix
-       subgraph matrix [build-and-smoke: one native runner per platform]
-           lx["linux_x86_64 / ubuntu-24.04"]
-           la["linux_arm64 / ubuntu-24.04-arm"]
-           mx["darwin_x86_64 / macos-13"]
-           ma["darwin_aarch64 / macos-14"]
-           wx["windows_x86_64 / windows-2022"]
-           wa["windows_arm64 / windows-11-arm"]
+       dispatch["workflow_dispatch (release bool)"] --> build
+       subgraph build [build: produce classifier JARs]
+           blx["linux_x86_64 / ubuntu-24.04 (native)"]
+           bla["linux_arm64 / ubuntu-24.04-arm (native)"]
+           bmx["darwin_x86_64 / macos-13 (native)"]
+           bma["darwin_aarch64 / macos-14 (native)"]
+           bwx["windows_x86_64 / ubuntu-24.04 (cross, Zig)"]
+           bwa["windows_arm64 / ubuntu-24.04 (cross, Zig)"]
        end
-       matrix --> rel["release job (needs all): provenance + gh release"]
+       subgraph smoke [smoke: run JARs on the real target runner]
+           slx["linux_x86_64 / ubuntu-24.04"]
+           sla["linux_arm64 / ubuntu-24.04-arm"]
+           smx["darwin_x86_64 / macos-13"]
+           sma["darwin_aarch64 / macos-14"]
+           swx["windows_x86_64 / windows-2022"]
+           swa["windows_arm64 / windows-11-arm"]
+       end
+       build --> smoke
+       smoke --> rel["release job (needs all): provenance + gh release"]
        rel --> ivy["consumers resolve dev.aifo:fastslide-* anonymously"]
 
-Each platform is built on a runner matching its CPU/OS -- FastSlide does **not**
-cross-compile to macOS, and building natively lets every job smoke-test the
-exact artifact it produced. The matrix is ``fail-fast: false``; the ``release``
-job ``needs:`` every matrix job, so a release is only cut when all selected
-platforms succeed. Released JARs additionally get a SLSA build-provenance
-attestation.
+Why the split:
+
+- **macOS / Linux are built natively.** FastSlide does **not** cross-compile to
+  macOS, so darwin JARs must be produced on macOS runners; Linux is built on
+  Linux.
+- **Windows is cross-compiled on Linux** (hermetic Zig toolchain). Windows
+  cannot act as the Bazel *host* here: ``aspect_rules_py`` / ``rules_uv`` reject
+  a Windows host (``Unsupported platform windows``), which aborts analysis of
+  even pure Java targets. Building with a Linux host (target = windows) avoids
+  that entirely.
+- **Smoke tests always run on the real target runner** (including native
+  Windows). They need only a JDK and the published JARs -- no Bazel -- so they
+  validate the exact artifact a consumer would load, regardless of where it was
+  built.
+
+The build and smoke matrices are ``fail-fast: false``; the ``release`` job
+``needs:`` the smoke phase, so a release is only cut when every selected
+platform both built and smoke-tested cleanly. Released JARs additionally get a
+SLSA build-provenance attestation.
 
 .. note::
 
    ``NKI-AI/fastslide`` must be public for anonymous consumption. The
-   ``windows-11-arm`` leg is the least battle-tested (Bazel/JDK availability on
+   ``windows-11-arm`` smoke leg is the least battle-tested (JDK availability on
    Windows arm64); if it is flaky, omit ``windows_arm64`` from the ``platforms``
    input -- the other platforms are unaffected.
