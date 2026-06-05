@@ -12,6 +12,7 @@ Step-by-step guides for extending and integrating FastSlide.
    custom_cache
    performance_tuning
    testing
+   java_packages
 
 Quick Navigation
 ----------------

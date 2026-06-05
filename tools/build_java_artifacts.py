@@ -35,6 +35,19 @@ def main() -> None:
         dest="bazel_args",
         help="Extra arg to pass through to Bazel (repeatable).",
     )
+    parser.add_argument(
+        "--native-host",
+        action="store_true",
+        help=(
+            "Build the host platform with its own native toolchain instead of the "
+            "hermetic Zig toolchain (no cross-compilation for the host platform)."
+        ),
+    )
+    parser.add_argument(
+        "--with-tool-jar",
+        action="store_true",
+        help="Also emit a self-contained fastslidetool JAR per platform (runnable via 'java -jar').",
+    )
     args = parser.parse_args()
 
     platforms = args.platforms or list(PLATFORMS.keys())
@@ -45,6 +58,8 @@ def main() -> None:
             platforms=platforms,
             keep_going=args.keep_going,
             extra_bazel_args=args.bazel_args,
+            native_host=args.native_host,
+            with_tool_jar=args.with_tool_jar,
         )
     )
 
