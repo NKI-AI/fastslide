@@ -28,6 +28,29 @@ FastSlide is a modern C++20 library for reading whole slide images (WSI) with fi
   - Ventana (BIF)
   - Olympus (VSI)
 
+## QuPath Extension
+
+FastSlide is also available as a [QuPath](https://qupath.github.io) extension, so
+you can open every FastSlide-supported format directly in QuPath — no coding
+required. The easiest way to install it is through QuPath's extension catalog
+(QuPath 0.6 or newer):
+
+1. Open QuPath and go to `Extensions` → `Manage extensions`.
+2. Click `Manage extension catalogs` → `Add`.
+3. Enter the catalog URL and confirm:
+
+   ```
+   https://github.com/NKI-AI/qupath-extension-catalog
+   ```
+
+4. Back in the extension manager, click the `+` next to **QuPath FastSlide
+   extension** to install it. Restart QuPath if prompted.
+
+QuPath will then read whole-slide images via FastSlide and notify you when a new
+version of the extension is published. Sources and manual install instructions
+live at
+[NKI-AI/qupath-extension-fastslide](https://github.com/NKI-AI/qupath-extension-fastslide).
+
 ## Quick Start
 
 ### Installation
