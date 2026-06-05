@@ -96,6 +96,14 @@ jobs:
           distribution: temurin
           java-version: "23"
 
+      # Pin the exact Bazel version from .bazelversion. bazelisk honors
+      # USE_BAZEL_VERSION above all else, so this guarantees the repo's pinned
+      # version (9.0.0) instead of bazelisk silently resolving to "latest".
+      - name: Pin Bazel version
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: echo "USE_BAZEL_VERSION=$(tr -d '[:space:]' < .bazelversion)" >> "$GITHUB_ENV"
+
       # Installs a real cross-OS `bazel` launcher (a proper .exe on Windows, so
       # Python's subprocess can spawn it) and manages Bazel caches in default
       # locations OUTSIDE the workspace -- which Bazel 9 requires for the

@@ -176,9 +176,9 @@ http_archive(
 http_archive(
     name = "lodepng",
     build_file = "//third_party:lodepng.BUILD",
-    sha256 = "613d6b45ab8e7568c1b00ac1b7efdb2c44eda330880a4fe2f3a0a173a81cd8ae",
-    strip_prefix = "lodepng-master",
-    urls = ["https://github.com/lvandeve/lodepng/archive/refs/heads/master.zip"],
+    sha256 = "e3e5a62322b7afd5037d0aaa27188457226ccdaacc1353d0a1efcccd8f87f504",
+    strip_prefix = "lodepng-ed6fe5825c6a4fbb7f58ab35a4231c7543cd452a",
+    urls = ["https://github.com/lvandeve/lodepng/archive/ed6fe5825c6a4fbb7f58ab35a4231c7543cd452a.zip"],
 )
 
 http_archive(
