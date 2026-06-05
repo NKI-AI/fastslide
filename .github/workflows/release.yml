@@ -2,7 +2,7 @@
 # JAR + per-platform native classifier JARs) and the Python wheels, tied
 # together by one GitHub Release. Wheels are also published to PyPI.
 #
-# Design (see docs/source/guides/java_packages.rst):
+# Design (see docs/source/guides/packages_and_releases.rst):
 #   - build-java / build-wheels: produce each platform's artifacts where they
 #     CAN be built:
 #       * linux/darwin: built on a matching runner (darwin_x86_64 is cross-built
@@ -279,11 +279,88 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  smoke-wheels:
+    name: Smoke wheel ${{ matrix.target.platform }} py${{ matrix.python }}
+    needs: build-wheels
+    runs-on: ${{ matrix.target.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        target:
+          - platform: linux_x86_64
+            runner: ubuntu-24.04
+          - platform: linux_arm64
+            runner: ubuntu-24.04-arm
+          # x86_64 wheel runs under Rosetta on the arm64 mac with an x86_64
+          # CPython (uv downloads the matching build).
+          - platform: darwin_x86_64
+            runner: macos-14
+            rosetta: true
+          - platform: darwin_aarch64
+            runner: macos-14
+          - platform: windows_x86_64
+            runner: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Decide whether to smoke this platform
+        id: gate
+        shell: bash
+        run: |
+          selected=",${{ inputs.platforms }},"
+          selected="${selected// /}"
+          if [[ "${selected}" == *",${{ matrix.target.platform }},"* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Rosetta
+        if: steps.gate.outputs.run == 'true' && matrix.target.rosetta
+        run: softwareupdate --install-rosetta --agree-to-license
+
+      - name: Set up uv
+        if: steps.gate.outputs.run == 'true'
+        uses: astral-sh/setup-uv@v6
+
+      - name: Download wheels
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/download-artifact@v6
+        with:
+          path: dist
+          pattern: "wheels-*"
+          merge-multiple: true
+
+      # Build a venv on the right interpreter (x86_64 CPython for the Rosetta
+      # leg), install ONLY the local wheel (--no-index; the wheel has no runtime
+      # deps), and run the import + open-sample smoke. uv picks the wheel whose
+      # tags match the venv's Python/arch.
+      - name: Import + open-sample smoke (${{ matrix.target.platform }} py${{ matrix.python }})
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          pyreq="${{ matrix.python }}"
+          if [ "${{ matrix.target.rosetta }}" = "true" ]; then
+            pyreq="cpython-${{ matrix.python }}-macos-x86_64"
+          fi
+          uv python install "$pyreq"
+          uv venv --python "$pyreq" .venv
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            py=".venv/Scripts/python.exe"
+          else
+            py=".venv/bin/python"
+          fi
+          uv pip install --python "$py" --no-index --find-links dist fastslide
+          "$py" tools/smoke_test_python.py
+
   publish-pypi:
     name: Publish wheels to PyPI
-    # Only a full release publishes to PyPI; snapshots stay GitHub-only.
+    # Full release -> real PyPI. Only after the wheels pass their on-target smoke.
     if: inputs.release == true
-    needs: build-wheels
+    needs: smoke-wheels
     runs-on: ubuntu-24.04
     environment: pypi
     permissions:
@@ -306,9 +383,39 @@ jobs:
           packages-dir: dist
           skip-existing: true
 
+  publish-testpypi:
+    name: Publish wheels to TestPyPI
+    # Snapshot -> TestPyPI, so the publish path is exercised without touching
+    # the real index. (Wheel version comes from versions.json, so re-runs of the
+    # same version are no-ops thanks to skip-existing.)
+    if: inputs.release == false
+    needs: smoke-wheels
+    runs-on: ubuntu-24.04
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - name: Download wheels
+        uses: actions/download-artifact@v6
+        with:
+          path: dist
+          pattern: "wheels-*"
+          merge-multiple: true
+
+      - name: List wheels
+        shell: bash
+        run: ls -l dist
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+
   github-release:
     name: Publish GitHub Release
-    needs: [smoke-java, build-wheels, publish-pypi]
+    needs: [smoke-java, smoke-wheels, build-wheels, publish-pypi, publish-testpypi]
     runs-on: ubuntu-24.04
     permissions:
       contents: write # create the release
