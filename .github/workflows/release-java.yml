@@ -42,6 +42,10 @@ concurrency:
 env:
   PYTHONUTF8: "1"
   PYTHONIOENCODING: "utf-8"
+  # Run all JavaScript actions on Node.js 24; Node.js 20 is deprecated on the
+  # runners (removed 2026-09-16). Covers the third-party actions too, not just
+  # the actions/* ones.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   build:
@@ -55,8 +59,11 @@ jobs:
             builder: ubuntu-24.04
           - platform: linux_arm64
             builder: ubuntu-24.04-arm
+          # Cross-compiled on the arm64 Mac (Apple toolchain targets x86_64):
+          # the Intel runner is far slower, and the artifact is still validated
+          # on a real Intel host in the smoke phase below.
           - platform: darwin_x86_64
-            builder: macos-13
+            builder: macos-14
           - platform: darwin_aarch64
             builder: macos-14
           # Windows is cross-compiled on Linux (see header note).
@@ -66,7 +73,7 @@ jobs:
             builder: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Decide whether to build this platform
         id: gate
@@ -117,7 +124,7 @@ jobs:
 
       - name: Upload native classifier JAR
         if: steps.gate.outputs.run == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: native-${{ matrix.platform }}
           path: artifacts/jars/fastslide-native-*-*.jar
@@ -129,7 +136,7 @@ jobs:
       # self-sufficient (downloads dedupe by filename).
       - name: Upload wrapper JAR
         if: steps.gate.outputs.run == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: wrapper-${{ matrix.platform }}
           path: artifacts/jars/fastslide-java-*.jar
@@ -146,19 +153,28 @@ jobs:
         include:
           - platform: linux_x86_64
             runner: ubuntu-24.04
+            java_arch: x64
           - platform: linux_arm64
             runner: ubuntu-24.04-arm
+            java_arch: aarch64
+          # No bootable Intel macOS runner; validate the x86_64 dylib under
+          # Rosetta on the arm64 runner with an x86_64 JDK.
           - platform: darwin_x86_64
-            runner: macos-13
+            runner: macos-14
+            java_arch: x64
+            rosetta: true
           - platform: darwin_aarch64
             runner: macos-14
+            java_arch: aarch64
           - platform: windows_x86_64
             runner: windows-2022
+            java_arch: x64
           - platform: windows_arm64
             runner: windows-11-arm
+            java_arch: aarch64
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Decide whether to smoke this platform
         id: gate
@@ -172,19 +188,27 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Run the x86_64 JVM + dylib under emulation on the arm64 runner.
+      - name: Install Rosetta
+        if: steps.gate.outputs.run == 'true' && matrix.rosetta
+        run: softwareupdate --install-rosetta --agree-to-license
+
       # JDK to RUN the smoke test. FastSlide's FFM code needs a JDK >= 22
       # (stable java.lang.foreign); 23 is the highest Temurin ships across
-      # every runner arch here, including windows-11-arm.
+      # every runner arch here, including windows-11-arm. The architecture is
+      # pinned per platform so the JVM (and thus the dylib/dll it loads) matches
+      # the artifact under test -- x64 here runs via Rosetta on the arm runner.
       - name: Set up JDK
         if: steps.gate.outputs.run == 'true'
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: "23"
+          architecture: ${{ matrix.java_arch }}
 
       - name: Download built JARs
         if: steps.gate.outputs.run == 'true'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           path: artifacts/jars
           merge-multiple: true
@@ -204,10 +228,10 @@ jobs:
       attestations: write # record the attestation
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Download all built JARs
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v6
         with:
           path: artifacts/jars
           merge-multiple: true
@@ -217,7 +241,7 @@ jobs:
         run: ls -l artifacts/jars
 
       - name: Generate build provenance attestation
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v3
         with:
           subject-path: artifacts/jars/*.jar
 

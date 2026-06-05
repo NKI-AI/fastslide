@@ -128,7 +128,7 @@ followed by an aggregate **release** job:
        subgraph build [build: produce classifier JARs]
            blx["linux_x86_64 / ubuntu-24.04 (native)"]
            bla["linux_arm64 / ubuntu-24.04-arm (native)"]
-           bmx["darwin_x86_64 / macos-13 (native)"]
+           bmx["darwin_x86_64 / macos-14 (cross, Apple arm->x86_64)"]
            bma["darwin_aarch64 / macos-14 (native)"]
            bwx["windows_x86_64 / ubuntu-24.04 (cross, Zig)"]
            bwa["windows_arm64 / ubuntu-24.04 (cross, Zig)"]
@@ -136,7 +136,7 @@ followed by an aggregate **release** job:
        subgraph smoke [smoke: run JARs on the real target runner]
            slx["linux_x86_64 / ubuntu-24.04"]
            sla["linux_arm64 / ubuntu-24.04-arm"]
-           smx["darwin_x86_64 / macos-13"]
+           smx["darwin_x86_64 / macos-14 (x64 JDK via Rosetta)"]
            sma["darwin_aarch64 / macos-14"]
            swx["windows_x86_64 / windows-2022"]
            swa["windows_arm64 / windows-11-arm"]
@@ -147,9 +147,13 @@ followed by an aggregate **release** job:
 
 Why the split:
 
-- **macOS / Linux are built natively.** FastSlide does **not** cross-compile to
-  macOS, so darwin JARs must be produced on macOS runners; Linux is built on
-  Linux.
+- **macOS uses only the arm64 runner.** FastSlide does **not** cross-compile to
+  macOS from another OS, but the Apple toolchain on an arm64 Mac targets
+  ``x86_64`` cheaply, so ``darwin_x86_64`` is cross-compiled on ``macos-14`` (the
+  Intel runner is slow and frequently unavailable). Its smoke test also runs on
+  ``macos-14`` under **Rosetta**, using an x86_64 JDK so the JVM and the x86_64
+  ``.dylib`` it loads are actually executed (emulated), not skipped. Linux is
+  built natively on Linux.
 - **Windows is cross-compiled on Linux** (hermetic Zig toolchain). Windows
   cannot act as the Bazel *host* here: ``aspect_rules_py`` / ``rules_uv`` reject
   a Windows host (``Unsupported platform windows``), which aborts analysis of
