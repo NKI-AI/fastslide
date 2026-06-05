@@ -704,5 +704,5 @@ NB_MODULE(_fastslide, m) {
       "Check if file format is supported", nb::arg("filename"));
 
   // Version and constants
-  m.attr("__version__") = "0.7.0";
+  m.attr("__version__") = "0.7.1";
 }

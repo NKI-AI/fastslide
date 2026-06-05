@@ -142,9 +142,20 @@ def publish_github(
     prerelease: bool,
     repo: str | None,
     checksums: Path,
+    extra_assets: list[Path] | None = None,
+    generate_notes: bool = False,
 ) -> None:
-    """Create the release if needed, then (re)upload all assets via ``gh``."""
-    assets = [str(jar) for jar in jars] + [str(checksums)]
+    """Create the release if needed, then (re)upload all assets via ``gh``.
+
+    Args:
+        jars: Java JARs to attach.
+        extra_assets: Additional files to attach (e.g. Python wheels) so a
+            single GitHub Release hubs every artifact for the version.
+        generate_notes: Let GitHub auto-generate the "What's Changed" notes from
+            merged PRs since the previous tag instead of using ``notes``.
+    """
+    extra_assets = extra_assets or []
+    assets = [str(jar) for jar in jars] + [str(checksums)] + [str(a) for a in extra_assets]
 
     if _release_exists(tag, repo=repo):
         print(f"\u25b6\ufe0e Release {tag} exists; uploading assets (--clobber)")
@@ -157,9 +168,11 @@ def publish_github(
             tag,
             "--title",
             title,
-            "--notes",
-            notes,
         ]
+        if generate_notes:
+            create_args.append("--generate-notes")
+        else:
+            create_args.extend(["--notes", notes])
         create_args.append("--prerelease" if prerelease else "--latest")
         result = _gh([*create_args, *assets], repo=repo)
 

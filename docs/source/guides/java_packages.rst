@@ -1,14 +1,19 @@
-Java Packages and Releases
-==========================
+Packages and Releases
+=====================
 
-FastSlide ships a small Java API plus per-platform native libraries as JARs.
-They are built with Bazel and published as **GitHub Release assets** on
-``NKI-AI/fastslide``, where downstream projects (notably the
-`QuPath FastSlide extension <https://github.com/NKI-AI/qupath-extension-fastslide>`_)
-consume them anonymously through a Gradle ``ivy``/url repository.
+A FastSlide release publishes two artifact families, all built with Bazel and
+tied together by a single GitHub Release on ``NKI-AI/fastslide``:
 
-Artifacts and coordinates
--------------------------
+- **Python wheels** -- published to **PyPI** (``pip install fastslide``) and also
+  attached to the GitHub Release.
+- **Java artifacts** -- a small Java API plus per-platform native libraries as
+  JARs, published as **GitHub Release assets** and consumed anonymously by
+  downstream projects (notably the
+  `QuPath FastSlide extension <https://github.com/NKI-AI/qupath-extension-fastslide>`_)
+  through a Gradle ``ivy``/url repository.
+
+Java artifacts and coordinates
+------------------------------
 
 A release contains:
 
@@ -67,6 +72,21 @@ The native library loads itself off the classpath at runtime
 (``NativeLoader.tryLoadFromClasspath`` reads ``META-INF/native/<os>-<arch>/``),
 so no native path configuration is needed.
 
+Python wheels
+-------------
+
+The Python package is distributed as platform wheels (one per
+platform/CPython version, cp310--cp314) built with Bazel and **published to
+PyPI**, so consumers just::
+
+   pip install fastslide
+
+The same wheels are attached to the GitHub Release for convenience. Wheels are
+built for ``linux``/``darwin`` (x86_64 + aarch64) and ``windows`` (x86_64);
+``windows_arm64`` is skipped (``rules_python`` has no ``py_cc`` toolchain for it,
+matching the Java side). Build them locally with ``tools/build_wheels.py``
+(see below).
+
 .. _java-local-release:
 
 Building and testing locally (no GitHub)
@@ -108,48 +128,68 @@ offline.
 Because step 3 produces the identical layout CI publishes, a green local run is
 a faithful preview of the real release.
 
-Publishing a GitHub release
----------------------------
+To build wheels locally (optionally narrowing the platform/Python matrix)::
 
-Releases are cut by the **manual** ``Release Java artifacts`` workflow
-(``.github/workflows/release-java.yml``); it never fires automatically on a
-version bump. To publish:
+   python3 tools/build_wheels.py --platform darwin_aarch64 --python cp311
+   # -> artifacts/wheels/*.whl
+
+``publish_java_artifacts.py`` also attaches any wheels in ``artifacts/wheels``
+to the GitHub Release (its ``--wheels-dir`` defaults there); for a local
+``--dest local`` stage only the Java JARs are written.
+
+Publishing a release
+--------------------
+
+Releases are cut by the **manual** ``Release FastSlide`` workflow
+(``.github/workflows/release.yml``); it never fires automatically on a version
+bump. To publish:
 
 1. Bump ``version`` in ``package/versions.json``.
 2. From the ``NKI-AI/fastslide`` repo, run the workflow (Actions tab ->
-   *Release Java artifacts* -> *Run workflow*). Set ``release: true`` for a final
-   release, or leave it ``false`` for a prerelease/snapshot (tag
-   ``<version>-dev.<shortsha>``). The ``platforms`` input lets you build a
-   subset for a cheap trial run.
+   *Release FastSlide* -> *Run workflow*). Set ``release: true`` for a final
+   release (tag ``<version>``, marked latest, **wheels published to PyPI**), or
+   leave it ``false`` for a prerelease/snapshot (tag ``<version>-dev.<shortsha>``,
+   GitHub-only, no PyPI). The ``platforms`` input lets you build a subset for a
+   cheap trial run.
+
+You do **not** create the git tag or write release notes by hand: the workflow
+creates the tag via ``gh release create`` and auto-generates the notes
+(``--generate-notes``) from merged PRs since the previous tag.
 
 What the workflow does
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-The workflow runs in two phases -- **build** (produce each classifier JAR where
-it can be built) and **smoke** (run every JAR on its real target OS/arch) --
-followed by an aggregate **release** job:
+The workflow fans out into per-platform **build** jobs (Java JARs and Python
+wheels) plus on-target **smoke** jobs, then converges on PyPI publishing and a
+single aggregate **GitHub Release**:
 
 .. mermaid::
 
    flowchart TB
-       dispatch["workflow_dispatch (release bool)"] --> build
-       subgraph build [build: produce classifier JARs]
-           blx["linux_x86_64 / ubuntu-24.04 (native)"]
-           bla["linux_arm64 / ubuntu-24.04-arm (native)"]
-           bmx["darwin_x86_64 / macos-14 (cross, Apple arm->x86_64)"]
-           bma["darwin_aarch64 / macos-14 (native)"]
+       dispatch["workflow_dispatch (release bool)"] --> bj & bw
+       subgraph bj [build-java: classifier JARs]
+           blx["linux_x86_64 / ubuntu-24.04"]
+           bla["linux_arm64 / ubuntu-24.04-arm"]
+           bmx["darwin_x86_64 / macos-14 (cross arm->x86_64)"]
+           bma["darwin_aarch64 / macos-14"]
            bwx["windows_x86_64 / ubuntu-24.04 (cross, Zig)"]
        end
-       subgraph smoke [smoke: run JARs on the real target runner]
-           slx["linux_x86_64 / ubuntu-24.04"]
-           sla["linux_arm64 / ubuntu-24.04-arm"]
-           smx["darwin_x86_64 / macos-14 (x64 JDK via Rosetta)"]
-           sma["darwin_aarch64 / macos-14"]
+       subgraph sj [smoke-java: run JARs on the real target OS/arch]
+           slx["linux x86_64/arm64"]
+           smx["darwin x86_64 (Rosetta) / aarch64"]
            swx["windows_x86_64 / windows-2022"]
        end
-       build --> smoke
-       smoke --> rel["release job (needs all): provenance + gh release"]
-       rel --> ivy["consumers resolve dev.aifo:fastslide-* anonymously"]
+       subgraph bw [build-wheels: cp310-cp314 per platform]
+           wl["linux x86_64/arm64"]
+           wm["darwin x86_64/aarch64"]
+           ww["windows_x86_64"]
+       end
+       bj --> sj
+       bw --> pypi["publish-pypi (release only): Trusted Publishing"]
+       sj --> rel
+       bw --> rel
+       pypi --> rel["github-release (needs all): provenance + gh release (jars + wheels + SHA256SUMS, auto notes)"]
+       rel --> consumers["pip install fastslide / Gradle ivy resolves dev.aifo:fastslide-*"]
 
 Why the split:
 
@@ -172,11 +212,19 @@ Why the split:
   validate the exact artifact a consumer would load, regardless of where it was
   built.
 
-The build and smoke matrices are ``fail-fast: false``; the ``release`` job
-``needs:`` the smoke phase, so a release is only cut when every selected
-platform both built and smoke-tested cleanly. Released JARs additionally get a
-SLSA build-provenance attestation.
+All matrices are ``fail-fast: false``; the ``github-release`` job ``needs:`` the
+smoke phase, the wheel builds, and (on a full release) the PyPI publish, so a
+release is only cut when every selected platform built, smoke-tested, and
+published cleanly. Every released JAR and wheel gets a SLSA build-provenance
+attestation.
 
 .. note::
 
-   ``NKI-AI/fastslide`` must be public for anonymous consumption.
+   ``NKI-AI/fastslide`` must be public for anonymous Java consumption.
+
+   **PyPI prerequisite (one-time).** Publishing wheels uses PyPI `Trusted
+   Publishing <https://docs.pypi.org/trusted-publishers/>`_ (OIDC, no API
+   token). On PyPI, add a trusted publisher for the project with owner
+   ``NKI-AI``, repository ``fastslide``, workflow ``release.yml``, and
+   environment ``pypi``. The ``publish-pypi`` job uses ``skip-existing`` so a
+   re-run won't fail if a version is already on PyPI.

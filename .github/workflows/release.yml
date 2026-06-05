@@ -1,30 +1,33 @@
-# Build and publish the FastSlide Java artifacts (wrapper JAR + per-platform
-# native classifier JARs) as a GitHub Release.
+# Build, test, and publish a full FastSlide release: the Java artifacts (wrapper
+# JAR + per-platform native classifier JARs) and the Python wheels, tied
+# together by one GitHub Release. Wheels are also published to PyPI.
 #
 # Design (see docs/source/guides/java_packages.rst):
-#   - `build`: produce each platform's classifier JAR where it CAN be built.
-#       * linux/darwin: built natively on a matching runner.
-#       * windows_x86_64: CROSS-compiled on Linux via the hermetic Zig
-#         toolchain. Windows cannot be a Bazel *host* here because
-#         aspect_rules_py / rules_uv have no Windows host support ("Unsupported
-#         platform windows"), which breaks analysis of even pure Java targets.
-#         Building on a Linux host (target=windows) avoids that.
-#       * windows_arm64 is NOT shipped: Zig emits an arm64 PE the Windows
-#         loader rejects (error 193) and we can't build on a Windows host.
-#   - `smoke`: run the shipped JARs through fastslidetool on the REAL target
-#       runner (incl. native Windows), needing only a JDK -- no Bazel. This is
-#       what validates the artifact on-target.
-#   - `release`: needs every smoke job, so a release is only cut when all
-#       selected platforms built and smoke-tested successfully.
+#   - build-java / build-wheels: produce each platform's artifacts where they
+#     CAN be built:
+#       * linux/darwin: built on a matching runner (darwin_x86_64 is cross-built
+#         on the arm64 Mac via the Apple toolchain).
+#       * windows_x86_64: CROSS-compiled on Linux via the hermetic Zig toolchain.
+#         Windows cannot be a Bazel *host* here because aspect_rules_py /
+#         rules_uv have no Windows host support ("Unsupported platform windows").
+#       * windows_arm64 is NOT shipped: Zig emits an arm64 PE the Windows loader
+#         rejects (error 193) and we can't build on a Windows host.
+#   - smoke-java: run the shipped JARs through fastslidetool on the REAL target
+#     runner (incl. native Windows), needing only a JDK -- no Bazel.
+#   - publish-pypi: upload wheels + to PyPI via Trusted Publishing (full release
+#     only). Requires a PyPI trusted publisher configured for this repo, this
+#     workflow file (release.yml), and the `pypi` environment.
+#   - github-release: needs every build/smoke job, so a release is only cut when
+#     all selected platforms succeed. Attaches every artifact + provenance.
 #
 # Trigger: manual only (`workflow_dispatch`). It does NOT run on a version bump.
-name: Release Java artifacts
+name: Release FastSlide
 
 on:
   workflow_dispatch:
     inputs:
       release:
-        description: "Publish a full release (false = prerelease/snapshot)"
+        description: "Publish a full release (false = prerelease/snapshot, no PyPI)"
         type: boolean
         default: false
       platforms:
@@ -36,22 +39,20 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-java-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: true
 
 # Force UTF-8 for Python stdio so the build scripts' status glyphs do not crash
-# on Windows runners (default code page is cp1252).
+# on Windows runners (default code page is cp1252). Run all JavaScript actions
+# on Node.js 24 (Node.js 20 is deprecated on the runners).
 env:
   PYTHONUTF8: "1"
   PYTHONIOENCODING: "utf-8"
-  # Run all JavaScript actions on Node.js 24; Node.js 20 is deprecated on the
-  # runners (removed 2026-09-16). Covers the third-party actions too, not just
-  # the actions/* ones.
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  build:
-    name: Build ${{ matrix.platform }}
+  build-java:
+    name: Build Java ${{ matrix.platform }}
     runs-on: ${{ matrix.builder }}
     strategy:
       fail-fast: false
@@ -69,9 +70,6 @@ jobs:
           - platform: darwin_aarch64
             builder: macos-14
           # Windows x86_64 is cross-compiled on Linux (see header note).
-          # windows_arm64 is intentionally absent: the Zig cross toolchain emits
-          # an arm64 PE the Windows loader rejects (error 193), and we cannot
-          # build on a Windows host (rules_uv has no Windows host support).
           - platform: windows_x86_64
             builder: ubuntu-24.04
     steps:
@@ -91,8 +89,6 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # ubuntu images ship large SDKs; the C++ build + hermetic Zig toolchain
-      # need room. Mirrors format_check.yml.
       - name: Free disk space (Linux)
         if: steps.gate.outputs.run == 'true' && runner.os == 'Linux'
         uses: jlumbroso/free-disk-space@v1.3.1
@@ -102,23 +98,18 @@ jobs:
           haskell: true
           large-packages: true
 
-      # bazelisk honors USE_BAZEL_VERSION above all else; pin the repo's exact
-      # version (.bazelversion) instead of letting it resolve to "latest".
       - name: Pin Bazel version
         if: steps.gate.outputs.run == 'true'
         shell: bash
         run: echo "USE_BAZEL_VERSION=$(tr -d '[:space:]' < .bazelversion)" >> "$GITHUB_ENV"
 
-      # Installs a real cross-OS `bazel` launcher and manages Bazel caches in
-      # default locations OUTSIDE the workspace (Bazel 9 requires this for the
-      # repo-contents cache).
       - name: Set up Bazel
         if: steps.gate.outputs.run == 'true'
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
           bazelisk-cache: true
           repository-cache: true
-          disk-cache: ${{ matrix.platform }}
+          disk-cache: java-${{ matrix.platform }}
 
       - name: Build native + JARs (${{ matrix.platform }})
         if: steps.gate.outputs.run == 'true'
@@ -146,9 +137,9 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  smoke:
-    name: Smoke ${{ matrix.platform }}
-    needs: build
+  smoke-java:
+    name: Smoke Java ${{ matrix.platform }}
+    needs: build-java
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -188,16 +179,13 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
 
-      # Run the x86_64 JVM + dylib under emulation on the arm64 runner.
       - name: Install Rosetta
         if: steps.gate.outputs.run == 'true' && matrix.rosetta
         run: softwareupdate --install-rosetta --agree-to-license
 
-      # JDK to RUN the smoke test. FastSlide's FFM code needs a JDK >= 22
-      # (stable java.lang.foreign); 23 is the highest Temurin ships across
-      # every runner arch here, including windows-11-arm. The architecture is
-      # pinned per platform so the JVM (and thus the dylib/dll it loads) matches
-      # the artifact under test -- x64 here runs via Rosetta on the arm runner.
+      # FastSlide's FFM code needs a JDK >= 22; 23 is the highest Temurin ships
+      # across every runner arch. Pin the architecture so the JVM matches the
+      # artifact under test (x64 runs via Rosetta on the arm runner).
       - name: Set up JDK
         if: steps.gate.outputs.run == 'true'
         uses: actions/setup-java@v5
@@ -211,6 +199,7 @@ jobs:
         uses: actions/download-artifact@v6
         with:
           path: artifacts/jars
+          pattern: "{native,wrapper}-*"
           merge-multiple: true
 
       - name: On-target smoke test (${{ matrix.platform }})
@@ -218,9 +207,108 @@ jobs:
         shell: bash
         run: python3 tools/smoke_test_java.py --platform ${{ matrix.platform }}
 
-  release:
+  build-wheels:
+    name: Build wheels ${{ matrix.platform }}
+    runs-on: ${{ matrix.builder }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # windows_arm64 has no rules_python py_cc toolchain, so wheels are not
+        # built for it (build_wheels.py skips it too).
+        include:
+          - platform: linux_x86_64
+            builder: ubuntu-24.04
+          - platform: linux_arm64
+            builder: ubuntu-24.04-arm
+          - platform: darwin_x86_64
+            builder: macos-14
+          - platform: darwin_aarch64
+            builder: macos-14
+          - platform: windows_x86_64
+            builder: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Decide whether to build this platform
+        id: gate
+        shell: bash
+        run: |
+          selected=",${{ inputs.platforms }},"
+          selected="${selected// /}"
+          if [[ "${selected}" == *",${{ matrix.platform }},"* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false (not in inputs.platforms)"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Free disk space (Linux)
+        if: steps.gate.outputs.run == 'true' && runner.os == 'Linux'
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+
+      - name: Pin Bazel version
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: echo "USE_BAZEL_VERSION=$(tr -d '[:space:]' < .bazelversion)" >> "$GITHUB_ENV"
+
+      - name: Set up Bazel
+        if: steps.gate.outputs.run == 'true'
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          disk-cache: wheels-${{ matrix.platform }}
+
+      - name: Build wheels (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: python3 tools/build_wheels.py --platform ${{ matrix.platform }} --bazel bazel
+
+      - name: Upload wheels
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: wheels-${{ matrix.platform }}
+          path: artifacts/wheels/*.whl
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-pypi:
+    name: Publish wheels to PyPI
+    # Only a full release publishes to PyPI; snapshots stay GitHub-only.
+    if: inputs.release == true
+    needs: build-wheels
+    runs-on: ubuntu-24.04
+    environment: pypi
+    permissions:
+      id-token: write # OIDC for PyPI Trusted Publishing (no API token)
+    steps:
+      - name: Download wheels
+        uses: actions/download-artifact@v6
+        with:
+          path: dist
+          pattern: "wheels-*"
+          merge-multiple: true
+
+      - name: List wheels
+        shell: bash
+        run: ls -l dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist
+          skip-existing: true
+
+  github-release:
     name: Publish GitHub Release
-    needs: smoke
+    needs: [smoke-java, build-wheels, publish-pypi]
     runs-on: ubuntu-24.04
     permissions:
       contents: write # create the release
@@ -230,20 +318,32 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Download all built JARs
+      - name: Download JARs
         uses: actions/download-artifact@v6
         with:
           path: artifacts/jars
+          pattern: "{native,wrapper}-*"
+          merge-multiple: true
+
+      - name: Download wheels
+        uses: actions/download-artifact@v6
+        with:
+          path: artifacts/wheels
+          pattern: "wheels-*"
           merge-multiple: true
 
       - name: List collected artifacts
         shell: bash
-        run: ls -l artifacts/jars
+        run: |
+          echo "JARs:"; ls -l artifacts/jars
+          echo "Wheels:"; ls -l artifacts/wheels
 
       - name: Generate build provenance attestation
         uses: actions/attest-build-provenance@v3
         with:
-          subject-path: artifacts/jars/*.jar
+          subject-path: |
+            artifacts/jars/*.jar
+            artifacts/wheels/*.whl
 
       - name: Publish
         shell: bash
@@ -256,4 +356,7 @@ jobs:
             channel="--release"
             require="--require-all"
           fi
-          python3 tools/publish_java_artifacts.py --dest github ${channel} ${require}
+          python3 tools/publish_java_artifacts.py \
+            --dest github ${channel} ${require} \
+            --wheels-dir artifacts/wheels \
+            --generate-notes
