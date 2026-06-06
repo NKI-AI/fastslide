@@ -37,6 +37,7 @@ struct CziSubblockInfo {
   int32_t scene = 0;        ///< Scene index (CZI "S" dimension start).
   int32_t z = 0;            ///< Focal-plane index (CZI "Z" dimension start).
   int32_t t = 0;            ///< Time-point index (CZI "T" dimension start).
+  int32_t c = 0;            ///< Channel index (CZI "C" dimension start).
   int32_t downsample = 1;   ///< Integer downsample factor (level-0 = 1).
   int32_t dim_count = 0;    ///< Directory entry's DimensionEntryDV count.
 };

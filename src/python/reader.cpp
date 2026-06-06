@@ -38,6 +38,47 @@ namespace fastslide::python {
 
 using fastslide::RegionSpec;
 
+namespace {
+
+/// @brief Convert C++ channel metadata into a list of Python dicts.
+///
+/// Shared by the slide-level (`FastSlide.channel_metadata`) and image-level
+/// (`SlideImageView.channel_metadata`) accessors so both expose the same
+/// shape, including any format-specific `additional` fields.
+nb::list BuildChannelMetadataList(
+    const std::vector<fastslide::ChannelMetadata>& channels) {
+  nb::list result;
+  for (const auto& channel : channels) {
+    nb::dict channel_dict;
+    channel_dict["name"] = channel.name;
+    channel_dict["biomarker"] = channel.biomarker;
+    channel_dict["color"] =
+        nb::make_tuple(channel.color[0], channel.color[1], channel.color[2]);
+    channel_dict["exposure_time"] = channel.exposure_time;
+    channel_dict["signal_units"] = channel.signal_units;
+    for (const auto& [key, value] : channel.additional) {
+      channel_dict[key.c_str()] = value;
+    }
+    result.append(channel_dict);
+  }
+  return result;
+}
+
+/// @brief Number of channels a `read_region` returns for a given format.
+///
+/// Standard formats map directly to their channel count (Gray=1, RGB=3,
+/// RGBA=4); spectral images carry one plane per channel-metadata entry.
+int NumChannelsFromFormat(
+    fastslide::ImageFormat format,
+    const std::vector<fastslide::ChannelMetadata>& channels) {
+  if (format == fastslide::ImageFormat::kSpectral) {
+    return static_cast<int>(channels.size());
+  }
+  return static_cast<int>(fastslide::GetFormatChannels(format));
+}
+
+}  // namespace
+
 // AssociatedImages implementation
 AssociatedImages::AssociatedImages(std::shared_ptr<SlideReader> reader)
     : reader_(reader) {}
@@ -342,6 +383,16 @@ StackInfo SlideImageView::GetStackInfo() const {
   return GetImage()->GetStackInfo();
 }
 
+nb::list SlideImageView::GetChannelMetadata() const {
+  return BuildChannelMetadataList(GetImage()->GetChannelMetadata());
+}
+
+int SlideImageView::GetNumChannels() const {
+  const auto* image = GetImage();
+  return NumChannelsFromFormat(image->GetImageFormat(),
+                               image->GetChannelMetadata());
+}
+
 int SlideImageView::GetBestLevelForDownsample(double downsample) const {
   return GetImage()->GetBestLevelForDownsample(downsample);
 }
@@ -641,28 +692,16 @@ nb::list FastSlide::GetChannelMetadata() const {
     throw std::runtime_error(
         "Cannot get channel metadata: slide reader is closed");
   }
+  return BuildChannelMetadataList(reader_->GetChannelMetadata());
+}
 
-  auto channel_metadata = reader_->GetChannelMetadata();
-  nb::list result;
-
-  for (const auto& channel : channel_metadata) {
-    nb::dict channel_dict;
-    channel_dict["name"] = channel.name;
-    channel_dict["biomarker"] = channel.biomarker;
-    channel_dict["color"] =
-        nb::make_tuple(channel.color[0], channel.color[1], channel.color[2]);
-    channel_dict["exposure_time"] = channel.exposure_time;
-    channel_dict["signal_units"] = channel.signal_units;
-
-    // Add additional metadata
-    for (const auto& [key, value] : channel.additional) {
-      channel_dict[key.c_str()] = value;
-    }
-
-    result.append(channel_dict);
+int FastSlide::GetNumChannels() const {
+  if (is_closed_) {
+    throw std::runtime_error(
+        "Cannot get channel count: slide reader is closed");
   }
-
-  return result;
+  return NumChannelsFromFormat(reader_->GetImageFormat(),
+                               reader_->GetChannelMetadata());
 }
 
 int FastSlide::GetBestLevelForDownsample(double downsample) const {

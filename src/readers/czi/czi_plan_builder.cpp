@@ -59,12 +59,23 @@ void DetermineRegionBounds(const core::TileRequest& request,
 }
 
 core::OutputSpec CreateOutputSpec(uint32_t width, uint32_t height,
-                                  DataType data_type) {
+                                  DataType data_type, uint32_t channel_count,
+                                  bool is_spectral) {
   core::OutputSpec spec;
   spec.dimensions = {width, height};
-  spec.channels = 3;  // RGB
   spec.pixel_format = core::ToOutputPixelFormat(data_type);
-  spec.background = {255, 255, 255, 255};
+  if (is_spectral) {
+    // One independent plane per channel; black background so missing tiles
+    // read as zero intensity, matching the other fluorescence readers.
+    spec.channels = channel_count;
+    spec.planar_config = PlanarConfig::kSeparate;
+    spec.force_spectral_image = true;
+    spec.background = {0, 0, 0, 255};
+  } else {
+    spec.channels = 3;  // RGB
+    spec.planar_config = PlanarConfig::kContiguous;
+    spec.background = {255, 255, 255, 255};
+  }
   return spec;
 }
 
@@ -88,8 +99,11 @@ std::optional<core::TileReadOp> CreateTileOperation(
 
   core::TileReadOp op{};
   op.level = level;
-  op.tile_coord = {subblock_index, 0};
-  op.source_id = 0;
+  // The subblock index identifies which tile to read and is carried in
+  // `source_id`; `tile_coord.x` carries the destination channel plane so the
+  // planar Canvas paints spectral channels correctly (0 for RGB scenes).
+  op.tile_coord = {spatial_tile.info.channel, 0};
+  op.source_id = subblock_index;
   op.byte_offset = 0;
   op.byte_size = 0;
 
@@ -128,9 +142,13 @@ aifocore::Result<core::TilePlan> CziPlanBuilder::BuildPlan(
   uint32_t height = 0;
   DetermineRegionBounds(request, level_info, x, y, width, height);
 
+  const uint32_t channel_count = context.channel_count;
+  const bool is_spectral = context.is_spectral;
+
   // Empty regions still return a plan (filled with background).
   if (width == 0 || height == 0) {
-    plan.output = CreateOutputSpec(width, height, data_type);
+    plan.output =
+        CreateOutputSpec(width, height, data_type, channel_count, is_spectral);
     plan.actual_region = {
         .top_left = {0, 0}, .size = {width, height}, .level = request.level};
     return plan;
@@ -139,7 +157,8 @@ aifocore::Result<core::TilePlan> CziPlanBuilder::BuildPlan(
   // Clamp region to level bounds.
   if (x >= static_cast<double>(level_info.dimensions[0]) ||
       y >= static_cast<double>(level_info.dimensions[1])) {
-    plan.output = CreateOutputSpec(width, height, data_type);
+    plan.output =
+        CreateOutputSpec(width, height, data_type, channel_count, is_spectral);
     plan.actual_region = {
         .top_left = {static_cast<uint32_t>(x), static_cast<uint32_t>(y)},
         .size = {width, height},
@@ -172,7 +191,8 @@ aifocore::Result<core::TilePlan> CziPlanBuilder::BuildPlan(
   }
 
   plan.operations = std::move(ops);
-  plan.output = CreateOutputSpec(width, height, data_type);
+  plan.output =
+      CreateOutputSpec(width, height, data_type, channel_count, is_spectral);
   plan.actual_region = {
       .top_left = {static_cast<uint32_t>(x), static_cast<uint32_t>(y)},
       .size = {width, height},

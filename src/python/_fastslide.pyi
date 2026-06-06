@@ -248,6 +248,14 @@ class SlideImageView:
     def get_stack_info(self) -> dict:
         """Z/T stack extent and spacing as a dict."""
 
+    @property
+    def channel_metadata(self) -> list:
+        """List of per-channel metadata dictionaries for this image."""
+
+    @property
+    def num_channels(self) -> int:
+        """Number of channels a read_region of this image returns."""
+
     def get_best_level_for_downsample(self, downsample: float) -> int:
         """Best level for a given downsample factor."""
 
@@ -396,6 +404,10 @@ class FastSlide:
     @property
     def channel_metadata(self) -> list:
         """List of channel metadata dictionaries"""
+
+    @property
+    def num_channels(self) -> int:
+        """Number of channels a read_region returns"""
 
     @property
     def images(self) -> SlideImages:

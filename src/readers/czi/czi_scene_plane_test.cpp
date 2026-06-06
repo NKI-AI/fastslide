@@ -109,16 +109,18 @@ TEST(CziScenePlaneTest, PrepareRequestSelectsOnlyRequestedPlane) {
   const auto scene = MakeMultiPlaneScene(*reader);
 
   // z index 1 -> Z start 1; t index 0 -> T start 0. Only subblock 2 matches.
+  // The subblock index is carried in `source_id`; `tile_coord.x` is the output
+  // channel plane (0 for these single-channel synthetic tiles).
   auto plan_or = scene->PrepareRequest(FullLevelRequest(/*level=*/0, 1, 0));
   ASSERT_TRUE(plan_or.ok()) << plan_or.status().ToString();
   ASSERT_EQ(plan_or->operations.size(), 1u);
-  EXPECT_EQ(plan_or->operations[0].tile_coord.x, 2u);
+  EXPECT_EQ(plan_or->operations[0].source_id, 2u);
 
   // The complementary plane resolves to its own, different subblock.
   auto other_or = scene->PrepareRequest(FullLevelRequest(/*level=*/0, 0, 1));
   ASSERT_TRUE(other_or.ok()) << other_or.status().ToString();
   ASSERT_EQ(other_or->operations.size(), 1u);
-  EXPECT_EQ(other_or->operations[0].tile_coord.x, 1u);
+  EXPECT_EQ(other_or->operations[0].source_id, 1u);
 }
 
 TEST(CziScenePlaneTest, PrepareRequestRejectsOutOfRangePlane) {

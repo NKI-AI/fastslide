@@ -15,6 +15,7 @@
 #ifndef AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_CZI_CZI_PLAN_CONTEXT_H_
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_CZI_CZI_PLAN_CONTEXT_H_
 
+#include <cstdint>
 #include <memory>
 
 #include "fastslide/image.h"
@@ -30,6 +31,11 @@ struct CziPlanContext {
   std::shared_ptr<const czi::CziSpatialIndex> spatial_index;
   /// Native output sample type for this scene (kUInt8 or kUInt16).
   DataType data_type = DataType::kUInt8;
+  /// Number of output channels (focal-plane independent). 1 for RGB scenes.
+  uint32_t channel_count = 1;
+  /// When true, build a separated, multi-channel (spectral) plan: one plane
+  /// per channel instead of a 3-channel RGB output.
+  bool is_spectral = false;
 };
 
 }  // namespace fastslide
