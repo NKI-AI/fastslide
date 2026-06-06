@@ -33,7 +33,7 @@ bazel_dep(name = "nlohmann_json", version = "3.11.3.bcr.1")
 bazel_dep(name = "aifocore-cpp", version = "0.0.1")
 git_override(
     module_name = "aifocore-cpp",
-    commit = "a1046b325dd8f7a89a4411fa1b45bc9faeb80ff8",
+    commit = "fc0ba506f0a6838da930849cb4252e770a1fa6b8",
     remote = "https://github.com/NKI-AI/aifocore.git",
 )
 
@@ -59,7 +59,7 @@ git_override(
 bazel_dep(name = "simpletiff", version = "0.0.1")
 git_override(
     module_name = "simpletiff",
-    commit = "94439833674040add3d641ac1f98cc595c1a9308",
+    commit = "902b320fab3cda3f293faf76c775de281df9df1d",
     remote = "https://github.com/NKI-AI/simpletiff.git",
 )
 

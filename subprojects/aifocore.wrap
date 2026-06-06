@@ -1,0 +1,9 @@
+# aifocore (NKI-AI/aifocore, synced from the monorepo). Provides the `aifocore`
+# dependency. Revision matches the git_override in MODULE.bazel. In the monorepo
+# this is overridden by a local symlink subprojects/aifocore -> ../../aifocore-cpp.
+[wrap-git]
+url = https://github.com/NKI-AI/aifocore.git
+revision = fc0ba506f0a6838da930849cb4252e770a1fa6b8
+
+[provide]
+dependency_names = aifocore
