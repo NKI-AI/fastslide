@@ -1,0 +1,14 @@
+# lodepng (single-file PNG codec) has no build system of its own, so we vendor a
+# meson.build via patch_directory. Revision matches the http_archive in
+# MODULE.bazel. Provides the `lodepng` dependency. Consumers include it as
+# "lodepng/lodepng.h"; the packagefiles overlay adds a small header shim so that
+# prefixed include resolves.
+[wrap-git]
+url = https://github.com/lvandeve/lodepng.git
+revision = ed6fe5825c6a4fbb7f58ab35a4231c7543cd452a
+depth = 1
+
+patch_directory = lodepng
+
+[provide]
+dependency_names = lodepng

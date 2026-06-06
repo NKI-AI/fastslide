@@ -1,0 +1,8 @@
+option('build_tests', type : 'boolean', value : true,
+  description : 'Build the gtest unit-test suite.')
+option('build_tool', type : 'boolean', value : true,
+  description : 'Build the fastslidetool CLI.')
+option('build_c_api', type : 'boolean', value : true,
+  description : 'Build the C API shared library (libfastslide).')
+option('jpeg_decoder', type : 'combo', choices : ['libjpeg', 'jpgd'], value : 'libjpeg',
+  description : 'JPEG decoder backend: system libjpeg(-turbo) or bundled jpeg-compressor (jpgd).')

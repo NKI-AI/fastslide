@@ -1,0 +1,9 @@
+# jpgd JPEG decoder (NKI-AI/jpeg-compressor). Only used when configured with
+# -Djpeg_decoder=jpgd. Provides the `jpgd` dependency (variable jpgd_dep).
+# Revision matches the git_override in MODULE.bazel.
+[wrap-git]
+url = https://github.com/NKI-AI/jpeg-compressor.git
+revision = 927f759d349b7ce2588d50465d719c42011ccb4b
+
+[provide]
+jpgd = jpgd_dep

@@ -1,0 +1,9 @@
+# JPEG-XR codec (NKI-AI fork with build fixes and a meson.build). Used by the
+# JPEG-XR decoder (CZI / MRXS). Its root meson.build provides the `jxrlib`
+# dependency via meson.override_dependency. Revision matches MODULE.bazel.
+[wrap-git]
+url = https://github.com/NKI-AI/jxrlib.git
+revision = 36dd1c94bd1c31551964bbb7b893674de95ca72f
+
+[provide]
+dependency_names = jxrlib

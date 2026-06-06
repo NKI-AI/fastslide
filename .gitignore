@@ -1,8 +1,11 @@
-subprojects/*
-!subprojects/simpletiff
-!subprojects/jpeg-compressor
-!subprojects/aifocore
-subprojects/*.wrap
-!subprojects/*-redirect.wrap
 builddir/
 node_modules/
+
+# Meson subprojects: commit only the wrap files and the vendored packagefiles
+# (meson.build overlays + header shims). Everything else under subprojects/ is
+# either downloaded/extracted dependency sources, the package cache, or local
+# dev symlinks (aifocore, simpletiff, jpeg-compressor -> monorepo siblings),
+# none of which should be tracked.
+subprojects/*
+!subprojects/*.wrap
+!subprojects/packagefiles/

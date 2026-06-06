@@ -316,6 +316,7 @@ func (sr *SlideReader) ReadRegion(x, y, width, height uint32, level int) (*Image
 		C.uint32_t(x), C.uint32_t(y),
 		C.uint32_t(width), C.uint32_t(height),
 		C.int(level),
+		C.uint32_t(0), C.uint32_t(0), // z, t: default plane
 	)
 
 	if handle == nil {
