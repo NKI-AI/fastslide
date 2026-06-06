@@ -123,6 +123,22 @@ CziSceneImage::CziSceneImage(
     t_values_.push_back(0);
   }
 
+  // Distinct channel (C) starts present in this scene. More than one channel
+  // means the scene is a multi-channel fluorescence stack: each channel is an
+  // independent plane and must not be collapsed into an RGB triplet.
+  {
+    std::vector<int32_t> c_starts;
+    c_starts.reserve(subblock_indices_.size());
+    for (uint32_t idx : subblock_indices_) {
+      c_starts.push_back(subblocks[idx].c);
+    }
+    channel_values_ = czi::SortedUniqueAxis(c_starts);
+  }
+  if (channel_values_.empty()) {
+    channel_values_.push_back(0);
+  }
+  is_spectral_ = channel_values_.size() > 1;
+
   // Native output dtype: any 16-bit pixel type (GRAY16 = 1, BGR48 = 4) makes
   // the whole scene 16-bit. Pixel type is uniform per scene in practice.
   for (uint32_t idx : subblock_indices_) {
@@ -194,7 +210,39 @@ aifocore::Result<LevelInfo> CziSceneImage::GetLevelInfo(int level) const {
   return info;
 }
 
+uint32_t CziSceneImage::ChannelIndexOf(int32_t c) const {
+  const auto it =
+      std::lower_bound(channel_values_.begin(), channel_values_.end(), c);
+  if (it == channel_values_.end() || *it != c) {
+    return 0;
+  }
+  return static_cast<uint32_t>(it - channel_values_.begin());
+}
+
+ImageFormat CziSceneImage::GetImageFormat() const {
+  return is_spectral_ ? ImageFormat::kSpectral : ImageFormat::kRGB;
+}
+
 std::vector<ChannelMetadata> CziSceneImage::GetChannelMetadata() const {
+  // Multi-channel fluorescence: surface one entry per channel, preferring the
+  // names/colors parsed from the CZI XML and falling back to generated names.
+  if (is_spectral_) {
+    const auto& parsed = container_.MetadataChannels();
+    std::vector<ChannelMetadata> out;
+    out.reserve(channel_values_.size());
+    for (size_t i = 0; i < channel_values_.size(); ++i) {
+      if (i < parsed.size() && !parsed[i].name.empty()) {
+        out.push_back(parsed[i]);
+      } else {
+        ChannelMetadata md;
+        md.name = aifocore::fmt::format("Channel {}", i);
+        out.push_back(std::move(md));
+      }
+    }
+    return out;
+  }
+
+  // Single-channel (grayscale broadcast or native BGR): legacy RGB surface.
   ChannelMetadata red;
   red.name = "Red";
   red.color = ColorRGB{255, 0, 0};
@@ -251,6 +299,8 @@ aifocore::Result<core::TilePlan> CziSceneImage::PrepareRequest(
       .level_info = level_info,
       .spatial_index = spatial_index,
       .data_type = data_type_,
+      .channel_count = static_cast<uint32_t>(channel_values_.size()),
+      .is_spectral = is_spectral_,
   };
   return CziPlanBuilder::BuildPlan(request, context);
 }
@@ -258,8 +308,8 @@ aifocore::Result<core::TilePlan> CziSceneImage::PrepareRequest(
 aifocore::Status CziSceneImage::ExecutePlan(const core::TilePlan& plan,
                                             runtime::Canvas& canvas) const {
   const CziExecContext context(container_.GetFilename(),
-                               container_.SubblockSpan(),
-                               container_.GetCache());
+                               container_.SubblockSpan(), container_.GetCache(),
+                               is_spectral_);
   return CziTileExecutor::ExecutePlan(plan, context, canvas);
 }
 
@@ -320,6 +370,7 @@ CziSceneImage::GetSpatialIndex(int level, uint32_t z, uint32_t t) const {
     st.info.subblock_index = idx;
     st.info.width = sb.w;
     st.info.height = sb.h;
+    st.info.channel = ChannelIndexOf(sb.c);
     st.bbox.min = {tx, ty};
     st.bbox.max = {tx + sb.w, ty + sb.h};
     tiles.push_back(st);

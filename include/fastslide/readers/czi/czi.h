@@ -36,6 +36,10 @@
 #include "fastslide/runtime/io/file_reader.h"
 #include "fastslide/slide_reader.h"
 
+namespace pugi {
+class xml_node;
+}  // namespace pugi
+
 namespace fastslide {
 
 namespace fs = std::filesystem;
@@ -106,7 +110,7 @@ class CziReader : public SlideReader, public ReaderFactory<CziReader> {
   [[nodiscard]] std::string GetFormatName() const override { return "CZI"; }
 
   [[nodiscard]] ImageFormat GetImageFormat() const override {
-    return ImageFormat::kRGB;
+    return Primary().GetImageFormat();
   }
 
   [[nodiscard]] DataType GetDataType() const override {
@@ -119,6 +123,14 @@ class CziReader : public SlideReader, public ReaderFactory<CziReader> {
   /// @brief Shared view of all parsed subblocks (used by scene images).
   [[nodiscard]] std::span<const CziSubblockInfo> SubblockSpan() const {
     return subblocks_;
+  }
+
+  /// @brief Per-channel metadata (name/color) parsed from the CZI XML.
+  ///
+  /// Indexed by channel (CZI "C") position. May be empty if the file carries
+  /// no channel metadata; scene images then fall back to generated names.
+  [[nodiscard]] const std::vector<ChannelMetadata>& MetadataChannels() const {
+    return metadata_channels_;
   }
 
  private:
@@ -148,6 +160,8 @@ class CziReader : public SlideReader, public ReaderFactory<CziReader> {
   aifocore::Status ParseFileHeader(FileReader& file);
   aifocore::Status ParseSubblockDirectory(FileReader& file);
   aifocore::Status ParseMetadataXml(FileReader& file);
+  /// @brief Extract per-channel name/color from the parsed ImageDocument root.
+  void ParseChannelMetadataXml(const pugi::xml_node& root);
   aifocore::Status ParseAttachmentDirectory(FileReader& file);
   void BuildSceneImages();
 
@@ -174,6 +188,8 @@ class CziReader : public SlideReader, public ReaderFactory<CziReader> {
   std::optional<double>
       metadata_z_spacing_um_;  ///< Focal-plane step (microns).
   std::optional<double> metadata_t_interval_s_;  ///< Time-point step (seconds).
+  std::vector<ChannelMetadata>
+      metadata_channels_;  ///< Per-channel name/color (CZI "C" order).
   std::string metadata_xml_;
   std::vector<AttachmentInfo> attachments_;
 

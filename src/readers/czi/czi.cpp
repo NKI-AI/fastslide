@@ -26,6 +26,7 @@
 #include <cstring>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -43,6 +44,7 @@
 #include "fastslide/runtime/io/ascii_utils.h"
 #include "fastslide/runtime/io/binary_utils.h"
 #include "fastslide/runtime/io/file_reader.h"
+#include "fastslide/utilities/colors.h"
 
 namespace fastslide {
 
@@ -50,6 +52,48 @@ namespace {
 
 using runtime::io::ReadFixedAscii;
 using runtime::io::StartsWithMagic;
+
+/// @brief Parse a CZI display color string ("#AARRGGBB" or "#RRGGBB").
+///
+/// CZI `DisplaySetting/Channels/Channel/Color` stores an ARGB (or RGB) hex
+/// string. Zeiss writes a leading alpha byte that we ignore. Returns nullopt
+/// for malformed input so the caller can fall back to a generated color.
+[[nodiscard]] std::optional<ColorRGB> ParseCziColor(std::string_view s) {
+  if (!s.empty() && s.front() == '#') {
+    s.remove_prefix(1);
+  }
+  // Accept 6 (RRGGBB) or 8 (AARRGGBB) hex digits.
+  if (s.size() != 6 && s.size() != 8) {
+    return std::nullopt;
+  }
+  if (s.size() == 8) {
+    s.remove_prefix(2);  // drop the alpha byte
+  }
+  auto hex_pair = [](char hi, char lo) -> std::optional<uint8_t> {
+    auto nibble = [](char ch) -> int {
+      if (ch >= '0' && ch <= '9')
+        return ch - '0';
+      if (ch >= 'a' && ch <= 'f')
+        return ch - 'a' + 10;
+      if (ch >= 'A' && ch <= 'F')
+        return ch - 'A' + 10;
+      return -1;
+    };
+    const int h = nibble(hi);
+    const int l = nibble(lo);
+    if (h < 0 || l < 0) {
+      return std::nullopt;
+    }
+    return static_cast<uint8_t>((h << 4) | l);
+  };
+  const auto r = hex_pair(s[0], s[1]);
+  const auto g = hex_pair(s[2], s[3]);
+  const auto b = hex_pair(s[4], s[5]);
+  if (!r || !g || !b) {
+    return std::nullopt;
+  }
+  return ColorRGB{*r, *g, *b};
+}
 
 constexpr std::string_view kCziExt = ".czi";
 constexpr std::string_view kSidZisRawFile = "ZISRAWFILE";
@@ -231,8 +275,12 @@ aifocore::Status CziReader::ParseSubblockDirectory(FileReader& file) {
           case 'T':
             sb.t = dim.start;
             break;
+          case 'C':
+            sb.c = dim.start;
+            break;
           default:
-            // Other dimensions (C, M, ...) do not affect 2D tile layout.
+            // Other dimensions (M, ...) do not affect tile layout or channel
+            // selection.
             break;
         }
       }
@@ -386,7 +434,160 @@ aifocore::Status CziReader::ParseMetadataXml(FileReader& file) {
     }
   }
 
+  ParseChannelMetadataXml(root);
+
   return aifocore::Status::OkStatus();
+}
+
+namespace {
+
+/// @brief Copy a scalar child element's text into the `additional` map.
+void CopyChildText(ChannelMetadata& md, const pugi::xml_node& ch,
+                   const char* tag, std::string_view key) {
+  const pugi::xml_node child = ch.child(tag);
+  if (!child) {
+    return;
+  }
+  const std::string value = child.text().as_string("");
+  if (!value.empty()) {
+    md.additional[std::string(key)] = value;
+  }
+}
+
+/// @brief Channel display color hex string ("#AARRGGBB"), preferring the
+///        channel's own <Color> and falling back to a DisplaySetting overlay.
+std::string ChannelColorString(const pugi::xml_node& info_ch,
+                               const pugi::xml_node& display_ch) {
+  std::string color = info_ch.child("Color").text().as_string("");
+  if (color.empty() && display_ch) {
+    color = display_ch.child("Color").text().as_string("");
+  }
+  if (color.empty() && display_ch) {
+    color = display_ch.child("OriginalColor").text().as_string("");
+  }
+  return color;
+}
+
+/// @brief Build a ChannelMetadata from one Information <Channel>, overlaying
+///        display-only fields (dye, short name) from the matching
+///        DisplaySetting <Channel>.
+ChannelMetadata BuildChannelMetadata(const pugi::xml_node& info_ch,
+                                     const pugi::xml_node& display_ch) {
+  ChannelMetadata md;
+
+  // Name: @Name attribute, then <Name> child, then @Id.
+  std::string name = info_ch.attribute("Name").as_string("");
+  if (name.empty()) {
+    name = info_ch.child("Name").text().as_string("");
+  }
+  if (name.empty()) {
+    name = info_ch.attribute("Id").as_string("");
+  }
+  md.name = std::move(name);
+
+  // Biomarker: fluorophore name, then dye name.
+  if (auto fluor = info_ch.child("Fluor"); fluor) {
+    md.biomarker = fluor.text().as_string("");
+  } else if (auto dye = info_ch.child("DyeName"); dye) {
+    md.biomarker = dye.text().as_string("");
+  } else if (display_ch) {
+    md.biomarker = display_ch.child("DyeName").text().as_string("");
+  }
+
+  // Color (#AARRGGBB); the alpha byte is dropped by ParseCziColor.
+  const std::string color_str = ChannelColorString(info_ch, display_ch);
+  if (const auto rgb = ParseCziColor(color_str)) {
+    md.color = *rgb;
+  }
+
+  // Exposure time: CZI stores nanoseconds; ChannelMetadata is microseconds.
+  if (auto exp = info_ch.child("ExposureTime"); exp) {
+    const double ns = exp.text().as_double(0.0);
+    if (ns > 0.0) {
+      md.exposure_time = static_cast<uint32_t>(ns / 1000.0);
+    }
+  }
+
+  // Component bit depth maps onto the "signal units" (bit-depth) field.
+  if (auto bits = info_ch.child("ComponentBitCount"); bits) {
+    const int n = bits.text().as_int(0);
+    if (n > 0) {
+      md.signal_units = static_cast<uint32_t>(n);
+    }
+  }
+
+  // Richer, format-specific fields kept in `additional` so the full channel
+  // description (matching czifile) is available to consumers that want it.
+  CopyChildText(md, info_ch, "Fluor", "Fluor");
+  CopyChildText(md, info_ch, "ExposureTime", "ExposureTime");  // raw ns
+  CopyChildText(md, info_ch, "ExcitationWavelength", "ExcitationWavelength");
+  CopyChildText(md, info_ch, "EmissionWavelength", "EmissionWavelength");
+  CopyChildText(md, info_ch, "AcquisitionMode", "AcquisitionMode");
+  CopyChildText(md, info_ch, "ContrastMethod", "ContrastMethod");
+  CopyChildText(md, info_ch, "IlluminationType", "IlluminationType");
+  CopyChildText(md, info_ch, "ComponentBitCount", "ComponentBitCount");
+  if (!color_str.empty()) {
+    md.additional["Color"] = color_str;
+  }
+  if (display_ch) {
+    CopyChildText(md, display_ch, "DyeName", "DyeName");
+    CopyChildText(md, display_ch, "ShortName", "ShortName");
+    CopyChildText(md, display_ch, "DyeMaxExcitation", "DyeMaxExcitation");
+    CopyChildText(md, display_ch, "DyeMaxEmission", "DyeMaxEmission");
+  }
+
+  return md;
+}
+
+}  // namespace
+
+void CziReader::ParseChannelMetadataXml(const pugi::xml_node& root) {
+  // Channel acquisition data (name, color, exposure, wavelengths) lives under
+  // Information/.../Channels; display-only data (dye short name, dye maxima)
+  // lives under DisplaySetting/Channels. Both are keyed by the same Channel
+  // @Id, so iterate Information and overlay DisplaySetting by Id (with a
+  // positional fallback).
+  metadata_channels_.clear();
+
+  std::vector<std::pair<std::string, pugi::xml_node>> display;
+  for (auto node :
+       root.select_nodes(".//Metadata/DisplaySetting/Channels/Channel")) {
+    display.emplace_back(node.node().attribute("Id").as_string(""),
+                         node.node());
+  }
+  auto display_for = [&](const std::string& id, size_t pos) -> pugi::xml_node {
+    if (!id.empty()) {
+      for (const auto& [cid, node] : display) {
+        if (cid == id) {
+          return node;
+        }
+      }
+    }
+    if (pos < display.size()) {
+      return display[pos].second;
+    }
+    return pugi::xml_node();
+  };
+
+  size_t pos = 0;
+  for (auto node : root.select_nodes(
+           ".//Metadata/Information/Image/Dimensions/Channels/Channel")) {
+    const pugi::xml_node info_ch = node.node();
+    const std::string id = info_ch.attribute("Id").as_string("");
+    metadata_channels_.push_back(
+        BuildChannelMetadata(info_ch, display_for(id, pos)));
+    ++pos;
+  }
+
+  // Some files only populate DisplaySetting; synthesize from it if Information
+  // carried no Channel nodes (BuildChannelMetadata also reads from there).
+  if (metadata_channels_.empty()) {
+    for (const auto& [id, display_ch] : display) {
+      (void)id;
+      metadata_channels_.push_back(
+          BuildChannelMetadata(display_ch, display_ch));
+    }
+  }
 }
 
 aifocore::Status CziReader::ParseAttachmentDirectory(FileReader& file) {
@@ -669,7 +870,8 @@ Metadata CziReader::GetMetadata() const {
         *metadata_objective_magnification_;
   }
   meta[std::string(MetadataKeys::kScannerModel)] = std::string("Zeiss");
-  meta[std::string(MetadataKeys::kChannels)] = static_cast<size_t>(3);
+  meta[std::string(MetadataKeys::kChannels)] =
+      Primary().GetChannelMetadata().size();
 
   // Focal/time stack extent of the primary scene, plus optional spacings.
   const StackInfo stack = Primary().GetStackInfo();

@@ -7,7 +7,7 @@ local_path_override.
 
 module(
     name = "fastslide",
-    version = "0.7.1",
+    version = "0.7.2",
 )
 
 bazel_dep(name = "rules_cc", version = "0.2.17")

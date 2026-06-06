@@ -78,9 +78,13 @@ class CziSceneImage final : public SlideImage {
   [[nodiscard]] std::vector<ChannelMetadata> GetChannelMetadata()
       const override;
 
-  [[nodiscard]] ImageFormat GetImageFormat() const override {
-    return ImageFormat::kRGB;
-  }
+  /// @brief kSpectral for multi-channel (fluorescence) scenes, kRGB otherwise.
+  ///
+  /// A scene is multi-channel when it stores more than one distinct CZI "C"
+  /// dimension start; each channel is then an independent plane rather than an
+  /// RGB color component. Single-channel scenes keep the legacy RGB surface
+  /// (grayscale broadcast to R/G/B, or native BGR).
+  [[nodiscard]] ImageFormat GetImageFormat() const override;
 
   [[nodiscard]] DataType GetDataType() const override { return data_type_; }
 
@@ -121,6 +125,15 @@ class CziSceneImage final : public SlideImage {
   std::vector<int32_t> t_values_;
   std::optional<double> z_spacing_um_;
   std::optional<double> t_interval_s_;
+
+  // Sorted unique CZI "C" (channel) dimension starts present in this scene.
+  // A scene with more than one channel is treated as spectral: each channel
+  // becomes a separate output plane instead of being collapsed to RGB.
+  std::vector<int32_t> channel_values_;
+  bool is_spectral_ = false;
+
+  /// @brief Index of subblock `sb.c` within `channel_values_` (0 if absent).
+  [[nodiscard]] uint32_t ChannelIndexOf(int32_t c) const;
 
   // Scene top-left origin in absolute level-0 coordinates. Subtracted to make
   // the scene's own pyramid start at (0, 0).

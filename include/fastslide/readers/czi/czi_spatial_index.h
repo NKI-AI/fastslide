@@ -39,6 +39,7 @@ struct TileInfo {
   uint32_t subblock_index = 0;  ///< Index into reader's subblock array.
   uint32_t width = 0;           ///< Tile pixel width (level coordinates).
   uint32_t height = 0;          ///< Tile pixel height (level coordinates).
+  uint32_t channel = 0;         ///< Output channel plane (0 for RGB scenes).
 };
 
 /// @brief Spatial tile record.

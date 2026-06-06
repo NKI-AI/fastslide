@@ -146,6 +146,12 @@ class SlideImageView {
   /// @brief Z (focal) / T (time) stack extent and spacing for this image.
   [[nodiscard]] StackInfo GetStackInfo() const;
 
+  /// @brief Per-channel metadata dictionaries for this image.
+  [[nodiscard]] nb::list GetChannelMetadata() const;
+
+  /// @brief Number of channels a `read_region` of this image returns.
+  [[nodiscard]] int GetNumChannels() const;
+
   /// @brief Pick the level closest to a desired downsample factor.
   [[nodiscard]] int GetBestLevelForDownsample(double downsample) const;
 
@@ -241,6 +247,7 @@ class FastSlide {
   [[nodiscard]] std::string GetDtype() const;
   [[nodiscard]] std::string GetQuickHash() const;
   [[nodiscard]] nb::list GetChannelMetadata() const;
+  [[nodiscard]] int GetNumChannels() const;
   [[nodiscard]] int GetBestLevelForDownsample(double downsample) const;
 
   // Cache management

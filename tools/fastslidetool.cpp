@@ -510,6 +510,7 @@ int RegionCommand(const std::string& input_file, double x, double y,
   const auto& image = *image_or;
   std::cout << "Read image: " << image.GetWidth() << " x " << image.GetHeight()
             << " pixels\n";
+  std::cout << "  Channels: " << image.GetChannels() << '\n';
 
   // Save image
   std::cout << "Saving to: " << output_file << '\n';

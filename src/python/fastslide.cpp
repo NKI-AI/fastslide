@@ -381,6 +381,10 @@ NB_MODULE(_fastslide, m) {
             return d;
           },
           "Z/T stack extent and spacing as a dict.")
+      .def_prop_ro("channel_metadata", &SlideImageView::GetChannelMetadata,
+                   "List of per-channel metadata dictionaries for this image.")
+      .def_prop_ro("num_channels", &SlideImageView::GetNumChannels,
+                   "Number of channels a read_region of this image returns.")
       .def("get_best_level_for_downsample",
            &SlideImageView::GetBestLevelForDownsample,
            "Best level for a given downsample factor.", nb::arg("downsample"));
@@ -543,6 +547,8 @@ NB_MODULE(_fastslide, m) {
           "SHA-256 quickhash (unique identifier, OpenSlide-compatible)")
       .def_prop_ro("channel_metadata", &FastSlide::GetChannelMetadata,
                    "List of channel metadata dictionaries")
+      .def_prop_ro("num_channels", &FastSlide::GetNumChannels,
+                   "Number of channels a read_region returns")
       .def_prop_ro(
           "images", &FastSlide::GetImages,
           "Sequence of navigable images (pyramids) in this file.\n\n"
@@ -704,5 +710,5 @@ NB_MODULE(_fastslide, m) {
       "Check if file format is supported", nb::arg("filename"));
 
   // Version and constants
-  m.attr("__version__") = "0.7.1";
+  m.attr("__version__") = "0.7.2";
 }

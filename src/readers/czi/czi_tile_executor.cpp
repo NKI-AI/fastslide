@@ -163,6 +163,57 @@ aifocore::Result<std::vector<uint8_t>> ConvertRawToRgb(
                               "Unsupported pixel type");
 }
 
+/// @brief Extract a single grayscale plane from raw subblock bytes.
+///
+/// For multi-channel (spectral) CZI scenes each subblock is one channel plane
+/// and must be painted into its own output channel rather than broadcast into
+/// an RGB triplet. GRAY8/GRAY16 raw payloads already contain exactly one
+/// sample per pixel, so the bytes pass through unchanged at their native
+/// depth. BGR pixel types are not expected on spectral scenes.
+aifocore::Result<std::vector<uint8_t>> ConvertRawToPlane(
+    PixelType pixel_type, uint32_t w, uint32_t h,
+    std::span<const uint8_t> raw) {
+  const size_t npx = static_cast<size_t>(w) * h;
+  switch (pixel_type) {
+    case PixelType::kGray8:
+      if (raw.size() != npx) {
+        return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                    "GRAY8 plane size mismatch");
+      }
+      return std::vector<uint8_t>(raw.begin(), raw.end());
+    case PixelType::kGray16:
+      if (raw.size() != npx * 2) {
+        return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                    "GRAY16 plane size mismatch");
+      }
+      return std::vector<uint8_t>(raw.begin(), raw.end());
+    default:
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kUnimplemented,
+          "Spectral CZI scenes only support grayscale pixel types");
+  }
+}
+
+/// @brief Take channel 0 of an interleaved 8-bit RGB buffer (gray broadcast).
+std::vector<uint8_t> ExtractPlane8(std::span<const uint8_t> rgb, size_t npx) {
+  std::vector<uint8_t> plane(npx);
+  for (size_t i = 0; i < npx; ++i) {
+    plane[i] = rgb[i * 3];
+  }
+  return plane;
+}
+
+/// @brief Take channel 0 of an interleaved 16-bit RGB buffer (gray broadcast).
+std::vector<uint8_t> ExtractPlane16(std::span<const uint16_t> rgb16,
+                                    size_t npx) {
+  std::vector<uint8_t> plane(npx * 2);
+  uint16_t* out = reinterpret_cast<uint16_t*>(plane.data());
+  for (size_t i = 0; i < npx; ++i) {
+    out[i] = rgb16[i * 3];
+  }
+  return plane;
+}
+
 }  // namespace
 
 aifocore::Status CziTileExecutor::ExecutePlan(const core::TilePlan& plan,
@@ -194,14 +245,17 @@ aifocore::Status CziTileExecutor::ExecutePlan(const core::TilePlan& plan,
 
 runtime::TileKey CziTileExecutor::MakeCacheKey(const core::TileReadOp& op,
                                                const CziExecContext& context) {
+  // `source_id` is the (globally unique) subblock index; that alone keys the
+  // tile uniquely across channels, focal planes and time points.
   return runtime::TileKey(std::string(context.GetFilename()),
-                          static_cast<uint16_t>(op.level), op.tile_coord.x,
-                          op.tile_coord.y);
+                          static_cast<uint16_t>(op.level), op.source_id,
+                          op.tile_coord.x);
 }
 
 aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
     const core::TileReadOp& op, const CziExecContext& context) {
-  const uint32_t subblock_index = op.tile_coord.x;
+  const uint32_t subblock_index = op.source_id;
+  const bool spectral = context.IsSpectral();
   const auto& sb = context.GetSubblockInfo(subblock_index);
 
   FileReader file;
@@ -278,9 +332,29 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
     }
   } else if (comp == Compression::kJxr) {
     const auto expected = runtime::decoders::ExpectedDimensions{sb.w, sb.h};
+    const size_t npx = static_cast<size_t>(sb.w) * sb.h;
+    auto& tile_buf = GetBuffers().tile_buffer;
+    if (spectral) {
+      // One channel plane per subblock, at native bit depth. The JPEG-XR
+      // decoders broadcast a grayscale source across the three RGB planes, so
+      // channel 0 carries the value we want.
+      if (pt == PixelType::kGray16) {
+        AIFOCORE_ASSIGN_OR_RETURN(
+            auto decoded,
+            runtime::decoders::DecodeJpegXrToRgb16(payload, expected));
+        tile_buf = ExtractPlane16(decoded.rgb, npx);
+      } else {
+        AIFOCORE_ASSIGN_OR_RETURN(
+            auto decoded,
+            runtime::decoders::DecodeJpegXrToRgb(payload, expected));
+        tile_buf = ExtractPlane8(decoded.rgb, npx);
+      }
+      return DecodedTileData{
+          std::span<const uint8_t>(tile_buf.data(), tile_buf.size()), sb.w,
+          sb.h, 1};
+    }
     AIFOCORE_ASSIGN_OR_RETURN(
         auto decoded, runtime::decoders::DecodeJpegXrToRgb(payload, expected));
-    auto& tile_buf = GetBuffers().tile_buffer;
     tile_buf = std::move(decoded.rgb);
     return DecodedTileData{
         std::span<const uint8_t>(tile_buf.data(), tile_buf.size()), sb.w, sb.h,
@@ -289,6 +363,13 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
     AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
                               runtime::decoders::DecodeJpegToRgb(payload));
     auto& tile_buf = GetBuffers().tile_buffer;
+    if (spectral) {
+      const size_t npx = static_cast<size_t>(sb.w) * sb.h;
+      tile_buf = ExtractPlane8(decoded.rgb, npx);
+      return DecodedTileData{
+          std::span<const uint8_t>(tile_buf.data(), tile_buf.size()), sb.w,
+          sb.h, 1};
+    }
     tile_buf = std::move(decoded.rgb);
     return DecodedTileData{
         std::span<const uint8_t>(tile_buf.data(), tile_buf.size()), sb.w, sb.h,
@@ -300,10 +381,20 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
                               sb.compression));
   }
 
+  auto& tile_buf = GetBuffers().tile_buffer;
+  if (spectral) {
+    // Spectral scenes paint one channel plane per subblock at native depth.
+    AIFOCORE_ASSIGN_OR_RETURN(auto plane,
+                              ConvertRawToPlane(pt, sb.w, sb.h, raw));
+    tile_buf = std::move(plane);
+    return DecodedTileData{
+        std::span<const uint8_t>(tile_buf.data(), tile_buf.size()), sb.w, sb.h,
+        1};
+  }
+
   // Convert raw pixel bytes to packed RGB, preserving the native bit depth
   // (8-bit types stay 8-bit, 16-bit types stay 16-bit; see ConvertRawToRgb).
   AIFOCORE_ASSIGN_OR_RETURN(auto rgb, ConvertRawToRgb(pt, sb.w, sb.h, raw));
-  auto& tile_buf = GetBuffers().tile_buffer;
   tile_buf = std::move(rgb);
   return DecodedTileData{
       std::span<const uint8_t>(tile_buf.data(), tile_buf.size()), sb.w, sb.h,
@@ -318,15 +409,19 @@ aifocore::Status CziTileExecutor::ExecuteTileOperation(
     return aifocore::Status::OkStatus();
   }
 
-  const uint32_t subblock_index = op.tile_coord.x;
+  const uint32_t subblock_index = op.source_id;
   const auto& sb = context.GetSubblockInfo(subblock_index);
   const uint32_t tile_w = sb.w;
   const uint32_t tile_h = sb.h;
+  // Spectral scenes decode one channel plane per subblock; RGB scenes decode
+  // a 3-channel triplet.
+  const uint32_t tile_channels = context.IsSpectral() ? 1u : 3u;
 
   const std::span<const uint8_t> tile_data = *tile_data_or;
   // Canvas extracts sub-regions from full tiles when op.transform.source
   // specifies one.
-  auto st = writer.PaintTile(op, tile_data, tile_w, tile_h, 3, writer_mutex);
+  auto st = writer.PaintTile(op, tile_data, tile_w, tile_h, tile_channels,
+                             writer_mutex);
   if (!st.ok()) {
     return aifocore::Status::OkStatus();
   }

@@ -30,8 +30,12 @@ class CziExecContext {
  public:
   CziExecContext(std::string_view filename,
                  std::span<const CziSubblockInfo> subblocks,
-                 std::shared_ptr<runtime::ITileCache> cache)
-      : filename_(filename), subblocks_(subblocks), cache_(std::move(cache)) {}
+                 std::shared_ptr<runtime::ITileCache> cache,
+                 bool is_spectral = false)
+      : filename_(filename),
+        subblocks_(subblocks),
+        cache_(std::move(cache)),
+        is_spectral_(is_spectral) {}
 
   [[nodiscard]] std::string_view GetFilename() const { return filename_; }
 
@@ -45,10 +49,15 @@ class CziExecContext {
 
   [[nodiscard]] bool IsCacheEnabled() const { return cache_ != nullptr; }
 
+  /// @brief True when decoding a multi-channel (spectral) plan: each subblock
+  ///        yields a single-channel plane rather than an RGB triplet.
+  [[nodiscard]] bool IsSpectral() const { return is_spectral_; }
+
  private:
   std::string_view filename_;
   std::span<const CziSubblockInfo> subblocks_;
   std::shared_ptr<runtime::ITileCache> cache_;
+  bool is_spectral_ = false;
 };
 
 }  // namespace fastslide
