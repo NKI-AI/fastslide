@@ -1,0 +1,37 @@
+Disable rules_rust's hermetic macOS SDKROOT injection.
+
+Since rules_rs 0.0.76, `rules_rust` defaults `rust_*` rules' `macos_sdkroot`
+attribute to `@macos_sdk//sysroot` (the hermetic macOS SDK shipped by the
+`@llvm` module). On macOS, `rust/private/rustc.bzl` then writes
+`SDKROOT=${pwd}/external/llvm++osx+macos_sdk/sysroot` into every Rustc/link
+action's env. At the same time, Bazel's apple `cc_toolchain`
+(`apple_support`'s `local_config_apple_cc`) sets `APPLE_SDK_VERSION_OVERRIDE`,
+which makes Bazel's `XcodeLocalEnvProvider.rewriteLocalEnv` also `put`
+`SDKROOT=/Applications/Xcode.app/.../MacOSX*.sdk`. The two `SDKROOT` entries
+then collide in `ImmutableMap.buildOrThrow()` and Bazel crashes; see
+upstream bug https://github.com/bazelbuild/bazel/issues/25438.
+
+We don't need rules_rust's hermetic macOS SDK: the apple `cc_toolchain` from
+`apple_support` already provides a working sysroot to clang at link time.
+This patch makes `default_macos_sdkroot` resolve to the empty filegroup on
+macOS too, so `_apple_sdkroot()` short-circuits to `None` and rules_rust
+never injects `SDKROOT` into the action env.
+
+--- a/rust/private/BUILD.bazel
++++ b/rust/private/BUILD.bazel
+@@ -20,10 +20,11 @@ filegroup(
+ 
+ alias(
+     name = "default_macos_sdkroot",
+-    actual = select({
+-        "@platforms//os:osx": "@macos_sdk//sysroot",
+-        "//conditions:default": ":empty_macos_sdkroot",
+-    }),
++    # On macOS, apple_support's cc_toolchain already injects SDKROOT via
++    # Bazel's XcodeLocalEnvProvider. Pointing this at @macos_sdk//sysroot
++    # causes a duplicate-SDKROOT crash in XcodeLocalEnvProvider; see
++    # https://github.com/bazelbuild/bazel/issues/25438.
++    actual = ":empty_macos_sdkroot",
+     visibility = ["//visibility:public"],
+ )
+ 

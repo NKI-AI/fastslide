@@ -84,6 +84,51 @@ bazel_dep(name = "rules_doxygen", version = "2.5.0")
 bazel_dep(name = "rules_uv", version = "0.89.2")
 bazel_dep(name = "sphinxdocs", version = "2.0.1")
 
+# Rust bindings (rust/fastslide, rust/fastslide-sys).
+#
+# `rules_rs` is a regular dependency so the BUILD files under `rust/` can load
+# the rule definitions in both the aiforoncology monorepo (where fastslide is a
+# non-root dependency) and the standalone fastslide checkout. The Rust toolchain
+# itself is registered as a dev_dependency: it is active only when fastslide is
+# the root module (standalone build). Inside the monorepo the root module already
+# provisions and registers a Rust toolchain, so registering here too would be
+# redundant.
+bazel_dep(name = "rules_rs", version = "0.0.76")
+
+# Standalone-only: patch rules_rust to drop its hermetic macOS SDKROOT
+# injection, which since rules_rs 0.0.76 collides with apple_support's
+# cc_toolchain and crashes Bazel on macOS
+# (https://github.com/bazelbuild/bazel/issues/25438). dev_dependency so it is
+# applied only when fastslide is the root module (standalone build); in the
+# aiforoncology monorepo the root module already applies the equivalent patch
+# (patches from non-root modules are ignored by Bazel regardless).
+rules_rust = use_extension(
+    "@rules_rs//rs:rules_rust.bzl",
+    "rules_rust",
+    dev_dependency = True,
+)
+rules_rust.patch(
+    patches = ["//third_party:rules_rust_no_macos_sdkroot.patch"],
+    strip = 1,
+)
+use_repo(rules_rust, "rules_rust")
+
+rust_toolchains = use_extension(
+    "@rules_rs//rs/toolchains:module_extension.bzl",
+    "toolchains",
+    dev_dependency = True,
+)
+rust_toolchains.toolchain(
+    edition = "2024",
+    version = "1.88.0",
+)
+use_repo(rust_toolchains, "default_rust_toolchains")
+
+register_toolchains(
+    "@default_rust_toolchains//:all",
+    dev_dependency = True,
+)
+
 # Formatter-only deps. Marked dev_dependency so they are active only when
 # fastslide is the root module (standalone repo). In a larger workspace such as
 # the aiforoncology monorepo, fastslide is a non-root dependency, dev deps are

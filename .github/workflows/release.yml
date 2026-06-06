@@ -22,7 +22,6 @@
 #
 # Trigger: manual only (`workflow_dispatch`). It does NOT run on a version bump.
 name: Release FastSlide
-
 on:
   workflow_dispatch:
     inputs:
@@ -34,14 +33,11 @@ on:
         description: "Comma-separated platform keys to build"
         type: string
         default: "linux_x86_64,linux_arm64,darwin_x86_64,darwin_aarch64,windows_x86_64"
-
 permissions:
   contents: read
-
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
-
 # Force UTF-8 for Python stdio so the build scripts' status glyphs do not crash
 # on Windows runners (default code page is cp1252). Run all JavaScript actions
 # on Node.js 24 (Node.js 20 is deprecated on the runners).
@@ -49,7 +45,6 @@ env:
   PYTHONUTF8: "1"
   PYTHONIOENCODING: "utf-8"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 jobs:
   build-java:
     name: Build Java ${{ matrix.platform }}
@@ -75,7 +70,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Decide whether to build this platform
         id: gate
         shell: bash
@@ -88,7 +82,6 @@ jobs:
             echo "run=false (not in inputs.platforms)"
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
-
       - name: Free disk space (Linux)
         if: steps.gate.outputs.run == 'true' && runner.os == 'Linux'
         uses: jlumbroso/free-disk-space@v1.3.1
@@ -97,12 +90,10 @@ jobs:
           dotnet: true
           haskell: true
           large-packages: true
-
       - name: Pin Bazel version
         if: steps.gate.outputs.run == 'true'
         shell: bash
         run: echo "USE_BAZEL_VERSION=$(tr -d '[:space:]' < .bazelversion)" >> "$GITHUB_ENV"
-
       - name: Set up Bazel
         if: steps.gate.outputs.run == 'true'
         uses: bazel-contrib/setup-bazel@0.19.0
@@ -110,12 +101,10 @@ jobs:
           bazelisk-cache: true
           repository-cache: true
           disk-cache: java-${{ matrix.platform }}
-
       - name: Build native + JARs (${{ matrix.platform }})
         if: steps.gate.outputs.run == 'true'
         shell: bash
         run: python3 tools/build_java_artifacts.py --platform ${{ matrix.platform }} --bazel bazel
-
       - name: Upload native classifier JAR
         if: steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v6
@@ -124,7 +113,6 @@ jobs:
           path: artifacts/jars/fastslide-native-*-*.jar
           if-no-files-found: error
           retention-days: 7
-
       # The platform-independent wrapper JAR is identical from every build;
       # upload it under a per-platform name so any single-platform run is
       # self-sufficient (downloads dedupe by filename).
@@ -136,7 +124,6 @@ jobs:
           path: artifacts/jars/fastslide-java-*.jar
           if-no-files-found: error
           retention-days: 7
-
   smoke-java:
     name: Smoke Java ${{ matrix.platform }}
     needs: build-java
@@ -166,7 +153,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Decide whether to smoke this platform
         id: gate
         shell: bash
@@ -178,11 +164,9 @@ jobs:
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
-
       - name: Install Rosetta
         if: steps.gate.outputs.run == 'true' && matrix.rosetta
         run: softwareupdate --install-rosetta --agree-to-license
-
       # FastSlide's FFM code needs a JDK >= 22; 23 is the highest Temurin ships
       # across every runner arch. Pin the architecture so the JVM matches the
       # artifact under test (x64 runs via Rosetta on the arm runner).
@@ -193,7 +177,6 @@ jobs:
           distribution: temurin
           java-version: "23"
           architecture: ${{ matrix.java_arch }}
-
       - name: Download built JARs
         if: steps.gate.outputs.run == 'true'
         uses: actions/download-artifact@v6
@@ -201,12 +184,10 @@ jobs:
           path: artifacts/jars
           pattern: "{native,wrapper}-*"
           merge-multiple: true
-
       - name: On-target smoke test (${{ matrix.platform }})
         if: steps.gate.outputs.run == 'true'
         shell: bash
         run: python3 tools/smoke_test_java.py --platform ${{ matrix.platform }}
-
   build-wheels:
     name: Build wheels ${{ matrix.platform }}
     runs-on: ${{ matrix.builder }}
@@ -229,7 +210,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Decide whether to build this platform
         id: gate
         shell: bash
@@ -242,7 +222,6 @@ jobs:
             echo "run=false (not in inputs.platforms)"
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
-
       - name: Free disk space (Linux)
         if: steps.gate.outputs.run == 'true' && runner.os == 'Linux'
         uses: jlumbroso/free-disk-space@v1.3.1
@@ -251,12 +230,10 @@ jobs:
           dotnet: true
           haskell: true
           large-packages: true
-
       - name: Pin Bazel version
         if: steps.gate.outputs.run == 'true'
         shell: bash
         run: echo "USE_BAZEL_VERSION=$(tr -d '[:space:]' < .bazelversion)" >> "$GITHUB_ENV"
-
       - name: Set up Bazel
         if: steps.gate.outputs.run == 'true'
         uses: bazel-contrib/setup-bazel@0.19.0
@@ -264,12 +241,10 @@ jobs:
           bazelisk-cache: true
           repository-cache: true
           disk-cache: wheels-${{ matrix.platform }}
-
       - name: Build wheels (${{ matrix.platform }})
         if: steps.gate.outputs.run == 'true'
         shell: bash
         run: python3 tools/build_wheels.py --platform ${{ matrix.platform }} --bazel bazel
-
       - name: Upload wheels
         if: steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v6
@@ -278,7 +253,6 @@ jobs:
           path: artifacts/wheels/*.whl
           if-no-files-found: error
           retention-days: 7
-
   smoke-wheels:
     name: Smoke wheel ${{ matrix.target.platform }} py${{ matrix.python }}
     needs: build-wheels
@@ -304,7 +278,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Decide whether to smoke this platform
         id: gate
         shell: bash
@@ -316,15 +289,12 @@ jobs:
           else
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
-
       - name: Install Rosetta
         if: steps.gate.outputs.run == 'true' && matrix.target.rosetta
         run: softwareupdate --install-rosetta --agree-to-license
-
       - name: Set up uv
         if: steps.gate.outputs.run == 'true'
         uses: astral-sh/setup-uv@v6
-
       - name: Download wheels
         if: steps.gate.outputs.run == 'true'
         uses: actions/download-artifact@v6
@@ -332,7 +302,6 @@ jobs:
           path: dist
           pattern: "wheels-*"
           merge-multiple: true
-
       # Build a venv on the right interpreter (x86_64 CPython for the Rosetta
       # leg), install ONLY the local wheel (--no-index; the wheel has no runtime
       # deps), and run the import + open-sample smoke. uv picks the wheel whose
@@ -355,7 +324,6 @@ jobs:
           fi
           uv pip install --python "$py" --no-index --find-links dist fastslide
           "$py" tools/smoke_test_python.py
-
   publish-pypi:
     name: Publish wheels to PyPI
     # Full release -> real PyPI. Only after the wheels pass their on-target smoke.
@@ -372,17 +340,14 @@ jobs:
           path: dist
           pattern: "wheels-*"
           merge-multiple: true
-
       - name: List wheels
         shell: bash
         run: ls -l dist
-
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
           skip-existing: true
-
   publish-testpypi:
     name: Publish wheels to TestPyPI
     # Snapshot -> TestPyPI, so the publish path is exercised without touching
@@ -401,18 +366,15 @@ jobs:
           path: dist
           pattern: "wheels-*"
           merge-multiple: true
-
       - name: List wheels
         shell: bash
         run: ls -l dist
-
       - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
           repository-url: https://test.pypi.org/legacy/
           skip-existing: true
-
   github-release:
     name: Publish GitHub Release
     needs: [smoke-java, smoke-wheels, build-wheels, publish-pypi, publish-testpypi]
@@ -428,34 +390,29 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Download JARs
         uses: actions/download-artifact@v6
         with:
           path: artifacts/jars
           pattern: "{native,wrapper}-*"
           merge-multiple: true
-
       - name: Download wheels
         uses: actions/download-artifact@v6
         with:
           path: artifacts/wheels
           pattern: "wheels-*"
           merge-multiple: true
-
       - name: List collected artifacts
         shell: bash
         run: |
           echo "JARs:"; ls -l artifacts/jars
           echo "Wheels:"; ls -l artifacts/wheels
-
       - name: Generate build provenance attestation
         uses: actions/attest-build-provenance@v3
         with:
           subject-path: |
             artifacts/jars/*.jar
             artifacts/wheels/*.whl
-
       - name: Publish
         shell: bash
         env:
