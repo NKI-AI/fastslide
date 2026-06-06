@@ -1,0 +1,12 @@
+load("@rules_rs//rs:rust_library.bzl", "rust_library")
+
+# Raw FFI bindings to the FastSlide C API. The C library (and the C++ core it
+# wraps) is linked transitively via `//:fastslide_c`.
+rust_library(
+    name = "fastslide_sys",
+    srcs = ["src/lib.rs"],
+    crate_name = "fastslide_sys",
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = ["//:fastslide_c"],
+)
