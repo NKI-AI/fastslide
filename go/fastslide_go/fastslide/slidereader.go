@@ -41,6 +41,18 @@ type RegionSpec struct {
 	Width  uint32
 	Height uint32
 	Level  int
+	Z      uint32 // Focal-plane index (0 = first plane)
+	T      uint32 // Time-point index (0 = first time point)
+}
+
+// StackInfo describes the Z/T (focal-plane / time-point) extent of an image.
+type StackInfo struct {
+	ZCount uint32 // Number of focal planes (>= 1)
+	TCount uint32 // Number of time points (>= 1)
+	// ZSpacingMicrons is the focal-plane spacing in microns, or nil if unknown.
+	ZSpacingMicrons *float64
+	// TIntervalSeconds is the time-point interval in seconds, or nil if unknown.
+	TIntervalSeconds *float64
 }
 
 // ColorRGB represents an RGB color.
@@ -300,8 +312,17 @@ func (sr *SlideReader) Bounds() (Bounds, error) {
 	}, nil
 }
 
-// ReadRegion reads a region from the slide using coordinates.
+// ReadRegion reads a region from the slide using coordinates from the first
+// focal plane and time point (z = 0, t = 0). For Z/T stack access use
+// ReadRegionZT.
 func (sr *SlideReader) ReadRegion(x, y, width, height uint32, level int) (*Image, error) {
+	return sr.ReadRegionZT(x, y, width, height, level, 0, 0)
+}
+
+// ReadRegionZT reads a region from the slide using coordinates at a specific
+// focal plane (z) and time point (t). Both are 0-based; pass z = 0, t = 0 for
+// non-stacked slides.
+func (sr *SlideReader) ReadRegionZT(x, y, width, height uint32, level int, z, t uint32) (*Image, error) {
 	if sr.IsClosed() {
 		return nil, ErrSlideClosed
 	}
@@ -316,7 +337,7 @@ func (sr *SlideReader) ReadRegion(x, y, width, height uint32, level int) (*Image
 		C.uint32_t(x), C.uint32_t(y),
 		C.uint32_t(width), C.uint32_t(height),
 		C.int(level),
-		C.uint32_t(0), C.uint32_t(0), // z, t: default plane
+		C.uint32_t(z), C.uint32_t(t),
 	)
 
 	if handle == nil {
@@ -329,9 +350,41 @@ func (sr *SlideReader) ReadRegion(x, y, width, height uint32, level int) (*Image
 	return image, nil
 }
 
-// ReadRegionWithSpec reads a region using a RegionSpec.
+// ReadRegionWithSpec reads a region using a RegionSpec, honoring its Z/T fields.
 func (sr *SlideReader) ReadRegionWithSpec(spec RegionSpec) (*Image, error) {
-	return sr.ReadRegion(spec.X, spec.Y, spec.Width, spec.Height, spec.Level)
+	return sr.ReadRegionZT(spec.X, spec.Y, spec.Width, spec.Height, spec.Level, spec.Z, spec.T)
+}
+
+// GetStackInfo returns the Z/T (focal-plane / time-point) extent of the
+// primary image, including optional Z spacing and T interval metadata.
+func (sr *SlideReader) GetStackInfo() (StackInfo, error) {
+	if sr.IsClosed() {
+		return StackInfo{}, ErrSlideClosed
+	}
+
+	var cInfo C.FastSlideStackInfo
+	if C.fastslide_slide_reader_get_stack_info(sr.handle, &cInfo) == 0 {
+		errorMsg := C.GoString(C.fastslide_get_last_error())
+		return StackInfo{}, &FastSlideError{
+			Op:      "GetStackInfo",
+			Code:    CodeInternal,
+			Message: errorMsg,
+		}
+	}
+
+	info := StackInfo{
+		ZCount: uint32(cInfo.z_count),
+		TCount: uint32(cInfo.t_count),
+	}
+	if cInfo.has_z_spacing != 0 {
+		v := float64(cInfo.z_spacing_um)
+		info.ZSpacingMicrons = &v
+	}
+	if cInfo.has_t_interval != 0 {
+		v := float64(cInfo.t_interval_s)
+		info.TIntervalSeconds = &v
+	}
+	return info, nil
 }
 
 // GetChannelMetadata returns metadata for all channels.
