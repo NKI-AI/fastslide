@@ -189,7 +189,6 @@ fastslide_sources = [
   'src/runtime/lru_tile_cache.cpp',
   'src/runtime/plugin_loader.cpp',
   'src/runtime/reader_registry.cpp',
-  'src/runtime/register_builtin_formats.cpp',
   'src/runtime/tile_writer.cpp',
   'src/runtime/tile_writer/bilinear_blit_hwy.cpp',
   'src/runtime/tile_writer/canvas_config.cpp',
@@ -213,11 +212,25 @@ fastslide_lib = library('fastslide',
   cpp_args : fastslide_cpp_args,
   install : true)
 
+# The built-in format registrar self-registers all readers from a single static
+# initializer (g_builtin_registrar in register_builtin_formats.cpp). Nothing
+# references its symbols, so the linker would discard the whole translation unit
+# from a static archive, leaving no formats registered ("No reader registered
+# for extension: .vsi"). Bazel marks this one target alwayslink = 1; mirror that
+# by building it separately and force-linking it via link_whole below.
+fastslide_register_lib = static_library('fastslide_register',
+  'src/runtime/register_builtin_formats.cpp',
+  include_directories : inc,
+  dependencies : fastslide_deps,
+  cpp_args : fastslide_cpp_args,
+  install : false)
+
 install_subdir('include/fastslide', install_dir : get_option('includedir'))
 
 fastslide_dep = declare_dependency(
   include_directories : inc,
   link_with : fastslide_lib,
+  link_whole : fastslide_register_lib,
   dependencies : fastslide_deps)
 
 meson.override_dependency('fastslide', fastslide_dep)
