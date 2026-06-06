@@ -5,6 +5,7 @@ exports_files([
     "libdicom.BUILD",
     "openjp2.BUILD",
     "openslide.BUILD",
+    "rules_rust_no_macos_sdkroot.patch",
     "uthash.BUILD",
 ])
 
