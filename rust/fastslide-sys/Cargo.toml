@@ -1,0 +1,12 @@
+[package]
+name = "fastslide-sys"
+version = "0.7.1"
+edition = "2021"
+description = "Raw FFI bindings to the FastSlide C API."
+license = "Apache-2.0"
+
+[lib]
+name = "fastslide_sys"
+path = "src/lib.rs"
+
+[dependencies]

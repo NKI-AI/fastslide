@@ -1,0 +1,28 @@
+load("@rules_rs//rs:rust_library.bzl", "rust_library")
+load("@rules_rs//rs:rust_test.bzl", "rust_test")
+
+# Safe, idiomatic Rust bindings over the raw FFI in `//rust/fastslide-sys`.
+rust_library(
+    name = "fastslide",
+    srcs = [
+        "src/error.rs",
+        "src/image.rs",
+        "src/lib.rs",
+        "src/metadata.rs",
+        "src/reader.rs",
+        "src/registry.rs",
+        "src/slide_image.rs",
+        "src/util.rs",
+    ],
+    crate_name = "fastslide",
+    edition = "2021",
+    visibility = ["//visibility:public"],
+    deps = ["//rust/fastslide-sys:fastslide_sys"],
+)
+
+rust_test(
+    name = "fastslide_test",
+    size = "small",
+    crate = ":fastslide",
+    edition = "2021",
+)

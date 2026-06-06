@@ -1,0 +1,13 @@
+[package]
+name = "fastslide"
+version = "0.7.1"
+edition = "2021"
+description = "Safe, idiomatic Rust bindings for the FastSlide whole-slide image library."
+license = "Apache-2.0"
+
+[lib]
+name = "fastslide"
+path = "src/lib.rs"
+
+[dependencies]
+fastslide-sys = { path = "../fastslide-sys" }
