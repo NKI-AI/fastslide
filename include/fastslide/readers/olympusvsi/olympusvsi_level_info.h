@@ -15,7 +15,9 @@
 #ifndef AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_OLYMPUSVSI_OLYMPUSVSI_LEVEL_INFO_H_
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_OLYMPUSVSI_OLYMPUSVSI_LEVEL_INFO_H_
 
+#include <cstddef>
 #include <cstdint>
+#include <vector>
 
 #include "fastslide/image.h"
 #include "fastslide/readers/olympusvsi/olympusvsi_ets.h"
@@ -34,13 +36,17 @@ struct LevelTileEntry {
 
 /// @brief Per-level pyramid metadata for an Olympus VSI stack.
 ///
-/// `tile_map` is a sparse map from `(channel, x, y)` -> `LevelTileEntry`.
-/// Olympus pyramids are regular grids but a level may legitimately be
-/// missing border cells (no scan data there), so missing keys mean
-/// "background". Brightfield stacks have a single channel (channel 0);
-/// 16-bit fluorescence stacks stack several grayscale planes that share
-/// the same `(x, y)` grid and are keyed by their channel index.
+/// Tiles are grouped into one sparse map per focal/time plane. Each map is
+/// keyed by `(channel, x, y)` -> `LevelTileEntry`; Olympus pyramids are
+/// regular grids but a level may legitimately be missing border cells (no
+/// scan data there), so missing keys mean "background". Brightfield stacks
+/// have a single channel (channel 0) and a single plane; 16-bit
+/// fluorescence stacks stack several grayscale channel planes, and may
+/// additionally span several focal (Z) / time (T) planes.
 struct OlympusVsiLevelInfo {
+  /// @brief Sparse `(channel, x, y)` -> entry map for one focal/time plane.
+  using TileMap = ankerl::unordered_dense::map<uint64_t, LevelTileEntry>;
+
   int level = 0;
   /// @brief On-disk tile-grid extent (``grid_cols * tile_w`` etc.), rounded
   ///        up to whole tiles. Used only for tile addressing.
@@ -65,8 +71,14 @@ struct OlympusVsiLevelInfo {
   /// fluorescence, where each plane is one output channel.
   uint32_t n_channels = 1;
 
-  /// @brief Packed (channel, x, y) -> file offset/length. Sparse.
-  ankerl::unordered_dense::map<uint64_t, LevelTileEntry> tile_map;
+  /// @brief Number of focal (Z) planes. ``1`` for a plain 2D image.
+  uint32_t z_count = 1;
+  /// @brief Number of time (T) points. ``1`` for a plain 2D image.
+  uint32_t t_count = 1;
+
+  /// @brief One tile map per (focal, time) plane, laid out plane-major as
+  ///        ``z * t_count + t``. A plain 2D image has a single entry.
+  std::vector<TileMap> plane_maps;
 
   /// @brief Pack tile-grid (x, y) into a 64-bit key (channel 0).
   static constexpr uint64_t PackKey(uint32_t x, uint32_t y) {
@@ -81,6 +93,20 @@ struct OlympusVsiLevelInfo {
   static constexpr uint64_t PackKey3(uint32_t channel, uint32_t x, uint32_t y) {
     return (static_cast<uint64_t>(channel) << 56) |
            (static_cast<uint64_t>(y) << 32) | static_cast<uint64_t>(x);
+  }
+
+  /// @brief Plane-major index of focal plane ``z`` / time point ``t``.
+  [[nodiscard]] size_t PlaneOffset(uint32_t z, uint32_t t) const {
+    return static_cast<size_t>(z) * t_count + t;
+  }
+
+  /// @brief Tile map for plane (z, t), or ``nullptr`` when out of range.
+  [[nodiscard]] const TileMap* MapForPlane(uint32_t z, uint32_t t) const {
+    if (z >= z_count || t >= t_count) {
+      return nullptr;
+    }
+    const size_t idx = PlaneOffset(z, t);
+    return idx < plane_maps.size() ? &plane_maps[idx] : nullptr;
   }
 };
 

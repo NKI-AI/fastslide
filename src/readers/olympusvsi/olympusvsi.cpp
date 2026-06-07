@@ -15,11 +15,13 @@
 #include "fastslide/readers/olympusvsi/olympusvsi.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -157,14 +159,53 @@ uint32_t CeilHalf(uint32_t value) {
   return static_cast<uint32_t>(std::ceil(static_cast<double>(value) / 2.0));
 }
 
+/// @brief Resolved tile-coordinate slots for the non-spatial axes.
+///
+/// Sourced from the matched `.vsi` container pyramid's dimension-description
+/// metadata. A value of ``-1`` means the axis is not described (or absent),
+/// in which case the builder treats that axis as a single principal plane.
+struct DimensionLayout {
+  int channel_slot = -1;
+  int focal_slot = -1;
+  int time_slot = -1;
+};
+
+/// @brief Map the distinct values of one tile-coordinate slot to dense,
+///        ascending 0-based indices.
+///
+/// Olympus uses 0-based dense axis indices in practice, but remapping keeps
+/// the builder robust against sparse or non-zero-based encodings. Returns an
+/// empty map when ``slot < 0`` (axis not present).
+std::map<uint32_t, uint32_t> IndexAxisValues(const EtsFileData& data,
+                                             int slot) {
+  std::map<uint32_t, uint32_t> values;
+  if (slot < 0) {
+    return values;
+  }
+  for (const auto& rec : data.tiles) {
+    values.emplace(rec.AxisAt(slot), 0U);
+  }
+  uint32_t next = 0;
+  for (auto& [value, index] : values) {
+    index = next++;
+  }
+  return values;
+}
+
 /// @brief Build per-level pyramid info by grouping tiles in the ETS table.
 ///
 /// Tile reads use the on-disk grid (`size`). Reported dimensions and
 /// downsamples: successive ceil(width/2) / ceil(height/2) from level 0
 /// and downsample = 2^level. This seems to keep the data stable across
 /// different levels.
+///
+/// @param data   Parsed ETS file (tiles + header).
+/// @param layout Tile-coordinate slots of the channel / focal / time axes,
+///               resolved from the `.vsi` dimension metadata. Used to read
+///               each tile's channel index and to fan tiles out across the
+///               focal (Z) / time (T) plane maps.
 aifocore::Result<std::vector<OlympusVsiLevelInfo>> BuildPyramid(
-    const EtsFileData& data) {
+    const EtsFileData& data, const DimensionLayout& layout) {
   std::vector<OlympusVsiLevelInfo> levels;
   if (data.tiles.empty())
     return levels;
@@ -184,99 +225,152 @@ aifocore::Result<std::vector<OlympusVsiLevelInfo>> BuildPyramid(
     levels[i].tile_h = tile_h;
   }
 
-  // Channel model. 16-bit Olympus VSI fluorescence stacks store several
-  // grayscale planes that share one (x, y, level) grid; the plane index
-  // lives in the "middle" tile-record dimensions (the slots between
-  // (x, y) and the pyramid level — i.e. the ``channel`` field plus any
-  // extra Z/T slot summed into ``extra_dim_sum``). QuPath surfaces these
-  // as N channels of one image, so we do the same: enumerate the
-  // distinct middle-dim tuples, sort them, and assign each a stable
-  // ascending channel index.
-  //
-  // 8-bit brightfield stacks keep the classic single-plane RGB model
-  // (channel 0, principal Z/T only); any non-principal slices are
-  // skipped and reported in the diagnostic log below.
+  // Axis model. 16-bit Olympus VSI fluorescence stacks pack channel, focal
+  // (Z) and time (T) indices into the non-spatial tile-coordinate slots
+  // (the slots between (x, y) and the pyramid level). The `.ets` file does
+  // not say which slot is which, so we rely on the `.vsi` dimension
+  // metadata (``layout``): the channel slot becomes output channels, and
+  // the focal / time slots become selectable Z / T planes -- exactly the
+  // separation QuPath shows. 8-bit brightfield keeps the classic
+  // single-plane RGB model (channel 0, principal Z/T only); any
+  // non-principal slice is skipped and reported below.
   const bool multi_plane = data.ets.pixel_type == TilePixelType::kUInt16;
-  const auto plane_key_of = [](const TileRecord& rec) -> uint64_t {
-    return (static_cast<uint64_t>(rec.channel) << 32) |
-           static_cast<uint64_t>(rec.extra_dim_sum);
-  };
 
-  ankerl::unordered_dense::map<uint64_t, uint32_t> plane_to_channel;
-  if (multi_plane) {
-    std::vector<uint64_t> plane_keys;
-    for (const auto& rec : data.tiles) {
-      const uint64_t pk = plane_key_of(rec);
-      if (plane_to_channel.emplace(pk, 0U).second) {
-        plane_keys.push_back(pk);
+  int channel_slot = layout.channel_slot;
+  int focal_slot = layout.focal_slot;
+  int time_slot = layout.time_slot;
+  // Fallback for files without `.vsi` dimension metadata: treat the first
+  // non-spatial slot as the channel axis (the classic ndim<=4 layout with
+  // no separate Z/T). Higher slots, if any, stay unmodeled and only their
+  // principal (0) slice is materialised.
+  if (channel_slot < 0 && focal_slot < 0 && time_slot < 0 &&
+      data.tiles.front().axis_count > 0) {
+    channel_slot = 2;
+  }
+
+  const std::map<uint32_t, uint32_t> channel_index =
+      multi_plane ? IndexAxisValues(data, channel_slot)
+                  : std::map<uint32_t, uint32_t>{};
+  const std::map<uint32_t, uint32_t> focal_index =
+      multi_plane ? IndexAxisValues(data, focal_slot)
+                  : std::map<uint32_t, uint32_t>{};
+  const std::map<uint32_t, uint32_t> time_index =
+      multi_plane ? IndexAxisValues(data, time_slot)
+                  : std::map<uint32_t, uint32_t>{};
+
+  const uint32_t n_channels =
+      !channel_index.empty() ? static_cast<uint32_t>(channel_index.size()) : 1U;
+  const uint32_t z_count =
+      !focal_index.empty() ? static_cast<uint32_t>(focal_index.size()) : 1U;
+  const uint32_t t_count =
+      !time_index.empty() ? static_cast<uint32_t>(time_index.size()) : 1U;
+
+  for (auto& lvl : levels) {
+    lvl.n_channels = n_channels;
+    lvl.z_count = z_count;
+    lvl.t_count = t_count;
+    lvl.plane_maps.resize(static_cast<size_t>(z_count) * t_count);
+  }
+
+  // A non-spatial slot that is not one of the modeled axes must sit at its
+  // principal (0) value, otherwise the tile is a slice we do not surface.
+  const auto unmodeled_slots_principal = [&](const TileRecord& rec) {
+    for (uint32_t s = 0; s < rec.axis_count; ++s) {
+      const int slot = static_cast<int>(s) + 2;
+      if (slot == channel_slot || slot == focal_slot || slot == time_slot) {
+        continue;
+      }
+      if (rec.axis_slots[s] != 0) {
+        return false;
       }
     }
-    std::sort(plane_keys.begin(), plane_keys.end());
-    for (uint32_t i = 0; i < plane_keys.size(); ++i) {
-      plane_to_channel[plane_keys[i]] = i;
-    }
-  }
-  const uint32_t n_channels =
-      multi_plane ? static_cast<uint32_t>(plane_to_channel.size()) : 1U;
+    return true;
+  };
 
   uint64_t skipped_nonprincipal = 0;
   for (const auto& rec : data.tiles) {
-    uint32_t channel_index = 0;
+    uint32_t channel_idx = 0;
+    uint32_t z_idx = 0;
+    uint32_t t_idx = 0;
     if (multi_plane) {
-      channel_index = plane_to_channel[plane_key_of(rec)];
-    } else if (rec.channel != 0 || rec.extra_dim_sum != 0) {
-      // Brightfield: only the principal slice is materialised. Count the
-      // skipped non-principal tiles (additional channel-field planes or
-      // non-zero Z/T focal planes) so the user can see what was dropped.
-      ++skipped_nonprincipal;
-      continue;
+      if (channel_slot >= 0) {
+        channel_idx = channel_index.at(rec.AxisAt(channel_slot));
+      }
+      if (focal_slot >= 0) {
+        z_idx = focal_index.at(rec.AxisAt(focal_slot));
+      }
+      if (time_slot >= 0) {
+        t_idx = time_index.at(rec.AxisAt(time_slot));
+      }
+      if (!unmodeled_slots_principal(rec)) {
+        ++skipped_nonprincipal;
+        continue;
+      }
+    } else {
+      // Brightfield: a single RGB plane. Only the principal slice of every
+      // non-spatial axis is materialised.
+      bool principal = true;
+      for (uint32_t s = 0; s < rec.axis_count; ++s) {
+        if (rec.axis_slots[s] != 0) {
+          principal = false;
+          break;
+        }
+      }
+      if (!principal) {
+        ++skipped_nonprincipal;
+        continue;
+      }
     }
     auto& lvl = levels[static_cast<size_t>(rec.level)];
-    lvl.tile_map[OlympusVsiLevelInfo::PackKey3(channel_index, rec.x, rec.y)] =
-        LevelTileEntry{rec.offset, rec.n_bytes};
+    const size_t plane = lvl.PlaneOffset(z_idx, t_idx);
+    lvl.plane_maps[plane][OlympusVsiLevelInfo::PackKey3(
+        channel_idx, rec.x, rec.y)] = LevelTileEntry{rec.offset, rec.n_bytes};
     lvl.grid_cols = std::max(lvl.grid_cols, rec.x + 1);
     lvl.grid_rows = std::max(lvl.grid_rows, rec.y + 1);
   }
 
-  for (auto& lvl : levels) {
-    lvl.n_channels = n_channels;
-  }
+  const auto level_tile_count = [](const OlympusVsiLevelInfo& lvl) -> uint64_t {
+    uint64_t total = 0;
+    for (const auto& m : lvl.plane_maps) {
+      total += m.size();
+    }
+    return total;
+  };
 
   // Reject coordinate tables that are not a dense pixel grid. A real
-  // pyramid level fills (almost) every grid cell, so the cell count is at
-  // most a small multiple of the materialised tile count. Some Olympus
-  // ``blob_*.ets`` payloads (vector layers, masks, serialized data) reuse
-  // the tile-record slots for flag-encoded indices (e.g. coordinates with
-  // the ``0x40000000`` bit set), which would otherwise inflate the grid to
-  // billions of cells and a meaningless, memory-exploding "image".
+  // pyramid level fills (almost) every grid cell across its planes, so the
+  // cell count is at most a small multiple of the materialised tile count.
+  // Some Olympus ``blob_*.ets`` payloads (vector layers, masks, serialized
+  // data) reuse the tile-record slots for flag-encoded indices (e.g.
+  // coordinates with the ``0x40000000`` bit set), which would otherwise
+  // inflate the grid to billions of cells and a meaningless,
+  // memory-exploding "image".
   for (const auto& lvl : levels) {
-    if (lvl.tile_map.empty()) {
+    const uint64_t tiles = level_tile_count(lvl);
+    if (tiles == 0) {
       continue;
     }
     const uint64_t cells = static_cast<uint64_t>(lvl.grid_cols) * lvl.grid_rows;
-    if (cells > lvl.tile_map.size() * 4ULL + 16ULL) {
+    if (cells > tiles * 4ULL + 16ULL) {
       return AIFOCORE_MAKE_STATUS(
           aifocore::StatusCode::kUnimplemented,
           aifocore::fmt::format(
               "Olympus VSI: tile coordinates do not form a dense pixel grid "
               "({}x{} cells for {} tiles); this looks like a serialized "
               "blob_*.ets payload, not an image",
-              lvl.grid_cols, lvl.grid_rows, lvl.tile_map.size()));
+              lvl.grid_cols, lvl.grid_rows, tiles));
     }
   }
 
   if (skipped_nonprincipal > 0) {
     std::cerr << "[OlympusVSI] " << data.path.string() << ": skipped "
               << skipped_nonprincipal
-              << " non-principal tile(s) (channel != 0 or Z/T != 0); only the "
-                 "principal slice is materialised for this 8-bit stack.\n";
-  } else if (multi_plane && n_channels > 1) {
-    // Nothing to do here
+              << " non-principal tile(s) in unmodeled coordinate slots.\n";
   }
 
   // Drop trailing empty levels (rare, but possible if the file declares a
-  // high `level` int that has no channel-0 tiles).
-  while (!levels.empty() && levels.back().tile_map.empty()) {
+  // high `level` int that has no tiles).
+  while (!levels.empty() && level_tile_count(levels.back()) == 0) {
     levels.pop_back();
   }
   if (levels.empty())
@@ -512,6 +606,15 @@ ImageDimensions OlympusVsiStackImage::GetTileSize() const {
   return ImageDimensions{pyramid_[0].tile_w, pyramid_[0].tile_h};
 }
 
+StackInfo OlympusVsiStackImage::GetStackInfo() const {
+  StackInfo info;
+  if (!pyramid_.empty()) {
+    info.z_count = std::max(1U, pyramid_.front().z_count);
+    info.t_count = std::max(1U, pyramid_.front().t_count);
+  }
+  return info;
+}
+
 aifocore::Result<core::TilePlan> OlympusVsiStackImage::PrepareRequest(
     const core::TileRequest& request) const {
   return OlympusVsiPlanBuilder::BuildPlan(request, pyramid_, ets_.ets);
@@ -630,7 +733,30 @@ aifocore::Status OlympusVsiReader::DiscoverAndBuildImages() {
                          CodecName(ets.ets.compression))));
       continue;
     }
-    auto pyramid_result = BuildPyramid(ets);
+    // Resolve the channel / focal / time axis layout from the matching
+    // `.vsi` container pyramid *before* building, so BuildPyramid can fan
+    // tiles out across channels and Z/T planes correctly. The level-0 grid
+    // (tile-aligned px) is the match key and is independent of the
+    // non-spatial axes, so we derive it straight from the tile table.
+    uint32_t l0_cols = 0;
+    uint32_t l0_rows = 0;
+    for (const auto& t : ets.tiles) {
+      if (t.level == 0) {
+        l0_cols = std::max(l0_cols, t.x + 1U);
+        l0_rows = std::max(l0_rows, t.y + 1U);
+      }
+    }
+    DimensionLayout layout;
+    {
+      const int idx = FindUnclaimedVsiPyramid(
+          l0_cols * ets.ets.tile_w, l0_rows * ets.ets.tile_h, ets.ets.tile_w,
+          ets.ets.tile_h, vsi_claimed);
+      if (idx >= 0) {
+        const auto& m = vsi_pyramids_[static_cast<size_t>(idx)];
+        layout = {m.channel_slot, m.focal_slot, m.time_slot};
+      }
+    }
+    auto pyramid_result = BuildPyramid(ets, layout);
     if (!pyramid_result.ok()) {
       skip_stack(stack_path, pyramid_result.status());
       continue;
@@ -734,9 +860,9 @@ aifocore::Status OlympusVsiReader::DiscoverAndBuildImages() {
   return aifocore::Status::OkStatus();
 }
 
-int OlympusVsiReader::MatchVsiPyramid(uint32_t grid_w, uint32_t grid_h,
-                                      uint32_t tile_w, uint32_t tile_h,
-                                      std::vector<bool>& claimed) const {
+int OlympusVsiReader::FindUnclaimedVsiPyramid(
+    uint32_t grid_w, uint32_t grid_h, uint32_t tile_w, uint32_t tile_h,
+    const std::vector<bool>& claimed) const {
   if (tile_w == 0U || tile_h == 0U) {
     return -1;
   }
@@ -744,8 +870,7 @@ int OlympusVsiReader::MatchVsiPyramid(uint32_t grid_w, uint32_t grid_h,
   // A container pyramid belongs to this stack when its true (sub-tile)
   // boundary covers that same number of tiles per axis -- i.e. dividing the
   // boundary by the tile size and rounding up reproduces the grid's tile
-  // count. The first not-yet-claimed pyramid that matches both axes wins;
-  // claiming it keeps equal-sized regions paired in document order.
+  // count. The first not-yet-claimed pyramid that matches both axes wins.
   const auto tiles_to_cover = [](uint32_t extent, uint32_t tile) -> uint32_t {
     return (extent + tile - 1U) / tile;
   };
@@ -761,11 +886,22 @@ int OlympusVsiReader::MatchVsiPyramid(uint32_t grid_w, uint32_t grid_h,
     }
     if (tiles_to_cover(pyr.width, tile_w) == target_cols &&
         tiles_to_cover(pyr.height, tile_h) == target_rows) {
-      claimed[i] = true;
       return static_cast<int>(i);
     }
   }
   return -1;
+}
+
+int OlympusVsiReader::MatchVsiPyramid(uint32_t grid_w, uint32_t grid_h,
+                                      uint32_t tile_w, uint32_t tile_h,
+                                      std::vector<bool>& claimed) const {
+  const int idx =
+      FindUnclaimedVsiPyramid(grid_w, grid_h, tile_w, tile_h, claimed);
+  // Claiming keeps equal-sized regions paired in document order.
+  if (idx >= 0) {
+    claimed[static_cast<size_t>(idx)] = true;
+  }
+  return idx;
 }
 
 void OlympusVsiReader::EmitSkippedStackWarnings() const {
@@ -876,6 +1012,10 @@ DataType OlympusVsiReader::GetDataType() const {
 
 ImageDimensions OlympusVsiReader::GetTileSize() const {
   return Primary().GetTileSize();
+}
+
+StackInfo OlympusVsiReader::GetStackInfo() const {
+  return Primary().GetStackInfo();
 }
 
 aifocore::Result<core::TilePlan> OlympusVsiReader::PrepareRequest(

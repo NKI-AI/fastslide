@@ -49,6 +49,23 @@ constexpr int32_t kFieldMicronScale = 2019;
 // scope, once per container rather than per image.
 constexpr int32_t kFieldDeviceName = 34;
 
+// Dimension-description container (one per non-spatial axis) and the inline
+// "meaning" leaf inside it that says which axis the container describes. The
+// container's secondary (extra) tag carries the axis' coordinate-slot index,
+// and the meaning leaf's size word carries the axis kind. Both are recovered
+// empirically by `inspect_vsi_format.py`.
+constexpr int32_t kFieldDimensionDescription = 2007;
+constexpr int32_t kFieldDimensionMeaning = 2023;
+
+// Axis-kind codes carried in the dimension-meaning leaf. These distinguish
+// the focal (Z), time (T) and channel (C) axes within the per-tile
+// coordinate tuple; the spectral (lambda) axis is folded into the channel
+// role, and any other code is ignored.
+constexpr uint32_t kAxisFocal = 1;    // Z.
+constexpr uint32_t kAxisTime = 2;     // T.
+constexpr uint32_t kAxisLambda = 3;   // Spectral (treated as channel).
+constexpr uint32_t kAxisChannel = 4;  // C.
+
 // Field-id tags that act purely as structural delimiters: they segment the
 // flat field stream into per-image groups. An image group opens when the
 // external-pixels marker is seen directly after the frame-group marker; the
@@ -210,6 +227,12 @@ struct RawField {
   int32_t tag = 0;
   uint32_t kind = 0;  ///< Field "real type" (low 24 bits of type word).
   bool is_container = false;
+  bool is_inline = false;      ///< True for inline (value-in-header) fields.
+  bool has_extra_tag = false;  ///< True when a secondary tag word is present.
+  int32_t extra_tag = 0;       ///< Secondary tag (valid iff has_extra_tag).
+  /// @brief Declared size word. For inline fields this is the value itself
+  ///        (no payload); for leaf fields it is the payload byte count.
+  uint32_t data_size = 0;
   std::vector<uint8_t> payload;  ///< Empty for containers / inline / zero-size.
 };
 
@@ -254,6 +277,7 @@ struct FieldHeader {
   int32_t tag = 0;
   uint32_t next_field = 0;
   uint32_t data_size = 0;
+  int32_t extra_tag = 0;  ///< Secondary tag (valid iff ``type.extra_tag``).
 };
 
 /// @brief Read the 24-byte container header at @p volume_start, leave the
@@ -265,12 +289,14 @@ bool ReadVolumeHeader(Cursor& c, size_t volume_start, uint32_t* field_count) {
   if (!c.Remaining(24) || volume_start + 24 >= c.Size()) {
     return false;
   }
-  c.U16();  // Header size is always 24 in samples
-  c.U16();  // Version is always 21321 in samples
-  c.U32();  // Seems to be a reserved field
+  c.U16();  // Header byte count (observed constant for this container kind, 24
+            // in samples).
+  c.U16();  // Container-format version word (observed constant, 21321 in
+            // samples).
+  c.U32();  // Reserved / unused in observed files.
   const int64_t data_field_offset = c.I64();
   const uint32_t flags = c.U32();
-  c.U32();  // Seems to be a reserved field
+  c.U32();  // Reserved / unused in observed files.
 
   *field_count = flags & kFieldCountMask;
   const int64_t data_field =
@@ -294,7 +320,7 @@ bool ReadFieldHeader(Cursor& c, FieldHeader* out) {
     if (!c.Remaining(4)) {
       return false;
     }
-    c.I32();  // Secondary tag, unused by the cosmetic parse.
+    out->extra_tag = c.I32();  // Secondary tag (e.g. dimension-slot index).
   }
   return true;
 }
@@ -363,6 +389,10 @@ void CollectVolume(Cursor& c, std::vector<RawField>& out, int depth) {
     field.tag = fh.tag;
     field.kind = t.real_type;
     field.is_container = container;
+    field.is_inline = t.inline_data;
+    field.has_extra_tag = t.extra_tag;
+    field.extra_tag = fh.extra_tag;
+    field.data_size = fh.data_size;
     if (has_payload) {
       const uint8_t* start = c.At(c.Tell());
       field.payload.assign(start, start + fh.data_size);
@@ -519,6 +549,44 @@ void AbsorbLeaf(VsiPyramidMeta& img, std::optional<ColorRGB>& pending_color,
   }
 }
 
+/// @brief Record a dimension-axis -> tile-slot mapping on the image.
+///
+/// @param img       Image being built.
+/// @param dim_index Coordinate-slot index of the dimension-description block
+///                  currently in scope (its secondary tag), or ``-1``.
+/// @param kind      Axis-kind code from the dimension-meaning leaf.
+///
+/// The on-disk coordinate tuple places ``x`` at slot 0 and ``y`` at slot 1,
+/// so a dimension declared with index ``dim_index`` occupies tile slot
+/// ``dim_index + 2``. The first occurrence of each axis wins (Olympus emits
+/// the level/resolution axis last and we never need it here).
+void ApplyDimensionMeaning(VsiPyramidMeta& img, int dim_index, uint32_t kind) {
+  if (dim_index < 0) {
+    return;
+  }
+  const int slot = dim_index + 2;
+  switch (kind) {
+    case kAxisFocal:
+      if (img.focal_slot < 0) {
+        img.focal_slot = slot;
+      }
+      break;
+    case kAxisTime:
+      if (img.time_slot < 0) {
+        img.time_slot = slot;
+      }
+      break;
+    case kAxisChannel:
+    case kAxisLambda:
+      if (img.channel_slot < 0) {
+        img.channel_slot = slot;
+      }
+      break;
+    default:
+      break;
+  }
+}
+
 /// @brief Pull the document-level device / acquisition-software name from
 ///        the flattened field list.
 ///
@@ -553,9 +621,32 @@ std::vector<VsiPyramidMeta> ReduceFieldsToImages(
   for (const FieldSpan& span : spans) {
     VsiPyramidMeta img;
     std::optional<ColorRGB> pending_color;
+    // Coordinate-slot index of the dimension-description block currently in
+    // scope. Each such block opens a new scope (its secondary tag is the
+    // index); the meaning leaf nested within then names the axis. Tracking
+    // the most recent block in document order is enough because the blocks
+    // are emitted one axis at a time.
+    int active_dim_index = -1;
     for (size_t i = span.begin; i < span.end; ++i) {
       const RawField& field = fields[i];
-      if (field.is_container || field.payload.empty()) {
+      // The dimension-description block carries the axis' coordinate-slot
+      // index on its secondary tag. The block nests a sub-volume in real
+      // files, but the slot index is on the block field itself, so we read
+      // it in document order regardless of the container recursion.
+      if (field.tag == kFieldDimensionDescription && field.has_extra_tag) {
+        active_dim_index = field.extra_tag;
+      }
+      if (field.is_container) {
+        continue;
+      }
+      if (field.is_inline) {
+        if (field.tag == kFieldDimensionMeaning) {
+          // Inline fields carry their value in the size word, not a payload.
+          ApplyDimensionMeaning(img, active_dim_index, field.data_size);
+        }
+        continue;
+      }
+      if (field.payload.empty()) {
         continue;
       }
       AbsorbLeaf(img, pending_color, field);

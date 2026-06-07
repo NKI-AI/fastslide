@@ -70,29 +70,45 @@ struct EtsHeader {
 };
 
 /// @brief One tile record. Packed size depends on the SIS-declared
-/// dimensionality ``ndim``: 36 B for ``ndim=4`` (brightfield x, y,
-/// channel, level), 40 B for ``ndim=5`` (fluorescence x, y, channel,
-/// Z, level), etc.
+/// dimensionality ``ndim``: 36 B for ``ndim=4``, 40 B for ``ndim=5``,
+/// 44 B for ``ndim=6``, etc.
 ///
-/// Coordinates `x`, `y`, `channel`, `level` are tile-grid indices (not
-/// pixel coordinates). Any "extra" intermediate dims (typically Z or
-/// time-point indices when ``ndim > 4``) are summed into
-/// ``extra_dim_sum`` so the pyramid builder can drop non-principal
-/// slices in one comparison.
+/// A record packs ``ndim`` little-endian coordinate slots. Slot 0 is the
+/// tile-grid ``x``, slot 1 is ``y``, and the final slot (``ndim - 1``) is
+/// the pyramid ``level``. The slots in between (``2 .. ndim - 2``) are the
+/// non-spatial axes -- some combination of channel, focal (Z) and
+/// time-point (T). Crucially, the ``.ets`` file does NOT label which
+/// in-between slot is which: that mapping comes from the ``.vsi``
+/// dimension metadata. We therefore keep the raw in-between slot values
+/// here and let the pyramid builder assign roles by slot index.
 struct TileRecord {
+  /// @brief Maximum number of non-spatial in-between slots we support
+  ///        (``ndim`` is capped at 6, so at most 3 slots sit between
+  ///        ``x, y`` and ``level``).
+  static constexpr size_t kMaxAxisSlots = 3;
+
   uint32_t const_marker = 0;  ///< Must equal SIS.ndim for every record.
   uint32_t x = 0;
   uint32_t y = 0;
-  uint32_t channel = 0;
   uint32_t level = 0;
-  /// @brief Sum of the intermediate dim values between ``channel`` and
-  ///        ``level`` (Z / time-point / position slots). Zero for the
-  ///        principal slice; non-zero records are skipped by the
-  ///        pyramid builder.
-  uint32_t extra_dim_sum = 0;
-  uint64_t offset = 0;        ///< Byte offset of the compressed tile bytes.
-  uint32_t n_bytes = 0;       ///< Size of the compressed tile bytes.
+  /// @brief Raw values of the non-spatial coordinate slots, in on-disk
+  ///        order. ``axis_slots[i]`` is the value of coordinate slot
+  ///        ``i + 2``. Only the first ``axis_count`` entries are valid.
+  std::array<uint32_t, kMaxAxisSlots> axis_slots = {0, 0, 0};
+  uint32_t axis_count = 0;  ///< Number of valid ``axis_slots`` (``ndim - 3``).
+  uint64_t offset = 0;      ///< Byte offset of the compressed tile bytes.
+  uint32_t n_bytes = 0;     ///< Size of the compressed tile bytes.
   uint32_t trailing_pad = 0;  ///< Reserved; zero in validated files.
+
+  /// @brief Value of coordinate slot ``slot`` (0-based, including x/y), or
+  ///        ``0`` when the slot is not an in-between axis slot.
+  [[nodiscard]] uint32_t AxisAt(int slot) const {
+    if (slot < 2) {
+      return 0;
+    }
+    const size_t idx = static_cast<size_t>(slot - 2);
+    return idx < axis_count ? axis_slots[idx] : 0U;
+  }
 };
 
 /// @brief Parsed contents of a single frame_t.ets file.

@@ -131,8 +131,11 @@ SIS container header (64 bytes)
    * - ``0x0c``
      - ``u32``
      - ``ndim``
-     - Tile-record dimensionality (``4`` for brightfield, ``5`` for
-       fluorescence); also stored as a constant marker in each tile record.
+     - Tile-record dimensionality (``4`` for brightfield, ``5``–``6`` for
+       fluorescence with focal/time stacks); also stored as a constant
+       marker in each tile record. The ``ndim - 3`` slots between ``(x, y)``
+       and ``level`` carry the non-spatial axes (channel, focal *Z*, time
+       *T*).
    * - ``0x10``
      - ``u64``
      - ``ets_offset``
@@ -187,8 +190,10 @@ The sub-header is a ``4``-byte ``ETS\0`` magic followed by nine ``u32`` fields (
      - Number of samples **within one tile**: ``1`` for grayscale tiles,
        ``3`` for RGB brightfield, ``4`` for RGBA-style data. Note this is
        not the number of channel planes — 16-bit fluorescence declares
-       ``1`` here but stacks several grayscale planes via the tile-record
-       intermediate dimension (see *Tile table*).
+       ``1`` here but stacks several grayscale planes (separate channels
+       *and* focal planes) via the tile-record non-spatial dimensions,
+       whose meaning is resolved from the ``.vsi`` tag tree (see *Tile
+       table* and *Dimension Ordering*).
    * - ``+0x10``
      - ``u32``
      - ``color_space``
@@ -235,15 +240,15 @@ Tile table
 ~~~~~~~~~~
 
 The tile-record layout is parametric in ``ndim`` (the SIS-declared dimensionality).
-Brightfield stacks use ``ndim = 4`` (records pack ``x, y, channel, level``);
-fluorescence sub-stacks use ``ndim = 5`` (records pack ``x, y, channel, Z, level``).
-A record is laid out as:
+Brightfield stacks use ``ndim = 4``; fluorescence sub-stacks use ``ndim = 5`` or ``6``
+when they carry separate channel, focal (*Z*) and/or time (*T*) axes. A record is laid
+out as:
 
 * ``+0`` — ``const_marker`` (``u32``, equal to ``ndim`` in every record).
 * ``+4`` … ``+4·ndim`` — one ``u32`` per dimension. Slot 0 is the tile-grid
   **column** ``x``, slot 1 is the tile-grid **row** ``y``, the last slot is the
-  pyramid ``level``, and the intermediate slots (slot 2 onward) are the channel /
-  focal-plane axis.
+  pyramid ``level``, and the intermediate slots (slot 2 onward) hold the raw indices
+  of the non-spatial axes (channel, focal *Z*, time *T*).
 * ``+4·ndim`` … ``+4·ndim + 16`` — ``(u64 offset, u32 n_bytes, u32 pad)``: the
   absolute byte offset and compressed length of the tile payload.
 
@@ -251,14 +256,21 @@ So the per-record size is ``4·ndim + 20`` bytes (36 B for ``ndim = 4``, 40 B fo
 ``ndim = 5``). The ``(offset, n_bytes)`` pair points at the JPEG / JPEG2000 payload
 elsewhere in the file. All coordinates are **tile-grid indices**, not pixels.
 
-The intermediate dimensions carry the channel / focal-plane axis:
+Crucially, the ``.ets`` file does **not** label its intermediate slots: a record only
+stores raw integers, not which slot is the channel and which is the focal plane. That
+mapping comes from the ``.vsi`` tag tree (see *Dimension Ordering*); the reader stores
+the slots verbatim and never guesses their meaning from the ``.ets`` alone. With the
+mapping in hand, the distinct values of each slot are densely re-indexed to give the
+channel count *C*, the focal-plane count *Z* and the time-point count *T*:
 
-* **8-bit brightfield** (``ndim = 4``): a single intermediate slot (``channel``),
-  ``0`` in practice — one image plane.
-* **16-bit fluorescence** (``ndim = 5``): several grayscale planes share one
-  ``(x, y, level)`` grid, with the plane index in the intermediate dimension. A stack
-  with three planes therefore represents a 3-channel image, each plane being one
-  channel.
+* **8-bit brightfield** (``ndim = 4``): a single intermediate slot, ``0`` in
+  practice — one RGB plane, ``Z = T = 1``.
+* **16-bit fluorescence** (``ndim = 5`` / ``6``): several grayscale planes share one
+  ``(x, y, level)`` grid. The channel slot separates the acquisition channels (e.g.
+  ``C405``, ``C488``) while the focal slot indexes a *Z*-stack; e.g. a 2-channel
+  acquisition with an 11-plane focal stack reports ``C = 2``, ``Z = 11`` rather than
+  ``22`` flat channels. Any non-spatial slot not named by the tag tree is required to
+  be ``0`` (its principal slice); other slices are skipped.
 
 Coordinate System and Tile Grid
 --------------------------------
@@ -352,11 +364,59 @@ Relevant facts of the on-disk layout:
   grid, which is how a container image is paired with its pixel stack.
 - The micron-scale field (tag ``2019``) is a pair of doubles giving the per-image
   microns-per-pixel; each image frame (navigator, overview, region) carries its own.
+- The dimension-description container (tag ``2007``) and its inline dimension-meaning
+  leaf (tag ``2023``) describe the non-spatial tile axes; they are what let the reader
+  separate channels from focal planes (see *Dimension Ordering*).
 
 These tag identifiers and the segmentation markers are facts of the format that can be
 recovered directly from the bytes (the ``tags`` subcommand of ``inspect_vsi_format.py``
 derives them by correlating field payloads against the measured ``.ets`` pyramid sizes
 and channel-name content).
+
+Dimension Ordering
+------------------
+
+The ``.ets`` tile records store raw axis indices in their intermediate slots but never
+say which slot is the channel, which is the focal (*Z*) plane and which is time (*T*).
+That mapping is described in the ``.vsi`` tag tree, once per image, and is what allows
+a 16-bit fluorescence stack to be reported as separate channel and *Z* (and *T*) axes
+instead of a flat pile of channels.
+
+Each non-spatial axis is declared by a **dimension-description** container (tag
+``2007``). The container's *extra* (secondary) tag word carries the axis' coordinate
+index ``d``; the corresponding tile-record slot is therefore ``d + 2`` (slots 0 and 1
+are always ``x`` and ``y``). Nested inside the container, an inline
+**dimension-meaning** leaf (tag ``2023``) names the axis kind via its size word:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 12 18 70
+
+   * - Value
+     - Axis kind
+     - Mapped role
+   * - ``1``
+     - focal (*Z*)
+     - Selectable focal plane; contributes to the *Z* count.
+   * - ``2``
+     - time (*T*)
+     - Selectable time point; contributes to the *T* count.
+   * - ``3``
+     - spectral (lambda)
+     - Folded into the channel axis.
+   * - ``4``
+     - channel (*C*)
+     - Output channel (paired with the channel names / colours above).
+
+For each axis kind the **first** declaration wins. Slots that the tag tree does not
+name are treated as unmodeled: only their principal (``0``) slice is materialised. When
+the ``.vsi`` container is absent (an ``.ets`` read on its own) there is no dimension
+metadata, so the first intermediate slot is assumed to be the channel axis and any
+further slots collapse to their principal slice.
+
+The resulting per-image geometry is surfaced as the slide's stack info: the channel
+slot becomes the channel count, while the focal and time slots become the ``z`` and
+``t`` plane counts that callers select through the tile request.
 
 Sample-file measurements
 ------------------------
@@ -392,6 +452,13 @@ records with the ``(u64 offset @+20, u32 length @+28)`` pair, and the same const
 The companion ``stack1`` previews are smaller dyadic pyramids of the same shape
 (``OS-1`` ``stack1`` is ``14 × 26`` tiles at level 0, six levels), confirming the
 navigator-vs-main-scan distinction implied by the stack numbering.
+
+A 16-bit fluorescence focal stack exercises the multi-axis path: a 2-channel
+acquisition with an 11-plane *Z*-stack writes ``ndim = 5`` records, declares
+``pixel_type = 4`` (``USHORT``) and ``n_channels = 1`` per tile, and pairs a
+dimension-meaning ``4`` (channel) slot with a dimension-meaning ``1`` (focal) slot in
+the ``.vsi`` tag tree. The reader reports it as ``C = 2`` channels (``C405``, ``C488``)
+and ``Z = 11`` focal planes — not ``22`` flat channels.
 
 References
 ----------

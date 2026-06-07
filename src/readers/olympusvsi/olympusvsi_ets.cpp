@@ -47,9 +47,12 @@ constexpr size_t kEtsBackgroundPad = 17 * sizeof(uint32_t);
 // Tile-record layout depends on the SIS-declared dimensionality
 // ``ndim``. Each record packs:
 //   * const_marker (u32, equals ``ndim``)
-//   * ``ndim`` dim slots (u32 each); slot 0 is ``x``, slot 1 is ``y``,
-//     slot 2 is ``channel``, the final slot is ``level``, and any
-//     intermediate slots (typically Z or T) are skipped if non-zero.
+//   * ``ndim`` coordinate slots (u32 each): slot 0 is ``x``, slot 1 is
+//     ``y``, the final slot is the pyramid ``level``, and the slots in
+//     between carry the raw non-spatial axis indices (channel / Z / T).
+//     The parser stores these middle slots verbatim; which slot means
+//     which axis is resolved later from the `.vsi` dimension metadata
+//     (see ``DimensionLayout`` in olympusvsi.cpp), never inferred here.
 //   * (u64 offset, u32 n_bytes, u32 pad) trailer = 16 B.
 // → record_size = 4 + 4*ndim + 16
 //   pair_offset = 4 + 4*ndim
@@ -57,9 +60,9 @@ constexpr size_t kEtsBackgroundPad = 17 * sizeof(uint32_t);
 //
 // Observed in the wild:
 //   * Brightfield RGB (8-bit) writes ``ndim = 4`` → 36-byte records,
-//     dims = (x, y, channel, level).
+//     dims = (x, y, axis, level).
 //   * Fluorescence (16-bit) writes ``ndim = 5`` → 40-byte records,
-//     dims = (x, y, channel, Z, level).
+//     dims = (x, y, axis, axis, level).
 constexpr size_t kTileRecordTrailerSize = 16;
 constexpr size_t kTileRecordMinNdim = 4;
 constexpr size_t kTileRecordMaxNdim = 6;
@@ -261,16 +264,20 @@ aifocore::Status ParseTileTable(std::span<const uint8_t> table,
     rec.const_marker = LoadLe<uint32_t>(p + 0);
     rec.x = LoadLe<uint32_t>(p + 4);
     rec.y = LoadLe<uint32_t>(p + 8);
-    rec.channel = LoadLe<uint32_t>(p + 12);
     rec.level = LoadLe<uint32_t>(p + level_offset);
-    // Capture any intermediate dim slots (between ``channel`` and
-    // ``level``). For ndim=4 there are none; for ndim=5 this is the
-    // typical Z / time index slot. We don't expose them as fields on
-    // ``TileRecord`` but encode them into ``extra_dim_sum`` so the
-    // pyramid builder can skip non-principal slices (non-zero Z, T).
-    rec.extra_dim_sum = 0;
-    for (size_t dim_off = 16; dim_off < level_offset; dim_off += 4) {
-      rec.extra_dim_sum += LoadLe<uint32_t>(p + dim_off);
+    // Capture the raw non-spatial coordinate slots (slots 2 .. ndim-2),
+    // i.e. everything between (x, y) and the trailing level slot. The
+    // first such slot sits at byte offset 12. Their semantic role
+    // (channel / focal / time) is not stored in the ``.ets`` file; the
+    // pyramid builder assigns roles by slot index using the ``.vsi``
+    // dimension metadata.
+    constexpr size_t kFirstAxisByteOffset = 12;
+    rec.axis_count = static_cast<uint32_t>(
+        (level_offset - kFirstAxisByteOffset) / sizeof(uint32_t));
+    for (uint32_t s = 0; s < rec.axis_count && s < TileRecord::kMaxAxisSlots;
+         ++s) {
+      rec.axis_slots[s] =
+          LoadLe<uint32_t>(p + kFirstAxisByteOffset + s * sizeof(uint32_t));
     }
     rec.offset = LoadLe<uint64_t>(p + pair_offset);
     rec.n_bytes = LoadLe<uint32_t>(p + pair_offset + 8);
