@@ -23,10 +23,11 @@ FastSlide is a modern C++20 library for reading whole slide images (WSI) with fi
   - MRXS (3DHISTECH, including mIF)
   - iSyntax (Philips)
   - Philips TIFF
+  - Hamamatsu NDPI (including Z stacks)
   - Generic TIFF
   - CZI (Zeiss, including Z/T stacks)
   - Ventana (BIF)
-  - Olympus (VSI)
+  - Olympus (VSI, including Z stacks)
 
 ## QuPath Extension
 
