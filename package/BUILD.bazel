@@ -16,7 +16,7 @@ load(":defs.bzl", "fastslide_bundle_tar_xz")
 
 package(default_visibility = ["//visibility:public"])
 
-FASTSLIDE_VERSION = "0.7.2"
+FASTSLIDE_VERSION = "0.7.3"
 
 # By default we do NOT build cross-platform bundles as part of `//aifo/fastslide/...`
 # because they require additional toolchains. Enable them explicitly via
