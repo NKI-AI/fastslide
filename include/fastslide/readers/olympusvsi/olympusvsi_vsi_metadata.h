@@ -55,6 +55,20 @@ struct VsiPyramidMeta {
   double mpp_x = 0.0;
   double mpp_y = 0.0;
   std::vector<VsiChannelMeta> channels;  ///< One per acquisition channel.
+
+  /// @brief Tile-record coordinate slot that carries each non-spatial axis.
+  ///
+  /// Olympus does not fix the order of the channel / focal (Z) / time (T)
+  /// axes in the per-tile coordinate tuple. Their positions are declared in
+  /// the container's dimension-description blocks (one per axis, each tagged
+  /// with its coordinate-slot index and a meaning code). These fields hold
+  /// the resolved 0-based tile-coordinate slot for each axis (slot 0 = x,
+  /// slot 1 = y), or ``-1`` when the container does not describe that axis.
+  /// The pyramid builder uses them to read the channel value from the right
+  /// slot and to collapse the focal/time axes to their principal index.
+  int channel_slot = -1;
+  int focal_slot = -1;
+  int time_slot = -1;
 };
 
 /// @brief Document-level metadata recovered from a `.vsi` container, in

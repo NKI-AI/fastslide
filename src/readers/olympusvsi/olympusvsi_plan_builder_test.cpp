@@ -40,13 +40,14 @@ OlympusVsiLevelInfo MakeLevel(int level, uint32_t cols, uint32_t rows,
   // Default: logical image fills the whole grid (no sub-tile trimming).
   info.reported_size = info.size;
   info.downsample = (level == 0) ? 1.0 : static_cast<double>(1 << level);
+  info.plane_maps.resize(1);  // Single focal/time plane.
   uint64_t fake_offset = 1024;
   for (uint32_t y = 0; y < rows; ++y) {
     for (uint32_t x = 0; x < cols; ++x) {
       if (drop_corner && x == 0 && y == 0) {
         continue;  // simulate a missing-cell hole
       }
-      info.tile_map[OlympusVsiLevelInfo::PackKey(x, y)] =
+      info.plane_maps[0][OlympusVsiLevelInfo::PackKey(x, y)] =
           LevelTileEntry{fake_offset, 256};
       fake_offset += 256;
     }
@@ -225,9 +226,10 @@ TEST(OlympusVsiPlanBuilderTest, MultiChannelUint16ProducesSeparatePlanarPlan) {
   level.reported_size = {256, 256};
   level.downsample = 1.0;
   level.n_channels = 3;
+  level.plane_maps.resize(1);
   uint64_t off = 1024;
   for (uint32_t c = 0; c < 3; ++c) {
-    level.tile_map[OlympusVsiLevelInfo::PackKey3(c, 0, 0)] =
+    level.plane_maps[0][OlympusVsiLevelInfo::PackKey3(c, 0, 0)] =
         LevelTileEntry{off, 256};
     off += 256;
   }
@@ -252,6 +254,50 @@ TEST(OlympusVsiPlanBuilderTest, MultiChannelUint16ProducesSeparatePlanarPlan) {
     dest_channels.insert(op.channel_group_offset);
   }
   EXPECT_EQ(dest_channels.size(), 3U);
+}
+
+TEST(OlympusVsiPlanBuilderTest, SelectsTileMapByRequestedFocalPlane) {
+  // A 1x1 grid with two focal (Z) planes. Each plane owns one tile at a
+  // distinct byte offset; the plan builder must read from the map for the
+  // requested plane.
+  OlympusVsiLevelInfo level;
+  level.level = 0;
+  level.tile_w = 256;
+  level.tile_h = 256;
+  level.grid_cols = 1;
+  level.grid_rows = 1;
+  level.size = {256, 256};
+  level.reported_size = {256, 256};
+  level.downsample = 1.0;
+  level.n_channels = 1;
+  level.z_count = 2;
+  level.t_count = 1;
+  level.plane_maps.resize(2);
+  level.plane_maps[0][OlympusVsiLevelInfo::PackKey3(0, 0, 0)] =
+      LevelTileEntry{1024, 256};
+  level.plane_maps[1][OlympusVsiLevelInfo::PackKey3(0, 0, 0)] =
+      LevelTileEntry{4096, 256};
+  const std::vector<OlympusVsiLevelInfo> pyramid = {level};
+
+  auto req0 = MakeRegionRequest(0, 0, 0, 256, 256);
+  req0.plane = {0, 0};
+  auto plan0 = OlympusVsiPlanBuilder::BuildPlan(req0, pyramid, MakeRgbEts(1));
+  ASSERT_TRUE(plan0.ok()) << plan0.status().message();
+  ASSERT_EQ(plan0->operations.size(), 1U);
+  EXPECT_EQ(plan0->operations[0].byte_offset, 1024U);
+
+  auto req1 = MakeRegionRequest(0, 0, 0, 256, 256);
+  req1.plane = {1, 0};
+  auto plan1 = OlympusVsiPlanBuilder::BuildPlan(req1, pyramid, MakeRgbEts(1));
+  ASSERT_TRUE(plan1.ok()) << plan1.status().message();
+  ASSERT_EQ(plan1->operations.size(), 1U);
+  EXPECT_EQ(plan1->operations[0].byte_offset, 4096U);
+
+  // A focal plane past z_count is rejected.
+  auto req_bad = MakeRegionRequest(0, 0, 0, 256, 256);
+  req_bad.plane = {2, 0};
+  EXPECT_FALSE(
+      OlympusVsiPlanBuilder::BuildPlan(req_bad, pyramid, MakeRgbEts(1)).ok());
 }
 
 TEST(OlympusVsiPlanBuilderTest, Uint8PixelTypeProducesUint8Plan) {

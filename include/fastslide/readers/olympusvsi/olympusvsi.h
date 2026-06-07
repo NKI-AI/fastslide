@@ -79,6 +79,14 @@ class OlympusVsiStackImage final : public SlideImage {
 
   [[nodiscard]] ImageDimensions GetTileSize() const override;
 
+  /// @brief Focal (Z) / time (T) stack extent of this image.
+  ///
+  /// Multi-plane 16-bit fluorescence stacks may span several focal planes
+  /// and/or time points (each its own selectable plane via
+  /// `TileRequest::plane`). Brightfield and single-plane stacks report the
+  /// default 1x1 (a plain 2D image).
+  [[nodiscard]] StackInfo GetStackInfo() const override;
+
   [[nodiscard]] aifocore::Result<core::TilePlan> PrepareRequest(
       const core::TileRequest& request) const override;
   [[nodiscard]] aifocore::Status ExecutePlan(
@@ -234,6 +242,9 @@ class OlympusVsiReader : public SlideReader {
 
   [[nodiscard]] ImageDimensions GetTileSize() const override;
 
+  /// @brief Focal/time stack extent forwarded from the primary image.
+  [[nodiscard]] StackInfo GetStackInfo() const override;
+
   [[nodiscard]] aifocore::Result<core::TilePlan> PrepareRequest(
       const core::TileRequest& request) const override;
   [[nodiscard]] aifocore::Status ExecutePlan(
@@ -289,6 +300,16 @@ class OlympusVsiReader : public SlideReader {
   [[nodiscard]] int MatchVsiPyramid(uint32_t grid_w, uint32_t grid_h,
                                     uint32_t tile_w, uint32_t tile_h,
                                     std::vector<bool>& claimed) const;
+
+  /// @brief Like `MatchVsiPyramid`, but does not claim the match.
+  ///
+  /// Used to peek at a stack's dimension layout before building its pyramid;
+  /// the claiming `MatchVsiPyramid` is then called once the build succeeds.
+  /// @param claimed Per-pyramid claim flags (read-only here).
+  /// @return Index into ``vsi_pyramids_``, or ``-1`` if none matched.
+  [[nodiscard]] int FindUnclaimedVsiPyramid(
+      uint32_t grid_w, uint32_t grid_h, uint32_t tile_w, uint32_t tile_h,
+      const std::vector<bool>& claimed) const;
 
   [[nodiscard]] const OlympusVsiStackImage& Primary() const {
     return *images_[static_cast<size_t>(primary_index_)];

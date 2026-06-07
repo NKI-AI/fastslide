@@ -130,6 +130,19 @@ aifocore::Result<core::TilePlan> OlympusVsiPlanBuilder::BuildPlan(
                                 "Olympus VSI: level has zero tile dimensions");
   }
 
+  // Pick the tile map for the requested focal (Z) / time (T) plane. An
+  // out-of-range plane selects no tiles, so the canvas paints background.
+  const OlympusVsiLevelInfo::TileMap* tile_map =
+      level.MapForPlane(request.plane.z, request.plane.t);
+  if (tile_map == nullptr) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format(
+            "Olympus VSI: requested plane (z={}, t={}) is out of range "
+            "(z_count={}, t_count={})",
+            request.plane.z, request.plane.t, level.z_count, level.t_count));
+  }
+
   const uint32_t first_x = region.x / level.tile_w;
   const uint32_t first_y = region.y / level.tile_h;
   const uint32_t last_x = (region.x + region.width - 1) / level.tile_w;
@@ -168,8 +181,8 @@ aifocore::Result<core::TilePlan> OlympusVsiPlanBuilder::BuildPlan(
       // decoded grayscale tile lands.
       for (uint32_t ch = 0; ch < n_channels; ++ch) {
         const uint64_t key = OlympusVsiLevelInfo::PackKey3(ch, tx, ty);
-        const auto it = level.tile_map.find(key);
-        if (it == level.tile_map.end()) {
+        const auto it = tile_map->find(key);
+        if (it == tile_map->end()) {
           // Missing cell for this plane: background fill via the canvas.
           continue;
         }

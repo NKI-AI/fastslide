@@ -56,9 +56,16 @@ struct FakeFile {
 };
 
 // Synthetic ETS file with `n_tiles_x * n_tiles_y` tiles at one level.
-FakeFile BuildFakeEtsFile(uint32_t n_tiles_x, uint32_t n_tiles_y,
-                          uint32_t tile_size = 64,
-                          TileCodec codec = TileCodec::kJp2) {
+//
+// ``ndim`` controls the per-tile record width: slot 0 is x, slot 1 is y,
+// the last slot is the pyramid level, and slots 2 .. ndim-2 are the
+// non-spatial (channel / focal / time) axes. ``axis_values`` supplies the
+// per-tile values for those in-between slots (indexed by tile, then by
+// axis-slot); empty entries default to all-zero (the principal slice).
+FakeFile BuildFakeEtsFile(
+    uint32_t n_tiles_x, uint32_t n_tiles_y, uint32_t tile_size = 64,
+    TileCodec codec = TileCodec::kJp2, uint32_t ndim = 4,
+    const std::vector<std::vector<uint32_t>>& axis_values = {}) {
   FakeFile f;
   f.bytes.reserve(4096);
 
@@ -74,7 +81,6 @@ FakeFile BuildFakeEtsFile(uint32_t n_tiles_x, uint32_t n_tiles_y,
   std::memcpy(f.bytes.data() + 0, kSisMagic.data(), 4);
   WriteAt<uint32_t>(&f.bytes, 4, 64);  // header_size
   WriteAt<uint32_t>(&f.bytes, 8, 1);   // version
-  const uint32_t ndim = 4;
   WriteAt<uint32_t>(&f.bytes, 12, ndim);
 
   // Patch ets_offset / tiles_offset / n_tiles after we know the layout.
@@ -114,25 +120,35 @@ FakeFile BuildFakeEtsFile(uint32_t n_tiles_x, uint32_t n_tiles_y,
   WriteAt<uint64_t>(&f.bytes, 32, f.tiles_offset);
   WriteAt<uint32_t>(&f.bytes, 40, n_tiles);
 
-  f.bytes.resize(f.tiles_offset + static_cast<size_t>(n_tiles) * 36, 0);
+  // record_size = 4 (const_marker) + 4*ndim (slots) + 16 (offset/size/pad).
+  const size_t record_size = 4 + 4 * static_cast<size_t>(ndim) + 16;
+  const size_t level_off = 4 + 4 * static_cast<size_t>(ndim - 1);
+  const size_t pair_off = 4 + 4 * static_cast<size_t>(ndim);
+  f.bytes.resize(f.tiles_offset + static_cast<size_t>(n_tiles) * record_size,
+                 0);
 
   // Tile payload area follows the tile table.
   uint64_t tile_data_offset =
-      f.tiles_offset + static_cast<size_t>(n_tiles) * 36;
+      f.tiles_offset + static_cast<size_t>(n_tiles) * record_size;
   f.tile0_offset = tile_data_offset;
 
   for (uint32_t i = 0; i < n_tiles; ++i) {
     const uint32_t x = i % n_tiles_x;
     const uint32_t y = i / n_tiles_x;
-    const size_t rec_offset = f.tiles_offset + i * 36;
+    const size_t rec_offset = f.tiles_offset + i * record_size;
     WriteAt<uint32_t>(&f.bytes, rec_offset + 0, ndim);  // const_marker == ndim
     WriteAt<uint32_t>(&f.bytes, rec_offset + 4, x);
     WriteAt<uint32_t>(&f.bytes, rec_offset + 8, y);
-    WriteAt<uint32_t>(&f.bytes, rec_offset + 12, 0U);  // channel
-    WriteAt<uint32_t>(&f.bytes, rec_offset + 16, 0U);  // level
-    WriteAt<uint64_t>(&f.bytes, rec_offset + 20, tile_data_offset);
-    WriteAt<uint32_t>(&f.bytes, rec_offset + 28, tile_size);
-    WriteAt<uint32_t>(&f.bytes, rec_offset + 32, 0);
+    // Non-spatial axis slots (slots 2 .. ndim-2), starting at byte 12.
+    if (i < axis_values.size()) {
+      for (size_t s = 0; s < axis_values[i].size(); ++s) {
+        WriteAt<uint32_t>(&f.bytes, rec_offset + 12 + s * 4, axis_values[i][s]);
+      }
+    }
+    WriteAt<uint32_t>(&f.bytes, rec_offset + level_off, 0U);  // level
+    WriteAt<uint64_t>(&f.bytes, rec_offset + pair_off, tile_data_offset);
+    WriteAt<uint32_t>(&f.bytes, rec_offset + pair_off + 8, tile_size);
+    WriteAt<uint32_t>(&f.bytes, rec_offset + pair_off + 12, 0);
 
     // Tile payload: codec-appropriate magic prefix, then pad.
     if (tile_data_offset + tile_size > f.bytes.size()) {
@@ -169,11 +185,39 @@ TEST(OlympusVsiEtsTest, ParsesValidFile) {
   for (uint32_t i = 0; i < data.tiles.size(); ++i) {
     EXPECT_EQ(data.tiles[i].const_marker, data.sis.ndim);
     EXPECT_EQ(data.tiles[i].n_bytes, 64U);
-    EXPECT_EQ(data.tiles[i].channel, 0U);
+    // ndim=4: a single non-spatial slot (slot 2) sits between (x, y) and
+    // the trailing level slot; here it is 0 for every tile.
+    EXPECT_EQ(data.tiles[i].axis_count, 1U);
+    EXPECT_EQ(data.tiles[i].AxisAt(2), 0U);
     EXPECT_EQ(data.tiles[i].level, 0U);
   }
   // First tile's grid (x, y) is (0, 0); offset should equal tile0_offset.
   EXPECT_EQ(data.tiles[0].offset, f.tile0_offset);
+}
+
+TEST(OlympusVsiEtsTest, ParsesMultipleAxisSlots) {
+  // ndim=6: three non-spatial slots (slots 2, 3, 4) sit between (x, y) and
+  // the trailing level slot. Give the single tile distinct slot values and
+  // confirm they are read back in on-disk order via AxisAt().
+  const FakeFile f = BuildFakeEtsFile(
+      /*nx=*/1, /*ny=*/1, /*tile_size=*/64, TileCodec::kJp2, /*ndim=*/6,
+      /*axis_values=*/{{7U, 3U, 5U}});
+  auto result =
+      ParseEtsBuffer(std::span<const uint8_t>(f.bytes.data(), f.bytes.size()));
+  ASSERT_TRUE(result.ok()) << result.status().message();
+  const EtsFileData& data = *result;
+
+  EXPECT_EQ(data.sis.ndim, 6U);
+  ASSERT_EQ(data.tiles.size(), 1U);
+  const TileRecord& rec = data.tiles[0];
+  EXPECT_EQ(rec.axis_count, 3U);
+  EXPECT_EQ(rec.AxisAt(2), 7U);
+  EXPECT_EQ(rec.AxisAt(3), 3U);
+  EXPECT_EQ(rec.AxisAt(4), 5U);
+  // Out-of-range slots return 0.
+  EXPECT_EQ(rec.AxisAt(1), 0U);
+  EXPECT_EQ(rec.AxisAt(5), 0U);
+  EXPECT_EQ(rec.level, 0U);
 }
 
 TEST(OlympusVsiEtsTest, RejectsBadSisMagic) {

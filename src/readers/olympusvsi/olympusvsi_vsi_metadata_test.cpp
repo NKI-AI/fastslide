@@ -18,6 +18,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,15 @@ constexpr uint32_t kTypeBgr = 270;
 constexpr uint32_t kTypeIntRect = 259;
 constexpr uint32_t kTypeDouble2 = 260;
 constexpr uint32_t kTypeUnicodeTChar = 8192;
+
+// Dimension-ordering on-disk constants (mirrored from the reader).
+constexpr int32_t kTagDimensionDescription = 2007;
+constexpr int32_t kTagDimensionMeaning = 2023;
+constexpr uint32_t kFlagExtraTag = 0x08000000u;
+constexpr uint32_t kFlagInlineData = 0x40000000u;
+constexpr uint32_t kAxisFocal = 1;    // Z.
+constexpr uint32_t kAxisTime = 2;     // T.
+constexpr uint32_t kAxisChannel = 4;  // C.
 
 template <typename T>
 void Append(std::vector<uint8_t>* out, T value) {
@@ -106,12 +116,28 @@ class VolumeBuilder {
 
   // Adds a leaf field with no payload (used for structural markers like
   // the frame-group marker (2002) / external-pixels marker (2018)).
-  void AddMarker(int32_t tag) { AddField(/*real_type=*/0, tag, {}); }
+  void AddMarker(int32_t tag) { AddField(/*type_word=*/0, tag, {}); }
 
   // Adds a leaf value field carrying ``payload`` bytes.
   void AddValue(uint32_t real_type, int32_t tag,
                 const std::vector<uint8_t>& payload) {
     AddField(real_type, tag, payload);
+  }
+
+  // Adds a dimension-description block field carrying the axis'
+  // coordinate-slot index on its secondary (extra) tag. Real files nest a
+  // sub-volume here; the reader only needs the secondary tag, so a flat
+  // field with the extra-tag flag is sufficient for the test.
+  void AddDimensionBlock(int32_t dim_index) {
+    AddField(kFlagExtraTag, kTagDimensionDescription, {},
+             /*extra_tag=*/dim_index);
+  }
+
+  // Adds an inline field whose value lives in the size word (no payload),
+  // used for the dimension-meaning leaf.
+  void AddInlineValue(int32_t tag, uint32_t value) {
+    AddField(kFlagInlineData, tag, {}, /*extra_tag=*/std::nullopt,
+             /*inline_size=*/value);
   }
 
   std::vector<uint8_t> Finish() {
@@ -127,8 +153,10 @@ class VolumeBuilder {
   }
 
  private:
-  void AddField(uint32_t real_type, int32_t tag,
-                const std::vector<uint8_t>& payload) {
+  void AddField(uint32_t type_word, int32_t tag,
+                const std::vector<uint8_t>& payload,
+                std::optional<int32_t> extra_tag = std::nullopt,
+                std::optional<uint32_t> inline_size = std::nullopt) {
     const size_t field_start = buf_.size();
     if (field_count_ == 0) {
       first_field_offset_ = field_start;
@@ -137,11 +165,15 @@ class VolumeBuilder {
       WriteAt(&buf_, last_next_field_slot_,
               static_cast<uint32_t>(field_start - volume_start_));
     }
-    Append(&buf_, real_type);  // type word.
+    Append(&buf_, type_word);  // type word (flags | real type).
     Append(&buf_, tag);        // tag.
     last_next_field_slot_ = buf_.size();
     Append(&buf_, static_cast<uint32_t>(0));  // next-sibling offset (patch).
-    Append(&buf_, static_cast<uint32_t>(payload.size()));  // payload size.
+    // Size word: payload byte count, or the inline value when inline.
+    Append(&buf_, inline_size.value_or(static_cast<uint32_t>(payload.size())));
+    if (extra_tag.has_value()) {
+      Append(&buf_, *extra_tag);  // secondary tag word.
+    }
     for (uint8_t byte : payload) {
       buf_.push_back(byte);
     }
@@ -238,6 +270,52 @@ TEST(OlympusVsiVsiMetadata, SeparatesChannelsAcrossPyramids) {
   ASSERT_EQ(pyramids[1].channels.size(), 2U);
   EXPECT_EQ(pyramids[1].channels[0].name, "Ch B");
   EXPECT_EQ(pyramids[1].channels[1].name, "Ch C");
+}
+
+TEST(OlympusVsiVsiMetadata, ResolvesDimensionAxisSlots) {
+  VolumeBuilder b;
+  b.AddMarker(kTagImageFrameVolume);
+  b.AddMarker(kTagExternalFileProperties);
+  // Three dimension-description blocks declaring, in tile-coordinate slot
+  // order: slot 2 -> time, slot 3 -> focal (Z), slot 4 -> channel. Each
+  // block's secondary tag is the dimension index (slot - 2).
+  b.AddDimensionBlock(/*dim_index=*/0);
+  b.AddInlineValue(kTagDimensionMeaning, kAxisTime);
+  b.AddDimensionBlock(/*dim_index=*/1);
+  b.AddInlineValue(kTagDimensionMeaning, kAxisFocal);
+  b.AddDimensionBlock(/*dim_index=*/2);
+  b.AddInlineValue(kTagDimensionMeaning, kAxisChannel);
+  b.AddValue(kTypeUnicodeTChar, kTagChannelName, Utf16Le("C405"));
+  b.AddValue(kTypeUnicodeTChar, kTagChannelName, Utf16Le("C488"));
+
+  const auto path = WriteTemp(b.Finish(), "vsi_meta_dims");
+  const auto pyramids = ParseVsiMetadata(path).pyramids;
+  std::filesystem::remove(path);
+
+  ASSERT_EQ(pyramids.size(), 1U);
+  const auto& p0 = pyramids.front();
+  EXPECT_EQ(p0.time_slot, 2);
+  EXPECT_EQ(p0.focal_slot, 3);
+  EXPECT_EQ(p0.channel_slot, 4);
+  ASSERT_EQ(p0.channels.size(), 2U);
+  EXPECT_EQ(p0.channels[0].name, "C405");
+  EXPECT_EQ(p0.channels[1].name, "C488");
+}
+
+TEST(OlympusVsiVsiMetadata, DefaultsDimensionSlotsWhenAbsent) {
+  VolumeBuilder b;
+  b.AddMarker(kTagImageFrameVolume);
+  b.AddMarker(kTagExternalFileProperties);
+  b.AddValue(kTypeUnicodeTChar, kTagChannelName, Utf16Le("Ch A"));
+
+  const auto path = WriteTemp(b.Finish(), "vsi_meta_nodims");
+  const auto pyramids = ParseVsiMetadata(path).pyramids;
+  std::filesystem::remove(path);
+
+  ASSERT_EQ(pyramids.size(), 1U);
+  EXPECT_EQ(pyramids[0].channel_slot, -1);
+  EXPECT_EQ(pyramids[0].focal_slot, -1);
+  EXPECT_EQ(pyramids[0].time_slot, -1);
 }
 
 TEST(OlympusVsiVsiMetadata, ExtractsPerImageFrameScale) {

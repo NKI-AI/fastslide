@@ -135,6 +135,14 @@ void PrintImages(const fastslide::SlideReader& reader) {
     PrintKeyValue("  Tile Size",
                   std::to_string(tile[0]) + " x " + std::to_string(tile[1]),
                   25);
+    // Surface the focal (Z) / time (T) stack extent when the image has one.
+    const auto stack = image->GetStackInfo();
+    if (stack.z_count > 1 || stack.t_count > 1) {
+      PrintKeyValue("  Focal Planes (Z)", static_cast<size_t>(stack.z_count),
+                    25);
+      PrintKeyValue("  Time Points (T)", static_cast<size_t>(stack.t_count),
+                    25);
+    }
     const auto& props = image->GetProperties();
     PrintKeyValue("  MPP X", props.mpp[0], 25);
     PrintKeyValue("  MPP Y", props.mpp[1], 25);
