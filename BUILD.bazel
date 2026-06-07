@@ -697,6 +697,8 @@ cc_library(
         ":image",
         ":readers",
         ":runtime",
+        ":runtime_decoded_image",
+        ":runtime_jpeg_xr_decoder",
         ":simpletiff_plan_builder_utils",
         ":slide_reader",
         ":tiff_utilities",

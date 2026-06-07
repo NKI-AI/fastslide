@@ -28,6 +28,7 @@
 #include "fastslide/readers/ndpitiff/ndpitiff_jpeg_header.h"
 #include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/readers/simpletiff_tile_executor_utils.h"
+#include "fastslide/runtime/decoders/jpeg_xr_decoder.h"
 #include "simpletiff/index.h"
 #include "simpletiff/io_utils.h"
 #include "simpletiff/reader.h"
@@ -36,6 +37,7 @@ namespace fastslide {
 namespace {
 
 constexpr uint16_t kCompressionJpeg = 7;
+constexpr uint16_t kCompressionJpegXr = 22610;
 constexpr uint16_t kPhotometricYCbCr = 6;
 
 [[nodiscard]] bool LooksLikeJpegStream(std::span<const uint8_t> bytes) {
@@ -112,6 +114,35 @@ aifocore::Result<DecodedTileData> NdpiTiffTileExecutor::ReadTileFromDisk(
   auto& decoded_buffer = buffers.tile_buffer;
 
   const uint32_t tile_index = static_cast<uint32_t>(op.byte_offset);
+
+  // JPEG XR (NDPI compression 22610): each tile/strip is a complete,
+  // self-contained JXR stream (unlike NDPI JPEG, which shares a header
+  // template). Read the raw payload and decode it directly with jxrlib.
+  if (page_header.compression == kCompressionJpegXr) {
+    auto rr = simpletiff::ReadRawTile(tiff_index, op.source_id, tile_index,
+                                      raw_compressed);
+    if (!rr.ok()) {
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kInternal,
+          aifocore::fmt::format(
+              "Failed to read raw JPEG XR tile {} from page {}: {}", tile_index,
+              op.source_id, rr.error().message()));
+    }
+
+    const auto raw_span =
+        std::span<const uint8_t>(raw_compressed.data(), raw_compressed.size());
+    AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
+                              runtime::decoders::DecodeJpegXrToRgb(raw_span));
+
+    decoded_buffer.assign(decoded.rgb.begin(), decoded.rgb.end());
+    return DecodedTileData{
+        .data = std::span<const uint8_t>(decoded_buffer.data(),
+                                         decoded_buffer.size()),
+        .width = decoded.width,
+        .height = decoded.height,
+        .channels = 3,
+    };
+  }
 
   const bool maybe_headerless_ndpi_jpeg =
       (page_header.storage == simpletiff::Storage::kTiles) &&

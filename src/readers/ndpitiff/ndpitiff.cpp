@@ -32,6 +32,7 @@
 #include "fastslide/readers/ndpitiff/ndpitiff_plan_builder.h"
 #include "fastslide/readers/ndpitiff/ndpitiff_plan_context.h"
 #include "fastslide/readers/ndpitiff/ndpitiff_tile_executor.h"
+#include "fastslide/runtime/decoders/jpeg_xr_decoder.h"
 #include "simpletiff/index.h"
 #include "simpletiff/io_utils.h"
 #include "simpletiff/reader.h"
@@ -43,6 +44,7 @@ namespace fastslide {
 namespace {
 
 constexpr uint16_t kCompressionJpeg = 7;
+constexpr uint16_t kCompressionJpegXr = 22610;
 constexpr uint16_t kPhotometricYCbCr = 6;
 
 // JPEG SOF markers (baseline/progressive/etc).
@@ -104,7 +106,8 @@ constexpr uint16_t kPhotometricYCbCr = 6;
   if (page.storage == simpletiff::Storage::kUnknown) {
     return false;
   }
-  if (page.compression == kCompressionJpeg &&
+  if ((page.compression == kCompressionJpeg ||
+       page.compression == kCompressionJpegXr) &&
       (page.storage == simpletiff::Storage::kTiles ||
        page.storage == simpletiff::Storage::kStrips)) {
     return true;
@@ -340,6 +343,79 @@ aifocore::Result<RGBImage> NdpiTiffReader::ReadAssociatedImage(
   RGBImage rgb_image({width, height}, ImageFormat::kRGB, DataType::kUInt8);
   uint8_t* dst = rgb_image.GetData();
   const int dst_stride = static_cast<int>(width) * 3;
+
+  // NDPI JPEG XR pages (macro): each tile/strip is a complete, self-contained
+  // JXR stream, so decode every tile/strip with jxrlib and stitch the results.
+  if (page_header.compression == kCompressionJpegXr &&
+      (page_header.storage == simpletiff::Storage::kTiles ||
+       page_header.storage == simpletiff::Storage::kStrips)) {
+    static thread_local std::vector<uint8_t> raw_compressed;
+
+    const auto decode_and_copy = [&](uint32_t tile_index, uint32_t px,
+                                     uint32_t py) -> aifocore::Status {
+      auto rr = simpletiff::ReadRawTile(*tiff_index_, info->page, tile_index,
+                                        raw_compressed);
+      if (!rr.ok()) {
+        return AIFOCORE_MAKE_STATUS(
+            aifocore::StatusCode::kInternal,
+            aifocore::fmt::format(
+                "Failed to read raw associated JPEG XR tile {}: {}", tile_index,
+                rr.error().message()));
+      }
+      const auto raw_span = std::span<const uint8_t>(raw_compressed.data(),
+                                                     raw_compressed.size());
+      AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
+                                runtime::decoders::DecodeJpegXrToRgb(raw_span));
+      for (uint32_t row = 0; row < decoded.height; ++row) {
+        const uint32_t dy = py + row;
+        if (dy >= height) {
+          break;
+        }
+        const uint32_t copy_w =
+            std::min<uint32_t>(decoded.width, width - std::min(px, width));
+        if (copy_w == 0) {
+          continue;
+        }
+        const uint8_t* src_row =
+            decoded.rgb.data() +
+            static_cast<size_t>(row) * static_cast<size_t>(decoded.width) * 3;
+        uint8_t* dst_row =
+            dst + static_cast<size_t>(dy) * static_cast<size_t>(dst_stride) +
+            static_cast<size_t>(px) * 3;
+        std::memcpy(dst_row, src_row, static_cast<size_t>(copy_w) * 3);
+      }
+      return aifocore::Status::OkStatus();
+    };
+
+    if (page_header.storage == simpletiff::Storage::kTiles) {
+      const auto& tiles = tiff_index_->Tiles(page_header.payload_id);
+      if (tiles.tiles_x == 0 || tiles.tiles_y == 0 || tiles.tile_w == 0 ||
+          tiles.tile_h == 0) {
+        return AIFOCORE_MAKE_STATUS(
+            aifocore::StatusCode::kInternal,
+            "Invalid NDPI associated JPEG XR tiled geometry");
+      }
+      for (uint32_t ty = 0; ty < tiles.tiles_y; ++ty) {
+        for (uint32_t tx = 0; tx < tiles.tiles_x; ++tx) {
+          AIFOCORE_RETURN_IF_ERROR(decode_and_copy(
+              ty * tiles.tiles_x + tx, tx * tiles.tile_w, ty * tiles.tile_h));
+        }
+      }
+      return rgb_image;
+    }
+
+    const auto& strips = tiff_index_->Strips(page_header.payload_id);
+    uint32_t rows_per_strip = strips.rows_per_strip;
+    if (rows_per_strip == 0) {
+      rows_per_strip = height;
+    }
+    const uint32_t num_strips = strips.offsets.count;
+    for (uint32_t strip_index = 0; strip_index < num_strips; ++strip_index) {
+      AIFOCORE_RETURN_IF_ERROR(
+          decode_and_copy(strip_index, 0, strip_index * rows_per_strip));
+    }
+    return rgb_image;
+  }
 
   // NDPI JPEG pages (macro/map) can be stored as "headerless" JPEG payloads.
   // Passing those bytes directly to jpgd can crash. Reconstruct a full JPEG
