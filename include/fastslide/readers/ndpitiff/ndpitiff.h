@@ -42,6 +42,7 @@ class NdpiTiffReader : public TiffBasedReader,
   [[nodiscard]] aifocore::Result<LevelInfo> GetLevelInfo(
       int level) const override;
   [[nodiscard]] const SlideProperties& GetProperties() const override;
+  [[nodiscard]] StackInfo GetStackInfo() const override;
   [[nodiscard]] std::vector<ChannelMetadata> GetChannelMetadata()
       const override;
   [[nodiscard]] std::vector<std::string> GetAssociatedImageNames()
@@ -100,7 +101,19 @@ class NdpiTiffReader : public TiffBasedReader,
   void PopulateSlideProperties();
   aifocore::Status LoadJpegHeaderTemplate();
 
+  // Pyramid levels of the default (representative) focal plane. Equal to
+  // `focal_planes_[0]`; kept as a flat member so the single-plane reader API
+  // (GetLevelInfo / GetLevelCount / GetTileSize / properties) stays unchanged.
   std::vector<NdpiTiffLevelInfo> pyramid_levels_;
+
+  // One pyramid (vector of levels) per focal (Z) plane, ordered by ascending
+  // ZOffset. A plain 2D NDPI has a single entry. `request.plane.z` indexes
+  // into this list (matching the sorted-unique-Z convention of PlaneIndex).
+  std::vector<std::vector<NdpiTiffLevelInfo>> focal_planes_;
+
+  // ZOffset (nanometres) for each focal plane, parallel to `focal_planes_`.
+  std::vector<double> z_offsets_nm_;
+
   std::vector<NdpiTiffAssociatedInfo> associated_images_;
 
   std::unique_ptr<simpletiff::TiffIndex> tiff_index_;

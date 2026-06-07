@@ -49,9 +49,11 @@ class NdpiTiffTileExecutor : public CachedTileExecutor<NdpiTiffTileExecutor> {
 
   /// @brief Build a cache key for `op` (CRTP hook).
   ///
-  /// `(filename, level, tile_x, tile_y)` is unique across both the tiled and
-  /// strip storage paths since the plan builder sets `tile_coord.x = 0` for
-  /// strip ops and `tile_coord.y = strip_index`.
+  /// `(filename, page, tile_x, tile_y)` is unique across the tiled and strip
+  /// storage paths (the plan builder sets `tile_coord.x = 0` and
+  /// `tile_coord.y = strip_index` for strips) and, crucially, across focal (Z)
+  /// planes: NDPI z-stacks reuse the same (level, tile) grid per plane, so the
+  /// TIFF page index (`source_id`) is the disambiguator.
   static TileKey MakeCacheKey(const core::TileReadOp& op,
                               const NdpiTiffExecContext& context);
 

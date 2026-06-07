@@ -443,7 +443,7 @@ int InfoCommand(const std::string& input_file, bool verbose, int image_index) {
 
 int RegionCommand(const std::string& input_file, double x, double y,
                   uint32_t width, uint32_t height, int level,
-                  const std::string& output_file, int image_index) {
+                  const std::string& output_file, int image_index, int z) {
   std::cout << "Opening slide: " << input_file << '\n';
   auto reader_or = fastslide::GetGlobalRegistry().CreateReader(input_file);
 
@@ -463,6 +463,7 @@ int RegionCommand(const std::string& input_file, double x, double y,
             << ", " << y << ") [FRACTIONAL]\n";
   std::cout << "  Size: " << width << " x " << height << " pixels\n";
   std::cout << "  Level: " << level << '\n';
+  std::cout << "  Focal plane (Z): " << z << '\n';
   std::cout << "  Format: " << reader->GetFormatName() << '\n';
   std::cout << "  Image Index: " << resolved_index;
   if (image_index < 0) {
@@ -506,6 +507,7 @@ int RegionCommand(const std::string& input_file, double x, double y,
         .top_left = {static_cast<uint32_t>(x), static_cast<uint32_t>(y)},
         .size = {width, height},
         .level = level};
+    region.plane.z = z < 0 ? 0U : static_cast<uint32_t>(z);
     image_or = target_or.value()->ReadRegion(region);
   }
 
@@ -553,6 +555,7 @@ int main(int argc, char* argv[]) {
   uint32_t width = 512;
   uint32_t height = 512;
   int level = 0;
+  int z = 0;
   std::string output_file = "output.png";
 
   app.require_subcommand(1);
@@ -600,6 +603,12 @@ int main(int argc, char* argv[]) {
       "--image", image_index,
       "Image index to read from (default: primary). Use 'info' to list "
       "available indices for multi-image formats like Olympus VSI.");
+  region_cmd
+      ->add_option("--z", z,
+                   "Focal plane (Z) index for z-stacks (default: 0). Use "
+                   "'info' to see the "
+                   "number of focal planes.")
+      ->default_val(0);
 
   CLI11_PARSE(app, argc, argv);
 
@@ -623,7 +632,7 @@ int main(int argc, char* argv[]) {
 
   if (region_cmd->parsed()) {
     return RegionCommand(input_file, x, y, width, height, level, output_file,
-                         image_index);
+                         image_index, z);
   }
 
   return 0;

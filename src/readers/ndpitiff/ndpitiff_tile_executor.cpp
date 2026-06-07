@@ -88,8 +88,12 @@ aifocore::Status NdpiTiffTileExecutor::ExecuteTileOperation(
 
 TileKey NdpiTiffTileExecutor::MakeCacheKey(const core::TileReadOp& op,
                                            const NdpiTiffExecContext& context) {
+  // Key by the TIFF page (`source_id`) rather than the pyramid level: in
+  // NDPI z-stacks several focal planes share the same (level, tile) grid, so
+  // the page index is what uniquely identifies a decoded tile across focal
+  // planes and levels.
   return runtime::TileKey(context.GetFilename(),
-                          static_cast<uint16_t>(op.level), op.tile_coord.x,
+                          static_cast<uint16_t>(op.source_id), op.tile_coord.x,
                           op.tile_coord.y);
 }
 
