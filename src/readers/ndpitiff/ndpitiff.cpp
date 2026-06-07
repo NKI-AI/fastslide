@@ -16,10 +16,13 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <limits>
+#include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -32,6 +35,7 @@
 #include "fastslide/readers/ndpitiff/ndpitiff_plan_builder.h"
 #include "fastslide/readers/ndpitiff/ndpitiff_plan_context.h"
 #include "fastslide/readers/ndpitiff/ndpitiff_tile_executor.h"
+#include "fastslide/runtime/decoders/jpeg_xr_decoder.h"
 #include "simpletiff/index.h"
 #include "simpletiff/io_utils.h"
 #include "simpletiff/reader.h"
@@ -43,6 +47,7 @@ namespace fastslide {
 namespace {
 
 constexpr uint16_t kCompressionJpeg = 7;
+constexpr uint16_t kCompressionJpegXr = 22610;
 constexpr uint16_t kPhotometricYCbCr = 6;
 
 // JPEG SOF markers (baseline/progressive/etc).
@@ -104,12 +109,52 @@ constexpr uint16_t kPhotometricYCbCr = 6;
   if (page.storage == simpletiff::Storage::kUnknown) {
     return false;
   }
-  if (page.compression == kCompressionJpeg &&
+  if ((page.compression == kCompressionJpeg ||
+       page.compression == kCompressionJpegXr) &&
       (page.storage == simpletiff::Storage::kTiles ||
        page.storage == simpletiff::Storage::kStrips)) {
     return true;
   }
   return page.samples_per_pixel > 0 && page.bits_per_sample > 0;
+}
+
+// Builds a pyramid (levels sorted from largest to smallest) for a single focal
+// plane from its set of TIFF pages. Downsample factors are computed relative to
+// that plane's own base (level 0), so each focal plane is internally
+// consistent.
+std::vector<NdpiTiffLevelInfo> BuildPyramidFromPages(
+    const simpletiff::TiffIndex& index, std::vector<uint16_t> pages) {
+  std::sort(pages.begin(), pages.end(), [&](uint16_t a, uint16_t b) {
+    const auto& pa = index.Page(a);
+    const auto& pb = index.Page(b);
+    if (pa.width != pb.width) {
+      return pa.width > pb.width;
+    }
+    return pa.height > pb.height;
+  });
+
+  std::vector<NdpiTiffLevelInfo> levels;
+  if (pages.empty()) {
+    return levels;
+  }
+
+  const uint32_t base_w = index.Page(pages.front()).width;
+  const uint32_t base_h = index.Page(pages.front()).height;
+  levels.reserve(pages.size());
+  for (const uint16_t page_idx : pages) {
+    const auto& page = index.Page(page_idx);
+    const double width_ratio =
+        static_cast<double>(base_w) /
+        static_cast<double>(std::max<uint32_t>(page.width, 1));
+    const double height_ratio =
+        static_cast<double>(base_h) /
+        static_cast<double>(std::max<uint32_t>(page.height, 1));
+    const double downsample = (width_ratio + height_ratio) / 2.0;
+    levels.push_back({.page = page_idx,
+                      .size = {page.width, page.height},
+                      .downsample_factor = downsample});
+  }
+  return levels;
 }
 
 aifocore::Result<std::vector<uint8_t>> FindNdpiJpegHeaderTemplate(
@@ -341,6 +386,72 @@ aifocore::Result<RGBImage> NdpiTiffReader::ReadAssociatedImage(
   uint8_t* dst = rgb_image.GetData();
   const int dst_stride = static_cast<int>(width) * 3;
 
+  // NDPI JPEG XR pages (macro): each tile/strip is a complete, self-contained
+  // JXR stream, so decode every tile/strip with jxrlib and stitch the results.
+  if (page_header.compression == kCompressionJpegXr &&
+      (page_header.storage == simpletiff::Storage::kTiles ||
+       page_header.storage == simpletiff::Storage::kStrips)) {
+    static thread_local std::vector<uint8_t> raw_compressed;
+
+    const auto decode_and_copy = [&](uint32_t tile_index, uint32_t px,
+                                     uint32_t py) -> aifocore::Status {
+      AIFOCORE_RETURN_IF_ERROR(simpletiff::ReadRawTile(
+          *tiff_index_, info->page, tile_index, raw_compressed));
+      const auto raw_span = std::span<const uint8_t>(raw_compressed.data(),
+                                                     raw_compressed.size());
+      AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
+                                runtime::decoders::DecodeJpegXrToRgb(raw_span));
+      for (uint32_t row = 0; row < decoded.height; ++row) {
+        const uint32_t dy = py + row;
+        if (dy >= height) {
+          break;
+        }
+        const uint32_t copy_w =
+            std::min<uint32_t>(decoded.width, width - std::min(px, width));
+        if (copy_w == 0) {
+          continue;
+        }
+        const uint8_t* src_row =
+            decoded.rgb.data() +
+            static_cast<size_t>(row) * static_cast<size_t>(decoded.width) * 3;
+        uint8_t* dst_row =
+            dst + static_cast<size_t>(dy) * static_cast<size_t>(dst_stride) +
+            static_cast<size_t>(px) * 3;
+        std::memcpy(dst_row, src_row, static_cast<size_t>(copy_w) * 3);
+      }
+      return aifocore::Status::OkStatus();
+    };
+
+    if (page_header.storage == simpletiff::Storage::kTiles) {
+      const auto& tiles = tiff_index_->Tiles(page_header.payload_id);
+      if (tiles.tiles_x == 0 || tiles.tiles_y == 0 || tiles.tile_w == 0 ||
+          tiles.tile_h == 0) {
+        return AIFOCORE_MAKE_STATUS(
+            aifocore::StatusCode::kInternal,
+            "Invalid NDPI associated JPEG XR tiled geometry");
+      }
+      for (uint32_t ty = 0; ty < tiles.tiles_y; ++ty) {
+        for (uint32_t tx = 0; tx < tiles.tiles_x; ++tx) {
+          AIFOCORE_RETURN_IF_ERROR(decode_and_copy(
+              ty * tiles.tiles_x + tx, tx * tiles.tile_w, ty * tiles.tile_h));
+        }
+      }
+      return rgb_image;
+    }
+
+    const auto& strips = tiff_index_->Strips(page_header.payload_id);
+    uint32_t rows_per_strip = strips.rows_per_strip;
+    if (rows_per_strip == 0) {
+      rows_per_strip = height;
+    }
+    const uint32_t num_strips = strips.offsets.count;
+    for (uint32_t strip_index = 0; strip_index < num_strips; ++strip_index) {
+      AIFOCORE_RETURN_IF_ERROR(
+          decode_and_copy(strip_index, 0, strip_index * rows_per_strip));
+    }
+    return rgb_image;
+  }
+
   // NDPI JPEG pages (macro/map) can be stored as "headerless" JPEG payloads.
   // Passing those bytes directly to jpgd can crash. Reconstruct a full JPEG
   // stream first (SOI..SOS header + scan payload + EOI).
@@ -367,15 +478,8 @@ aifocore::Result<RGBImage> NdpiTiffReader::ReadAssociatedImage(
       for (uint32_t ty = 0; ty < tiles.tiles_y; ++ty) {
         for (uint32_t tx = 0; tx < tiles.tiles_x; ++tx) {
           const uint32_t tile_index = ty * tiles.tiles_x + tx;
-          auto rr = simpletiff::ReadRawTile(*tiff_index_, info->page,
-                                            tile_index, raw_compressed);
-          if (!rr.ok()) {
-            return AIFOCORE_MAKE_STATUS(
-                aifocore::StatusCode::kInternal,
-                aifocore::fmt::format(
-                    "Failed to read raw associated tile {}: {}", tile_index,
-                    rr.error().message()));
-          }
+          AIFOCORE_RETURN_IF_ERROR(simpletiff::ReadRawTile(
+              *tiff_index_, info->page, tile_index, raw_compressed));
 
           const uint32_t px = tx * tiles.tile_w;
           const uint32_t py = ty * tiles.tile_h;
@@ -467,14 +571,8 @@ aifocore::Result<RGBImage> NdpiTiffReader::ReadAssociatedImage(
       const uint32_t strip_h =
           std::min<uint32_t>(rows_per_strip, height - y_off);
 
-      auto rr = simpletiff::ReadRawTile(*tiff_index_, info->page, strip_index,
-                                        raw_compressed);
-      if (!rr.ok()) {
-        return AIFOCORE_MAKE_STATUS(
-            aifocore::StatusCode::kInternal,
-            aifocore::fmt::format("Failed to read raw associated strip {}: {}",
-                                  strip_index, rr.error().message()));
-      }
+      AIFOCORE_RETURN_IF_ERROR(simpletiff::ReadRawTile(
+          *tiff_index_, info->page, strip_index, raw_compressed));
 
       const auto raw_span = std::span<const uint8_t>(raw_compressed.data(),
                                                      raw_compressed.size());
@@ -535,14 +633,8 @@ aifocore::Result<RGBImage> NdpiTiffReader::ReadAssociatedImage(
   simpletiff::DecodeContext ctx;
   simpletiff::Roi roi{0, 0, width, height};
   const int stride = static_cast<int>(width) * 3;
-  auto result =
-      simpletiff::ReadPage(*tiff_index_, info->page, roi, ctx, dst, stride);
-  if (!result.ok()) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kInternal,
-        aifocore::fmt::format("Failed to read associated image '{}': {}", name,
-                              result.error().message()));
-  }
+  AIFOCORE_RETURN_IF_ERROR(
+      simpletiff::ReadPage(*tiff_index_, info->page, roi, ctx, dst, stride));
   return rgb_image;
 }
 
@@ -569,6 +661,13 @@ Metadata NdpiTiffReader::GetMetadata() const {
   if (properties_.objective_magnification > 0) {
     metadata[std::string(MetadataKeys::kMagnification)] =
         properties_.objective_magnification;
+  }
+
+  // Focal (Z) stack metadata. Always reported; equals 1 for plain 2D slides.
+  metadata[std::string("ndpi.FocalPlanes")] = focal_planes_.size();
+  const StackInfo stack = GetStackInfo();
+  if (stack.z_spacing_um.has_value()) {
+    metadata[std::string("ndpi.ZSpacingMicrons")] = *stack.z_spacing_um;
   }
   return metadata;
 }
@@ -599,11 +698,38 @@ ImageDimensions NdpiTiffReader::GetTileSize() const {
 
 aifocore::Result<core::TilePlan> NdpiTiffReader::PrepareRequest(
     const core::TileRequest& request) const {
+  // Select the focal (Z) plane. `plane.z` is a zero-based index into the
+  // ascending-ZOffset focal planes; t is ignored (NDPI has no time axis).
+  const size_t z = request.plane.z;
+  if (z >= focal_planes_.size()) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kOutOfRange,
+        aifocore::fmt::format(
+            "NDPI focal plane z={} out of range (image has {} plane(s))", z,
+            focal_planes_.size()));
+  }
   const NdpiTiffPlanContext context{
-      .pyramid_levels = pyramid_levels_,
+      .pyramid_levels = focal_planes_[z],
       .tiff_index = GetTiffIndex(),
   };
   return NdpiTiffPlanBuilder::BuildPlan(request, context);
+}
+
+StackInfo NdpiTiffReader::GetStackInfo() const {
+  StackInfo info;
+  info.z_count =
+      std::max<uint32_t>(1U, static_cast<uint32_t>(focal_planes_.size()));
+  info.t_count = 1U;
+  // NDPI ZOffset is stored in nanometres; report the focal-plane step in
+  // microns when at least two planes are present and evenly spaced enough to
+  // have a meaningful first step.
+  if (z_offsets_nm_.size() >= 2) {
+    const double step_nm = z_offsets_nm_[1] - z_offsets_nm_[0];
+    if (step_nm != 0.0) {
+      info.z_spacing_um = std::abs(step_nm) / 1000.0;
+    }
+  }
+  return info;
 }
 
 aifocore::Status NdpiTiffReader::ExecutePlan(const core::TilePlan& plan,
@@ -655,10 +781,17 @@ aifocore::Status NdpiTiffReader::LoadDirectories() {
   }
 
   pyramid_levels_.clear();
+  focal_planes_.clear();
+  z_offsets_nm_.clear();
   associated_images_.clear();
 
-  std::vector<uint16_t> pyramid_pages;
-  pyramid_pages.reserve(tiff_index_->NumPages());
+  // Pyramid pages grouped by focal-plane ZOffset (nanometres). std::map keeps
+  // the planes ordered by ascending Z, so `request.plane.z` indexes into them
+  // following the sorted-unique-Z convention of core::PlaneIndex. NDPI stores
+  // each focal plane as its own full pyramid of same-sized pages, so a z-stack
+  // has, e.g., 3 groups (Z = -100/0/+100 nm) of 7 levels each; a plain 2D NDPI
+  // collapses to a single group at Z = 0.
+  std::map<double, std::vector<uint16_t>> pages_by_z;
 
   std::optional<uint16_t> macro_page;
   std::optional<uint16_t> map_page;
@@ -676,6 +809,7 @@ aifocore::Status NdpiTiffReader::LoadDirectories() {
     if (page.width == 0 || page.height == 0) {
       continue;
     }
+    const double zoffset = page.ndpi_zoffset.value_or(0.0);
 
     if (has_source_lens_any && page.ndpi_source_lens.has_value()) {
       const double v = *page.ndpi_source_lens;
@@ -690,7 +824,7 @@ aifocore::Status NdpiTiffReader::LoadDirectories() {
       // Pyramid levels are typically tiled, but allow strip-based levels too.
       if (page.storage == simpletiff::Storage::kTiles ||
           page.storage == simpletiff::Storage::kStrips) {
-        pyramid_pages.push_back(static_cast<uint16_t>(i));
+        pages_by_z[zoffset].push_back(static_cast<uint16_t>(i));
       }
       continue;
     }
@@ -701,42 +835,36 @@ aifocore::Status NdpiTiffReader::LoadDirectories() {
         (page.storage == simpletiff::Storage::kTiles ||
          page.storage == simpletiff::Storage::kStrips);
     if (is_level_storage && (i == 0 || is_reduced)) {
-      pyramid_pages.push_back(static_cast<uint16_t>(i));
+      pages_by_z[zoffset].push_back(static_cast<uint16_t>(i));
     }
   }
 
-  if (pyramid_pages.empty()) {
+  if (pages_by_z.empty()) {
     return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
                                 "No NDPI pyramid levels found");
   }
 
-  std::sort(pyramid_pages.begin(), pyramid_pages.end(),
-            [&](uint16_t a, uint16_t b) {
-              const auto& pa = tiff_index_->Page(a);
-              const auto& pb = tiff_index_->Page(b);
-              if (pa.width != pb.width) {
-                return pa.width > pb.width;
-              }
-              return pa.height > pb.height;
-            });
-
-  const uint32_t base_w = tiff_index_->Page(pyramid_pages.front()).width;
-  const uint32_t base_h = tiff_index_->Page(pyramid_pages.front()).height;
-
-  pyramid_levels_.reserve(pyramid_pages.size());
-  for (const uint16_t page_idx : pyramid_pages) {
-    const auto& page = tiff_index_->Page(page_idx);
-    const double width_ratio =
-        static_cast<double>(base_w) /
-        static_cast<double>(std::max<uint32_t>(page.width, 1));
-    const double height_ratio =
-        static_cast<double>(base_h) /
-        static_cast<double>(std::max<uint32_t>(page.height, 1));
-    const double downsample = (width_ratio + height_ratio) / 2.0;
-    pyramid_levels_.push_back({.page = page_idx,
-                               .size = {page.width, page.height},
-                               .downsample_factor = downsample});
+  focal_planes_.reserve(pages_by_z.size());
+  z_offsets_nm_.reserve(pages_by_z.size());
+  for (auto& [zoffset, pages] : pages_by_z) {
+    auto levels = BuildPyramidFromPages(*tiff_index_, std::move(pages));
+    if (levels.empty()) {
+      continue;
+    }
+    z_offsets_nm_.push_back(zoffset);
+    focal_planes_.push_back(std::move(levels));
   }
+
+  if (focal_planes_.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "No NDPI pyramid levels found");
+  }
+
+  // The first focal plane is the representative pyramid for the single-plane
+  // reader API. Its geometry (level sizes / downsamples / tile size / MPP) is
+  // identical across all focal planes, so this choice only affects which plane
+  // a Z-agnostic read returns (the lowest Z), preserving prior behavior.
+  pyramid_levels_ = focal_planes_.front();
 
   if (macro_page.has_value()) {
     if (IsAssociatedImagePageDecodable(*tiff_index_, *macro_page)) {
