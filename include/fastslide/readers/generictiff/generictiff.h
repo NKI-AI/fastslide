@@ -87,7 +87,9 @@ class GenericTiffReader : public TiffBasedReader,
     if (page >= tiff_index_->NumPages()) {
       return DataType::kUInt8;
     }
-    return DataTypeFromBitsPerSample(tiff_index_->Page(page).bits_per_sample);
+    const auto& page_header = tiff_index_->Page(page);
+    return DataTypeFromSampleFormat(page_header.bits_per_sample,
+                                    page_header.sample_format);
   }
 
   [[nodiscard]] ImageDimensions GetTileSize() const override;

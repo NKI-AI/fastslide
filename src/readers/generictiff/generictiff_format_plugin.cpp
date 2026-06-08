@@ -25,6 +25,7 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/readers/generictiff/generictiff.h"
+#include "fastslide/readers/imagejtiff/imagejtiff.h"
 #include "fastslide/readers/philipstiff/philipstiff.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/format_descriptor.h"
@@ -49,36 +50,55 @@ namespace {
   return enabled;
 }
 
-bool IsPhilipsTiff(std::string_view filename, std::string* software_out) {
+/// @brief Sniff the page-0 Software and ImageDescription tags so the .tif
+///        factory can route to the matching specialized reader.
+struct TiffVariant {
+  bool is_philips = false;
+  bool is_imagej = false;
+  std::string software;
+};
+
+TiffVariant SniffTiffVariant(std::string_view filename) {
+  TiffVariant variant;
   simpletiff::TiffIndex index;
   int fd_val = -1;
   if (!simpletiff::OpenTiff(std::string(filename), index, fd_val)) {
-    return false;
+    return variant;
   }
   if (index.NumPages() == 0) {
-    return false;
+    return variant;
   }
   const std::string_view software = index.Page(0).software;
-  if (software_out != nullptr) {
-    software_out->assign(software.begin(), software.end());
-  }
-  return software.rfind("Philips", 0) == 0;
+  variant.software.assign(software.begin(), software.end());
+  variant.is_philips = software.rfind("Philips", 0) == 0;
+  variant.is_imagej = ImageJTiffReader::IsImageJTiff(index);
+  return variant;
 }
 
 /// @brief Factory function for GenericTIFF readers
 aifocore::Result<std::unique_ptr<SlideReader>> CreateGenericTiffReader(
     std::shared_ptr<ITileCache> cache, std::string_view filename) {
-  std::string software;
-  const bool is_philips = IsPhilipsTiff(filename, &software);
+  const TiffVariant variant = SniffTiffVariant(filename);
   if (IsFastSlideDebugEnabled()) {
-    std::cerr << "[TIFF] Open '" << filename << "' Software='" << software
-              << "' -> " << (is_philips ? "PhilipsTIFF" : "GenericTIFF")
-              << "\n";
+    const char* chosen = variant.is_philips  ? "PhilipsTIFF"
+                         : variant.is_imagej ? "ImageJTIFF"
+                                             : "GenericTIFF";
+    std::cerr << "[TIFF] Open '" << filename << "' Software='"
+              << variant.software << "' -> " << chosen << "\n";
   }
 
-  if (is_philips) {
+  if (variant.is_philips) {
     AIFOCORE_ASSIGN_OR_RETURN(auto reader,
                               PhilipsTiffReader::Create(std::string(filename)));
+    if (cache) {
+      reader->SetCache(cache);
+    }
+    return std::unique_ptr<SlideReader>(std::move(reader));
+  }
+
+  if (variant.is_imagej) {
+    AIFOCORE_ASSIGN_OR_RETURN(auto reader,
+                              ImageJTiffReader::Create(std::string(filename)));
     if (cache) {
       reader->SetCache(cache);
     }

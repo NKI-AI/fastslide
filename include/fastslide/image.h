@@ -70,6 +70,41 @@ constexpr DataType DataTypeFromBitsPerSample(uint16_t bits_per_sample) {
   return DataType::kFloat32;
 }
 
+/// @brief Infer DataType from TIFF bits_per_sample and SampleFormat (tag 339).
+///
+/// SampleFormat declares the numeric interpretation of the samples that bit
+/// depth alone cannot convey: 2 == signed integer, 3 == IEEE float. Per the
+/// TIFF baseline spec, an absent SampleFormat tag (or value 1) means *unsigned
+/// integer* - so 32-bit samples are uint32, not float. Float must be declared
+/// explicitly via SampleFormat == 3. This matches the behaviour of
+/// tifffile/libtiff: an ImageJ float TIFF that omits the tag is read as uint32,
+/// and any producer that wants float must write SampleFormat == 3.
+///
+/// @param bits_per_sample Bits per sample from the TIFF page header.
+/// @param sample_format   SampleFormat tag value (defaults to 1 = unsigned).
+/// @return DataType matching the bit depth and sample format.
+constexpr DataType DataTypeFromSampleFormat(uint16_t bits_per_sample,
+                                            uint16_t sample_format) {
+  switch (sample_format) {
+    case 3:  // IEEE floating point.
+      return bits_per_sample >= 64 ? DataType::kFloat64 : DataType::kFloat32;
+    case 2:  // Two's-complement signed integer.
+      return bits_per_sample <= 16 ? DataType::kInt16 : DataType::kInt32;
+    case 1:  // Unsigned integer.
+    default:
+      // Spec default: unsigned integer. Do NOT route through
+      // DataTypeFromBitsPerSample here, which treats 32-bit as float for the
+      // formats that have no SampleFormat concept (qptiff/ometiff).
+      if (bits_per_sample <= 8) {
+        return DataType::kUInt8;
+      }
+      if (bits_per_sample <= 16) {
+        return DataType::kUInt16;
+      }
+      return DataType::kUInt32;
+  }
+}
+
 /// @brief Get size in bytes for a given data type
 /// @param dtype Data type
 /// @return Size in bytes

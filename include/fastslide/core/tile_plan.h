@@ -156,6 +156,7 @@ struct OutputSpec {
   enum class PixelFormat {
     kUInt8,   ///< 8-bit unsigned integer
     kUInt16,  ///< 16-bit unsigned integer
+    kUInt32,  ///< 32-bit unsigned integer
     kFloat32  ///< 32-bit float
   } pixel_format = PixelFormat::kUInt8;
 
@@ -189,7 +190,8 @@ struct OutputSpec {
     size_t bytes_per_pixel = channels;
     if (pixel_format == PixelFormat::kUInt16) {
       bytes_per_pixel *= 2;
-    } else if (pixel_format == PixelFormat::kFloat32) {
+    } else if (pixel_format == PixelFormat::kUInt32 ||
+               pixel_format == PixelFormat::kFloat32) {
       bytes_per_pixel *= 4;
     }
     return static_cast<size_t>(dimensions[0]) * dimensions[1] * bytes_per_pixel;
@@ -198,7 +200,7 @@ struct OutputSpec {
 
 /// @brief Convert a DataType to the closest OutputSpec::PixelFormat
 /// @param dtype Source data type
-/// @return Matching pixel format (kUInt8, kUInt16, or kFloat32)
+/// @return Matching pixel format (kUInt8, kUInt16, kUInt32, or kFloat32)
 constexpr OutputSpec::PixelFormat ToOutputPixelFormat(
     fastslide::DataType dtype) {
   switch (dtype) {
@@ -206,6 +208,8 @@ constexpr OutputSpec::PixelFormat ToOutputPixelFormat(
       return OutputSpec::PixelFormat::kUInt8;
     case fastslide::DataType::kUInt16:
       return OutputSpec::PixelFormat::kUInt16;
+    case fastslide::DataType::kUInt32:
+      return OutputSpec::PixelFormat::kUInt32;
     default:
       return OutputSpec::PixelFormat::kFloat32;
   }

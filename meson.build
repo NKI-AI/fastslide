@@ -98,6 +98,9 @@ fastslide_sources = [
   'src/readers/generictiff/generictiff_format_plugin.cpp',
   'src/readers/generictiff/generictiff_plan_builder.cpp',
   'src/readers/generictiff/generictiff_tile_executor.cpp',
+  # readers/imagejtiff
+  'src/readers/imagejtiff/imagejtiff.cpp',
+  'src/readers/imagejtiff/imagejtiff_plan_builder.cpp',
   # readers/isyntax (third_party, minus isyntax.c handled above)
   'src/readers/isyntax/isyntax.cpp',
   'src/readers/isyntax/isyntax_plan_builder.cpp',
