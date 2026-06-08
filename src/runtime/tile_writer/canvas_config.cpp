@@ -189,6 +189,9 @@ Canvas::Config Canvas::AnalyzePlan(const core::TilePlan& plan) {
     case core::OutputSpec::PixelFormat::kUInt16:
       config.data_type = DataType::kUInt16;
       break;
+    case core::OutputSpec::PixelFormat::kUInt32:
+      config.data_type = DataType::kUInt32;
+      break;
     case core::OutputSpec::PixelFormat::kFloat32:
       config.data_type = DataType::kFloat32;
       break;

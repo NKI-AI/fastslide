@@ -75,8 +75,12 @@ ClampedRegion ClampRegionToLevel(const RegionBounds& bounds,
 TileGeometry QueryTileGeometry(const simpletiff::TiffIndex& tiff_index,
                                uint32_t page, Dimensions2D level_dimensions);
 
-core::OutputSpec::PixelFormat PixelFormatFromBitsPerSample(
-    uint16_t bits_per_sample);
+/// Derive the plan's output pixel format from the page's bit depth and
+/// SampleFormat tag, so the produced image's data type matches the reader's
+/// declared `GetDataType()` (e.g. a 32-bit page without SampleFormat is
+/// unsigned uint32, not float - matching tifffile).
+core::OutputSpec::PixelFormat PixelFormatFromSampleFormat(
+    uint16_t bits_per_sample, uint16_t sample_format);
 
 uint32_t BytesPerSample(uint16_t bits_per_sample);
 
@@ -161,7 +165,8 @@ aifocore::Result<core::TilePlan> BuildSinglePagePlan(
   const uint16_t samples_per_pixel = page_header.samples_per_pixel;
   const auto level_dims = ToDimensions2D(level_info.size);
 
-  plan.output.pixel_format = PixelFormatFromBitsPerSample(bits_per_sample);
+  plan.output.pixel_format =
+      PixelFormatFromSampleFormat(bits_per_sample, page_header.sample_format);
 
   const auto bounds = DetermineRegionBounds(request, level_dims);
   const auto region = ClampRegionToLevel(bounds, level_dims);
@@ -252,7 +257,8 @@ aifocore::Result<core::TilePlan> BuildMultiChannelPlan(
   const uint16_t bits_per_sample = page_header.bits_per_sample;
   const auto level_dims = ToDimensions2D(level_info.size);
 
-  plan.output.pixel_format = PixelFormatFromBitsPerSample(bits_per_sample);
+  plan.output.pixel_format =
+      PixelFormatFromSampleFormat(bits_per_sample, page_header.sample_format);
 
   const auto bounds = DetermineRegionBounds(request, level_dims);
   const auto region = ClampRegionToLevel(bounds, level_dims);

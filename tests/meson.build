@@ -39,6 +39,7 @@ if gtest_dep.found()
     'aperio_metadata_parser_test' : '../src/readers/aperio/metadata_parser_test.cpp',
     'aperio_tile_executor_test' : '../src/readers/aperio/aperio_tile_executor_test.cpp',
     'qptiff_metadata_parser_test' : '../src/readers/qptiff/metadata_parser_test.cpp',
+    'imagejtiff_test' : '../src/readers/imagejtiff/imagejtiff_test.cpp',
     'ometiff_metadata_loader_test' : '../src/readers/ometiff/ometiff_metadata_loader_test.cpp',
     'omezarr_metadata_test' : '../src/readers/omezarr/omezarr_metadata_test.cpp',
     'omezarr_codec_test' : '../src/readers/omezarr/omezarr_codec_test.cpp',

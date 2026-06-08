@@ -99,9 +99,10 @@ TileGeometry QueryTileGeometry(const simpletiff::TiffIndex& tiff_index,
   return out;
 }
 
-core::OutputSpec::PixelFormat PixelFormatFromBitsPerSample(
-    uint16_t bits_per_sample) {
-  return core::ToOutputPixelFormat(DataTypeFromBitsPerSample(bits_per_sample));
+core::OutputSpec::PixelFormat PixelFormatFromSampleFormat(
+    uint16_t bits_per_sample, uint16_t sample_format) {
+  return core::ToOutputPixelFormat(
+      DataTypeFromSampleFormat(bits_per_sample, sample_format));
 }
 
 uint32_t BytesPerSample(uint16_t bits_per_sample) {

@@ -1151,26 +1151,15 @@ cc_library(
     ],
 )
 
-# Generic TIFF format
+# Philips TIFF format (delegated to from the .tif factory in generictiff)
 cc_library(
-    name = "formats_generictiff",
+    name = "formats_philipstiff",
     srcs = [
-        "src/readers/generictiff/generictiff.cpp",
-        "src/readers/generictiff/generictiff_format_plugin.cpp",
-        "src/readers/generictiff/generictiff_plan_builder.cpp",
-        "src/readers/generictiff/generictiff_tile_executor.cpp",
         "src/readers/philipstiff/philipstiff.cpp",
         "src/readers/philipstiff/philipstiff_plan_builder.cpp",
         "src/readers/philipstiff/philipstiff_tile_executor.cpp",
     ],
     hdrs = [
-        "include/fastslide/readers/generictiff/generictiff.h",
-        "include/fastslide/readers/generictiff/generictiff_exec_context.h",
-        "include/fastslide/readers/generictiff/generictiff_format_plugin.h",
-        "include/fastslide/readers/generictiff/generictiff_level_info.h",
-        "include/fastslide/readers/generictiff/generictiff_plan_builder.h",
-        "include/fastslide/readers/generictiff/generictiff_plan_context.h",
-        "include/fastslide/readers/generictiff/generictiff_tile_executor.h",
         "include/fastslide/readers/philipstiff/philipstiff.h",
         "include/fastslide/readers/philipstiff/philipstiff_exec_context.h",
         "include/fastslide/readers/philipstiff/philipstiff_level_info.h",
@@ -1193,6 +1182,81 @@ cc_library(
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
         "@pugixml",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+# ImageJ TIFF format (delegated to from the .tif factory in generictiff).
+# ImageJ hyperstacks store one page per channel, so the shared multi-channel
+# plan builder and tile executor (also used by QPTIFF/OME-TIFF) are reused.
+cc_library(
+    name = "formats_imagejtiff",
+    srcs = [
+        "src/readers/imagejtiff/imagejtiff.cpp",
+        "src/readers/imagejtiff/imagejtiff_plan_builder.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/readers/imagejtiff/imagejtiff.h",
+        "include/fastslide/readers/imagejtiff/imagejtiff_exec_context.h",
+        "include/fastslide/readers/imagejtiff/imagejtiff_level_info.h",
+        "include/fastslide/readers/imagejtiff/imagejtiff_plan_builder.h",
+        "include/fastslide/readers/imagejtiff/imagejtiff_plan_context.h",
+        "include/fastslide/readers/imagejtiff/imagejtiff_tile_executor.h",
+        "include/fastslide/readers/multi_channel_tiff_tile_executor.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":cache",
+        ":colors",
+        ":core",
+        ":image",
+        ":readers",
+        ":runtime",
+        ":simpletiff_plan_builder_utils",
+        ":slide_reader",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+# Generic TIFF format. Its .tif factory content-sniffs and delegates to the
+# Philips and ImageJ readers before falling back to the plain TIFF reader.
+cc_library(
+    name = "formats_generictiff",
+    srcs = [
+        "src/readers/generictiff/generictiff.cpp",
+        "src/readers/generictiff/generictiff_format_plugin.cpp",
+        "src/readers/generictiff/generictiff_plan_builder.cpp",
+        "src/readers/generictiff/generictiff_tile_executor.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/readers/generictiff/generictiff.h",
+        "include/fastslide/readers/generictiff/generictiff_exec_context.h",
+        "include/fastslide/readers/generictiff/generictiff_format_plugin.h",
+        "include/fastslide/readers/generictiff/generictiff_level_info.h",
+        "include/fastslide/readers/generictiff/generictiff_plan_builder.h",
+        "include/fastslide/readers/generictiff/generictiff_plan_context.h",
+        "include/fastslide/readers/generictiff/generictiff_tile_executor.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":core",
+        ":formats_imagejtiff",
+        ":formats_philipstiff",
+        ":hash",
+        ":image",
+        ":readers",
+        ":runtime",
+        ":simpletiff_plan_builder_utils",
+        ":slide_reader",
+        ":tiff_quickhash",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
         "@simpletiff//:simpletiff_lib",
     ],
 )
@@ -1843,6 +1907,23 @@ cc_test(
     srcs = ["src/readers/ometiff/ometiff_metadata_loader_test.cpp"],
     deps = [
         ":formats_ometiff",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+cc_test(
+    name = "imagejtiff_test",
+    size = "small",
+    srcs = ["src/readers/imagejtiff/imagejtiff_test.cpp"],
+    deps = [
+        ":core",
+        ":formats_generictiff",
+        ":formats_imagejtiff",
+        ":image",
+        ":runtime",
+        ":slide_reader",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
         "@simpletiff//:simpletiff_lib",
