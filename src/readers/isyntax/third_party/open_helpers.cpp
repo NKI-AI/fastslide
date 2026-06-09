@@ -126,7 +126,7 @@ void InitializeLevelGeometry(isyntax_t* isyntax, isyntax_image_t* wsi_image) {
     const float offset_in_um_y =
         static_cast<float>(level->origin_offset_in_pixels) *
         wsi_image->levels[0].um_per_pixel_y;
-    level->origin_offset = (v2f){offset_in_um_x - 1.5f, offset_in_um_y - 1.5f};
+    level->origin_offset = v2f{offset_in_um_x - 1.5f, offset_in_um_y - 1.5f};
   }
 }
 

@@ -4,5 +4,9 @@ option('build_tool', type : 'boolean', value : true,
   description : 'Build the fastslidetool CLI.')
 option('build_c_api', type : 'boolean', value : true,
   description : 'Build the C API shared library (libfastslide).')
+option('shared_c_api', type : 'boolean', value : false,
+  description : 'Build the C API as a self-contained shared library that exports its symbols (for the Java FFM native artifact).')
+option('build_python', type : 'boolean', value : false,
+  description : 'Build the nanobind _fastslide Python extension (used for wheels).')
 option('jpeg_decoder', type : 'combo', choices : ['libjpeg', 'jpgd'], value : 'libjpeg',
   description : 'JPEG decoder backend: system libjpeg(-turbo) or bundled jpeg-compressor (jpgd).')

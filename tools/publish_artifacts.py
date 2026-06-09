@@ -99,6 +99,16 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--sdist-dir",
+        type=Path,
+        default=common.WORKSPACE_ROOT / "artifacts" / "sdist",
+        help=(
+            "Directory of Python sdists (*.tar.gz) to also attach to the GitHub "
+            "Release. The sdist is the source fallback for platforms without a "
+            f"prebuilt wheel (default: {common.WORKSPACE_ROOT / 'artifacts' / 'sdist'})."
+        ),
+    )
+    parser.add_argument(
         "--generate-notes",
         action="store_true",
         help="Let GitHub auto-generate the release notes from merged PRs.",
@@ -142,7 +152,12 @@ def main() -> None:
     else:
         print(f"\u26a0 No wheels found in {args.wheels_dir}; attaching JARs only.")
 
-    checksums = release.write_checksums(jars + wheels, args.jar_dir / release.CHECKSUMS_NAME)
+    sdists = sorted(args.sdist_dir.glob("*.tar.gz")) if args.sdist_dir.is_dir() else []
+    if sdists:
+        print(f"\u25b6\ufe0e Attaching {len(sdists)} sdist(s) from {args.sdist_dir}")
+
+    python_assets = wheels + sdists
+    checksums = release.write_checksums(jars + python_assets, args.jar_dir / release.CHECKSUMS_NAME)
     title = f"FastSlide {tag}"
     notes = (
         f"FastSlide artifacts for `{version}`.\n\n"
@@ -158,7 +173,7 @@ def main() -> None:
         prerelease=not is_release,
         repo=args.repo,
         checksums=checksums,
-        extra_assets=wheels,
+        extra_assets=python_assets,
         generate_notes=args.generate_notes,
     )
 

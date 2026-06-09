@@ -1,10 +1,10 @@
 {
-    "versions": [
-        {
-            "display": "FastSlide",
-            "id": "fastslide",
-            "type": "primary",
-            "version": "0.7.3"
-        }
-    ]
+  "versions": [
+    {
+      "display": "FastSlide",
+      "id": "fastslide",
+      "type": "primary",
+      "version": "0.7.3"
+    }
+  ]
 }

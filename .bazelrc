@@ -23,6 +23,32 @@ build --cxxopt=-std=c++20
 build --host_cxxopt=-std=c++20
 
 # =============================================================================
+# Release Config (opt + strip)
+# =============================================================================
+# Without an explicit compilation_mode, Bazel defaults to `fastbuild` (-O0).
+# Make optimized builds the default here too so the standalone fastslide build
+# matches the monorepo's `-O3` release build. Use --config=debug to opt out.
+build:release --compilation_mode=opt
+build:release --copt=-O3
+build:release --copt=-DNDEBUG
+build:release --strip=always
+
+build --config=release
+test  --config=release
+run   --config=release
+
+# =============================================================================
+# Debug Config (Opt-in: --config=debug)
+# =============================================================================
+# Unoptimized build with debug info for development / debugging.
+build:debug --compilation_mode=dbg
+build:debug --copt=-O0
+build:debug --copt=-g3
+build:debug --strip=never
+build:debug --copt=-fno-omit-frame-pointer
+build:debug --verbose_failures
+
+# =============================================================================
 # Developer Experience
 # =============================================================================
 build --color=yes
