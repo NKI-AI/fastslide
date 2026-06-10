@@ -333,6 +333,13 @@ jobs:
           CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
           CIBW_ARCHS_WINDOWS: ${{ matrix.cibw_arch }}
           CIBW_BUILD_VERBOSITY: "1"
+          # Force MSVC. The windows-2022/windows-11-arm images ship MinGW GCC
+          # (C:\mingw64\bin) on PATH, and Meson's auto-detection picks that `cc`
+          # over MSVC, producing a GCC build (which also hits the MinGW-only
+          # jpeglib.h/<cstdio> FILE error). `--vsenv` makes Meson activate the
+          # Visual Studio environment even when another compiler is already on
+          # PATH, matching the MSVC toolchain used by the Java native build.
+          CIBW_CONFIG_SETTINGS_WINDOWS: "setup-args=--vsenv"
       - name: Upload wheels
         if: steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v6
