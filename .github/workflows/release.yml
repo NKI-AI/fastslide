@@ -492,9 +492,13 @@ jobs:
           pattern: "wheels-*"
           merge-multiple: true
       # Build a venv on the right interpreter (x86_64 CPython for the Rosetta
-      # leg), install ONLY the local wheel (--no-index; the wheel has no runtime
-      # deps), and run the import + open-sample smoke. uv picks the wheel whose
-      # tags match the venv's Python/arch.
+      # leg), install the local wheel under test (uv picks the dist wheel whose
+      # tags match the venv's Python/arch), and run the import + open-sample
+      # smoke. --find-links dist makes the local wheel the source for fastslide,
+      # while the index supplies its runtime dep (numpy>=1.20), which is NOT
+      # vendored in dist. Do NOT add --no-index here: that made the install fail
+      # to resolve numpy on a cold uv cache (it only "worked" elsewhere by
+      # accident, off a warm cache that already had numpy).
       - name: Import + open-sample smoke (${{ matrix.target.platform }} py${{ matrix.python }})
         if: steps.gate.outputs.run == 'true'
         shell: bash
@@ -511,7 +515,7 @@ jobs:
           else
             py=".venv/bin/python"
           fi
-          uv pip install --python "$py" --no-index --find-links dist fastslide
+          uv pip install --python "$py" --find-links dist fastslide
           "$py" tools/smoke_test_python.py
   publish-pypi:
     name: Publish wheels + sdist to PyPI
