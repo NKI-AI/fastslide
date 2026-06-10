@@ -12,7 +12,8 @@
 #         (build-java job, method: meson). Meson compiles the C API as a
 #         self-contained shared DLL (deps static via subprojects/*.wrap, static
 #         CRT); only the native classifier JAR is produced this way -- the
-#         platform-independent wrapper/tool JARs come from the bazel legs.
+#         platform-independent wrapper/tool JARs come from the dedicated,
+#         always-run build-java-wrapper job (Bazel on Linux).
 #         Windows cannot be a Bazel *host* here because aspect_rules_py /
 #         rules_uv have no Windows host support ("Unsupported platform windows").
 #       * windows_x86_64 / windows_arm64 (WHEELS): built NATIVELY on a matching
@@ -60,12 +61,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # method=bazel: linux/macOS native libs + the platform-independent
-        # wrapper/tool JARs (built once, uploaded per-platform). method=meson:
-        # Windows native libs built on a real Windows host with MSVC via Meson
-        # (Bazel has no Windows host support, and Zig cross emits a broken arm64
-        # PE). The meson legs build ONLY the native classifier JAR; the wrapper
-        # JAR comes from the bazel legs. msvc_arch selects the MSVC toolset.
+        # method=bazel: linux/macOS native libs. method=meson: Windows native
+        # libs built on a real Windows host with MSVC via Meson (Bazel has no
+        # Windows host support, and Zig cross emits a broken arm64 PE). Both only
+        # produce the native classifier JAR; the platform-independent wrapper JAR
+        # comes from the dedicated build-java-wrapper job. msvc_arch selects the
+        # MSVC toolset.
         include:
           - platform: linux_x86_64
             builder: ubuntu-24.04
@@ -129,18 +130,10 @@ jobs:
         if: steps.gate.outputs.run == 'true' && matrix.method == 'bazel'
         shell: bash
         run: python3 tools/build_java_artifacts.py --platform ${{ matrix.platform }} --bazel bazel
-      # The platform-independent wrapper JAR is identical from every bazel build;
-      # upload it under a per-platform name so any single-platform run is
-      # self-sufficient (downloads dedupe by filename). Only the bazel legs
-      # produce it -- the Windows meson legs build the native lib only.
-      - name: Upload wrapper JAR
-        if: steps.gate.outputs.run == 'true' && matrix.method == 'bazel'
-        uses: actions/upload-artifact@v6
-        with:
-          name: wrapper-${{ matrix.platform }}
-          path: artifacts/jars/fastslide-java-*.jar
-          if-no-files-found: error
-          retention-days: 7
+      # NOTE: the platform-independent wrapper JAR is NOT uploaded here. It is
+      # produced once by the dedicated, always-run `build-java-wrapper` job so
+      # that every platform selection -- including a Windows-only run whose Meson
+      # legs build the native lib only -- still ships the wrapper.
       # --- Native Meson path (Windows): native classifier JAR only ---
       # Meson compiles the C API as a self-contained shared DLL with MSVC (all
       # deps static via subprojects/*.wrap, static CRT), then packages it into
@@ -177,9 +170,42 @@ jobs:
           path: artifacts/jars/fastslide-native-*-*.jar
           if-no-files-found: error
           retention-days: 7
+  build-java-wrapper:
+    # The wrapper + tool JARs are platform-independent pure Java
+    # (//java:fastslide_java is a plain java_library with no third-party deps).
+    # Build them ONCE on Linux with Bazel, UNCONDITIONALLY (not gated on
+    # inputs.platforms), so every selection -- including a Windows-only run whose
+    # Meson legs build native libs only -- still ships the wrapper that the smoke
+    # test and downstream consumers need. Using Bazel (not javac) keeps the
+    # bytecode identical to what the bazel legs produce (java_language_version 21,
+    # FFM), avoiding any toolchain/target-version divergence.
+    name: Build Java wrapper JAR
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Pin Bazel version
+        shell: bash
+        run: echo "USE_BAZEL_VERSION=$(tr -d '[:space:]' < .bazelversion)" >> "$GITHUB_ENV"
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          disk-cache: java-wrapper
+      - name: Build wrapper + tool JARs
+        shell: bash
+        run: python3 tools/build_java_artifacts.py --wrapper-only --bazel bazel
+      - name: Upload wrapper JAR
+        uses: actions/upload-artifact@v6
+        with:
+          name: wrapper-all
+          path: artifacts/jars/fastslide-java-*.jar
+          if-no-files-found: error
+          retention-days: 7
   smoke-java:
     name: Smoke Java ${{ matrix.platform }}
-    needs: build-java
+    needs: [build-java, build-java-wrapper]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -519,7 +545,7 @@ jobs:
     # the real index. (Version comes from versions.json, so re-runs of the same
     # version are no-ops thanks to skip-existing.)
     if: inputs.release == false
-    needs: [smoke-wheels, smoke-sdist]
+    needs: [smoke-wheels]
     runs-on: ubuntu-24.04
     environment: testpypi
     permissions:
@@ -542,7 +568,7 @@ jobs:
           skip-existing: true
   github-release:
     name: Publish GitHub Release
-    needs: [smoke-java, smoke-wheels, smoke-sdist, build-wheels, build-sdist, publish-pypi, publish-testpypi]
+    needs: [smoke-java, smoke-wheels, build-wheels, build-sdist, publish-pypi, publish-testpypi]
     # publish-pypi / publish-testpypi are mutually exclusive, so one is always
     # skipped. A skipped need is not success(), which would skip this job too;
     # gate on "nothing failed/cancelled" instead so the skipped sibling is OK.
