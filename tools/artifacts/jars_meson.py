@@ -50,6 +50,35 @@ _SETUP_OPTIONS = [
 ]
 
 
+def _strip_gnu_link_from_path(env: dict[str, str]) -> None:
+    """Drop Git-for-Windows Unix-tool dirs that shadow the MSVC linker on PATH.
+
+    Git Bash prepends ``C:\\Program Files\\Git\\usr\\bin`` (which ships a GNU
+    ``link.exe``) to PATH, so Meson's linker probe can pick it over the MSVC
+    ``link.exe`` and abort with "Found GNU link.exe instead of MSVC link.exe".
+    Remove only directories that hold a ``link.exe`` next to Unix coreutils
+    (``sh.exe`` / ``cygpath.exe``) but no MSVC ``cl.exe`` -- i.e. exactly the
+    Git Bash tool dirs, never the real MSVC toolchain. No-op off Windows.
+
+    Args:
+        env: Environment mapping to mutate in place (its ``PATH`` is rewritten).
+    """
+    if os.name != "nt":
+        return
+    kept: list[str] = []
+    for entry in env.get("PATH", "").split(os.pathsep):
+        d = Path(entry) if entry else None
+        is_gnu_link_dir = (
+            d is not None
+            and (d / "link.exe").exists()
+            and not (d / "cl.exe").exists()
+            and ((d / "sh.exe").exists() or (d / "cygpath.exe").exists())
+        )
+        if not is_gnu_link_dir:
+            kept.append(entry)
+    env["PATH"] = os.pathsep.join(kept)
+
+
 def _find_shared_lib(build_dir: Path, *, env: dict[str, str]) -> Path:
     """Locate the built fastslide_c shared library via `meson introspect`."""
     out = common.run_capture(["meson", "introspect", str(build_dir), "--targets"], env=env)
@@ -85,6 +114,7 @@ def build_native_jar(platform_key: str) -> int:
     spec: PlatformSpec = PLATFORMS[platform_key]
 
     env = os.environ.copy()
+    _strip_gnu_link_from_path(env)
     version = common.read_fastslide_version()
     common.ensure_dir(ARTIFACT_DIR)
 

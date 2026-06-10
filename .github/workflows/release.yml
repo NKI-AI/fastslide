@@ -155,13 +155,19 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # Use pwsh, NOT bash, for the Meson steps. The bash on the Windows runners
+      # is Git Bash, which prepends C:\Program Files\Git\usr\bin to PATH on
+      # startup. That dir ships a GNU link.exe that shadows the MSVC link.exe
+      # msvc-dev-cmd put on PATH, so Meson's linker probe errors out with
+      # "Found GNU link.exe instead of MSVC link.exe". pwsh leaves the
+      # MSVC-first PATH from msvc-dev-cmd intact.
       - name: Install Meson + Ninja
         if: steps.gate.outputs.run == 'true' && matrix.method == 'meson'
-        shell: bash
+        shell: pwsh
         run: python -m pip install --upgrade meson ninja
       - name: Build native lib (${{ matrix.platform }})
         if: steps.gate.outputs.run == 'true' && matrix.method == 'meson'
-        shell: bash
+        shell: pwsh
         run: python tools/build_java_native_meson.py --platform ${{ matrix.platform }}
       - name: Upload native classifier JAR
         if: steps.gate.outputs.run == 'true'
