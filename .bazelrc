@@ -64,15 +64,23 @@ build:linux --sandbox_add_mount_pair=/tmp
 build:windows --sandbox_add_mount_pair=C:\Temp
 
 # =============================================================================
-# Rust Platforms (libc constraint required by rules_rs toolchains)
+# Rust Platforms (Opt-in: --config=rust, Linux x86_64 only)
 # =============================================================================
 # rules_rs's Linux Rust toolchains carry the `@@llvm+//constraints/libc:gnu.2.28`
 # constraint, satisfied only by the rules_rs platform below. Without these,
 # toolchain resolution for Linux Rust targets (e.g. //rust/fastslide-sys) fails
 # with "No matching toolchains found". macOS rust toolchains carry no libc
-# constraint, so no override is needed there. The monorepo root sets the same.
-build:linux --platforms=@rules_rs//rs/platforms:x86_64-unknown-linux-gnu
-build:linux --host_platform=@rules_rs//rs/platforms:x86_64-unknown-linux-gnu
+# constraint, so no override is needed there.
+#
+# Opt-in (NOT part of build:linux) on purpose:
+#   * `--enable_platform_specific_config` expands build:linux AFTER the command
+#     line, so an unconditional pin overrides explicit `--platforms=...` flags
+#     and breaks every non-x86_64 or cross-compiled Linux build (e.g. the
+#     linux_arm64 release legs).
+#   * `bazel info` does not apply the main-repo mapping to `@rules_rs` labels
+#     and exits 2, breaking the artifact scripts' `bazel info bazel-bin` calls.
+build:rust --platforms=@rules_rs//rs/platforms:x86_64-unknown-linux-gnu
+build:rust --host_platform=@rules_rs//rs/platforms:x86_64-unknown-linux-gnu
 
 # =============================================================================
 # Hermetic Cross-Compilation Config (Opt-in)
