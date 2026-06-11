@@ -47,11 +47,16 @@ def run_capture(cmd: list[str], *, env: dict[str, str]) -> str:
     result = subprocess.run(
         cmd,
         cwd=WORKSPACE_ROOT,
-        check=True,
+        check=False,
         capture_output=True,
         env=env,
         text=True,
     )
+    if result.returncode != 0:
+        # Surface the captured stderr; a bare CalledProcessError hides the
+        # underlying error (e.g. bazel's diagnostics) entirely.
+        print(result.stderr, file=sys.stderr, end="")
+        raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
     return result.stdout
 
 

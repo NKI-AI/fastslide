@@ -4,14 +4,14 @@ build-backend = "mesonpy"
 
 [project]
 name = "fastslide"
-version = "0.7.3"
+version = "0.7.4"
 description = "High-performance whole slide image reader for digital pathology"
 readme = "README.md"
 authors = [
     {name = "Jonas Teuwen", email = "j.teuwen@nki.nl"}
 ]
 license = {text = "Apache-2.0"}
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
@@ -19,8 +19,11 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: C++",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Medical Science Apps.",
     "Topic :: Scientific/Engineering :: Image Processing",
 ]
@@ -43,7 +46,40 @@ Issues = "https://github.com/NKI-AI/fastslide/issues"
 [tool.meson-python.args]
 setup = [
     "--wrap-mode=forcefallback",
-    "--prefer-static",
+    # NOTE: do not add --prefer-static. It makes Meson hunt for a static
+    # libpython (libpythonXY.a), which CPython does not ship, breaking the
+    # nanobind Python dependency. Codecs are already static via the
+    # default_library=static wraps below; the extension links libpython's
+    # import library (shared), as required.
+    "-Ddefault_library=static",
+    "-Dbuild_python=true",
+    "-Dbuild_tests=false",
+    "-Dbuild_tool=false",
+    "-Dbuild_c_api=false",
+    # simpletiff defaults to building its gtest suite (no gtest wrap here) and to
+    # default_library=shared; force both off so it links statically into the
+    # self-contained _fastslide extension with no extra DLL.
+    "-Dsimpletiff:build_tests=false",
+    "-Dsimpletiff:default_library=static",
+    # Don't build dependency test suites for the wheel -- pure wasted compile
+    # time (they are never installed thanks to --skip-subprojects below).
+    # libdicom's tests drag in the `check` subproject; pugixml builds its check.
+    "-Dpugixml:tests=false",
+    "-Dlibdicom:tests=false",
+    # highway resolves `dependency('gtest')` unconditionally (gated only by
+    # test_standalone, NOT by `tests`), so it would configure + build the whole
+    # googletest/gmock subproject even with tests disabled. test_standalone=true
+    # makes highway use its built-in test harness and never touch gtest.
+    "-Dhighway:test_standalone=true",
+]
+# Only install the top-level fastslide targets (the _fastslide extension + the
+# Python package). Subproject wraps (fmt, gtest, libdicom, codecs, ...) declare
+# `install: true` for their static libs/headers, which land in {libdir_static}/
+# {includedir} -- locations with no wheel equivalent, so meson-python aborts with
+# "Could not map installation path ... libfmt.a". Everything is statically linked
+# into _fastslide at build time, so skipping subproject installs is exactly right.
+install = [
+    "--skip-subprojects",
 ]
 
 [tool.pytest.ini_options]

@@ -56,13 +56,55 @@ live at
 
 ### Installation
 
-#### Option 1: Using uv (prebuilt wheel)
+FastSlide can be installed from a prebuilt wheel, or built from source with
+either **Meson** (simplest, integrates with `pip`/`uv`) or **Bazel** (hermetic,
+used for the official release wheels).
+
+#### Option 1: Prebuilt wheel (recommended)
 
 ```bash
 uv pip install fastslide
 ```
 
-#### Option 2: Build from source with Bazel
+#### Option 2: Build from source with Meson
+
+FastSlide is a regular [Meson](https://mesonbuild.com) project. All native
+dependencies have [wrap fallbacks](https://mesonbuild.com/Wrap-dependency-system-manual.html),
+so a checkout builds standalone with nothing but a C++20 compiler, Meson
+(>= 1.3) and Ninja:
+
+```bash
+git clone https://github.com/NKI-AI/fastslide
+cd fastslide
+
+meson setup builddir
+meson compile -C builddir
+
+# Run the C++ test suite.
+meson test -C builddir
+```
+
+This builds the C++ library, the `fastslidetool` CLI and the C API. See
+`meson.options` for the available options (e.g. `-Dbuild_tool=false`,
+`-Dbuild_c_api=false`, `-Djpeg_decoder=jpgd`).
+
+**Python package via meson-python** — the Python bindings are wired up through
+[meson-python](https://mesonpy.readthedocs.io), so the wheel builds straight
+from the source tree with standard Python tooling:
+
+```bash
+# Editable (development) install: compiles the native extension with Meson.
+uv pip install -e .
+
+# Or build a wheel.
+uv build
+```
+
+`pip install -e .` / `python -m build` work the same way. The build is
+self-contained: all codecs are statically linked into the `_fastslide`
+extension, so the resulting wheel has no native runtime dependencies.
+
+#### Option 3: Build from source with Bazel
 
 FastSlide is a [Bazel module](https://bazel.build/external/module). Builds are
 driven by [bzlmod](https://bazel.build/external/overview#bzlmod) and we pin a
@@ -79,17 +121,14 @@ bazelisk build //...
 
 # Run the C++ test suite.
 bazelisk test //...
-
-# Build the Python wheel for the current platform (example: Python 3.11).
-bazelisk build //python:fastslide_wheel_cp311
-# The wheel is written under `bazel-bin/python/`.
 ```
 
-#### Building Python wheels
+##### Building Python wheels with Bazel
 
 Wheels are platform-specific because they bundle the native C++ extension. Each
 Python version has its own Bazel target: `//python:fastslide_wheel_cp310` through
-`//python:fastslide_wheel_cp314` (Python 3.10–3.14).
+`//python:fastslide_wheel_cp314` (Python 3.10–3.14). Unlike the Meson path,
+Bazel can also cross-compile wheels for other platforms.
 
 **Current platform** — build on the host OS/arch without cross-compilation:
 
@@ -128,6 +167,8 @@ python tools/build_wheels.py --keep-going
 ```
 
 Run `python tools/build_wheels.py --help` for the full option list.
+
+##### Using FastSlide from another Bazel module
 
 To consume FastSlide from another Bazel module, add it to your `MODULE.bazel`:
 

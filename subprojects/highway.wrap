@@ -1,10 +1,10 @@
 # Google Highway SIMD library. Upstream ships a meson.build that exposes the
-# `hwy_dep` variable (project name `hwy`, pkg-config name `libhwy`). Pinned to
-# 1.3.0 to match the version used by the Bazel build. Only used as a fallback
-# when libhwy is not found on the system.
+# `hwy_dep` variable (pkg-config name `libhwy`). Pinned to 1.4.0: this is the
+# first tag that includes the meson.build (1.3.0, used by the Bazel build, has
+# none). Only used as a fallback when libhwy is not found on the system.
 [wrap-git]
 url = https://github.com/google/highway.git
-revision = 1.3.0
+revision = 1.4.0
 depth = 1
 
 [provide]

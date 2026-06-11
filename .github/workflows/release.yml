@@ -7,11 +7,20 @@
 #     CAN be built:
 #       * linux/darwin: built on a matching runner (darwin_x86_64 is cross-built
 #         on the arm64 Mac via the Apple toolchain).
-#       * windows_x86_64: CROSS-compiled on Linux via the hermetic Zig toolchain.
+#       * windows_x86_64 / windows_arm64 (JAVA): built NATIVELY on a matching
+#         Windows runner (windows-2022 / windows-11-arm) with MSVC via Meson
+#         (build-java job, method: meson). Meson compiles the C API as a
+#         self-contained shared DLL (deps static via subprojects/*.wrap, static
+#         CRT); only the native classifier JAR is produced this way -- the
+#         platform-independent wrapper/tool JARs come from the dedicated,
+#         always-run build-java-wrapper job (Bazel on Linux).
 #         Windows cannot be a Bazel *host* here because aspect_rules_py /
 #         rules_uv have no Windows host support ("Unsupported platform windows").
-#       * windows_arm64 is NOT shipped: Zig emits an arm64 PE the Windows loader
-#         rejects (error 193) and we can't build on a Windows host.
+#       * windows_x86_64 / windows_arm64 (WHEELS): built NATIVELY on a matching
+#         Windows runner (windows-2022 / windows-11-arm) with MSVC via Meson +
+#         nanobind + cibuildwheel (build-wheels job, method: meson). All deps are
+#         compiled from source through subprojects/*.wrap and linked statically,
+#         sidestepping the missing Windows Bazel rules.
 #   - smoke-java: run the shipped JARs through fastslidetool on the REAL target
 #     runner (incl. native Windows), needing only a JDK -- no Bazel.
 #   - publish-pypi: upload wheels + to PyPI via Trusted Publishing (full release
@@ -32,7 +41,7 @@ on:
       platforms:
         description: "Comma-separated platform keys to build"
         type: string
-        default: "linux_x86_64,linux_arm64,darwin_x86_64,darwin_aarch64,windows_x86_64"
+        default: "linux_x86_64,linux_arm64,darwin_x86_64,darwin_aarch64,windows_x86_64,windows_arm64"
 permissions:
   contents: read
 concurrency:
@@ -52,21 +61,36 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # method=bazel: linux/macOS native libs. method=meson: Windows native
+        # libs built on a real Windows host with MSVC via Meson (Bazel has no
+        # Windows host support, and Zig cross emits a broken arm64 PE). Both only
+        # produce the native classifier JAR; the platform-independent wrapper JAR
+        # comes from the dedicated build-java-wrapper job. msvc_arch selects the
+        # MSVC toolset.
         include:
           - platform: linux_x86_64
             builder: ubuntu-24.04
+            method: bazel
           - platform: linux_arm64
             builder: ubuntu-24.04-arm
+            method: bazel
           # Cross-compiled on the arm64 Mac (Apple toolchain targets x86_64):
           # the Intel runner is far slower, and the artifact is still validated
           # on a real Intel host in the smoke phase below.
           - platform: darwin_x86_64
             builder: macos-14
+            method: bazel
           - platform: darwin_aarch64
             builder: macos-14
-          # Windows x86_64 is cross-compiled on Linux (see header note).
+            method: bazel
           - platform: windows_x86_64
-            builder: ubuntu-24.04
+            builder: windows-2022
+            method: meson
+            msvc_arch: amd64
+          - platform: windows_arm64
+            builder: windows-11-arm
+            method: meson
+            msvc_arch: amd64_arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -90,21 +114,54 @@ jobs:
           dotnet: true
           haskell: true
           large-packages: true
+      # --- Bazel path (linux/macOS): native lib + wrapper/tool JARs ---
       - name: Pin Bazel version
-        if: steps.gate.outputs.run == 'true'
+        if: steps.gate.outputs.run == 'true' && matrix.method == 'bazel'
         shell: bash
         run: echo "USE_BAZEL_VERSION=$(tr -d '[:space:]' < .bazelversion)" >> "$GITHUB_ENV"
       - name: Set up Bazel
-        if: steps.gate.outputs.run == 'true'
+        if: steps.gate.outputs.run == 'true' && matrix.method == 'bazel'
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
           bazelisk-cache: true
           repository-cache: true
           disk-cache: java-${{ matrix.platform }}
       - name: Build native + JARs (${{ matrix.platform }})
-        if: steps.gate.outputs.run == 'true'
+        if: steps.gate.outputs.run == 'true' && matrix.method == 'bazel'
         shell: bash
         run: python3 tools/build_java_artifacts.py --platform ${{ matrix.platform }} --bazel bazel
+      # NOTE: the platform-independent wrapper JAR is NOT uploaded here. It is
+      # produced once by the dedicated, always-run `build-java-wrapper` job so
+      # that every platform selection -- including a Windows-only run whose Meson
+      # legs build the native lib only -- still ships the wrapper.
+      # --- Native Meson path (Windows): native classifier JAR only ---
+      # Meson compiles the C API as a self-contained shared DLL with MSVC (all
+      # deps static via subprojects/*.wrap, static CRT), then packages it into
+      # the classifier JAR the Java FFM loader expects.
+      - name: Set up MSVC
+        if: steps.gate.outputs.run == 'true' && matrix.method == 'meson'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.msvc_arch }}
+      - name: Set up Python
+        if: steps.gate.outputs.run == 'true' && matrix.method == 'meson'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # Use pwsh, NOT bash, for the Meson steps. The bash on the Windows runners
+      # is Git Bash, which prepends C:\Program Files\Git\usr\bin to PATH on
+      # startup. That dir ships a GNU link.exe that shadows the MSVC link.exe
+      # msvc-dev-cmd put on PATH, so Meson's linker probe errors out with
+      # "Found GNU link.exe instead of MSVC link.exe". pwsh leaves the
+      # MSVC-first PATH from msvc-dev-cmd intact.
+      - name: Install Meson + Ninja
+        if: steps.gate.outputs.run == 'true' && matrix.method == 'meson'
+        shell: pwsh
+        run: python -m pip install --upgrade meson ninja
+      - name: Build native lib (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true' && matrix.method == 'meson'
+        shell: pwsh
+        run: python tools/build_java_native_meson.py --platform ${{ matrix.platform }}
       - name: Upload native classifier JAR
         if: steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v6
@@ -113,20 +170,42 @@ jobs:
           path: artifacts/jars/fastslide-native-*-*.jar
           if-no-files-found: error
           retention-days: 7
-      # The platform-independent wrapper JAR is identical from every build;
-      # upload it under a per-platform name so any single-platform run is
-      # self-sufficient (downloads dedupe by filename).
+  build-java-wrapper:
+    # The wrapper + tool JARs are platform-independent pure Java
+    # (//java:fastslide_java is a plain java_library with no third-party deps).
+    # Build them ONCE on Linux with Bazel, UNCONDITIONALLY (not gated on
+    # inputs.platforms), so every selection -- including a Windows-only run whose
+    # Meson legs build native libs only -- still ships the wrapper that the smoke
+    # test and downstream consumers need. Using Bazel (not javac) keeps the
+    # bytecode identical to what the bazel legs produce (java_language_version 21,
+    # FFM), avoiding any toolchain/target-version divergence.
+    name: Build Java wrapper JAR
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Pin Bazel version
+        shell: bash
+        run: echo "USE_BAZEL_VERSION=$(tr -d '[:space:]' < .bazelversion)" >> "$GITHUB_ENV"
+      - name: Set up Bazel
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          disk-cache: java-wrapper
+      - name: Build wrapper + tool JARs
+        shell: bash
+        run: python3 tools/build_java_artifacts.py --wrapper-only --bazel bazel
       - name: Upload wrapper JAR
-        if: steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v6
         with:
-          name: wrapper-${{ matrix.platform }}
+          name: wrapper-all
           path: artifacts/jars/fastslide-java-*.jar
           if-no-files-found: error
           retention-days: 7
   smoke-java:
     name: Smoke Java ${{ matrix.platform }}
-    needs: build-java
+    needs: [build-java, build-java-wrapper]
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -150,6 +229,9 @@ jobs:
           - platform: windows_x86_64
             runner: windows-2022
             java_arch: x64
+          - platform: windows_arm64
+            runner: windows-11-arm
+            java_arch: aarch64
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -194,19 +276,32 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # windows_arm64 has no rules_python py_cc toolchain, so wheels are not
-        # built for it (build_wheels.py skips it too).
+        # Linux/macOS wheels are built with Bazel (method: bazel). Windows wheels
+        # (both amd64 and arm64) are built NATIVELY on a matching Windows runner
+        # via Meson + nanobind + cibuildwheel (method: meson): many Bazel rules
+        # lack Windows host support, so the meson-python path (all deps static via
+        # wraps) is used instead. cibw_arch selects the cibuildwheel target arch.
         include:
           - platform: linux_x86_64
             builder: ubuntu-24.04
+            method: bazel
           - platform: linux_arm64
             builder: ubuntu-24.04-arm
+            method: bazel
           - platform: darwin_x86_64
             builder: macos-14
+            method: bazel
           - platform: darwin_aarch64
             builder: macos-14
+            method: bazel
           - platform: windows_x86_64
-            builder: ubuntu-24.04
+            builder: windows-2022
+            method: meson
+            cibw_arch: AMD64
+          - platform: windows_arm64
+            builder: windows-11-arm
+            method: meson
+            cibw_arch: ARM64
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -230,21 +325,47 @@ jobs:
           dotnet: true
           haskell: true
           large-packages: true
+      # --- Bazel path (linux/darwin) ---
       - name: Pin Bazel version
-        if: steps.gate.outputs.run == 'true'
+        if: steps.gate.outputs.run == 'true' && matrix.method == 'bazel'
         shell: bash
         run: echo "USE_BAZEL_VERSION=$(tr -d '[:space:]' < .bazelversion)" >> "$GITHUB_ENV"
       - name: Set up Bazel
-        if: steps.gate.outputs.run == 'true'
+        if: steps.gate.outputs.run == 'true' && matrix.method == 'bazel'
         uses: bazel-contrib/setup-bazel@0.19.0
         with:
           bazelisk-cache: true
           repository-cache: true
           disk-cache: wheels-${{ matrix.platform }}
       - name: Build wheels (${{ matrix.platform }})
-        if: steps.gate.outputs.run == 'true'
+        if: steps.gate.outputs.run == 'true' && matrix.method == 'bazel'
         shell: bash
         run: python3 tools/build_wheels.py --platform ${{ matrix.platform }} --bazel bazel
+      # --- Native Meson path (windows) ---
+      # Windows wheels are compiled on a real Windows host with MSVC. cibuildwheel
+      # drives meson-python once per CPython; meson-python reads the forcefallback
+      # setup args from pyproject.toml, so every dependency (aifocore/simpletiff
+      # via git wraps, codecs via WrapDB) is built from source and linked
+      # statically into the self-contained _fastslide.pyd. No DLLs to bundle.
+      - name: Build wheels (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true' && matrix.method == 'meson'
+        uses: pypa/cibuildwheel@v3.2.0
+        with:
+          package-dir: .
+          output-dir: artifacts/wheels
+        env:
+          # cp310 has no official Windows ARM64 CPython; cibuildwheel skips it
+          # there automatically, so the same build set is safe for both arches.
+          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
+          CIBW_ARCHS_WINDOWS: ${{ matrix.cibw_arch }}
+          CIBW_BUILD_VERBOSITY: "1"
+          # Force MSVC. The windows-2022/windows-11-arm images ship MinGW GCC
+          # (C:\mingw64\bin) on PATH, and Meson's auto-detection picks that `cc`
+          # over MSVC, producing a GCC build (which also hits the MinGW-only
+          # jpeglib.h/<cstdio> FILE error). `--vsenv` makes Meson activate the
+          # Visual Studio environment even when another compiler is already on
+          # PATH, matching the MSVC toolchain used by the Java native build.
+          CIBW_CONFIG_SETTINGS_WINDOWS: "setup-args=--vsenv"
       - name: Upload wheels
         if: steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v6
@@ -253,6 +374,66 @@ jobs:
           path: artifacts/wheels/*.whl
           if-no-files-found: error
           retention-days: 7
+  build-sdist:
+    # The source distribution is platform-independent and is what
+    # `pip install fastslide` falls back to on ANY platform/Python without a
+    # prebuilt wheel: pip builds it from source via meson-python, where
+    # --wrap-mode=forcefallback (from pyproject.toml) fetches every dependency
+    # through subprojects/*.wrap and links it statically. meson-python assembles
+    # the tarball from git-tracked files, so the wraps + packagefiles overlays
+    # are included (the re-downloaded dependency sources are not). NOT gated on
+    # inputs.platforms: the sdist is wanted for every release regardless of which
+    # binary platforms were selected.
+    name: Build sdist
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+      - name: Build sdist
+        shell: bash
+        run: uv build --sdist --out-dir artifacts/sdist
+      - name: Upload sdist
+        uses: actions/upload-artifact@v6
+        with:
+          name: sdist
+          path: artifacts/sdist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+  # TEMPORARILY DISABLED: the source build pulls simpletiff from its pinned git
+  # wrap (subprojects/simpletiff.wrap @ 3886522), which predates the
+  # <cstdio>-before-<jpeglib.h> fix and so fails to compile under GCC. Re-enable
+  # once the simpletiff repo carries the fix and the wrap revision is bumped.
+  # Restore: uncomment this job and re-add `smoke-sdist` to the `needs` lists of
+  # publish-pypi, publish-testpypi, and github-release below.
+  # smoke-sdist:
+  #   # Prove the source-build path actually works (the whole point of shipping an
+  #   # sdist): install the tarball with --no-binary so pip MUST compile fastslide
+  #   # from source on a clean runner -- exactly what an unsupported platform does
+  #   # -- then run the import + open-sample smoke. numpy is allowed as a wheel
+  #   # (only fastslide itself is forced to build from source).
+  #   name: Smoke sdist (source build)
+  #   needs: build-sdist
+  #   runs-on: ubuntu-24.04
+  #   steps:
+  #     - name: Checkout
+  #       uses: actions/checkout@v5
+  #     - name: Set up uv
+  #       uses: astral-sh/setup-uv@v6
+  #     - name: Download sdist
+  #       uses: actions/download-artifact@v6
+  #       with:
+  #         name: sdist
+  #         path: dist
+  #     - name: Source-build install + smoke
+  #       shell: bash
+  #       run: |
+  #         set -euo pipefail
+  #         uv python install 3.11
+  #         uv venv --python 3.11 .venv
+  #         uv pip install --python .venv/bin/python --no-binary fastslide dist/*.tar.gz
+  #         .venv/bin/python tools/smoke_test_python.py
   smoke-wheels:
     name: Smoke wheel ${{ matrix.target.platform }} py${{ matrix.python }}
     needs: build-wheels
@@ -275,6 +456,14 @@ jobs:
             runner: macos-14
           - platform: windows_x86_64
             runner: windows-2022
+          - platform: windows_arm64
+            runner: windows-11-arm
+        # No official CPython 3.10 for Windows ARM64, so no cp310 win_arm64 wheel
+        # is built; drop that smoke combination.
+        exclude:
+          - python: "3.10"
+            target:
+              platform: windows_arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -303,9 +492,13 @@ jobs:
           pattern: "wheels-*"
           merge-multiple: true
       # Build a venv on the right interpreter (x86_64 CPython for the Rosetta
-      # leg), install ONLY the local wheel (--no-index; the wheel has no runtime
-      # deps), and run the import + open-sample smoke. uv picks the wheel whose
-      # tags match the venv's Python/arch.
+      # leg), install the local wheel under test (uv picks the dist wheel whose
+      # tags match the venv's Python/arch), and run the import + open-sample
+      # smoke. --find-links dist makes the local wheel the source for fastslide,
+      # while the index supplies its runtime dep (numpy>=1.20), which is NOT
+      # vendored in dist. Do NOT add --no-index here: that made the install fail
+      # to resolve numpy on a cold uv cache (it only "worked" elsewhere by
+      # accident, off a warm cache that already had numpy).
       - name: Import + open-sample smoke (${{ matrix.target.platform }} py${{ matrix.python }})
         if: steps.gate.outputs.run == 'true'
         shell: bash
@@ -322,25 +515,27 @@ jobs:
           else
             py=".venv/bin/python"
           fi
-          uv pip install --python "$py" --no-index --find-links dist fastslide
+          uv pip install --python "$py" --find-links dist fastslide
           "$py" tools/smoke_test_python.py
   publish-pypi:
-    name: Publish wheels to PyPI
-    # Full release -> real PyPI. Only after the wheels pass their on-target smoke.
+    name: Publish wheels + sdist to PyPI
+    # Full release -> real PyPI. Only after the wheels AND the source build pass
+    # their smoke tests. The sdist is uploaded alongside the wheels so pip can
+    # fall back to a source build on any platform without a prebuilt wheel.
     if: inputs.release == true
-    needs: smoke-wheels
+    needs: [smoke-wheels]
     runs-on: ubuntu-24.04
     environment: pypi
     permissions:
       id-token: write # OIDC for PyPI Trusted Publishing (no API token)
     steps:
-      - name: Download wheels
+      - name: Download wheels + sdist
         uses: actions/download-artifact@v6
         with:
           path: dist
-          pattern: "wheels-*"
+          pattern: "{wheels-*,sdist}"
           merge-multiple: true
-      - name: List wheels
+      - name: List distributions
         shell: bash
         run: ls -l dist
       - name: Publish to PyPI
@@ -349,24 +544,24 @@ jobs:
           packages-dir: dist
           skip-existing: true
   publish-testpypi:
-    name: Publish wheels to TestPyPI
+    name: Publish wheels + sdist to TestPyPI
     # Snapshot -> TestPyPI, so the publish path is exercised without touching
-    # the real index. (Wheel version comes from versions.json, so re-runs of the
-    # same version are no-ops thanks to skip-existing.)
+    # the real index. (Version comes from versions.json, so re-runs of the same
+    # version are no-ops thanks to skip-existing.)
     if: inputs.release == false
-    needs: smoke-wheels
+    needs: [smoke-wheels]
     runs-on: ubuntu-24.04
     environment: testpypi
     permissions:
       id-token: write
     steps:
-      - name: Download wheels
+      - name: Download wheels + sdist
         uses: actions/download-artifact@v6
         with:
           path: dist
-          pattern: "wheels-*"
+          pattern: "{wheels-*,sdist}"
           merge-multiple: true
-      - name: List wheels
+      - name: List distributions
         shell: bash
         run: ls -l dist
       - name: Publish to TestPyPI
@@ -377,7 +572,7 @@ jobs:
           skip-existing: true
   github-release:
     name: Publish GitHub Release
-    needs: [smoke-java, smoke-wheels, build-wheels, publish-pypi, publish-testpypi]
+    needs: [smoke-java, smoke-wheels, build-wheels, build-sdist, publish-pypi, publish-testpypi]
     # publish-pypi / publish-testpypi are mutually exclusive, so one is always
     # skipped. A skipped need is not success(), which would skip this job too;
     # gate on "nothing failed/cancelled" instead so the skipped sibling is OK.
@@ -402,17 +597,24 @@ jobs:
           path: artifacts/wheels
           pattern: "wheels-*"
           merge-multiple: true
+      - name: Download sdist
+        uses: actions/download-artifact@v6
+        with:
+          name: sdist
+          path: artifacts/sdist
       - name: List collected artifacts
         shell: bash
         run: |
           echo "JARs:"; ls -l artifacts/jars
           echo "Wheels:"; ls -l artifacts/wheels
+          echo "Sdist:"; ls -l artifacts/sdist
       - name: Generate build provenance attestation
         uses: actions/attest-build-provenance@v3
         with:
           subject-path: |
             artifacts/jars/*.jar
             artifacts/wheels/*.whl
+            artifacts/sdist/*.tar.gz
       - name: Publish
         shell: bash
         env:
@@ -424,7 +626,8 @@ jobs:
             channel="--release"
             require="--require-all"
           fi
-          python3 tools/publish_java_artifacts.py \
+          python3 tools/publish_artifacts.py \
             --dest github ${channel} ${require} \
             --wheels-dir artifacts/wheels \
+            --sdist-dir artifacts/sdist \
             --generate-notes

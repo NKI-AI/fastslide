@@ -3,7 +3,7 @@
 # dependency via meson.override_dependency. Revision matches MODULE.bazel.
 [wrap-git]
 url = https://github.com/NKI-AI/jxrlib.git
-revision = 36dd1c94bd1c31551964bbb7b893674de95ca72f
+revision = 7632349d973656c773f7ecb45325390f463bc92a
 
 [provide]
 dependency_names = jxrlib
