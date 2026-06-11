@@ -36,6 +36,7 @@
 
 #include "fastslide/readers/mrxs/mrxs_position_reader.h"
 
+#include <bit>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -52,6 +53,13 @@
 namespace fastslide {
 namespace mrxs {
 namespace {
+
+// Byte-swap a 32-bit value. MRXS stores coordinates little-endian; this is only
+// applied on big-endian hosts. std::byteswap is C++23, so swap by hand.
+constexpr uint32_t ByteSwap32(uint32_t v) {
+  return ((v & 0x000000FFu) << 24) | ((v & 0x0000FF00u) << 8) |
+         ((v & 0x00FF0000u) >> 8) | ((v & 0xFF000000u) >> 24);
+}
 
 void LogGainMetadataSizeMismatchOnce(size_t expected_size, size_t actual_size) {
   static std::once_flag once_flag;
@@ -88,13 +96,13 @@ void ParseGainBuffer(const uint8_t* data, size_t data_size, int npositions,
     float gain;
     std::memcpy(&gain, data + (static_cast<size_t>(i) * sizeof(float)),
                 sizeof(float));
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    uint32_t temp;
-    std::memcpy(&temp, data + (static_cast<size_t>(i) * sizeof(uint32_t)),
-                sizeof(uint32_t));
-    temp = __builtin_bswap32(temp);
-    std::memcpy(&gain, &temp, sizeof(float));
-#endif
+    if constexpr (std::endian::native == std::endian::big) {
+      uint32_t temp;
+      std::memcpy(&temp, data + (static_cast<size_t>(i) * sizeof(uint32_t)),
+                  sizeof(uint32_t));
+      temp = ByteSwap32(temp);
+      std::memcpy(&gain, &temp, sizeof(float));
+    }
     gains.push_back(gain);
   }
 }
@@ -185,10 +193,10 @@ void ParsePositionBuffer(const std::vector<uint8_t>& position_data,
     std::memcpy(&y, p, sizeof(y));
     p += sizeof(y);
 
-#if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    x = __builtin_bswap32(x);
-    y = __builtin_bswap32(y);
-#endif
+    if constexpr (std::endian::native == std::endian::big) {
+      x = static_cast<int32_t>(ByteSwap32(static_cast<uint32_t>(x)));
+      y = static_cast<int32_t>(ByteSwap32(static_cast<uint32_t>(y)));
+    }
 
     camera_positions.push_back(x * level_0_concat);
     camera_positions.push_back(y * level_0_concat);

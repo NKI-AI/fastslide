@@ -27,12 +27,10 @@ from .specs import PLATFORMS
 ARTIFACT_DIR = common.WORKSPACE_ROOT / "artifacts" / "jars"
 CHECKSUMS_NAME = "SHA256SUMS"
 
-# Classifiers excluded from the Java release. windows-aarch64 has no usable
-# build path today: the Zig cross toolchain emits an arm64 PE the Windows
-# loader rejects (error 193), and we cannot build on a Windows host because
-# rules_uv has no Windows host support. Revisit if a native arm64 Windows
-# build becomes possible.
-_UNSUPPORTED_CLASSIFIERS: frozenset[str] = frozenset({"windows-aarch64"})
+# Classifiers excluded from the Java release. Empty: windows-aarch64 is now
+# built natively on a Windows arm64 runner via Meson + MSVC (see
+# tools/artifacts/jars_meson.py)
+_UNSUPPORTED_CLASSIFIERS: frozenset[str] = frozenset()
 
 # Distinct ``<os>-<arch>`` classifiers, deduplicated while preserving order.
 NATIVE_CLASSIFIERS: list[str] = [

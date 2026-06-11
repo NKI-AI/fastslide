@@ -151,6 +151,18 @@ def _collect_plans(*, current_version: str, new_version: str) -> list[PlannedEdi
         )
     )
 
+    # Meson build. Anchor on a line-leading `version` so the `meson_version`
+    # field on the following line is never matched.
+    plans.append(
+        _plan_regex_sub(
+            path=WORKSPACE_ROOT / "meson.build",
+            description="Update project() version in meson.build",
+            pattern=r"^(\s*version\s*:\s*)'[^']*'(\s*,)",
+            replacement=f"\\g<1>'{new_version}'\\g<2>",
+            flags=re.MULTILINE,
+        )
+    )
+
     # Python package version markers.
     plans.append(
         _plan_regex_sub(

@@ -49,9 +49,26 @@ def main() -> None:
         action="store_true",
         help="Also emit a self-contained fastslidetool JAR per platform (runnable via 'java -jar').",
     )
+    parser.add_argument(
+        "--wrapper-only",
+        action="store_true",
+        help=(
+            "Build ONLY the platform-independent wrapper + tool JARs (no native "
+            "libraries). Used by the dedicated, always-run wrapper job so every "
+            "release -- including a Windows-only run whose Meson legs build native "
+            "libs only -- still ships the wrapper the smoke test/consumers need."
+        ),
+    )
     args = parser.parse_args()
 
-    platforms = args.platforms or list(PLATFORMS.keys())
+    if args.wrapper_only:
+        if args.platforms:
+            parser.error("--wrapper-only cannot be combined with --platform.")
+        # Empty platform list: build_jars builds the wrapper + tool JARs and then
+        # has no per-platform native libraries to build.
+        platforms: list[str] = []
+    else:
+        platforms = args.platforms or list(PLATFORMS.keys())
 
     raise SystemExit(
         jars.build_jars(

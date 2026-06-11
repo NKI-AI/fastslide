@@ -39,6 +39,15 @@
 // Platform detection
 #ifdef _WIN32
 #define WINDOWS 1
+// Keep <windows.h> from defining the min/max macros (they clobber std::min /
+// std::max) and trim the include. Must be set before any <windows.h> include;
+// common.h is pulled in first by intrinsics.h / platform.h.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0600
 #endif
@@ -118,6 +127,7 @@
 
 #if COMPILER_MSVC
 #include <io.h>
+#include <malloc.h>  // _alloca
 #define access _access
 #define F_OK 0  // check for file existence
 #define S_ISDIR(m)   \

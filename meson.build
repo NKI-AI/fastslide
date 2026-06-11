@@ -1,14 +1,20 @@
 project('fastslide', 'c', 'cpp',
-  version : '0.7.1',
+  version : '0.7.4',
   license : 'Apache-2.0',
   meson_version : '>=1.3',
   default_options : [
     'warning_level=1',
     'cpp_std=c++20',
     'default_library=static',
+    # Optimized by default (mirrors the Bazel `--config=release` -O3 -DNDEBUG).
+    # Meson's built-in default is `buildtype=debug` (-O0). Override on the CLI
+    # with e.g. `meson setup builddir --buildtype=debug` for an unoptimized build.
+    'buildtype=release',
+    'b_ndebug=if-release',
   ])
 
 fs = import('fs')
+cpp = meson.get_compiler('cpp')
 is_wasm = host_machine.cpu_family() == 'wasm32' or host_machine.cpu_family() == 'wasm64'
 
 # ---------------------------------------------------------------------------
@@ -187,6 +193,7 @@ fastslide_sources = [
   jpeg_decoder_src,
   'src/runtime/decoders/jpeg_xr_decoder.cpp',
   'src/runtime/decoders/png_decoder.cpp',
+  'src/runtime/global_cache_manager.cpp',
   'src/runtime/io/binary_utils.cpp',
   'src/runtime/io/file_reader.cpp',
   'src/runtime/lru_tile_cache.cpp',
@@ -206,14 +213,20 @@ fastslide_sources = [
 
 # -D__ANSI__ is required by the JPEG-XR decoder and CZI; jxrlib_dep already
 # propagates it, but set it library-wide to match the Bazel per-target flag.
-fastslide_cpp_args = ['-D__ANSI__', '-Wno-unused-parameter']
+# `-Wno-unused-parameter` is GCC/Clang-only; drop it on MSVC (cl.exe rejects it).
+fastslide_cpp_args = ['-D__ANSI__'] + cpp.get_supported_arguments(['-Wno-unused-parameter'])
+
+# When building the Python wheel (build_python) the static library and public
+# headers are NOT installed: meson-python would otherwise dump them into the
+# wheel. Only the nanobind extension + Python package belong in the wheel.
+install_cpp = not get_option('build_python')
 
 fastslide_lib = library('fastslide',
   fastslide_sources, isyntax_as_cpp,
   include_directories : inc,
   dependencies : fastslide_deps,
   cpp_args : fastslide_cpp_args,
-  install : true)
+  install : install_cpp)
 
 # The built-in format registrar self-registers all readers from a single static
 # initializer (g_builtin_registrar in register_builtin_formats.cpp). Nothing
@@ -228,7 +241,9 @@ fastslide_register_lib = static_library('fastslide_register',
   cpp_args : fastslide_cpp_args,
   install : false)
 
-install_subdir('include/fastslide', install_dir : get_option('includedir'))
+if install_cpp
+  install_subdir('include/fastslide', install_dir : get_option('includedir'))
+endif
 
 fastslide_dep = declare_dependency(
   include_directories : inc,
@@ -237,6 +252,39 @@ fastslide_dep = declare_dependency(
   dependencies : fastslide_deps)
 
 meson.override_dependency('fastslide', fastslide_dep)
+
+# ---------------------------------------------------------------------------
+# Python extension (nanobind)
+# ---------------------------------------------------------------------------
+# Built only for wheels (meson-python sets -Dbuild_python=true). nanobind and
+# robin-map are resolved from subprojects/*.wrap; with --wrap-mode=forcefallback
+# they compile from source, so the resulting `_fastslide` extension is fully
+# self-contained (all codecs are static via default_library=static).
+if get_option('build_python')
+  py = import('python').find_installation(pure : false)
+  nanobind_dep = dependency('nanobind')
+
+  py.extension_module('_fastslide',
+    [
+      'src/python/fastslide.cpp',
+      'src/python/cache.cpp',
+      'src/python/reader.cpp',
+    ],
+    include_directories : inc,
+    dependencies : [nanobind_dep, fastslide_dep],
+    cpp_args : fastslide_cpp_args,
+    install : true,
+    subdir : 'fastslide')
+
+  # Pure-Python package + checked-in nanobind stub (matches the Bazel wheel);
+  # both install by basename into the `fastslide` package dir.
+  py.install_sources(
+    [
+      'python/fastslide/__init__.py',
+      'src/python/_fastslide.pyi',
+    ],
+    subdir : 'fastslide')
+endif
 
 # ---------------------------------------------------------------------------
 # CLI tool
@@ -253,19 +301,36 @@ endif
 # C API shared library
 # ---------------------------------------------------------------------------
 if get_option('build_c_api')
-  fastslide_c_lib = library('fastslide_c',
-    [
-      'src/c/fastslide.cpp',
-      'src/c/image.cpp',
-      'src/c/registry.cpp',
-      'src/c/slide_image.cpp',
-      'src/c/slide_reader.cpp',
-      'src/c/utilities.cpp',
-    ],
-    include_directories : inc,
-    dependencies : [fastslide_dep],
-    cpp_args : fastslide_cpp_args,
-    install : true)
+  c_api_sources = [
+    'src/c/fastslide.cpp',
+    'src/c/image.cpp',
+    'src/c/registry.cpp',
+    'src/c/slide_image.cpp',
+    'src/c/slide_reader.cpp',
+    'src/c/utilities.cpp',
+  ]
+  if get_option('shared_c_api')
+    # Self-contained shared C API for the Java FFM native artifact. The export
+    # macro FASTSLIDE_API only expands to __declspec(dllexport) (Windows) /
+    # visibility("default") (Unix) when FASTSLIDE_BUILDING_DLL is defined, so
+    # define it here. gnu_symbol_visibility=hidden keeps everything but the C
+    # API out of the export table. With default_library=static, all wrap deps
+    # link in statically, producing a self-contained fastslide_c.{dll,so,dylib}.
+    fastslide_c_lib = shared_library('fastslide_c',
+      c_api_sources,
+      include_directories : inc,
+      dependencies : [fastslide_dep],
+      cpp_args : fastslide_cpp_args + ['-DFASTSLIDE_BUILDING_DLL'],
+      gnu_symbol_visibility : 'hidden',
+      install : false)
+  else
+    fastslide_c_lib = library('fastslide_c',
+      c_api_sources,
+      include_directories : inc,
+      dependencies : [fastslide_dep],
+      cpp_args : fastslide_cpp_args,
+      install : true)
+  endif
 endif
 
 # ---------------------------------------------------------------------------

@@ -23,6 +23,32 @@ build --cxxopt=-std=c++20
 build --host_cxxopt=-std=c++20
 
 # =============================================================================
+# Release Config (opt + strip)
+# =============================================================================
+# Without an explicit compilation_mode, Bazel defaults to `fastbuild` (-O0).
+# Make optimized builds the default here too so the standalone fastslide build
+# matches the monorepo's `-O3` release build. Use --config=debug to opt out.
+build:release --compilation_mode=opt
+build:release --copt=-O3
+build:release --copt=-DNDEBUG
+build:release --strip=always
+
+build --config=release
+test  --config=release
+run   --config=release
+
+# =============================================================================
+# Debug Config (Opt-in: --config=debug)
+# =============================================================================
+# Unoptimized build with debug info for development / debugging.
+build:debug --compilation_mode=dbg
+build:debug --copt=-O0
+build:debug --copt=-g3
+build:debug --strip=never
+build:debug --copt=-fno-omit-frame-pointer
+build:debug --verbose_failures
+
+# =============================================================================
 # Developer Experience
 # =============================================================================
 build --color=yes
@@ -36,6 +62,25 @@ test  --test_output=errors
 build:macos --sandbox_add_mount_pair=/var/tmp
 build:linux --sandbox_add_mount_pair=/tmp
 build:windows --sandbox_add_mount_pair=C:\Temp
+
+# =============================================================================
+# Rust Platforms (Opt-in: --config=rust, Linux x86_64 only)
+# =============================================================================
+# rules_rs's Linux Rust toolchains carry the `@@llvm+//constraints/libc:gnu.2.28`
+# constraint, satisfied only by the rules_rs platform below. Without these,
+# toolchain resolution for Linux Rust targets (e.g. //rust/fastslide-sys) fails
+# with "No matching toolchains found". macOS rust toolchains carry no libc
+# constraint, so no override is needed there.
+#
+# Opt-in (NOT part of build:linux) on purpose:
+#   * `--enable_platform_specific_config` expands build:linux AFTER the command
+#     line, so an unconditional pin overrides explicit `--platforms=...` flags
+#     and breaks every non-x86_64 or cross-compiled Linux build (e.g. the
+#     linux_arm64 release legs).
+#   * `bazel info` does not apply the main-repo mapping to `@rules_rs` labels
+#     and exits 2, breaking the artifact scripts' `bazel info bazel-bin` calls.
+build:rust --platforms=@rules_rs//rs/platforms:x86_64-unknown-linux-gnu
+build:rust --host_platform=@rules_rs//rs/platforms:x86_64-unknown-linux-gnu
 
 # =============================================================================
 # Hermetic Cross-Compilation Config (Opt-in)

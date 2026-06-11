@@ -14,7 +14,9 @@
 
 #include "fastslide/runtime/decoders/jpeg_decoder.h"
 
+#include <stdio.h>  // Must precede <jpeglib.h>: it uses global FILE*. <cstdio> only guarantees std::FILE.
 #include <array>
+
 #include <csetjmp>
 #include <cstdint>
 #include <cstring>
