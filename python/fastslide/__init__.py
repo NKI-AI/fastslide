@@ -14,6 +14,8 @@ Example:
 __version__ = "0.7.4"
 from fastslide._fastslide import *
 
+from fastslide.xyz_pyramid import XYZPyramid
+
 __all__ = [
     "FastSlide",
     "SlideImageView",
@@ -26,4 +28,5 @@ __all__ = [
     "RuntimeCacheStats",
     "AssociatedImages",
     "AssociatedData",
+    "XYZPyramid",
 ]

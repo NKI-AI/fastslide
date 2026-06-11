@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FastSlide XYZ Viewer - Files</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: {
+                400: "#38bdf8",
+                500: "#0ea5e9",
+                600: "#0284c7",
+                700: "#0369a1",
+              },
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      body {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+      }
+      #file-list {
+        scrollbar-width: thin;
+        scrollbar-color: #4b5563 transparent;
+      }
+      #file-list::-webkit-scrollbar {
+        width: 8px;
+      }
+      #file-list::-webkit-scrollbar-thumb {
+        background-color: #4b5563;
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+
+  <body class="bg-gray-900 text-gray-100 font-sans antialiased">
+    <header
+      class="bg-gray-800 border-b border-gray-700 shadow-sm z-10 shrink-0"
+    >
+      <div
+        class="max-w-full mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between"
+      >
+        <div class="flex items-center gap-3">
+          <div class="bg-primary-600 text-white p-1.5 rounded-lg">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="2"
+              stroke="currentColor"
+              class="w-6 h-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
+              />
+            </svg>
+          </div>
+          <h1 class="text-xl font-bold tracking-tight text-white">
+            FastSlide <span class="text-primary-500">XYZ</span> Files
+          </h1>
+        </div>
+        <div
+          id="root-path"
+          class="hidden md:block text-sm text-gray-400 font-mono truncate max-w-md"
+        ></div>
+      </div>
+    </header>
+
+    <main
+      class="flex-1 overflow-hidden flex flex-col max-w-4xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6"
+    >
+      <div class="mb-4 flex items-center gap-3">
+        <div class="relative flex-1">
+          <input
+            id="filter"
+            type="text"
+            placeholder="Filter slides..."
+            class="w-full rounded-lg bg-gray-800 border border-gray-700 text-gray-200 text-sm py-2.5 pl-10 pr-3 focus:border-primary-500 focus:ring-primary-500"
+          />
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke-width="1.5"
+            stroke="currentColor"
+            class="w-5 h-5 text-gray-500 absolute left-3 top-2.5"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+            />
+          </svg>
+        </div>
+        <span id="count" class="text-sm text-gray-500 whitespace-nowrap"></span>
+      </div>
+
+      <div id="file-list" class="flex-1 overflow-y-auto space-y-2 pr-1"></div>
+
+      <p id="extensions" class="mt-4 text-xs text-gray-600 truncate"></p>
+    </main>
+
+    <script>
+      let allSlides = [];
+
+      function formatSize(bytes) {
+        if (bytes == null) return "folder";
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+        if (bytes < 1024 * 1024 * 1024)
+          return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+        return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+      }
+
+      function render(slides) {
+        const list = document.getElementById("file-list");
+        list.innerHTML = "";
+        document.getElementById("count").textContent = `${slides.length} slide${
+          slides.length === 1 ? "" : "s"
+        }`;
+
+        if (slides.length === 0) {
+          list.innerHTML =
+            '<div class="text-center text-gray-500 py-12">No matching slides found.</div>';
+          return;
+        }
+
+        slides.forEach((slide) => {
+          const a = document.createElement("a");
+          a.href = `/viewer?slide=${encodeURIComponent(slide.path)}`;
+          a.className =
+            "flex items-center justify-between gap-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg px-4 py-3 transition-colors group";
+          a.innerHTML = `
+            <div class="flex items-center gap-3 min-w-0">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-primary-400 shrink-0">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5z" />
+              </svg>
+              <div class="min-w-0">
+                <div class="text-sm font-medium text-gray-100 truncate">${
+                  slide.name
+                }</div>
+                <div class="text-xs text-gray-500 font-mono truncate">${
+                  slide.path
+                }</div>
+              </div>
+            </div>
+            <span class="text-xs text-gray-500 shrink-0">${formatSize(
+              slide.size_bytes
+            )}</span>`;
+          list.appendChild(a);
+        });
+      }
+
+      function applyFilter() {
+        const q = document.getElementById("filter").value.toLowerCase();
+        if (!q) {
+          render(allSlides);
+          return;
+        }
+        render(allSlides.filter((s) => s.path.toLowerCase().includes(q)));
+      }
+
+      function showLoading() {
+        document.getElementById("count").textContent = "";
+        document.getElementById("file-list").innerHTML = `
+          <div class="flex flex-col items-center justify-center text-gray-500 py-16 gap-4">
+            <svg class="animate-spin h-8 w-8 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <span class="text-sm">Scanning folder for slides...</span>
+          </div>`;
+      }
+
+      async function init() {
+        showLoading();
+        let resp;
+        try {
+          resp = await fetch("/api/slides");
+        } catch (err) {
+          document.getElementById("file-list").innerHTML =
+            '<div class="text-center text-red-400 py-12">Failed to load slide list.</div>';
+          return;
+        }
+        if (!resp.ok) {
+          document.getElementById("file-list").innerHTML =
+            '<div class="text-center text-red-400 py-12">Failed to load slide list.</div>';
+          return;
+        }
+        const data = await resp.json();
+        allSlides = data.slides;
+        document.getElementById("root-path").textContent = data.root;
+        document.getElementById("extensions").textContent =
+          "Supported: " + data.extensions.join(", ");
+        render(allSlides);
+        document
+          .getElementById("filter")
+          .addEventListener("input", applyFilter);
+      }
+
+      init();
+    </script>
+  </body>
+</html>
