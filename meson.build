@@ -1,5 +1,5 @@
 project('fastslide', 'c', 'cpp',
-  version : '0.7.3',
+  version : '0.7.4',
   license : 'Apache-2.0',
   meson_version : '>=1.3',
   default_options : [

@@ -92,9 +92,7 @@ def _find_shared_lib(build_dir: Path, *, env: dict[str, str]) -> Path:
                 path = build_dir / path
             if path.suffix.lower() in (".dll", ".so", ".dylib"):
                 return path
-    raise FileNotFoundError(
-        f"Could not locate the fastslide_c shared library in {build_dir} via 'meson introspect'."
-    )
+    raise FileNotFoundError(f"Could not locate the fastslide_c shared library in {build_dir} via 'meson introspect'.")
 
 
 def build_native_jar(platform_key: str) -> int:
