@@ -46,3 +46,13 @@ aspect_py_test(
     main = "_pytest_main.py",
     deps = PYTEST_DEPS,
 )
+
+aspect_py_test(
+    name = "xyz_pyramid_test",
+    srcs = [
+        "_pytest_main.py",
+        "xyz_pyramid_test.py",
+    ],
+    main = "_pytest_main.py",
+    deps = PYTEST_DEPS + [requirement("pillow")],
+)

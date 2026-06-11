@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FastSlide XYZ Viewer</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/ol@v10.3.1/ol.css"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/ol@v10.3.1/dist/ol.js"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: {
+                50: "#f0f9ff",
+                100: "#e0f2fe",
+                400: "#38bdf8",
+                500: "#0ea5e9",
+                600: "#0284c7",
+                700: "#0369a1",
+              },
+            },
+          },
+        },
+      };
+    </script>
+    <style>
+      .ol-control button {
+        background-color: white !important;
+        color: #374151 !important;
+        border: 1px solid #d1d5db !important;
+      }
+      .ol-control button:hover {
+        background-color: #f3f4f6 !important;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+      }
+      #map {
+        flex: 1;
+        width: 100%;
+        background: #111827;
+      }
+      #sidebar {
+        scrollbar-width: thin;
+        scrollbar-color: #4b5563 transparent;
+        transition: width 0.2s ease, opacity 0.2s ease;
+      }
+      #sidebar.collapsed {
+        width: 0 !important;
+        opacity: 0;
+        overflow: hidden;
+        border: 0;
+      }
+      #sidebar::-webkit-scrollbar {
+        width: 6px;
+      }
+      #sidebar::-webkit-scrollbar-thumb {
+        background-color: #4b5563;
+        border-radius: 3px;
+      }
+      /* Scale bar styled for the dark background. */
+      .ol-scale-line {
+        background: rgba(31, 41, 55, 0.8);
+        border-radius: 4px;
+        bottom: 12px;
+        left: 12px;
+        padding: 2px;
+      }
+      .ol-scale-line-inner {
+        color: #e5e7eb;
+        border-color: #e5e7eb;
+        font-size: 11px;
+      }
+    </style>
+  </head>
+
+  <body class="bg-gray-900 text-gray-100 font-sans antialiased">
+    <header
+      class="bg-gray-800 border-b border-gray-700 shadow-sm z-10 shrink-0"
+    >
+      <div
+        class="max-w-full mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between"
+      >
+        <div class="flex items-center gap-3">
+          <button
+            id="sidebar-toggle"
+            title="Toggle sidebar"
+            class="p-2 rounded-lg text-gray-300 hover:bg-gray-700 transition-colors"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="2"
+              stroke="currentColor"
+              class="w-5 h-5"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"
+              />
+            </svg>
+          </button>
+          <div class="bg-primary-600 text-white p-1.5 rounded-lg">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="2"
+              stroke="currentColor"
+              class="w-6 h-6"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5z"
+              />
+            </svg>
+          </div>
+          <h1 class="text-xl font-bold tracking-tight text-white">
+            FastSlide <span class="text-primary-500">XYZ</span>
+          </h1>
+        </div>
+
+        <div
+          id="header-info"
+          class="hidden md:flex gap-6 text-sm text-gray-400"
+        >
+          <span id="format-info" class="font-medium text-gray-300"></span>
+          <span id="dimensions-info"></span>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <a
+            id="files-link"
+            href="/"
+            class="hidden inline-flex items-center gap-1.5 rounded-lg bg-gray-700 px-3 py-1.5 text-sm font-medium text-gray-100 hover:bg-gray-600 transition-colors"
+            title="Back to file browser"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="2"
+              stroke="currentColor"
+              class="w-4 h-4"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z"
+              />
+            </svg>
+            Files
+          </a>
+          <label class="text-sm text-gray-400">Tile format</label>
+          <select
+            id="format-select"
+            class="rounded-lg bg-gray-900 border border-gray-700 text-gray-200 text-sm py-1.5 px-3 focus:border-primary-500 focus:ring-primary-500"
+          >
+            <option value="jpg">JPEG</option>
+            <option value="png">PNG</option>
+          </select>
+        </div>
+      </div>
+    </header>
+
+    <main class="flex-1 flex overflow-hidden">
+      <aside
+        id="sidebar"
+        class="w-80 bg-gray-800 border-r border-gray-700 flex-shrink-0 overflow-y-auto"
+      >
+        <div class="p-6 space-y-6">
+          <div id="image-switcher" class="hidden">
+            <h2 class="text-lg font-semibold text-primary-400 mb-4">Image</h2>
+            <select
+              id="image-select"
+              class="w-full rounded-lg bg-gray-900 border border-gray-700 text-gray-200 text-sm py-2 px-3 focus:border-primary-500 focus:ring-primary-500"
+            ></select>
+          </div>
+
+          <div>
+            <h2 class="text-lg font-semibold text-primary-400 mb-4">
+              Slide Details
+            </h2>
+            <div
+              class="space-y-3 bg-gray-900/50 p-4 rounded-xl border border-gray-700/50"
+            >
+              <div class="flex justify-between text-sm">
+                <span class="text-gray-500">Name</span>
+                <span
+                  class="font-medium text-gray-200 truncate ml-2"
+                  id="info-name"
+                  >-</span
+                >
+              </div>
+              <div class="flex justify-between text-sm">
+                <span class="text-gray-500">Format</span>
+                <span class="font-medium text-gray-200" id="info-format"
+                  >-</span
+                >
+              </div>
+              <div class="flex justify-between text-sm">
+                <span class="text-gray-500">Dimensions</span>
+                <span class="font-medium text-gray-200" id="info-dimensions"
+                  >-</span
+                >
+              </div>
+              <div class="flex justify-between text-sm">
+                <span class="text-gray-500">MPP (µm/px)</span>
+                <span class="font-medium text-gray-200" id="info-mpp">-</span>
+              </div>
+              <div class="flex justify-between text-sm">
+                <span class="text-gray-500">Native levels</span>
+                <span class="font-medium text-gray-200" id="info-levels"
+                  >-</span
+                >
+              </div>
+              <div class="flex justify-between text-sm">
+                <span class="text-gray-500">Zoom levels</span>
+                <span class="font-medium text-gray-200" id="info-zoom">-</span>
+              </div>
+              <div class="flex justify-between text-sm">
+                <span class="text-gray-500">Tile size</span>
+                <span class="font-medium text-gray-200" id="info-tile">-</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <div id="viewer-container" class="flex-1 relative bg-gray-900">
+        <div id="map" class="absolute inset-0"></div>
+      </div>
+    </main>
+
+    <script>
+      let map = null;
+      let layer = null;
+      let slideInfo = null;
+      let currentImageIndex = 0;
+
+      // When served by the multi-image (folder) server, the slide to view is
+      // passed as a ?slide=<relpath> query param that must be forwarded to the
+      // /info and /tiles endpoints. The single-slide server ignores it.
+      const slideParam = new URLSearchParams(window.location.search).get(
+        "slide"
+      );
+
+      function withSlide(url) {
+        if (!slideParam) return url;
+        const sep = url.includes("?") ? "&" : "?";
+        return url + sep + "slide=" + encodeURIComponent(slideParam);
+      }
+
+      function currentImage() {
+        return slideInfo.images[currentImageIndex];
+      }
+
+      function tileUrl(imageIndex, z, x, y, ext) {
+        return withSlide(`/tiles/${imageIndex}/${z}/${x}/${y}.${ext}`);
+      }
+
+      function buildSource(image, ext) {
+        const [width, height] = image.dimensions;
+        const tileSize = image.tile_size;
+
+        // Coordinate system: image pixels, y pointing down. The extent's top
+        // edge is y=0 and the bottom edge is y=-height, with the tile grid
+        // origin anchored at the top-left so XYZ rows increase downward.
+        const extent = [0, -height, width, 0];
+
+        // One zoom level per native pyramid level; resolutions are the slide's
+        // own downsamples (not necessarily powers of two). OpenLayers scales
+        // between these client-side, so the server never resamples.
+        const resolutions = image.resolutions.slice();
+
+        // Set meters-per-unit from MPP so the scale bar reads in real units
+        // (1 map unit = 1 level-0 pixel = mpp_x microns = mpp_x * 1e-6 m).
+        const projOpts = {
+          code: "fastslide-pixels",
+          units: "pixels",
+          extent: extent,
+        };
+        if (image.mpp) {
+          projOpts.metersPerUnit = image.mpp[0] * 1e-6;
+        }
+        const projection = new ol.proj.Projection(projOpts);
+
+        const tileGrid = new ol.tilegrid.TileGrid({
+          extent: extent,
+          origin: [0, 0],
+          resolutions: resolutions,
+          tileSize: tileSize,
+        });
+
+        const source = new ol.source.XYZ({
+          projection: projection,
+          tileGrid: tileGrid,
+          wrapX: false,
+          tileUrlFunction: function (tileCoord) {
+            if (!tileCoord) return undefined;
+            const z = tileCoord[0];
+            const x = tileCoord[1];
+            const y = tileCoord[2];
+            if (x < 0 || y < 0) return undefined;
+            return tileUrl(image.index, z, x, y, ext);
+          },
+        });
+
+        return { source, projection, resolutions, extent };
+      }
+
+      function createMap(image, ext) {
+        const { source, projection, resolutions, extent } = buildSource(
+          image,
+          ext
+        );
+
+        layer = new ol.layer.Tile({ source });
+
+        if (map) {
+          map.setTarget(null);
+          map = null;
+        }
+
+        // The tile grid only goes as coarse as the slide's coarsest native
+        // level (resolutions[0]). To let the user zoom out far enough to fit
+        // the whole slide, give the View extra coarser steps; OpenLayers scales
+        // the coarsest tiles down for those without requesting new tiles.
+        const [width, height] = image.dimensions;
+        const viewResolutions = resolutions.slice();
+        const maxRes = Math.max(width, height) / 200;
+        let currentMax = viewResolutions[0];
+        while (currentMax < maxRes) {
+          currentMax *= 2;
+          viewResolutions.unshift(currentMax);
+        }
+
+        const controls = ol.control.defaults
+          .defaults()
+          .extend([new ol.control.FullScreen(), new ol.control.ZoomSlider()]);
+        if (image.mpp) {
+          controls.extend([
+            new ol.control.ScaleLine({ units: "metric", minWidth: 80 }),
+          ]);
+        }
+
+        map = new ol.Map({
+          target: "map",
+          layers: [layer],
+          view: new ol.View({
+            projection: projection,
+            resolutions: viewResolutions,
+            extent: extent,
+            constrainOnlyCenter: true,
+            showFullExtent: true,
+            enableRotation: false,
+          }),
+          controls: controls,
+        });
+
+        map.getView().fit(extent, { padding: [20, 20, 20, 20] });
+      }
+
+      function populateImageSwitcher() {
+        const switcher = document.getElementById("image-switcher");
+        const select = document.getElementById("image-select");
+        select.innerHTML = "";
+        if (slideInfo.images.length <= 1) {
+          switcher.classList.add("hidden");
+          return;
+        }
+        switcher.classList.remove("hidden");
+        slideInfo.images.forEach((img) => {
+          const option = document.createElement("option");
+          option.value = img.index;
+          const label = img.name || `Image ${img.index}`;
+          option.textContent = `${label} (${img.dimensions[0]}×${img.dimensions[1]})`;
+          select.appendChild(option);
+        });
+        select.value = currentImageIndex;
+      }
+
+      function populateSidebar() {
+        const image = currentImage();
+        document.getElementById("info-name").textContent =
+          slideInfo.name || "-";
+        document.getElementById("info-format").textContent =
+          slideInfo.format || "-";
+        document.getElementById("format-info").textContent =
+          slideInfo.format || "";
+        const dims = `${image.dimensions[0]} × ${image.dimensions[1]}`;
+        document.getElementById("info-dimensions").textContent = dims;
+        document.getElementById("dimensions-info").textContent = dims;
+        document.getElementById("info-mpp").textContent = image.mpp
+          ? ((image.mpp[0] + image.mpp[1]) / 2).toFixed(4)
+          : "N/A";
+        document.getElementById("info-levels").textContent = image.level_count;
+        document.getElementById(
+          "info-zoom"
+        ).textContent = `${image.min_zoom} – ${image.max_zoom}`;
+        document.getElementById(
+          "info-tile"
+        ).textContent = `${image.tile_size} px`;
+      }
+
+      function selectImage(index) {
+        currentImageIndex = index;
+        populateSidebar();
+        createMap(
+          currentImage(),
+          document.getElementById("format-select").value
+        );
+      }
+
+      async function init() {
+        if (slideParam) {
+          document.getElementById("files-link").classList.remove("hidden");
+        }
+        const resp = await fetch(withSlide("/info"));
+        if (!resp.ok) {
+          document.getElementById("map").innerHTML =
+            '<div class="flex items-center justify-center h-full text-red-400">Failed to load slide info</div>';
+          return;
+        }
+        slideInfo = await resp.json();
+        currentImageIndex = slideInfo.primary_index || 0;
+
+        populateImageSwitcher();
+        selectImage(currentImageIndex);
+
+        document
+          .getElementById("format-select")
+          .addEventListener("change", (e) => {
+            createMap(currentImage(), e.target.value);
+          });
+
+        document
+          .getElementById("image-select")
+          .addEventListener("change", (e) => {
+            selectImage(parseInt(e.target.value, 10));
+          });
+
+        document
+          .getElementById("sidebar-toggle")
+          .addEventListener("click", () => {
+            document.getElementById("sidebar").classList.toggle("collapsed");
+            // Let the layout settle before OpenLayers recomputes its size.
+            setTimeout(() => map && map.updateSize(), 220);
+          });
+      }
+
+      init();
+    </script>
+  </body>
+</html>

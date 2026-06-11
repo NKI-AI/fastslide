@@ -1,0 +1,37 @@
+load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
+load("@fastslide_pip//:requirements.bzl", "requirement")
+
+package(default_visibility = ["//visibility:public"])
+
+VIEWER_DEPS = [
+    requirement("fastapi"),
+    requirement("uvicorn"),
+    requirement("pillow"),
+    requirement("numpy"),
+    "//python:fastslide",
+]
+
+# FastAPI + OpenLayers XYZ tile viewer for a single slide. Run with:
+#   bazelisk run //examples/python:viewer -- /abs/path/to/slide.svs
+# then open http://127.0.0.1:8000
+aspect_py_binary(
+    name = "viewer",
+    srcs = ["server.py"],
+    data = ["index.html"],
+    main = "server.py",
+    deps = VIEWER_DEPS,
+)
+
+# Same viewer, but serves a whole folder of slides with a file browser. Run:
+#   bazelisk run //examples/python:viewer_multiimage -- /abs/path/to/slides
+# then open http://127.0.0.1:8000
+aspect_py_binary(
+    name = "viewer_multiimage",
+    srcs = ["server_multiimage.py"],
+    data = [
+        "browser.html",
+        "index.html",
+    ],
+    main = "server_multiimage.py",
+    deps = VIEWER_DEPS,
+)
