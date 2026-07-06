@@ -1,5 +1,5 @@
 project('fastslide', 'c', 'cpp',
-  version : '0.7.4',
+  version : '0.7.5',
   license : 'Apache-2.0',
   meson_version : '>=1.3',
   default_options : [
@@ -281,6 +281,7 @@ if get_option('build_python')
   py.install_sources(
     [
       'python/fastslide/__init__.py',
+      'python/fastslide/xyz_pyramid.py',
       'src/python/_fastslide.pyi',
     ],
     subdir : 'fastslide')
