@@ -59,7 +59,7 @@ git_override(
 bazel_dep(name = "simpletiff", version = "0.0.1")
 git_override(
     module_name = "simpletiff",
-    commit = "38865229481f9a5c00f5a70fc6a2444f3cd3ccfd",
+    commit = "4a6b4b812701c5a21c97379efa4a0c2bfebd34c7",
     remote = "https://github.com/NKI-AI/simpletiff.git",
 )
 

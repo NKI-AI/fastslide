@@ -541,6 +541,8 @@ aifocore::Status ParseGroup301D(isyntax_t* isyntax, isyntax_image_t* image,
     } break;
     case 0x101C: /*DP_WAVELET_DEADZONE*/ {
     } break;
+    case 0x1025: /*UFS_IMAGE_OPP_EXTREME_VERTEX*/ {  // data model >= 100
+    } break;
     case 0x1004: /*PIM_DP_IMAGE_TYPE*/ {
       if ((strcmp(value, "MACROIMAGE") == 0)) {
         isyntax->macro_image_index = isyntax->parser.running_image_index;
@@ -609,6 +611,8 @@ aifocore::Status ParseGroup301D(isyntax_t* isyntax, isyntax_image_t* image,
     } break;
     case 0x200C: /*UFS_IMAGE_DIMENSION_IN_BLOCK*/ {
     } break;
+    case 0x200D: /*UFS_IMAGE_BLOCK_HEADERS*/ {  // data model >= 100
+    } break;
     case 0x200E: /*UFS_IMAGE_BLOCK_COORDINATE*/ {
       if (isyntax->parser.data_object_flags &
           (ISYNTAX_OBJECT_UFSImageBlockHeader |
@@ -656,6 +660,10 @@ aifocore::Status ParseGroup301D(isyntax_t* isyntax, isyntax_image_t* image,
     case 0x2014: { /*UFS_IMAGE_BLOCK_HEADER_TABLE*/
       success = ParseBlockHeaderTable(image, value, value_len);
     } break;
+    case 0x2016: /*UFS_IMAGE_CLUSTER_HEADER_TEMPLATES*/ {  // data model >= 100
+    } break;
+    case 0x2017: /*UFS_IMAGE_DIMENSIONS_OVER_CLUSTER*/ {  // data model >= 100
+    } break;
     case 0x201F: /*UFS_IMAGE_CLUSTER_HEADER_TABLE*/ {
       success = ParseClusterHeaderTable(isyntax, image, value, value_len);
     } break;
@@ -665,6 +673,10 @@ aifocore::Status ParseGroup301D(isyntax_t* isyntax, isyntax_image_t* image,
           isyntax->parser.cluster_header_template_index;
       tmpl->dimension_count =
           isyntax::math::ParseUpToFiveIntegers(value, tmpl->dimension_order);
+    } break;
+    case 0x2023: /*UFS_IMAGE_VALID_DATA_ENVELOPES*/ {  // data model >= 100
+    } break;
+    case 0x2024: /*UFS_IMAGE_OPP_EXTREME_VERTICES*/ {  // data model >= 100
     } break;
     case 0x2025: /*UFS_IMAGE_OPP_EXTREME_VERTEX*/ {
       if (isyntax->parser.data_object_flags &
@@ -681,6 +693,12 @@ aifocore::Status ParseGroup301D(isyntax_t* isyntax, isyntax_image_t* image,
           success = false;
         }
       }
+    } break;
+    case 0x2026: /*UFS_IMAGE_VALID_ENVELOPE_DIMENSIONS*/ {  // data model >= 100
+    } break;
+    case 0x2027: /*UFS_IMAGE_DIMENSION_ORIGIN*/ {  // data model >= 100
+    } break;
+    case 0x2029: /*UFS_IMAGE_PIXEL_TRANSFORM_METHOD*/ {  // data model >= 100
     } break;
   }
 

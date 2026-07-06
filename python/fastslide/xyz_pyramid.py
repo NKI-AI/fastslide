@@ -281,7 +281,6 @@ class XYZPyramid:
         OpenLayers tile grid and populate the slide info panel.
         """
         return {
-            "format": self._slide_format(),
             "dimensions": [self._width, self._height],
             "tile_size": self._tile_size,
             "min_zoom": self.min_zoom,
@@ -316,10 +315,6 @@ class XYZPyramid:
             return PILImage.fromarray(array, mode="RGBA")
         # Fall back to the first three channels for multiplex/spectral data.
         return PILImage.fromarray(array[:, :, :3].copy(), mode="RGB")
-
-    def _slide_format(self) -> str | None:
-        fmt = getattr(self._slide, "format", None)
-        return str(fmt) if fmt is not None else None
 
     def _slide_mpp(self) -> list[float] | None:
         try:

@@ -43,7 +43,7 @@ Extra flags are forwarded after the path, for example:
 bazelisk run //examples/python:viewer -- /abs/path/to/slide.svs --port 8080 --tile-size 256
 ```
 
-Then open <http://127.0.0.1:8000> (or the port you chose).
+Then open <http://127.0.0.1:8080> (or the port you chose).
 
 ## Run with a plain Python environment
 

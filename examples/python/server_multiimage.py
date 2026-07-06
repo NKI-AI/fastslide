@@ -37,6 +37,7 @@ from __future__ import annotations
 import argparse
 import functools
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 import uvicorn
@@ -45,6 +46,22 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 
 import fastslide
 from fastslide.xyz_pyramid import XYZPyramid
+
+
+@dataclass(frozen=True)
+class _OpenSlide:
+    """A cached, opened slide: its reader and one XYZPyramid per image.
+
+    Holding an instance keeps the underlying ``FastSlide`` reader alive, so the
+    weak reader handle inside each pyramid's ``SlideImageView`` stays valid for
+    as long as any caller references this object. Eviction from the cache is
+    therefore safe even while a tile request is still in flight: the entry is
+    only torn down once the last in-flight request drops its reference.
+    """
+
+    reader: fastslide.FastSlide
+    pyramids: tuple[XYZPyramid, ...]
+
 
 _HERE = Path(__file__).resolve().parent
 _INDEX_HTML = _HERE / "index.html"
@@ -132,15 +149,19 @@ def create_app(root: str | Path, tile_size: int = 256, jpeg_quality: int = 85) -
         return candidate
 
     # Cache the opened slide per relative path so repeated tile requests reuse
-    # the same reader. The cached tuple keeps the FastSlide handle alive, which
-    # matters because each SlideImageView only holds a weak reader handle.
+    # the same reader. ``functools.lru_cache`` is thread-safe, which matters
+    # because FastAPI runs these sync endpoints in a threadpool. Each endpoint
+    # holds onto the returned _OpenSlide for the whole request, so an entry
+    # evicted by a concurrent open of a different slide stays alive until the
+    # in-flight request that still references it returns. ``maxsize`` only
+    # bounds how many readers are kept warm, not correctness.
     @functools.lru_cache(maxsize=16)
-    def open_slide(rel: str) -> tuple[fastslide.FastSlide, tuple[XYZPyramid, ...]]:
+    def open_slide(rel: str) -> _OpenSlide:
         path = resolve_slide(rel)
-        slide = fastslide.FastSlide.from_file_path(str(path))
-        images = slide.images
+        reader = fastslide.FastSlide.from_file_path(str(path))
+        images = reader.images
         pyramids = tuple(XYZPyramid(images[i], tile_size=tile_size) for i in range(len(images)))
-        return slide, pyramids
+        return _OpenSlide(reader=reader, pyramids=pyramids)
 
     app = FastAPI(title="FastSlide XYZ Multi-Slide Viewer")
 
@@ -164,19 +185,18 @@ def create_app(root: str | Path, tile_size: int = 256, jpeg_quality: int = 85) -
 
     @app.get("/info")
     def info(slide: str = Query(...)) -> JSONResponse:
-        reader, pyramids = open_slide(slide)
+        opened = open_slide(slide)
         image_infos = []
-        for i, pyramid in enumerate(pyramids):
+        for i, pyramid in enumerate(opened.pyramids):
             entry = pyramid.info()
             entry["index"] = i
-            view = pyramid.slide
-            entry["name"] = view.name if hasattr(view, "name") else f"Image {i}"
+            entry["name"] = pyramid.slide.name
             image_infos.append(entry)
         return JSONResponse(
             {
                 "name": Path(slide).name,
-                "format": reader.format,
-                "primary_index": reader.images.primary_index,
+                "format": opened.reader.format,
+                "primary_index": opened.reader.images.primary_index,
                 "images": image_infos,
             }
         )
@@ -186,11 +206,11 @@ def create_app(root: str | Path, tile_size: int = 256, jpeg_quality: int = 85) -
         media_type = _MEDIA_TYPES.get(ext.lower())
         if media_type is None:
             raise HTTPException(status_code=404, detail=f"unsupported extension: {ext}")
-        _, pyramids = open_slide(slide)
-        if not 0 <= image < len(pyramids):
+        opened = open_slide(slide)
+        if not 0 <= image < len(opened.pyramids):
             raise HTTPException(status_code=404, detail=f"no image {image}")
         try:
-            data = pyramids[image].get_tile_bytes(z, x, y, fmt=ext, quality=jpeg_quality)
+            data = opened.pyramids[image].get_tile_bytes(z, x, y, fmt=ext, quality=jpeg_quality)
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return Response(content=data, media_type=media_type)
