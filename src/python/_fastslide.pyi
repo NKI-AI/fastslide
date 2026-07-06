@@ -45,8 +45,33 @@ class Image:
     def dtype(self) -> str: ...
     @property
     def planar_config(self) -> PlanarConfig: ...
+    @property
+    def is_interleaved(self) -> bool:
+        """True if the image is stored interleaved (HWC)."""
+
+    @property
+    def is_separate(self) -> bool:
+        """True if the image is stored band-separate / planar (CHW)."""
+
     def numpy(self) -> object:
         """Get a numpy array view of the image data (zero-copy)"""
+
+    def to_interleaved(self) -> Image:
+        """Return an interleaved (HWC) view of this image.
+
+        If the image is already interleaved, returns ``self`` unchanged (no
+        copy). Otherwise allocates a new Image with the same pixels in
+        interleaved layout. Peak extra memory during conversion equals the
+        image size.
+        """
+
+    def to_separate(self) -> Image:
+        """Return a band-separate (CHW) view of this image.
+
+        If the image is already band-separate, returns ``self`` unchanged (no
+        copy). Otherwise allocates a new Image with the same pixels in planar
+        layout.
+        """
 
 class CacheInspectionStats:
     @property
