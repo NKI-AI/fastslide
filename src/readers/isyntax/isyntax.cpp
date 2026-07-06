@@ -14,6 +14,7 @@
 
 #include "fastslide/readers/isyntax/isyntax.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -47,11 +48,11 @@ IsyntaxReader::~IsyntaxReader() {}
 
 aifocore::Status IsyntaxReader::ValidateInput(
     const std::filesystem::path& filename) {
-  // Check extension
+  // Accept both iSyntax v1 (".isyntax") and v2 (".i2syntax"), case-insensitive.
   std::string ext = filename.extension().string();
-  // case insensitive check?
-  // For now simple check
-  if (ext != ".isyntax") {
+  std::transform(ext.begin(), ext.end(), ext.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+  if (ext != ".isyntax" && ext != ".i2syntax") {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid extension for iSyntax: {}", ext));
