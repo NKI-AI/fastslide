@@ -198,8 +198,11 @@ class FastSlide {
                      const std::string& source_path);
 
   /// @brief Factory method to create from file path
+  /// @param file_path Path to the slide file.
+  /// @param apply_icc When true and the slide carries an embedded ICC profile,
+  ///        `read_region` returns pixels converted to sRGB (perceptual intent).
   [[nodiscard]] static std::unique_ptr<FastSlide> FromFilePath(
-      const std::string& file_path);
+      const std::string& file_path, bool apply_icc = false);
 
   /// @brief Future factory method for URIs
   [[nodiscard]] static std::unique_ptr<FastSlide> FromUri(
@@ -245,6 +248,12 @@ class FastSlide {
   [[nodiscard]] nb::tuple GetBounds() const;
   [[nodiscard]] std::string GetFormat() const;
   [[nodiscard]] std::string GetDtype() const;
+
+  /// @brief Embedded ICC profile as `bytes`, or `None` if the slide has none.
+  [[nodiscard]] nb::object GetIccProfile() const;
+
+  /// @brief Whether ICC color management is currently applied on read.
+  [[nodiscard]] bool GetApplyIcc() const;
   [[nodiscard]] std::string GetQuickHash() const;
   [[nodiscard]] nb::list GetChannelMetadata() const;
   [[nodiscard]] int GetNumChannels() const;

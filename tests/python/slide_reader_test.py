@@ -844,6 +844,42 @@ class TestSlideImagesAccessor:
         assert last_by_neg.dimensions == last_by_pos.dimensions
 
 
+class TestFastSlideIcc:
+    """Test the ICC color-management API surface."""
+
+    def test_icc_profile_property_type(self, sample_slide_path: str) -> None:
+        """``icc_profile`` is either bytes (non-empty) or None."""
+        with fastslide.FastSlide.from_file_path(sample_slide_path) as slide:
+            profile = slide.icc_profile
+            assert profile is None or isinstance(profile, bytes)
+            if isinstance(profile, bytes):
+                assert len(profile) > 0
+
+    def test_apply_icc_defaults_to_false(self, sample_slide_path: str) -> None:
+        """Opening without ``apply_icc`` leaves color management disabled."""
+        with fastslide.FastSlide.from_file_path(sample_slide_path) as slide:
+            assert slide.apply_icc is False
+
+    def test_apply_icc_open_flag(self, sample_slide_path: str) -> None:
+        """``apply_icc=True`` enables color management iff a profile exists."""
+        with fastslide.FastSlide.from_file_path(sample_slide_path, apply_icc=True) as slide:
+            # Enabling is a no-op on slides without a profile, so the flag
+            # tracks whether a transform was actually built.
+            expected = slide.icc_profile is not None
+            assert slide.apply_icc is expected
+
+    def test_apply_icc_read_region_shape_unchanged(self, sample_slide_path: str) -> None:
+        """Color management must not change the returned array shape/dtype."""
+        with fastslide.FastSlide.from_file_path(sample_slide_path) as plain:
+            plain_region = plain.read_region(location=(0, 0), level=0, size=(64, 64)).numpy()
+
+        with fastslide.FastSlide.from_file_path(sample_slide_path, apply_icc=True) as icc:
+            icc_region = icc.read_region(location=(0, 0), level=0, size=(64, 64)).numpy()
+
+        assert plain_region.shape == icc_region.shape
+        assert plain_region.dtype == icc_region.dtype
+
+
 @pytest.fixture(scope="session")
 def sample_slide_path() -> str:
     """

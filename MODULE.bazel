@@ -7,7 +7,7 @@ local_path_override.
 
 module(
     name = "fastslide",
-    version = "0.7.5",
+    version = "0.8.0",
 )
 
 bazel_dep(name = "rules_cc", version = "0.2.17")
@@ -59,7 +59,7 @@ git_override(
 bazel_dep(name = "simpletiff", version = "0.0.1")
 git_override(
     module_name = "simpletiff",
-    commit = "4a6b4b812701c5a21c97379efa4a0c2bfebd34c7",
+    commit = "babc4f958b60f493f3d5092cbd4a11af350ea6fa",
     remote = "https://github.com/NKI-AI/simpletiff.git",
 )
 
@@ -215,6 +215,17 @@ http_archive(
     sha256 = "8702ba68b442657f11aaeb2b338443ca8d5fb95b0d845757968a7be31ef7f16d",
     strip_prefix = "openjpeg-2.4.0",
     urls = ["https://github.com/uclouvain/openjpeg/archive/v2.4.0.tar.gz"],
+)
+
+# Little CMS 2 (lcms2): ICC color-management engine used to apply embedded
+# slide ICC profiles during region decode. Not on the BCR, so vendored via
+# http_archive with a custom BUILD file, like openjp2/libdicom/lodepng.
+http_archive(
+    name = "lcms2",
+    build_file = "//third_party:lcms2.BUILD",
+    sha256 = "bfc54f7bab59fbc921012014a8032e4cba4abd46db47d46b76416a8c0b2815c8",
+    strip_prefix = "lcms2-2.19.1",
+    urls = ["https://github.com/mm2/Little-CMS/releases/download/lcms2.19.1/lcms2-2.19.1.tar.gz"],
 )
 
 # The main monorepo vendors this module.

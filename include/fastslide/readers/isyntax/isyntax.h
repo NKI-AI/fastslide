@@ -60,6 +60,10 @@ class IsyntaxReader : public SlideReader, public ReaderFactory<IsyntaxReader> {
 
   [[nodiscard]] Metadata GetMetadata() const override;
 
+  /// @brief Embedded DICOM ICC profile for the WSI image, if present.
+  [[nodiscard]] aifocore::Result<std::vector<uint8_t>> GetIccProfile()
+      const override;
+
   [[nodiscard]] std::string GetFormatName() const override { return "iSyntax"; }
 
   [[nodiscard]] ImageFormat GetImageFormat() const override {

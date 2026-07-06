@@ -69,6 +69,12 @@ class DicomReader : public SlideReader, public ReaderFactory<DicomReader> {
       std::string_view name) const override;
   Metadata GetMetadata() const override;
 
+  /// @brief Embedded ICC profile from the Optical Path Sequence (0048,0105 →
+  /// 0028,2000), if present.
+  /// @return ICC profile bytes, or `kNotFound` when the slide carries none.
+  [[nodiscard]] aifocore::Result<std::vector<uint8_t>> GetIccProfile()
+      const override;
+
   std::string GetFormatName() const override { return "DICOM"; }
 
   ImageFormat GetImageFormat() const override { return ImageFormat::kRGB; }
@@ -118,6 +124,11 @@ class DicomReader : public SlideReader, public ReaderFactory<DicomReader> {
   static void ExtractObjectiveLensPower(const DcmDataSet* metadata,
                                         DicomLevel& level);
 
+  /// @brief Extract the embedded ICC profile from the OpticalPathSequence.
+  /// @return ICC profile bytes, or `kNotFound` when absent/empty.
+  static aifocore::Result<std::vector<uint8_t>> ExtractIccProfile(
+      const DcmDataSet* metadata);
+
   /// @brief Parse the DICOM transfer syntax UID string.
   static DicomTransferSyntax ParseTransferSyntax(const char* uid);
 
@@ -125,6 +136,7 @@ class DicomReader : public SlideReader, public ReaderFactory<DicomReader> {
   std::vector<DicomLevel> levels_;
   std::vector<DicomAssociated> associated_;
   SlideProperties properties_{};
+  std::vector<uint8_t> icc_profile_;
 };
 
 }  // namespace fastslide

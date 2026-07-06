@@ -129,6 +129,10 @@ public final class FastSlideNative {
   // -----------------------------------------------------------------------
   private static final MethodHandle CREATE_READER =
       downcall("fastslide_create_reader", FunctionDescriptor.of(ADDRESS, ADDRESS));
+  private static final MethodHandle CREATE_READER_WITH_OPTIONS =
+      downcall(
+          "fastslide_create_reader_with_options",
+          FunctionDescriptor.of(ADDRESS, ADDRESS, ADDRESS));
   private static final MethodHandle GET_SUPPORTED_EXTENSIONS =
       downcall(
           "fastslide_get_supported_extensions", FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
@@ -137,12 +141,33 @@ public final class FastSlideNative {
   private static final MethodHandle IS_SUPPORTED =
       downcall("fastslide_is_supported", FunctionDescriptor.of(JAVA_INT, ADDRESS));
 
+  // FastSlideOpenOptions layout: { int apply_icc (0); int target_color_space (4);
+  //   int rendering_intent (8); } => 12 bytes (C enums are int-sized).
+  static final long OPEN_OPTIONS_SIZE = 12;
+
   public static MemorySegment createReader(Arena arena, String path) {
     try {
       MemorySegment pathSeg = arena.allocateFrom(path);
       clearLastError();
       MemorySegment reader = (MemorySegment) CREATE_READER.invokeExact(pathSeg);
       return checkNonNull(reader, "fastslide_create_reader");
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  public static MemorySegment createReaderWithOptions(
+      Arena arena, String path, boolean applyIcc, int targetColorSpace, int renderingIntent) {
+    try {
+      MemorySegment pathSeg = arena.allocateFrom(path);
+      MemorySegment options = arena.allocate(OPEN_OPTIONS_SIZE);
+      options.set(JAVA_INT, 0, applyIcc ? 1 : 0);
+      options.set(JAVA_INT, 4, targetColorSpace);
+      options.set(JAVA_INT, 8, renderingIntent);
+      clearLastError();
+      MemorySegment reader =
+          (MemorySegment) CREATE_READER_WITH_OPTIONS.invokeExact(pathSeg, options);
+      return checkNonNull(reader, "fastslide_create_reader_with_options");
     } catch (Throwable t) {
       throw wrap(t);
     }
@@ -240,6 +265,18 @@ public final class FastSlideNative {
       downcall(
           "fastslide_slide_reader_get_stack_info",
           FunctionDescriptor.of(JAVA_INT, ADDRESS, ADDRESS));
+  private static final MethodHandle READER_GET_ICC_PROFILE_SIZE =
+      downcall(
+          "fastslide_slide_reader_get_icc_profile_size",
+          FunctionDescriptor.of(JAVA_LONG, ADDRESS));
+  private static final MethodHandle READER_READ_ICC_PROFILE =
+      downcall(
+          "fastslide_slide_reader_read_icc_profile",
+          FunctionDescriptor.of(JAVA_LONG, ADDRESS, ADDRESS, JAVA_LONG));
+  private static final MethodHandle READER_ENABLE_ICC_TRANSFORM =
+      downcall(
+          "fastslide_slide_reader_enable_icc_transform",
+          FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT));
 
   // FastSlideImageDimensions layout: { uint32_t width; uint32_t height; }
   static final long DIMS_SIZE = 8;
@@ -444,6 +481,38 @@ public final class FastSlideNative {
           (int) READER_GET_STACK_INFO.invokeExact(reader, info),
           "fastslide_slide_reader_get_stack_info");
       return parseStackInfo(info);
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  /** Copies the embedded ICC profile bytes, or {@code null} if the slide has none. */
+  public static byte[] readerReadIccProfile(Arena arena, MemorySegment reader) {
+    try {
+      clearLastError();
+      long size = (long) READER_GET_ICC_PROFILE_SIZE.invokeExact(reader);
+      if (size == 0) {
+        return null;
+      }
+      MemorySegment buffer = arena.allocate(size);
+      long written = (long) READER_READ_ICC_PROFILE.invokeExact(reader, buffer, size);
+      if (written == 0) {
+        throw new FastSlideException(
+            "fastslide_slide_reader_read_icc_profile: " + lastErrorOr("failed"));
+      }
+      return buffer.asSlice(0, written).toArray(JAVA_BYTE);
+    } catch (Throwable t) {
+      throw wrap(t);
+    }
+  }
+
+  public static void readerEnableIccTransform(
+      MemorySegment reader, int targetColorSpace, int renderingIntent) {
+    try {
+      clearLastError();
+      checkSuccess(
+          (int) READER_ENABLE_ICC_TRANSFORM.invokeExact(reader, targetColorSpace, renderingIntent),
+          "fastslide_slide_reader_enable_icc_transform");
     } catch (Throwable t) {
       throw wrap(t);
     }

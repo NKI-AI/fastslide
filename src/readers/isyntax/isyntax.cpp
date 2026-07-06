@@ -274,6 +274,17 @@ Metadata IsyntaxReader::GetMetadata() const {
   return meta;
 }
 
+aifocore::Result<std::vector<uint8_t>> IsyntaxReader::GetIccProfile() const {
+  if (!isyntax_file_) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "iSyntax file is not open");
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  isyntax::IccProfile profile;
+  AIFOCORE_ASSIGN_OR_RETURN(profile, isyntax_file_->ReadIccProfileForWsi());
+  return std::move(profile.bytes);
+}
+
 ImageDimensions IsyntaxReader::GetTileSize() const {
   return ImageDimensions{
       static_cast<uint32_t>(isyntax_file_ ? isyntax_file_->tile_width() : 0),

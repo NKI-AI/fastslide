@@ -418,7 +418,7 @@ NB_MODULE(_fastslide, m) {
   nb::class_<FastSlide>(m, "FastSlide")
       .def_static(
           "from_file_path",
-          [](const nb::object& file_path) {
+          [](const nb::object& file_path, bool apply_icc) {
             std::string path_str;
             if (nb::isinstance<nb::str>(file_path)) {
               path_str = nb::cast<std::string>(file_path);
@@ -429,10 +429,16 @@ NB_MODULE(_fastslide, m) {
             } else {
               path_str = nb::cast<std::string>(file_path);
             }
-            return FastSlide::FromFilePath(path_str);
+            return FastSlide::FromFilePath(path_str, apply_icc);
           },
-          "Create FastSlide from file path (accepts str or pathlib.Path)",
-          nb::arg("file_path"))
+          "Create FastSlide from file path (accepts str or pathlib.Path)\n\n"
+          "Args:\n"
+          "    file_path: Path to the slide (str or pathlib.Path).\n"
+          "    apply_icc: When True and the slide has an embedded ICC\n"
+          "        profile, read_region returns sRGB-corrected pixels\n"
+          "        (perceptual intent). Slides without a profile are\n"
+          "        returned unchanged.",
+          nb::arg("file_path"), nb::arg("apply_icc") = false)
       .def_static("from_uri", &FastSlide::FromUri,
                   "Create FastSlide from URI (future)", nb::arg("uri"))
 
@@ -542,6 +548,12 @@ NB_MODULE(_fastslide, m) {
       .def_prop_ro("format", &FastSlide::GetFormat, "File format name")
       .def_prop_ro("dtype", &FastSlide::GetDtype,
                    "Pixel data type (e.g. 'uint8', 'uint16')")
+      .def_prop_ro("icc_profile", &FastSlide::GetIccProfile,
+                   "Embedded ICC profile as bytes, or None if the slide has "
+                   "no color profile.")
+      .def_prop_ro("apply_icc", &FastSlide::GetApplyIcc,
+                   "True if ICC color management is applied on read_region "
+                   "(see from_file_path(apply_icc=True)).")
       .def_prop_ro(
           "quickhash", &FastSlide::GetQuickHash,
           "SHA-256 quickhash (unique identifier, OpenSlide-compatible)")
@@ -710,5 +722,5 @@ NB_MODULE(_fastslide, m) {
       "Check if file format is supported", nb::arg("filename"));
 
   // Version and constants
-  m.attr("__version__") = "0.7.5";
+  m.attr("__version__") = "0.8.0";
 }

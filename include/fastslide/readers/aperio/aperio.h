@@ -104,6 +104,12 @@ class AperioReader : public TiffBasedReader,
 
   [[nodiscard]] Metadata GetMetadata() const override;
 
+  /// @brief Embedded ICC profile (TIFF tag 0x8773), if present.
+  [[nodiscard]] aifocore::Result<std::vector<uint8_t>> GetIccProfile()
+      const override {
+    return tiff::ExtractIccProfile(GetTiffIndex());
+  }
+
   [[nodiscard]] std::string GetFormatName() const override { return "Aperio"; }
 
   [[nodiscard]] ImageFormat GetImageFormat() const override {

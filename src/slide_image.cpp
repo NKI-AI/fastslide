@@ -19,8 +19,16 @@
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/runtime/tile_writer.h"
+#include "fastslide/utilities/color_transform.h"
 
 namespace fastslide {
+
+aifocore::Status SlideImage::MaybeApplyColorTransform(Image& image) const {
+  if (color_transform_ == nullptr) {
+    return aifocore::Status::OkStatus();
+  }
+  return color_transform_->ApplyInPlace(image);
+}
 
 aifocore::Result<core::TileRequest> SlideImage::RegionToTileRequest(
     const RegionSpec& region) const {
@@ -90,6 +98,9 @@ aifocore::Result<Image> SlideImage::ReadRegion(const RegionSpec& region) const {
 
   Image output;
   AIFOCORE_ASSIGN_OR_RETURN(output, canvas.GetOutput());
+
+  AIFOCORE_RETURN_IF_ERROR(MaybeApplyColorTransform(output));
+
   return output;
 }
 

@@ -56,6 +56,93 @@ impl Drop for ReaderHandle {
     }
 }
 
+/// Target color space for ICC color management.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorSpace {
+    /// Standard RGB.
+    Rgb,
+    /// Linear-light RGB.
+    Linear,
+    /// sRGB (OpenSlide-compatible; the default target).
+    Srgb,
+    /// Determine automatically (defaults to sRGB).
+    Automatic,
+}
+
+impl ColorSpace {
+    fn to_sys(self) -> sys::FastSlideColorSpace {
+        match self {
+            ColorSpace::Rgb => sys::FastSlideColorSpace::Rgb,
+            ColorSpace::Linear => sys::FastSlideColorSpace::Linear,
+            ColorSpace::Srgb => sys::FastSlideColorSpace::Srgb,
+            ColorSpace::Automatic => sys::FastSlideColorSpace::Automatic,
+        }
+    }
+}
+
+/// ICC rendering intent used when applying a color transform.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderingIntent {
+    /// Perceptual (default, OpenSlide-compatible).
+    Perceptual,
+    /// Relative colorimetric.
+    RelativeColorimetric,
+    /// Saturation.
+    Saturation,
+    /// Absolute colorimetric.
+    AbsoluteColorimetric,
+}
+
+impl RenderingIntent {
+    fn to_sys(self) -> sys::FastSlideRenderingIntent {
+        match self {
+            RenderingIntent::Perceptual => sys::FastSlideRenderingIntent::Perceptual,
+            RenderingIntent::RelativeColorimetric => {
+                sys::FastSlideRenderingIntent::RelativeColorimetric
+            }
+            RenderingIntent::Saturation => sys::FastSlideRenderingIntent::Saturation,
+            RenderingIntent::AbsoluteColorimetric => {
+                sys::FastSlideRenderingIntent::AbsoluteColorimetric
+            }
+        }
+    }
+}
+
+/// Options controlling how a slide is opened.
+///
+/// When `apply_icc` is set and the slide carries an embedded ICC profile,
+/// [`SlideReader::read_region`] returns pixels already converted to
+/// `target_color_space` using `rendering_intent`.
+#[derive(Debug, Clone, Copy)]
+pub struct OpenOptions {
+    /// Apply the embedded ICC profile during region decode.
+    pub apply_icc: bool,
+    /// Target color space (sRGB by default).
+    pub target_color_space: ColorSpace,
+    /// Rendering intent.
+    pub rendering_intent: RenderingIntent,
+}
+
+impl Default for OpenOptions {
+    fn default() -> Self {
+        Self {
+            apply_icc: false,
+            target_color_space: ColorSpace::Srgb,
+            rendering_intent: RenderingIntent::Perceptual,
+        }
+    }
+}
+
+impl OpenOptions {
+    fn to_sys(self) -> sys::FastSlideOpenOptions {
+        sys::FastSlideOpenOptions {
+            apply_icc: i32::from(self.apply_icc),
+            target_color_space: self.target_color_space.to_sys(),
+            rendering_intent: self.rendering_intent.to_sys(),
+        }
+    }
+}
+
 /// A whole-slide image reader.
 ///
 /// Open one with [`SlideReader::open`] (the analogue of the C++
@@ -87,8 +174,75 @@ impl SlideReader {
         })
     }
 
+    /// Open a slide file with explicit [`OpenOptions`] (e.g. ICC color
+    /// management).
+    ///
+    /// Initializes the format registry on first use.
+    pub fn open_with_options(path: impl AsRef<Path>, options: OpenOptions) -> Result<Self> {
+        ensure_initialized();
+
+        let path = path.as_ref();
+        let c_path = CString::new(path.to_string_lossy().as_bytes()).map_err(|_| {
+            Error::new("open_with_options", "path contains an interior NUL byte")
+        })?;
+        let sys_options = options.to_sys();
+
+        // SAFETY: `c_path` is a valid NUL-terminated string and `sys_options`
+        // outlives the call.
+        let ptr = unsafe {
+            sys::fastslide_create_reader_with_options(c_path.as_ptr(), &sys_options)
+        };
+        if ptr.is_null() {
+            return Err(Error::last("open_with_options"));
+        }
+        Ok(Self {
+            inner: Arc::new(ReaderHandle { ptr }),
+        })
+    }
+
     fn ptr(&self) -> *const sys::FastSlideSlideReader {
         self.inner.ptr
+    }
+
+    /// The slide's embedded ICC profile, or `None` if it has none.
+    #[must_use]
+    pub fn icc_profile(&self) -> Option<Vec<u8>> {
+        let size = unsafe { sys::fastslide_slide_reader_get_icc_profile_size(self.ptr()) };
+        if size == 0 {
+            return None;
+        }
+        let mut buffer = vec![0u8; size];
+        let written = unsafe {
+            sys::fastslide_slide_reader_read_icc_profile(self.ptr(), buffer.as_mut_ptr(), size)
+        };
+        if written == 0 {
+            return None;
+        }
+        buffer.truncate(written);
+        Some(buffer)
+    }
+
+    /// Enable in-library ICC color management for subsequent reads.
+    ///
+    /// Builds a transform from the slide's embedded ICC profile to `target`
+    /// and applies it in place during [`SlideReader::read_region`]. On a slide
+    /// with no embedded profile this is a successful no-op (reads stay native).
+    pub fn enable_icc_transform(
+        &self,
+        target: ColorSpace,
+        intent: RenderingIntent,
+    ) -> Result<()> {
+        let ok = unsafe {
+            sys::fastslide_slide_reader_enable_icc_transform(
+                self.inner.ptr,
+                target.to_sys(),
+                intent.to_sys(),
+            )
+        };
+        if ok == 0 {
+            return Err(Error::last("enable_icc_transform"));
+        }
+        Ok(())
     }
 
     /// Number of pyramid levels of the primary image.

@@ -693,6 +693,33 @@ void DicomReader::ExtractObjectiveLensPower(const DcmDataSet* metadata,
   }
 }
 
+aifocore::Result<std::vector<uint8_t>> DicomReader::ExtractIccProfile(
+    const DcmDataSet* metadata) {
+  // In DICOM WSI the ICC Profile (0028,2000, VR OB) lives inside the first
+  // item of the Optical Path Sequence (0048,0105); see PS3.3 C.8.12.5.
+  DcmDataSet* optical_path =
+      GetSequenceItem(metadata, "OpticalPathSequence", 0);
+  if (!optical_path) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "DICOM slide has no OpticalPathSequence");
+  }
+  DcmElement* element = FindElement(optical_path, "ICCProfile");
+  const void* data = nullptr;
+  if (element == nullptr ||
+      !dcm_element_get_value_binary(nullptr, element, &data) ||
+      data == nullptr) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "DICOM slide has no embedded ICC profile");
+  }
+  const uint32_t length = dcm_element_get_length(element);
+  if (length == 0) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "DICOM ICC profile is empty");
+  }
+  const auto* bytes = static_cast<const uint8_t*>(data);
+  return std::vector<uint8_t>(bytes, bytes + length);
+}
+
 aifocore::Status DicomReader::Initialize() {
   // If the user pointed us at a directory, find the first DICOM file
   // inside and use that as the starting point. The sibling scan below will
@@ -812,6 +839,23 @@ aifocore::Status DicomReader::Initialize() {
   }
   if (l0.objective_lens_power) {
     properties_.objective_magnification = *l0.objective_lens_power;
+  }
+
+  // Cache the embedded ICC profile (if any) from the primary level so
+  // GetIccProfile()/SetColorTransform() can serve it without re-reading. The
+  // OpticalPathSequence that carries it is part of the fast metadata subset
+  // (the same one ExtractObjectiveLensPower reads above).
+  if (!l0.parts.empty()) {
+    DcmError* dcm_error = nullptr;
+    const DcmDataSet* metadata = dcm_filehandle_get_metadata_subset(
+        &dcm_error, l0.PrimaryFile().filehandle.get());
+    if (metadata != nullptr) {
+      if (auto icc_or = ExtractIccProfile(metadata); icc_or.ok()) {
+        icc_profile_ = icc_or.value();
+      }
+    } else if (dcm_error != nullptr) {
+      dcm_error_clear(&dcm_error);
+    }
   }
 
   return aifocore::Status::OkStatus();
@@ -944,6 +988,14 @@ Metadata DicomReader::GetMetadata() const {
     }
   }
   return meta;
+}
+
+aifocore::Result<std::vector<uint8_t>> DicomReader::GetIccProfile() const {
+  if (icc_profile_.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "DICOM slide has no embedded ICC profile");
+  }
+  return icc_profile_;
 }
 
 ImageDimensions DicomReader::GetTileSize() const {

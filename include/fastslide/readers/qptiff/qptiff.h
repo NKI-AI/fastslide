@@ -164,6 +164,12 @@ class QpTiffReader : public TiffBasedReader,
 
   [[nodiscard]] Metadata GetMetadata() const override;
 
+  /// @brief Embedded ICC profile (TIFF tag 0x8773), if present.
+  [[nodiscard]] aifocore::Result<std::vector<uint8_t>> GetIccProfile()
+      const override {
+    return tiff::ExtractIccProfile(GetTiffIndex());
+  }
+
   [[nodiscard]] std::string GetFormatName() const override { return "QPTIFF"; }
 
   [[nodiscard]] ImageFormat GetImageFormat() const override { return format_; }

@@ -4,7 +4,7 @@ build-backend = "mesonpy"
 
 [project]
 name = "fastslide"
-version = "0.7.5"
+version = "0.8.0"
 description = "High-performance whole slide image reader for digital pathology"
 readme = "README.md"
 authors = [

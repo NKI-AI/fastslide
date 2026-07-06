@@ -58,7 +58,7 @@ pub use metadata::{
     Bounds, ChannelMetadata, ColorRgb, Coordinate, DataType, Dimensions, ImageFormat, LevelInfo,
     PlanarConfig, RegionSpec, SlideProperties, StackInfo,
 };
-pub use reader::SlideReader;
+pub use reader::{ColorSpace, OpenOptions, RenderingIntent, SlideReader};
 pub use registry::{c_api_version, is_supported, supported_extensions, version};
 pub use slide_image::SlideImage;
 

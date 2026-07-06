@@ -33,6 +33,31 @@ public final class FastSlideSmokeTest {
     // When a slide path is provided, exercise the Z/T stack API end to end.
     if (args.length > 0) {
       checkStackInfo(args[0]);
+      checkIcc(args[0]);
+    }
+  }
+
+  private static void checkIcc(String path) {
+    // Raw profile access and enabling a transform must not throw. Slides
+    // without an embedded profile simply report an empty profile and a no-op
+    // transform, both of which are valid.
+    try (SlideReader reader = FastSlide.open(path)) {
+      reader.getIccProfile();
+      reader.enableIccTransform(ColorSpace.SRGB, RenderingIntent.PERCEPTUAL);
+      try (Image tile = reader.readRegion(0, 0, 1, 1, 0)) {
+        if (tile.getSizeBytes() <= 0) {
+          throw new AssertionError("Expected non-empty tile after enabling ICC transform");
+        }
+      }
+    }
+    // The open-time flag path must also succeed.
+    try (SlideReader reader =
+        FastSlide.open(path, OpenOptions.withIcc(RenderingIntent.PERCEPTUAL))) {
+      try (Image tile = reader.readRegion(0, 0, 1, 1, 0)) {
+        if (tile.getSizeBytes() <= 0) {
+          throw new AssertionError("Expected non-empty tile when opened with ICC applied");
+        }
+      }
     }
   }
 

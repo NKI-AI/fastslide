@@ -17,12 +17,31 @@
 
 #include <cstdint>
 #include <iterator>
+#include <vector>
 
 #include "aifocore/concepts/numeric.h"
+#include "aifocore/status/result.h"
 #include "fastslide/core/tile_request.h"
+
+namespace simpletiff {
+class TiffIndex;
+}  // namespace simpletiff
 
 namespace fastslide {
 namespace tiff {
+
+/// @brief Extract the embedded ICC profile from a parsed TIFF index.
+///
+/// Scans the index pages for a non-empty ICC profile (TIFF tag 34675 /
+/// 0x8773). Vendor formats such as Aperio SVS and Ventana BIF store the
+/// profile only on the level-0 IFD, but it applies to every pyramid level, so
+/// the first page carrying a profile is returned.
+///
+/// @param index Parsed TIFF index.
+/// @return The raw ICC profile bytes, or a `kNotFound` status if no page in the
+///         file carries an ICC profile.
+[[nodiscard]] aifocore::Result<std::vector<uint8_t>> ExtractIccProfile(
+    const simpletiff::TiffIndex& index);
 
 /// @brief Type alias for tile coordinates
 using TileCoordinate = aifocore::Size<uint32_t, 2>;
