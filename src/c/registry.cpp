@@ -67,10 +67,8 @@ int fastslide_registry_initialize(void) {
   // This ensures formats are registered even if static initialization
   // doesn't work properly (e.g. when loaded as a shared library from Go).
   auto& registry = fastslide::runtime::GetGlobalRegistry();
-  auto context = fastslide::runtime::PluginLoadContext::CreateDefault();
   const auto status =
-      fastslide::runtime::BuiltInPluginsInitializer::RegisterAll(registry,
-                                                                 context);
+      fastslide::runtime::BuiltInPluginsInitializer::RegisterAll(registry);
 
   if (!status.ok()) {
     FASTSLIDE_DEBUG_PRINT(

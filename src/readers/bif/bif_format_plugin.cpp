@@ -72,18 +72,6 @@ FormatDescriptor CreateBifFormatDescriptor() {
   desc.format_name = "BIF";
   desc.version = "1.0.0";
 
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kTiled);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kPyramidal);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kAssociatedImages);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kCompressed);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kRandomAccess);
-
-  desc.required_capabilities.push_back("jpeg");
   desc.factory = CreateBifReader;
   desc.matches_content = MatchesBifContent;
   return desc;

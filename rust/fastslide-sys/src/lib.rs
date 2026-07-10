@@ -339,20 +339,6 @@ unsafe extern "C" {
         num_channels: c_int,
     );
 
-    // ---- slide_reader.h: channel visibility ----
-    pub fn fastslide_slide_reader_set_visible_channels(
-        reader: *mut FastSlideSlideReader,
-        channel_indices: *const usize,
-        num_channels: c_int,
-    ) -> c_int;
-    pub fn fastslide_slide_reader_get_visible_channels(
-        reader: *const FastSlideSlideReader,
-        channel_indices: *mut *mut usize,
-        num_channels: *mut c_int,
-    ) -> c_int;
-    pub fn fastslide_slide_reader_show_all_channels(reader: *mut FastSlideSlideReader) -> c_int;
-    pub fn fastslide_slide_reader_free_visible_channels(channel_indices: *mut usize);
-
     // ---- slide_reader.h: region reading ----
     pub fn fastslide_slide_reader_read_region(
         reader: *const FastSlideSlideReader,

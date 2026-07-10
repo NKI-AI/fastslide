@@ -271,11 +271,6 @@ class FastSlide {
                                                      int level) const;
   [[nodiscard]] nb::tuple ConvertLevelNativeToLevel0(uint32_t x, uint32_t y,
                                                      int level) const;
-
-  // Channel visibility controls
-  void SetVisibleChannels(const std::vector<size_t>& channel_indices);
-  [[nodiscard]] std::vector<size_t> GetVisibleChannels() const;
-  void ShowAllChannels();
 };
 
 }  // namespace fastslide::python
