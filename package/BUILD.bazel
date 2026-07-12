@@ -1,317 +1,86 @@
-"""FastSlide binary distribution bundles.
+"""FastSlide Debian packages.
 
-This package produces per-platform binary bundles:
-  fastslide-bin-<version>-<os>-<arch>.tar.xz
+This package produces two Debian packages built with the NATIVE host toolchain
+(so the shared object matches the distribution it is installed on):
 
-Layout inside the archive:
-  - bin/fastslidetool[.exe]
-  - lib/libfastslide.(so|dylib) or lib/fastslide.dll
-  - include/fastslide/**/*.h
-  - LICENSE, README.md, versions.json
+  - libfastslide_<version>_<arch>.deb   (runtime: self-contained .so + CLI)
+  - libfastslide-dev_<version>_all.deb   (development: SDK headers)
+
+Build (on a matching-arch host):
+  bazelisk build //package:libfastslide_amd64 //package:libfastslide_dev
+
+The debs are consumed by the release workflow's `build-deb` / `smoke-deb` jobs.
 """
 
-load("@aspect_bazel_lib//lib:transitions.bzl", "platform_transition_filegroup")
-load("@rules_pkg//pkg:pkg.bzl", "pkg_tar")
-load(":defs.bzl", "fastslide_bundle_tar_xz")
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load(":defs.bzl", "fastslide_dev_deb", "fastslide_runtime_deb")
 
 package(default_visibility = ["//visibility:public"])
 
 FASTSLIDE_VERSION = "0.8.0"
 
-# By default we do NOT build cross-platform bundles as part of `//aifo/fastslide/...`
-# because they require additional toolchains. Enable them explicitly via
-# `--config=hermetic` (sets --define=fastslide_cross_packages=1 in .bazelrc).
-config_setting(
-    name = "cross_packages_enabled",
-    define_values = {"fastslide_cross_packages": "1"},
-)
+exports_files([
+    "versions.json",
+    "ldconfig_postinst.sh",
+    "deb_smoke.cpp",
+    "Dockerfile",
+])
 
-CROSS_PACKAGES_COMPAT = select({
-    ":cross_packages_enabled": [],
-    "//conditions:default": ["@platforms//:incompatible"],
-})
-# -----------------------------------------------------------------------------
-# Cross-platform binaries (built under platform transitions)
-# -----------------------------------------------------------------------------
-
-platform_transition_filegroup(
-    name = "fastslidetool_linux_x86_64",
-    srcs = ["//:fastslidetool"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:linux_x86_64",
-)
-
-platform_transition_filegroup(
-    name = "fastslidetool_linux_arm64",
-    srcs = ["//:fastslidetool"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:linux_arm64",
-)
-
-platform_transition_filegroup(
-    name = "fastslidetool_macos_x86_64",
-    srcs = ["//:fastslidetool"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:darwin_x86_64",
-)
-
-platform_transition_filegroup(
-    name = "fastslidetool_macos_arm64",
-    srcs = ["//:fastslidetool"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:darwin_aarch64",
-)
-
-platform_transition_filegroup(
-    name = "fastslidetool_windows_x86_64",
-    srcs = ["//:fastslidetool"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:windows_x86_64",
-)
-
-platform_transition_filegroup(
-    name = "fastslidetool_windows_arm64",
-    srcs = ["//:fastslidetool"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:windows_arm64",
-)
-
-platform_transition_filegroup(
-    name = "fastslide_lib_linux_x86_64",
-    srcs = ["//:fastslide"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:linux_x86_64",
-)
-
-platform_transition_filegroup(
-    name = "fastslide_lib_linux_arm64",
-    srcs = ["//:fastslide"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:linux_arm64",
-)
-
-platform_transition_filegroup(
-    name = "fastslide_lib_macos_x86_64",
-    srcs = ["//:fastslide"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:darwin_x86_64",
-)
-
-platform_transition_filegroup(
-    name = "fastslide_lib_macos_arm64",
-    srcs = ["//:fastslide"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:darwin_aarch64",
-)
-
-platform_transition_filegroup(
-    name = "fastslide_lib_windows_x86_64",
-    srcs = ["//:fastslide"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:windows_x86_64",
-)
-
-platform_transition_filegroup(
-    name = "fastslide_lib_windows_arm64",
-    srcs = ["//:fastslide"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:windows_arm64",
-)
-
-# -----------------------------------------------------------------------------
-# Shared components (headers + metadata)
-# -----------------------------------------------------------------------------
-
-pkg_tar(
-    name = "include_tar",
-    srcs = ["//:fastslide_headers"],
-    mode = "0644",
-    package_dir = "include",
-    # NOTE: rules_pkg interprets strip_prefix as a *data_path* relative to the
-    # pkg_tar target's package unless it is absolute. Use an absolute path so
-    # it matches the file short_path from other packages.
-    strip_prefix = "/external/fastslide+/include",
-)
-
-pkg_tar(
-    name = "meta_root_tar",
-    srcs = [
-        "//:LICENSE",
-        "//:README.md",
+# pkg-config metadata for the -dev package. libfastslide.so is self-contained
+# (simpletiff and the other third-party deps are statically linked in), so a
+# consumer only needs `-lfastslide`.
+write_file(
+    name = "fastslide_pc",
+    out = "fastslide.pc",
+    content = [
+        "prefix=/usr",
+        "exec_prefix=${prefix}",
+        "libdir=${exec_prefix}/lib",
+        "includedir=${prefix}/include",
+        "",
+        "Name: FastSlide",
+        "Description: FastSlide digital pathology slide reader",
+        "Version: " + FASTSLIDE_VERSION,
+        "Libs: -L${libdir} -lfastslide",
+        "Cflags: -I${includedir}",
+        "",
     ],
-    mode = "0644",
-    package_dir = "",
-    strip_prefix = "/external/fastslide+",
-)
-
-exports_files(["versions.json"])
-
-pkg_tar(
-    name = "versions_tar",
-    srcs = [":versions.json"],
-    mode = "0644",
-    package_dir = "",
-    strip_prefix = "/external/fastslide+/package",
+    newline = "unix",
 )
 
 # -----------------------------------------------------------------------------
-# Dependency headers (for consumers building against the SDK)
+# Runtime packages (per Debian architecture). Built natively: the host running
+# the build determines the actual machine code, so only build the target whose
+# `deb_arch` matches the build host.
 # -----------------------------------------------------------------------------
 
-pkg_tar(
-    name = "aifocore_include_tar",
-    srcs = ["@aifocore-cpp//:aifocore_headers"],
-    mode = "0644",
-    package_dir = "include",
-    strip_prefix = "/external/aifocore-cpp+/include",
+fastslide_runtime_deb(
+    name = "libfastslide_amd64",
+    deb_arch = "amd64",
+    lib = "//:fastslide",
+    tool = "//:fastslidetool",
+    version = FASTSLIDE_VERSION,
 )
 
-pkg_tar(
-    name = "simpletiff_include_tar",
-    srcs = ["@simpletiff//:simpletiff_headers"],
-    mode = "0644",
-    package_dir = "include",
-    strip_prefix = "/external/simpletiff+/include",
+fastslide_runtime_deb(
+    name = "libfastslide_arm64",
+    deb_arch = "arm64",
+    lib = "//:fastslide",
+    tool = "//:fastslidetool",
+    version = FASTSLIDE_VERSION,
 )
 
 # -----------------------------------------------------------------------------
-# Platform-specific bundles
+# Development package (architecture-independent headers).
 # -----------------------------------------------------------------------------
 
-platform_transition_filegroup(
-    name = "simpletiff_lib_linux_x86_64",
-    srcs = ["@simpletiff"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:linux_x86_64",
-)
-
-platform_transition_filegroup(
-    name = "simpletiff_lib_linux_arm64",
-    srcs = ["@simpletiff"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:linux_arm64",
-)
-
-platform_transition_filegroup(
-    name = "simpletiff_lib_macos_x86_64",
-    srcs = ["@simpletiff"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:darwin_x86_64",
-)
-
-platform_transition_filegroup(
-    name = "simpletiff_lib_macos_arm64",
-    srcs = ["@simpletiff"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:darwin_aarch64",
-)
-
-platform_transition_filegroup(
-    name = "simpletiff_lib_windows_x86_64",
-    srcs = ["@simpletiff"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:windows_x86_64",
-)
-
-platform_transition_filegroup(
-    name = "simpletiff_lib_windows_arm64",
-    srcs = ["@simpletiff"],
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-    target_platform = "//platforms:windows_arm64",
-)
-
-pkg_tar(
-    name = "simpletiff_lib_tar_linux_x86_64",
-    srcs = [":simpletiff_lib_linux_x86_64"],
-    mode = "0755",
-    package_dir = "lib",
-    strip_prefix = "/external/simpletiff+",
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-)
-
-pkg_tar(
-    name = "simpletiff_lib_tar_linux_arm64",
-    srcs = [":simpletiff_lib_linux_arm64"],
-    mode = "0755",
-    package_dir = "lib",
-    strip_prefix = "/external/simpletiff+",
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-)
-
-pkg_tar(
-    name = "simpletiff_lib_tar_macos_x86_64",
-    srcs = [":simpletiff_lib_macos_x86_64"],
-    mode = "0755",
-    package_dir = "lib",
-    strip_prefix = "/external/simpletiff+",
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-)
-
-pkg_tar(
-    name = "simpletiff_lib_tar_macos_arm64",
-    srcs = [":simpletiff_lib_macos_arm64"],
-    mode = "0755",
-    package_dir = "lib",
-    strip_prefix = "/external/simpletiff+",
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-)
-
-pkg_tar(
-    name = "simpletiff_lib_tar_windows_x86_64",
-    srcs = [":simpletiff_lib_windows_x86_64"],
-    mode = "0755",
-    package_dir = "lib",
-    strip_prefix = "/external/simpletiff+",
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-)
-
-pkg_tar(
-    name = "simpletiff_lib_tar_windows_arm64",
-    srcs = [":simpletiff_lib_windows_arm64"],
-    mode = "0755",
-    package_dir = "lib",
-    strip_prefix = "/external/simpletiff+",
-    target_compatible_with = CROSS_PACKAGES_COMPAT,
-)
-
-fastslide_bundle_tar_xz(
-    "fastslide-bin-" + FASTSLIDE_VERSION + "-linux-x86_64",
-    lib = ":fastslide_lib_linux_x86_64",
-    tool = ":fastslidetool_linux_x86_64",
-    deps = [":simpletiff_lib_tar_linux_x86_64"],
-)
-
-fastslide_bundle_tar_xz(
-    "fastslide-bin-" + FASTSLIDE_VERSION + "-linux-aarch64",
-    lib = ":fastslide_lib_linux_arm64",
-    tool = ":fastslidetool_linux_arm64",
-    deps = [":simpletiff_lib_tar_linux_arm64"],
-)
-
-fastslide_bundle_tar_xz(
-    "fastslide-bin-" + FASTSLIDE_VERSION + "-macos-x86_64",
-    lib = ":fastslide_lib_macos_x86_64",
-    tool = ":fastslidetool_macos_x86_64",
-    deps = [":simpletiff_lib_tar_macos_x86_64"],
-)
-
-fastslide_bundle_tar_xz(
-    "fastslide-bin-" + FASTSLIDE_VERSION + "-macos-arm64",
-    lib = ":fastslide_lib_macos_arm64",
-    tool = ":fastslidetool_macos_arm64",
-    deps = [":simpletiff_lib_tar_macos_arm64"],
-)
-
-fastslide_bundle_tar_xz(
-    "fastslide-bin-" + FASTSLIDE_VERSION + "-windows-x86_64",
-    lib = ":fastslide_lib_windows_x86_64",
-    tool = ":fastslidetool_windows_x86_64",
-    deps = [":simpletiff_lib_tar_windows_x86_64"],
-)
-
-fastslide_bundle_tar_xz(
-    "fastslide-bin-" + FASTSLIDE_VERSION + "-windows-arm64",
-    lib = ":fastslide_lib_windows_arm64",
-    tool = ":fastslidetool_windows_arm64",
-    deps = [":simpletiff_lib_tar_windows_arm64"],
+fastslide_dev_deb(
+    name = "libfastslide_dev",
+    headers = [
+        ("//:fastslide_headers", "include"),
+        ("@aifocore-cpp//:aifocore_headers", "include"),
+        ("@simpletiff//:simpletiff_headers", "include"),
+    ],
+    pc_file = ":fastslide_pc",
+    version = FASTSLIDE_VERSION,
 )

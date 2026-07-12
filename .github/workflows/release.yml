@@ -21,6 +21,10 @@
 #         nanobind + cibuildwheel (build-wheels job, method: meson). All deps are
 #         compiled from source through subprojects/*.wrap and linked statically,
 #         sidestepping the missing Windows Bazel rules.
+#   - build-deb / smoke-deb: build the Linux-only Debian packages (runtime .so +
+#     CLI, and a -dev headers package) with the NATIVE host toolchain, then
+#     install them in a clean ubuntu:24.04 container and compile+run a standalone
+#     C++ smoke against the installed SDK (plus the shipped fastslidetool CLI).
 #   - smoke-java: run the shipped JARs through fastslidetool on the REAL target
 #     runner (incl. native Windows), needing only a JDK -- no Bazel.
 #   - publish-pypi: upload wheels + to PyPI via Trusted Publishing (full release
@@ -401,6 +405,128 @@ jobs:
           path: artifacts/sdist/*.tar.gz
           if-no-files-found: error
           retention-days: 7
+  build-deb:
+    # Debian packages are Linux-only and built with the NATIVE host toolchain
+    # (system gcc/libstdc++) so the shipped .so matches the distribution it is
+    # installed on. Each leg builds its own arch runtime deb plus the
+    # arch-independent -dev deb (headers), so the per-platform smoke can install
+    # both without pulling a cross-arch runtime.
+    name: Build deb ${{ matrix.platform }}
+    runs-on: ${{ matrix.builder }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux_x86_64
+            builder: ubuntu-24.04
+            deb_arch: amd64
+          - platform: linux_arm64
+            builder: ubuntu-24.04-arm
+            deb_arch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Decide whether to build this platform
+        id: gate
+        shell: bash
+        run: |
+          selected=",${{ inputs.platforms }},"
+          selected="${selected// /}"
+          if [[ "${selected}" == *",${{ matrix.platform }},"* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false (not in inputs.platforms)"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Free disk space (Linux)
+        if: steps.gate.outputs.run == 'true'
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+      - name: Pin Bazel version
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: echo "USE_BAZEL_VERSION=$(tr -d '[:space:]' < .bazelversion)" >> "$GITHUB_ENV"
+      - name: Set up Bazel
+        if: steps.gate.outputs.run == 'true'
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          disk-cache: deb-${{ matrix.platform }}
+      - name: Build Debian packages (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bazel build \
+            //package:libfastslide_${{ matrix.deb_arch }} \
+            //package:libfastslide_dev
+          mkdir -p artifacts/debs
+          cp "$(bazel info bazel-bin)"/package/*.deb artifacts/debs/
+          ls -l artifacts/debs
+      - name: Upload debs
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: debs-${{ matrix.platform }}
+          path: artifacts/debs/*.deb
+          if-no-files-found: error
+          retention-days: 7
+  smoke-deb:
+    # Prove the built packages install and are usable on a clean system:
+    # install the runtime + dev debs with apt, then compile a standalone C++
+    # program (package/deb_smoke.cpp) with the SYSTEM compiler against ONLY the
+    # installed SDK and run it, plus exercise the shipped fastslidetool CLI. The
+    # container base (ubuntu:24.04) matches the build-deb runner so the .so ABI
+    # lines up. Runs natively per arch (no emulation).
+    name: Smoke deb ${{ matrix.platform }}
+    needs: build-deb
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux_x86_64
+            runner: ubuntu-24.04
+            docker_platform: linux/amd64
+          - platform: linux_arm64
+            runner: ubuntu-24.04-arm
+            docker_platform: linux/arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Decide whether to smoke this platform
+        id: gate
+        shell: bash
+        run: |
+          selected=",${{ inputs.platforms }},"
+          selected="${selected// /}"
+          if [[ "${selected}" == *",${{ matrix.platform }},"* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Download debs (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/download-artifact@v6
+        with:
+          name: debs-${{ matrix.platform }}
+          path: debs
+      - name: Docker smoke (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p smoke_ctx
+          cp package/Dockerfile package/deb_smoke.cpp smoke_ctx/
+          cp debs/*.deb smoke_ctx/
+          ls -l smoke_ctx
+          docker build --platform ${{ matrix.docker_platform }} \
+            -t fastslide-deb-smoke smoke_ctx
   # TEMPORARILY DISABLED: the source build pulls simpletiff from its pinned git
   # wrap (subprojects/simpletiff.wrap @ 3886522), which predates the
   # <cstdio>-before-<jpeglib.h> fix and so fails to compile under GCC. Re-enable
@@ -572,7 +698,7 @@ jobs:
           skip-existing: true
   github-release:
     name: Publish GitHub Release
-    needs: [smoke-java, smoke-wheels, build-wheels, build-sdist, publish-pypi, publish-testpypi]
+    needs: [smoke-java, smoke-wheels, build-wheels, build-sdist, build-deb, smoke-deb, publish-pypi, publish-testpypi]
     # publish-pypi / publish-testpypi are mutually exclusive, so one is always
     # skipped. A skipped need is not success(), which would skip this job too;
     # gate on "nothing failed/cancelled" instead so the skipped sibling is OK.
@@ -602,12 +728,19 @@ jobs:
         with:
           name: sdist
           path: artifacts/sdist
+      - name: Download debs
+        uses: actions/download-artifact@v6
+        with:
+          path: artifacts/debs
+          pattern: "debs-*"
+          merge-multiple: true
       - name: List collected artifacts
         shell: bash
         run: |
           echo "JARs:"; ls -l artifacts/jars
           echo "Wheels:"; ls -l artifacts/wheels
           echo "Sdist:"; ls -l artifacts/sdist
+          echo "Debs:"; ls -l artifacts/debs || echo "(no debs)"
       - name: Generate build provenance attestation
         uses: actions/attest-build-provenance@v3
         with:
@@ -615,6 +748,7 @@ jobs:
             artifacts/jars/*.jar
             artifacts/wheels/*.whl
             artifacts/sdist/*.tar.gz
+            artifacts/debs/*.deb
       - name: Publish
         shell: bash
         env:
@@ -630,4 +764,5 @@ jobs:
             --dest github ${channel} ${require} \
             --wheels-dir artifacts/wheels \
             --sdist-dir artifacts/sdist \
+            --debs-dir artifacts/debs \
             --generate-notes
