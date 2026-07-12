@@ -48,17 +48,6 @@ FormatDescriptor CreateCziFormatDescriptor() {
   desc.format_name = "CZI";
   desc.version = "1.0.0";
 
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kTiled);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kPyramidal);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kAssociatedImages);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kCompressed);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kRandomAccess);
-
   // Factory function
   desc.factory = CreateCziReader;
   return desc;

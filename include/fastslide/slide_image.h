@@ -118,20 +118,6 @@ class SlideImage {
   /// `GetLevelInfo` fails for every level.
   [[nodiscard]] int GetBestLevelForDownsample(double downsample) const;
 
-  /// @brief Restrict which channels `ReadRegion` returns (empty = all).
-  /// Per-image: setting this on image i does not affect image j.
-  void SetVisibleChannels(std::vector<size_t> channel_indices) {
-    visible_channels_ = std::move(channel_indices);
-  }
-
-  /// @brief Currently-visible channel indices (empty = all visible).
-  [[nodiscard]] const std::vector<size_t>& GetVisibleChannels() const {
-    return visible_channels_;
-  }
-
-  /// @brief Reset to "show all channels".
-  void ShowAllChannels() { visible_channels_.clear(); }
-
   /// @brief Inject the ICC color transform to apply during `ReadRegion`.
   ///
   /// Set by the owning `SlideReader::SetColorTransform` so per-image reads
@@ -146,9 +132,9 @@ class SlideImage {
   SlideImage() = default;
 
   /// @brief Convert a `RegionSpec` into a `TileRequest` populated with the
-  /// per-image visible channels and fractional region bounds. Pure (no
-  /// I/O), shared with both `ReadRegion` and external callers that want
-  /// to drive the plan/execute pipeline manually.
+  /// fractional region bounds. Pure (no I/O), shared with both `ReadRegion`
+  /// and external callers that want to drive the plan/execute pipeline
+  /// manually.
   [[nodiscard]] aifocore::Result<core::TileRequest> RegionToTileRequest(
       const RegionSpec& region) const;
 
@@ -156,8 +142,6 @@ class SlideImage {
   /// No-op (returns OK) when no transform is set or the layout is not
   /// color-managed. Called by `ReadRegion` before returning.
   [[nodiscard]] aifocore::Status MaybeApplyColorTransform(Image& image) const;
-
-  std::vector<size_t> visible_channels_;
 
  private:
   /// @brief Optional ICC color transform injected by the owning reader.

@@ -23,8 +23,7 @@ namespace runtime {
 // This registration runs at static initialization time to register
 // built-in formats with the global registry.
 //
-// It uses BuiltInPluginsInitializer to handle version checking and
-// capability detection.
+// It uses BuiltInPluginsInitializer to register all built-in formats.
 
 namespace {
 

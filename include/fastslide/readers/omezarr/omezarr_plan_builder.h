@@ -47,8 +47,7 @@ class OmeZarrPlanBuilder {
   static aifocore::Result<core::TilePlan> BuildPlan(
       const core::TileRequest& request,
       const std::vector<OmeZarrLevelInfo>& pyramid,
-      PlanarConfig output_planar_config, DataType data_type,
-      const std::vector<size_t>& visible_channels);
+      PlanarConfig output_planar_config, DataType data_type);
 };
 
 }  // namespace fastslide
