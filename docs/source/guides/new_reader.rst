@@ -98,9 +98,9 @@ If your format is built on TIFF:
        /**
         * @brief Create MyFormat reader from file path
         * @param file_path Path to .myf file
-        * @return StatusOr containing reader instance or error
+        * @return Result containing reader instance or error
         */
-       static absl::StatusOr<std::unique_ptr<MyFormatReader>> 
+       static aifocore::Result<std::unique_ptr<MyFormatReader>> 
        Create(const std::string& file_path);
        
    protected:
@@ -108,20 +108,20 @@ If your format is built on TIFF:
         * @brief Validate file format and structure
         * @return Status indicating validation result
         */
-       absl::Status ValidateFile() override;
+       aifocore::Status ValidateFile() override;
        
        /**
         * @brief Load slide metadata and build level information
         * @return Status indicating success or failure
         */
-       absl::Status LoadMetadata() override;
+       aifocore::Status LoadMetadata() override;
        
        /**
         * @brief Execute tile reading plan
         * @param plan Batch tile plan to execute
         * @return Image result or error status
         */
-       absl::StatusOr<Image> ExecutePlan(
+       aifocore::Result<Image> ExecutePlan(
            const core::BatchTilePlan& plan) override;
        
    private:
@@ -131,9 +131,9 @@ If your format is built on TIFF:
            std::unordered_map<std::string, std::string> properties;
        };
        
-       absl::Status ParseMyFormatHeader();
-       absl::Status LoadMyFormatMetadata();
-       absl::StatusOr<std::vector<uint8_t>> ReadTileData(
+       aifocore::Status ParseMyFormatHeader();
+       aifocore::Status LoadMyFormatMetadata();
+       aifocore::Result<std::vector<uint8_t>> ReadTileData(
            int level, int tile_x, int tile_y);
        
        MyFormatMetadata metadata_;
@@ -157,11 +157,11 @@ For completely custom formats:
    
    class MyFormatReader : public SlideReader {
    public:
-       static absl::StatusOr<std::unique_ptr<MyFormatReader>> 
+       static aifocore::Result<std::unique_ptr<MyFormatReader>> 
        Create(const std::string& file_path);
        
        // Implement SlideReader interface
-       absl::StatusOr<Image> ReadRegion(const RegionSpec& spec) override;
+       aifocore::Result<Image> ReadRegion(const RegionSpec& spec) override;
        SlideProperties GetProperties() const override;
        int GetLevelCount() const override;
        LevelInfo GetLevelInfo(int level) const override;
@@ -184,10 +184,11 @@ Always validate the file format first:
 .. code-block:: cpp
 
    // src/readers/myformat/myformat_reader.cpp
-   absl::Status MyFormatReader::ValidateFile() {
+   aifocore::Status MyFormatReader::ValidateFile() {
        std::ifstream file(file_path_, std::ios::binary);
        if (!file.is_open()) {
-           return absl::NotFoundError("Cannot open file: " + file_path_);
+           return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                       "Cannot open file: " + file_path_);
        }
        
        // Read and validate format signature
@@ -195,7 +196,8 @@ Always validate the file format first:
        file.read(signature, sizeof(signature));
        
        if (std::memcmp(signature, "MYFORMAT", 8) != 0) {
-           return absl::InvalidArgumentError("Invalid MyFormat signature");
+           return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                       "Invalid MyFormat signature");
        }
        
        // Validate version
@@ -203,11 +205,12 @@ Always validate the file format first:
        file.read(reinterpret_cast<char*>(&version), sizeof(version));
        
        if (version < MIN_SUPPORTED_VERSION || version > MAX_SUPPORTED_VERSION) {
-           return absl::InvalidArgumentError(absl::StrCat(
-               "Unsupported version: ", version));
+           return AIFOCORE_MAKE_STATUS(
+               aifocore::StatusCode::kInvalidArgument,
+               aifocore::fmt::format("Unsupported version: {}", version));
        }
        
-       return absl::OkStatus();
+       return aifocore::Status::OkStatus();
    }
 
 Metadata Loading
@@ -217,7 +220,7 @@ Parse format-specific metadata:
 
 .. code-block:: cpp
 
-   absl::Status MyFormatReader::LoadMetadata() {
+   aifocore::Status MyFormatReader::LoadMetadata() {
        std::ifstream file(file_path_, std::ios::binary);
        
        // Seek to metadata section
@@ -260,11 +263,12 @@ Parse format-specific metadata:
            }
            
        } catch (const json::exception& e) {
-           return absl::InvalidArgumentError(
-               absl::StrCat("Failed to parse metadata: ", e.what()));
+           return AIFOCORE_MAKE_STATUS(
+               aifocore::StatusCode::kInvalidArgument,
+               aifocore::fmt::format("Failed to parse metadata: {}", e.what()));
        }
        
-       return absl::OkStatus();
+       return aifocore::Status::OkStatus();
    }
 
 Tile Reading Implementation
@@ -274,7 +278,7 @@ Implement the core tile reading logic:
 
 .. code-block:: cpp
 
-   absl::StatusOr<Image> MyFormatReader::ExecutePlan(
+   aifocore::Result<Image> MyFormatReader::ExecutePlan(
        const core::BatchTilePlan& plan) {
        
        // Create output image
@@ -312,7 +316,7 @@ Implement the core tile reading logic:
        return output_image;
    }
 
-   absl::StatusOr<std::vector<uint8_t>> MyFormatReader::ReadTileData(
+   aifocore::Result<std::vector<uint8_t>> MyFormatReader::ReadTileData(
        int level, int tile_x, int tile_y) {
        
        // Calculate tile offset in file
@@ -333,7 +337,8 @@ Implement the core tile reading logic:
        file.read(reinterpret_cast<char*>(compressed_data.data()), tile_size);
        
        if (!file.good()) {
-           return absl::DataLossError("Failed to read tile data");
+           return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kDataLoss,
+                                       "Failed to read tile data");
        }
        
        return compressed_data;
@@ -350,38 +355,29 @@ Create format plugin registration:
 .. code-block:: cpp
 
    // src/readers/myformat/myformat_format_plugin.cpp
-   #include "fastslide/runtime/reader_registry.h"
+   #include "fastslide/runtime/format_descriptor.h"
    #include "fastslide/readers/myformat/myformat_reader.h"
-   
+
    namespace fastslide::formats::myformat {
-   
-   class MyFormatPlugin : public runtime::FormatDescriptor {
-   public:
-       std::string GetName() const override {
-           return "MyFormat";
-       }
-       
-       std::vector<std::string> GetSupportedExtensions() const override {
-           return {".myf", ".myformat"};
-       }
-       
-       std::set<runtime::FormatCapability> GetCapabilities() const override {
-           return {
-               runtime::FormatCapability::kMultiLevel,
-               runtime::FormatCapability::kAssociatedImages,
-               runtime::FormatCapability::kMetadata
-           };
-       }
-       
-       absl::StatusOr<std::unique_ptr<SlideReader>> CreateReader(
-           const std::string& file_path) const override {
-           return MyFormatReader::Create(file_path);
-       }
-   };
-   
-   // Register the format
-   FASTSLIDE_REGISTER_FORMAT(MyFormatPlugin);
-   
+
+   FormatDescriptor CreateMyFormatDescriptor() {
+       FormatDescriptor desc;
+       desc.primary_extension = ".myf";
+       desc.aliases = {".myformat"};
+       desc.format_name = "MyFormat";
+       desc.version = "1.0.0";
+       desc.factory = [](std::shared_ptr<ITileCache> cache,
+                         std::string_view filename)
+           -> aifocore::Result<std::unique_ptr<SlideReader>> {
+           AIFOCORE_ASSIGN_OR_RETURN(auto reader,
+                                     MyFormatReader::Create(filename));
+           auto slide = std::unique_ptr<SlideReader>(std::move(reader));
+           slide->SetCache(std::move(cache));
+           return slide;
+       };
+       return desc;
+   }
+
    } // namespace fastslide::formats::myformat
 
 Update Build Configuration
@@ -622,20 +618,23 @@ Provide rich error context:
 
 .. code-block:: cpp
 
-   absl::Status MyFormatReader::ReadTileData(int level, int x, int y) {
+   aifocore::Status MyFormatReader::ReadTileData(int level, int x, int y) {
        if (level < 0 || level >= GetLevelCount()) {
-           return absl::OutOfRangeError(absl::StrCat(
-               "Invalid level ", level, " (valid range: 0-", 
-               GetLevelCount() - 1, ")"));
+           return AIFOCORE_MAKE_STATUS(
+               aifocore::StatusCode::kOutOfRange,
+               aifocore::fmt::format("Invalid level {} (valid range: 0-{})",
+                                     level, GetLevelCount() - 1));
        }
        
        const auto& level_info = metadata_.levels[level];
        if (x < 0 || y < 0 || 
            x >= level_info.tiles_x || y >= level_info.tiles_y) {
-           return absl::OutOfRangeError(absl::StrCat(
-               "Invalid tile coordinates (", x, ",", y, ") for level ", level,
-               " (valid range: 0-", level_info.tiles_x - 1, ",0-", 
-               level_info.tiles_y - 1, ")"));
+           return AIFOCORE_MAKE_STATUS(
+               aifocore::StatusCode::kOutOfRange,
+               aifocore::fmt::format(
+                   "Invalid tile coordinates ({},{}) for level {} "
+                   "(valid range: 0-{},0-{})",
+                   x, y, level, level_info.tiles_x - 1, level_info.tiles_y - 1));
        }
        
        // Continue with implementation...
@@ -683,7 +682,7 @@ Always profile your implementation:
    // Add performance timing
    #include <chrono>
    
-   absl::StatusOr<Image> MyFormatReader::ReadRegion(const RegionSpec& spec) {
+   aifocore::Result<Image> MyFormatReader::ReadRegion(const RegionSpec& spec) {
        auto start = std::chrono::high_resolution_clock::now();
        
        auto result = ExecutePlan(BuildPlan(spec));
@@ -692,7 +691,7 @@ Always profile your implementation:
        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(
            end - start).count();
        
-       LOG(INFO) << "ReadRegion took " << duration << " microseconds";
+       std::cerr << "ReadRegion took " << duration << " microseconds\n";
        
        return result;
    }
@@ -788,5 +787,3 @@ Once your reader is complete:
 4. **Performance Validation**: Benchmark against similar formats
 5. **Documentation Update**: Add format to supported formats list
 6. **Release Planning**: Include in next version release notes
-
-See :doc:`external_reader` for information on creating external plugin readers.

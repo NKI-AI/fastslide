@@ -1616,18 +1616,6 @@ cc_test(
     ],
 )
 
-cc_test(
-    name = "channel_selection_test",
-    size = "small",
-    srcs = ["src/channel_selection_test.cpp"],
-    deps = [
-        ":minimal_slide_reader_testing",
-        ":slide_reader",
-        "@googletest//:gtest",
-        "@googletest//:gtest_main",
-    ],
-)
-
 # Core tests
 cc_test(
     name = "tile_request_test",

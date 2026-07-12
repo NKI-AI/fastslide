@@ -223,9 +223,6 @@ aifocore::Result<core::TileRequest> SlideReader::RegionToTileRequest(
   // PrepareRequest implementations should use region_bounds instead
   request.tile_coord = {0, 0};
 
-  // Include visible channel indices if set
-  request.channel_indices = visible_channels_;
-
   // Forward the focal/time plane selector to the format's PrepareRequest.
   request.plane = region.plane;
 

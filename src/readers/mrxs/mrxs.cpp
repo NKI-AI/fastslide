@@ -700,7 +700,6 @@ aifocore::Result<RGBImage> MrxsReader::ReadRegionFractional(
   core::TileRequest request;
   request.level = level;
   request.tile_coord = {0, 0};  // Not meaningful for region requests
-  request.channel_indices = visible_channels_;
 
   // Populate fractional bounds (preserves fractional coordinates!)
   core::FractionalRegionBounds bounds;

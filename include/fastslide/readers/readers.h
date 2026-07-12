@@ -77,7 +77,6 @@ inline std::vector<FormatDescriptor> GetBuiltinFormats() {
   isyntax_desc.primary_extension = ".isyntax";
   isyntax_desc.aliases = {".i2syntax"};
   isyntax_desc.version = "1.0.0";
-  isyntax_desc.capabilities = SetCapability(0, FormatCapability::kTiled);
   isyntax_desc.factory = [](std::shared_ptr<ITileCache> cache,
                             std::string_view filename)
       -> aifocore::Result<std::unique_ptr<SlideReader>> {

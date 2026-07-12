@@ -49,8 +49,7 @@ uint64_t ChannelChunkIndex(const OmeZarrLevelInfo& level,
 aifocore::Result<core::TilePlan> OmeZarrPlanBuilder::BuildPlan(
     const core::TileRequest& request,
     const std::vector<OmeZarrLevelInfo>& pyramid,
-    PlanarConfig output_planar_config, DataType data_type,
-    const std::vector<size_t>& visible_channels) {
+    PlanarConfig output_planar_config, DataType data_type) {
   core::TilePlan plan;
   plan.request = request;
 
@@ -68,8 +67,6 @@ aifocore::Result<core::TilePlan> OmeZarrPlanBuilder::BuildPlan(
   std::vector<size_t> source_channels;
   if (!request.channel_indices.empty()) {
     source_channels = request.channel_indices;
-  } else if (!visible_channels.empty()) {
-    source_channels = visible_channels;
   } else {
     source_channels.reserve(level.c_size);
     for (size_t i = 0; i < level.c_size; ++i)

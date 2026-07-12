@@ -386,7 +386,7 @@ ImageDimensions OmeZarrReader::GetTileSize() const {
 aifocore::Result<core::TilePlan> OmeZarrReader::PrepareRequest(
     const core::TileRequest& request) const {
   return OmeZarrPlanBuilder::BuildPlan(request, pyramid_, planar_config_,
-                                       data_type_, visible_channels_);
+                                       data_type_);
 }
 
 aifocore::Status OmeZarrReader::ExecutePlan(const core::TilePlan& plan,
