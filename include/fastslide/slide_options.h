@@ -35,6 +35,18 @@ enum class ColorSpace {
   kAutomatic  ///< Automatically determine from metadata
 };
 
+/// @brief ICC rendering intent used when applying color transforms
+///
+/// Mirrors the four ICC rendering intents. Perceptual is the default and
+/// matches OpenSlide's behaviour when converting through an embedded slide
+/// profile to sRGB.
+enum class RenderingIntent {
+  kPerceptual,            ///< Perceptual (default, OpenSlide-compatible)
+  kRelativeColorimetric,  ///< Relative colorimetric
+  kSaturation,            ///< Saturation
+  kAbsoluteColorimetric   ///< Absolute colorimetric
+};
+
 /// @brief Bundle of optional dependencies that can be injected into readers
 ///
 /// This struct allows readers to receive shared services without tight
@@ -120,6 +132,19 @@ struct SlideOpenOptions {
   /// Readers should attempt to provide image data in this color space.
   /// If conversion is not possible, readers should use their native format.
   ColorSpace color_space = ColorSpace::kAutomatic;
+
+  /// @brief Apply the slide's embedded ICC profile during region decode
+  ///
+  /// When true and the slide carries an embedded ICC profile, `ReadRegion`
+  /// returns pixels already converted to `color_space` (sRGB by default) using
+  /// the embedded profile. The transform is built once per reader and applied
+  /// in place on the decoded region buffer, so there is no extra copy. Slides
+  /// without an embedded profile, or non-RGB(A)/8-16-bit outputs, are returned
+  /// unchanged.
+  bool apply_icc = false;
+
+  /// @brief Rendering intent used when `apply_icc` is enabled
+  RenderingIntent rendering_intent = RenderingIntent::kPerceptual;
 
   /// @brief Optional dependency bundle for shared services
   ///

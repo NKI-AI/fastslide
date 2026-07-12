@@ -16,6 +16,7 @@
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_SLIDE_IMAGE_H_
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -31,6 +32,8 @@ namespace fastslide {
 namespace runtime {
 class Canvas;
 }  // namespace runtime
+
+class IccTransform;
 
 /// @brief One navigable pyramid inside a slide file ("series" / "scene").
 ///
@@ -129,6 +132,16 @@ class SlideImage {
   /// @brief Reset to "show all channels".
   void ShowAllChannels() { visible_channels_.clear(); }
 
+  /// @brief Inject the ICC color transform to apply during `ReadRegion`.
+  ///
+  /// Set by the owning `SlideReader::SetColorTransform` so per-image reads
+  /// produce the same color-managed output as the container's `ReadRegion`.
+  /// Passing `nullptr` disables color management for this image. Treated as an
+  /// injected service (like a cache), hence const with a mutable backing field.
+  void SetColorTransform(std::shared_ptr<const IccTransform> transform) const {
+    color_transform_ = std::move(transform);
+  }
+
  protected:
   SlideImage() = default;
 
@@ -139,7 +152,16 @@ class SlideImage {
   [[nodiscard]] aifocore::Result<core::TileRequest> RegionToTileRequest(
       const RegionSpec& region) const;
 
+  /// @brief Apply the injected ICC color transform to a region in place.
+  /// No-op (returns OK) when no transform is set or the layout is not
+  /// color-managed. Called by `ReadRegion` before returning.
+  [[nodiscard]] aifocore::Status MaybeApplyColorTransform(Image& image) const;
+
   std::vector<size_t> visible_channels_;
+
+ private:
+  /// @brief Optional ICC color transform injected by the owning reader.
+  mutable std::shared_ptr<const IccTransform> color_transform_;
 };
 
 }  // namespace fastslide

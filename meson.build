@@ -1,5 +1,5 @@
 project('fastslide', 'c', 'cpp',
-  version : '0.7.5',
+  version : '0.8.0',
   license : 'Apache-2.0',
   meson_version : '>=1.3',
   default_options : [
@@ -35,10 +35,12 @@ openjpeg_dep = dependency('libopenjp2')
 dicom_dep = dependency('libdicom')
 lodepng_dep = dependency('lodepng')
 jxrlib_dep = dependency('jxrlib')
+lcms2_dep = dependency('lcms2')
 
 fastslide_deps = [
   aifocore_dep, simpletiff_dep, hwy_dep, zlib_dep, zstd_dep, png_dep,
   pugixml_dep, json_dep, openjpeg_dep, dicom_dep, lodepng_dep, jxrlib_dep,
+  lcms2_dep,
 ]
 
 # JPEG decoder backend (libjpeg by default, jpgd opt-in).
@@ -65,6 +67,7 @@ fastslide_sources = [
   'src/self_image_view.cpp',
   'src/slide_image.cpp',
   'src/slide_reader.cpp',
+  'src/utilities/color_transform.cpp',
   'src/utilities/colors.cpp',
   'src/utilities/hash.cpp',
   'src/utilities/sha-256.c',

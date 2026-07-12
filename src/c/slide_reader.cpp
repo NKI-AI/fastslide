@@ -66,6 +66,37 @@ FastSlidePropertyType PropertyTypeToCEnum(
   return FASTSLIDE_PROPERTY_TYPE_STRING;  // Default fallback
 }
 
+// Map the C color-space enum to the C++ ColorSpace.
+fastslide::ColorSpace ColorSpaceFromCEnum(FastSlideColorSpace space) {
+  switch (space) {
+    case FASTSLIDE_COLOR_SPACE_RGB:
+      return fastslide::ColorSpace::kRGB;
+    case FASTSLIDE_COLOR_SPACE_LINEAR:
+      return fastslide::ColorSpace::kLinear;
+    case FASTSLIDE_COLOR_SPACE_SRGB:
+      return fastslide::ColorSpace::kSRGB;
+    case FASTSLIDE_COLOR_SPACE_AUTOMATIC:
+    default:
+      return fastslide::ColorSpace::kSRGB;
+  }
+}
+
+// Map the C rendering-intent enum to the C++ RenderingIntent.
+fastslide::RenderingIntent RenderingIntentFromCEnum(
+    FastSlideRenderingIntent intent) {
+  switch (intent) {
+    case FASTSLIDE_RENDERING_INTENT_RELATIVE_COLORIMETRIC:
+      return fastslide::RenderingIntent::kRelativeColorimetric;
+    case FASTSLIDE_RENDERING_INTENT_SATURATION:
+      return fastslide::RenderingIntent::kSaturation;
+    case FASTSLIDE_RENDERING_INTENT_ABSOLUTE_COLORIMETRIC:
+      return fastslide::RenderingIntent::kAbsoluteColorimetric;
+    case FASTSLIDE_RENDERING_INTENT_PERCEPTUAL:
+    default:
+      return fastslide::RenderingIntent::kPerceptual;
+  }
+}
+
 }  // namespace
 
 // Basic slide properties
@@ -929,6 +960,52 @@ int fastslide_slide_reader_clamp_region(const FastSlideSlideReader* reader,
 }
 
 // Memory management
+
+// ICC color management
+
+size_t fastslide_slide_reader_get_icc_profile_size(
+    const FastSlideSlideReader* reader) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+  auto profile_or = reader->reader->GetIccProfile();
+  if (!profile_or.ok()) {
+    return 0;
+  }
+  return profile_or.value().size();
+}
+
+size_t fastslide_slide_reader_read_icc_profile(
+    const FastSlideSlideReader* reader, uint8_t* buffer, size_t buffer_size) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+  if (buffer == nullptr) {
+    SetLastError("buffer cannot be null");
+    return 0;
+  }
+  auto profile_or = reader->reader->GetIccProfile();
+  if (!profile_or.ok()) {
+    SetLastError(std::string(profile_or.status().message()).c_str());
+    return 0;
+  }
+  const std::vector<uint8_t>& profile = profile_or.value();
+  if (buffer_size < profile.size()) {
+    SetLastError("buffer too small for ICC profile");
+    return 0;
+  }
+  std::memcpy(buffer, profile.data(), profile.size());
+  return profile.size();
+}
+
+int fastslide_slide_reader_enable_icc_transform(
+    FastSlideSlideReader* reader, FastSlideColorSpace target_space,
+    FastSlideRenderingIntent intent) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+  const auto status = reader->reader->SetColorTransform(
+      ColorSpaceFromCEnum(target_space), RenderingIntentFromCEnum(intent));
+  if (!status.ok()) {
+    SetLastError(std::string(status.message()).c_str());
+    return 0;
+  }
+  return 1;
+}
 
 void fastslide_slide_reader_free(FastSlideSlideReader* reader) {
   delete reader;

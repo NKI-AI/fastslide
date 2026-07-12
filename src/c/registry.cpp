@@ -155,6 +155,26 @@ FastSlideSlideReader* fastslide_create_reader(const char* file_path) {
   return fastslide_registry_create_reader(registry, file_path);
 }
 
+FastSlideSlideReader* fastslide_create_reader_with_options(
+    const char* file_path, const FastSlideOpenOptions* options) {
+  FastSlideSlideReader* reader = fastslide_create_reader(file_path);
+  if (reader == nullptr) {
+    return nullptr;
+  }
+
+  if (options != nullptr && options->apply_icc) {
+    if (!fastslide_slide_reader_enable_icc_transform(
+            reader, options->target_color_space, options->rendering_intent)) {
+      // Building the transform failed (a profile was present but unusable).
+      // Surface the error and do not hand back a half-configured reader.
+      fastslide_slide_reader_free(reader);
+      return nullptr;
+    }
+  }
+
+  return reader;
+}
+
 // Utility functions
 
 int fastslide_registry_get_supported_extensions(FastSlideRegistry* registry,
@@ -257,5 +277,5 @@ int fastslide_is_supported(const char* file_path) {
 // Version information
 
 const char* fastslide_get_version(void) {
-  return "0.7.5";
+  return "0.8.0";
 }

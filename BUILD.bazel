@@ -118,6 +118,8 @@ cc_library(
         ":core_tile_request",
         ":image",
         "@aifocore-cpp//:concepts",
+        "@aifocore-cpp//:result",
+        "@simpletiff//:simpletiff_lib",
     ],
 )
 
@@ -131,6 +133,22 @@ cc_library(
     deps = [
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
+    name = "color_transform",
+    srcs = ["src/utilities/color_transform.cpp"],
+    hdrs = ["include/fastslide/utilities/color_transform.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":image",
+        ":slide_options",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@lcms2",
     ],
 )
 
@@ -276,6 +294,9 @@ cc_library(
     hdrs = ["include/fastslide/slide_options.h"],
     includes = ["include"],
     visibility = ["//visibility:public"],
+    deps = [
+        ":colors",
+    ],
 )
 
 cc_library(
@@ -493,6 +514,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":cache",
+        ":color_transform",
         ":colors",
         ":core_slide_descriptor",
         ":core_tile_plan",
@@ -1423,6 +1445,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":cache",
+        ":color_transform",
         ":colors",
         ":core",
         ":formats",
@@ -1631,6 +1654,21 @@ cc_test(
     ],
 )
 
+# ICC color-management transform test
+cc_test(
+    name = "color_transform_test",
+    size = "small",
+    srcs = ["tests/color_transform_test.cpp"],
+    deps = [
+        ":color_transform",
+        ":image",
+        ":slide_options",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@lcms2",
+    ],
+)
+
 # iSyntax C++ conversion tests
 cc_test(
     name = "isyntax_math_utils_test",
@@ -1813,6 +1851,7 @@ cc_test(
     size = "small",
     srcs = ["src/readers/dicom/dicom_concatenation_test.cpp"],
     data = [
+        "src/readers/dicom/testdata/icc_profile.bin",
         "src/readers/dicom/testdata/part_1.dcm",
         "src/readers/dicom/testdata/part_2.dcm",
     ],

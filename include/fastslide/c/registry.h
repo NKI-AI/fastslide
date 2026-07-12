@@ -46,6 +46,31 @@ FASTSLIDE_API FastSlideSlideReader* fastslide_registry_create_reader(
 FASTSLIDE_API FastSlideSlideReader* fastslide_create_reader(
     const char* file_path);
 
+/// @brief Options controlling how a slide is opened.
+///
+/// Zero-initialize (e.g. `FastSlideOpenOptions options = {0};`) for defaults:
+/// no ICC color management. When `apply_icc` is non-zero and the slide carries
+/// an embedded ICC profile, `read_region` returns pixels already converted to
+/// `target_color_space` using `rendering_intent`.
+typedef struct {
+  int apply_icc;  ///< Non-zero to apply the embedded ICC profile on read.
+  FastSlideColorSpace target_color_space;     ///< Target space (sRGB default).
+  FastSlideRenderingIntent rendering_intent;  ///< Rendering intent.
+} FastSlideOpenOptions;
+
+/// @brief Create a slide reader with open options (e.g. ICC color management).
+///
+/// Equivalent to `fastslide_create_reader` plus, when `options->apply_icc` is
+/// set, enabling the ICC transform (see
+/// `fastslide_slide_reader_enable_icc_transform`). A null `options` behaves
+/// like `fastslide_create_reader`.
+///
+/// @param file_path Path to slide file
+/// @param options Open options, or NULL for defaults
+/// @return Slide reader handle or NULL on failure
+FASTSLIDE_API FastSlideSlideReader* fastslide_create_reader_with_options(
+    const char* file_path, const FastSlideOpenOptions* options);
+
 // Utility functions
 
 /// @brief Get supported file extensions

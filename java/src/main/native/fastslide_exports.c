@@ -15,6 +15,7 @@ __attribute__((used)) static const fn_ptr fastslide_exports[] = {
     (fn_ptr)fastslide_get_last_error,
     (fn_ptr)fastslide_clear_last_error,
     (fn_ptr)fastslide_create_reader,
+    (fn_ptr)fastslide_create_reader_with_options,
     (fn_ptr)fastslide_get_supported_extensions,
     (fn_ptr)fastslide_registry_free_extensions,
     (fn_ptr)fastslide_is_supported,
@@ -36,6 +37,10 @@ __attribute__((used)) static const fn_ptr fastslide_exports[] = {
     (fn_ptr)fastslide_slide_reader_get_stack_info,
     (fn_ptr)fastslide_slide_reader_get_channel_metadata,
     (fn_ptr)fastslide_slide_reader_free_channel_metadata,
+    // ICC color management.
+    (fn_ptr)fastslide_slide_reader_get_icc_profile_size,
+    (fn_ptr)fastslide_slide_reader_read_icc_profile,
+    (fn_ptr)fastslide_slide_reader_enable_icc_transform,
     // Multi-image container API.
     (fn_ptr)fastslide_slide_reader_get_image_count,
     (fn_ptr)fastslide_slide_reader_get_primary_image_index,

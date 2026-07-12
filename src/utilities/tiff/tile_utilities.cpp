@@ -17,9 +17,28 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
+#include <span>
+#include <vector>
+
+#include "aifocore/status/result.h"
+#include "simpletiff/index.h"
 
 namespace fastslide {
 namespace tiff {
+
+aifocore::Result<std::vector<uint8_t>> ExtractIccProfile(
+    const simpletiff::TiffIndex& index) {
+  const std::span<const simpletiff::PageHeader> pages = index.Pages();
+  for (const simpletiff::PageHeader& page : pages) {
+    if (!page.icc_profile.empty()) {
+      const auto* begin =
+          reinterpret_cast<const uint8_t*>(page.icc_profile.data());
+      return std::vector<uint8_t>(begin, begin + page.icc_profile.size());
+    }
+  }
+  return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                              "TIFF file has no embedded ICC profile");
+}
 
 TileCoordinateIterator::TileCoordinateIterator(uint32_t start_x,
                                                uint32_t start_y, uint32_t end_x,

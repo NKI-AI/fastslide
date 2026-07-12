@@ -12,6 +12,7 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalDouble;
 
 /** Wraps a native {@code FastSlideSlideReader*}. */
@@ -178,6 +179,30 @@ public final class SlideReader implements AutoCloseable {
         tCount,
         hasZSpacing ? OptionalDouble.of(zSpacingUm) : OptionalDouble.empty(),
         hasTInterval ? OptionalDouble.of(tIntervalS) : OptionalDouble.empty());
+  }
+
+  // ---------------------------------------------------------------------
+  // ICC color management
+  // ---------------------------------------------------------------------
+
+  /**
+   * Returns the slide's embedded ICC profile bytes, or {@link Optional#empty()} if the slide has
+   * none. The bytes are returned verbatim regardless of whether ICC color management is enabled.
+   */
+  public Optional<byte[]> getIccProfile() {
+    try (Arena arena = Arena.ofConfined()) {
+      return Optional.ofNullable(FastSlideNative.readerReadIccProfile(arena, requireHandle()));
+    }
+  }
+
+  /**
+   * Enables in-library ICC color management for subsequent {@link #readRegion} calls, converting
+   * to {@code target} with the given {@code intent}. Enabling on a slide without an embedded
+   * profile is a no-op (reads stay native).
+   */
+  public void enableIccTransform(ColorSpace target, RenderingIntent intent) {
+    FastSlideNative.readerEnableIccTransform(
+        requireHandle(), target.nativeValue(), intent.nativeValue());
   }
 
   public Image readRegion(int x, int y, int width, int height, int level) {

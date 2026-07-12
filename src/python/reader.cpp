@@ -447,8 +447,8 @@ FastSlide::FastSlide(std::shared_ptr<SlideReader> reader,
   images_ = std::make_unique<SlideImages>(reader_);
 }
 
-std::unique_ptr<FastSlide> FastSlide::FromFilePath(
-    const std::string& file_path) {
+std::unique_ptr<FastSlide> FastSlide::FromFilePath(const std::string& file_path,
+                                                   bool apply_icc) {
   // Validate file existence up front so callers get a clean, predictable
   // error instead of a format-specific factory writing to stderr and
   // returning a half-initialised reader (e.g. the Aperio/TIFF factory does
@@ -466,7 +466,19 @@ std::unique_ptr<FastSlide> FastSlide::FromFilePath(
                              "': " + std::string(reader_or.status().message()));
   }
 
-  return std::make_unique<FastSlide>(std::move(reader_or.value()), file_path);
+  auto reader = std::move(reader_or.value());
+  if (apply_icc) {
+    // Enabling on a slide with no embedded profile is a successful no-op; a
+    // non-ok status means the profile was present but could not be used.
+    const auto status = reader->SetColorTransform();
+    if (!status.ok()) {
+      throw std::runtime_error("Failed to enable ICC color management for '" +
+                               file_path +
+                               "': " + std::string(status.message()));
+    }
+  }
+
+  return std::make_unique<FastSlide>(std::move(reader), file_path);
 }
 
 std::unique_ptr<FastSlide> FastSlide::FromUri(const std::string& uri) {
@@ -652,6 +664,26 @@ std::string FastSlide::GetDtype() const {
     throw std::runtime_error("Cannot get dtype: slide reader is closed");
   }
   return fastslide::GetDataTypeName(reader_->GetDataType());
+}
+
+nb::object FastSlide::GetIccProfile() const {
+  if (is_closed_) {
+    throw std::runtime_error("Cannot get ICC profile: slide reader is closed");
+  }
+  auto profile_or = reader_->GetIccProfile();
+  if (!profile_or.ok()) {
+    return nb::none();
+  }
+  const std::vector<uint8_t>& profile = profile_or.value();
+  return nb::bytes(reinterpret_cast<const char*>(profile.data()),
+                   profile.size());
+}
+
+bool FastSlide::GetApplyIcc() const {
+  if (is_closed_) {
+    throw std::runtime_error("Cannot query ICC state: slide reader is closed");
+  }
+  return reader_->IsColorTransformEnabled();
 }
 
 std::string FastSlide::GetQuickHash() const {

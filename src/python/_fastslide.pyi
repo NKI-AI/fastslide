@@ -303,8 +303,15 @@ class SlideImages:
 
 class FastSlide:
     @staticmethod
-    def from_file_path(file_path: object) -> FastSlide:
-        """Create FastSlide from file path (accepts str or pathlib.Path)"""
+    def from_file_path(file_path: object, apply_icc: bool = False) -> FastSlide:
+        """Create FastSlide from file path (accepts str or pathlib.Path)
+
+        Args:
+            file_path: Path to the slide (str or pathlib.Path).
+            apply_icc: When True and the slide has an embedded ICC profile,
+                read_region returns sRGB-corrected pixels (perceptual intent).
+                Slides without a profile are returned unchanged.
+        """
 
     @staticmethod
     def from_uri(uri: str) -> FastSlide:
@@ -421,6 +428,14 @@ class FastSlide:
     @property
     def dtype(self) -> str:
         """Pixel data type (e.g. 'uint8', 'uint16')"""
+
+    @property
+    def icc_profile(self) -> bytes | None:
+        """Embedded ICC profile as bytes, or None if the slide has no color profile."""
+
+    @property
+    def apply_icc(self) -> bool:
+        """True if ICC color management is applied on read_region."""
 
     @property
     def quickhash(self) -> str:
