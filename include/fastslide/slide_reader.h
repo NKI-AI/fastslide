@@ -348,16 +348,39 @@ class SlideReader {
   ///
   /// @param target Target color space (sRGB by default via `kAutomatic`).
   /// @param intent ICC rendering intent.
+  /// @param use_lut When true, build the 256^3 8-bit LUT fast path (48 MiB,
+  ///        ~200 ms one-time cost) so 8-bit RGB(A) regions are color-managed
+  ///        with an O(1) table gather instead of an lcms2 pass.
   /// @return OK on success or when the slide has no profile; an error only if
   ///         a profile is present but the transform could not be built.
   aifocore::Status SetColorTransform(
       ColorSpace target = ColorSpace::kSRGB,
-      RenderingIntent intent = RenderingIntent::kPerceptual);
+      RenderingIntent intent = RenderingIntent::kPerceptual,
+      bool use_lut = false);
 
   /// @brief Whether an ICC color transform is currently active.
   [[nodiscard]] bool IsColorTransformEnabled() const {
     return color_transform_ != nullptr;
   }
+
+  /// @brief Set which channels are visible during ReadRegion operations
+  /// @param channel_indices Vector of channel indices to load
+  /// (empty = all channels)
+  /// @details Only the specified channels will be loaded and combined in
+  /// ReadRegion. This can significantly improve performance for multichannel
+  /// formats when only a subset of channels is needed for visualization.
+  virtual void SetVisibleChannels(const std::vector<size_t>& channel_indices) {
+    visible_channels_ = channel_indices;
+  }
+
+  /// @brief Get currently visible channel indices
+  /// @return Vector of visible channel indices (empty = all channels visible)
+  [[nodiscard]] virtual const std::vector<size_t>& GetVisibleChannels() const {
+    return visible_channels_;
+  }
+
+  /// @brief Reset to show all channels
+  virtual void ShowAllChannels() { visible_channels_.clear(); }
 
   /// @brief Utility function to clamp region to image bounds
   /// @param region Input region specification
@@ -395,6 +418,11 @@ class SlideReader {
   /// @param image Decoded region image, transformed in place.
   /// @return OK on success or when skipped; error only on transform failure.
   [[nodiscard]] aifocore::Status MaybeApplyColorTransform(Image& image) const;
+
+  /// @brief Channel indices to load (empty = all channels)
+  /// @details Protected so derived classes can access for implementing
+  /// selective loading
+  std::vector<size_t> visible_channels_;
 
  private:
   /// @brief Optional tile cache for decoded internal tiles

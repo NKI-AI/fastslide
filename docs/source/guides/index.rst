@@ -8,6 +8,7 @@ Step-by-step guides for extending and integrating FastSlide.
    :caption: Implementation Guides:
 
    new_reader
+   external_reader
    custom_cache
    performance_tuning
    testing
@@ -18,6 +19,7 @@ Quick Navigation
 
 🔧 **Extension Guides**
    - :doc:`new_reader` - Add support for a new slide format
+   - :doc:`external_reader` - Create external reader plugins
    - :doc:`custom_cache` - Implement custom caching strategies
 
 ⚡ **Optimization Guides**  
@@ -119,7 +121,7 @@ Coding Standards
 
 **C++ Guidelines:**
 - Follow Google C++ Style Guide
-- Use ``aifocore::Result`` for error handling
+- Use ``absl::StatusOr`` for error handling
 - Prefer ``std::unique_ptr`` for ownership
 - Use ``std::string_view`` for string parameters
 - Always use RAII for resource management
@@ -191,7 +193,7 @@ Common Pitfalls
 
 **Error Handling**  
    ❌ Don't throw exceptions in C++ code
-   ✅ Use ``aifocore::Result`` consistently
+   ✅ Use ``absl::StatusOr`` consistently
 
 **Thread Safety**
    ❌ Don't assume single-threaded access

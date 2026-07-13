@@ -83,7 +83,9 @@ Core Components
 
 2. **Plugin Architecture**
 
-   Built-in formats are registered via :class:`fastslide::runtime::BuiltInPluginsInitializer`.
+   Built-in formats are registered via :class:`fastslide::runtime::BuiltInPluginsInitializer`,
+   filtered through a :class:`fastslide::runtime::PluginLoadContext` describing the
+   environment's available codecs and hardware.
 
    .. doxygenclass:: fastslide::runtime::BuiltInPluginsInitializer
       :no-link:
@@ -752,18 +754,18 @@ All format readers follow a common pattern:
        }
        
        class MrxsReader {
-           +Create(path) Result~Reader~
+           +Create(path) StatusOr~Reader~
            -ReadSlidedatIni() Status
            -BuildSpatialIndex() Status
        }
        
        class QpTiffReader {
-           +Create(path) Result~Reader~
+           +Create(path) StatusOr~Reader~
            -LoadQpTiffMetadata() Status
        }
        
        class AperioReader {
-           +Create(path) Result~Reader~
+           +Create(path) StatusOr~Reader~
            -ParseAperioMetadata() Status
            -BuildLevelInfo() Status
        }
@@ -831,13 +833,13 @@ Key interfaces to implement:
 
    class MyFormatReader : public fastslide::TiffBasedReader {
    public:
-       static aifocore::Result<std::unique_ptr<MyFormatReader>> 
+       static absl::StatusOr<std::unique_ptr<MyFormatReader>> 
        Create(const std::string& path);
        
    protected:
-       aifocore::Status ValidateFile() override;
-       aifocore::Status LoadMetadata() override; 
-       aifocore::Result<fastslide::Image> ExecutePlan(
+       absl::Status ValidateFile() override;
+       absl::Status LoadMetadata() override; 
+       absl::StatusOr<fastslide::Image> ExecutePlan(
            const fastslide::BatchTilePlan& plan) override;
    };
 
@@ -847,7 +849,7 @@ Debugging & Observability
 Built-in debugging support:
 
 **Logging**
-   - Lightweight debug logging via ``FASTSLIDE_DEBUG_PRINT``
+   - Structured logging with ``absl::log``
    - Configurable log levels per component
    - Performance metrics collection
 

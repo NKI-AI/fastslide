@@ -109,16 +109,6 @@ def main() -> None:
         ),
     )
     parser.add_argument(
-        "--debs-dir",
-        type=Path,
-        default=common.WORKSPACE_ROOT / "artifacts" / "debs",
-        help=(
-            "Directory of Debian packages (*.deb) to also attach to the GitHub "
-            "Release. Attached for every channel "
-            f"(default: {common.WORKSPACE_ROOT / 'artifacts' / 'debs'})."
-        ),
-    )
-    parser.add_argument(
         "--generate-notes",
         action="store_true",
         help="Let GitHub auto-generate the release notes from merged PRs.",
@@ -156,16 +146,8 @@ def main() -> None:
     else:
         tag = f"{version}-dev.{_short_sha()}"
 
-    # Wheels are attached to the GitHub Release ONLY for dev/snapshot builds.
-    # Full releases publish wheels to PyPI, so they are not duplicated as GitHub
-    # assets; dev/snapshot builds go to TestPyPI, so the wheels are attached here
-    # for easy download.
     wheels = sorted(args.wheels_dir.glob("*.whl")) if args.wheels_dir.is_dir() else []
-    if is_release:
-        if wheels:
-            print(f"\u25b6\ufe0e Full release: {len(wheels)} wheel(s) not attached (published to PyPI).")
-        wheels = []
-    elif wheels:
+    if wheels:
         print(f"\u25b6\ufe0e Attaching {len(wheels)} wheel(s) from {args.wheels_dir}")
     else:
         print(f"\u26a0 No wheels found in {args.wheels_dir}; attaching JARs only.")
@@ -174,19 +156,14 @@ def main() -> None:
     if sdists:
         print(f"\u25b6\ufe0e Attaching {len(sdists)} sdist(s) from {args.sdist_dir}")
 
-    debs = sorted(args.debs_dir.glob("*.deb")) if args.debs_dir.is_dir() else []
-    if debs:
-        print(f"\u25b6\ufe0e Attaching {len(debs)} Debian package(s) from {args.debs_dir}")
-
-    extra_assets = wheels + sdists + debs
-    checksums = release.write_checksums(jars + extra_assets, args.jar_dir / release.CHECKSUMS_NAME)
+    python_assets = wheels + sdists
+    checksums = release.write_checksums(jars + python_assets, args.jar_dir / release.CHECKSUMS_NAME)
     title = f"FastSlide {tag}"
     notes = (
         f"FastSlide artifacts for `{version}`.\n\n"
         "Java: Gradle ivy/url dependencies `dev.aifo:fastslide-java` and "
         "`dev.aifo:fastslide-native:<os>-<arch>`.\n"
-        "Python: wheels published to PyPI (attached here for dev/snapshot builds).\n"
-        "Debian: `libfastslide` (runtime) and `libfastslide-dev` (headers) packages."
+        "Python: wheels published to PyPI (also attached here)."
     )
     release.publish_github(
         jars,
@@ -196,7 +173,7 @@ def main() -> None:
         prerelease=not is_release,
         repo=args.repo,
         checksums=checksums,
-        extra_assets=extra_assets,
+        extra_assets=python_assets,
         generate_notes=args.generate_notes,
     )
 

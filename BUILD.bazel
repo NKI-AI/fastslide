@@ -138,8 +138,14 @@ cc_library(
 
 cc_library(
     name = "color_transform",
-    srcs = ["src/utilities/color_transform.cpp"],
-    hdrs = ["include/fastslide/utilities/color_transform.h"],
+    srcs = [
+        "src/utilities/color_lut_hwy.cpp",
+        "src/utilities/color_transform.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/utilities/color_lut_hwy.h",
+        "include/fastslide/utilities/color_transform.h",
+    ],
     copts = WASM_COPTS,
     includes = ["include"],
     visibility = ["//visibility:public"],
@@ -148,6 +154,7 @@ cc_library(
         ":slide_options",
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
+        "@hwy",
         "@lcms2",
     ],
 )
@@ -1608,6 +1615,18 @@ cc_test(
     name = "slide_reader_test",
     size = "small",
     srcs = ["src/slide_reader_test.cpp"],
+    deps = [
+        ":minimal_slide_reader_testing",
+        ":slide_reader",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "channel_selection_test",
+    size = "small",
+    srcs = ["src/channel_selection_test.cpp"],
     deps = [
         ":minimal_slide_reader_testing",
         ":slide_reader",

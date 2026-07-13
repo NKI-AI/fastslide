@@ -238,10 +238,13 @@ Runtime System
 .. doxygenclass:: fastslide::runtime::BuiltInPluginsInitializer
    :members:
 
+.. doxygenclass:: fastslide::runtime::PluginLoadContext
+   :members:
+
 Error Handling
 --------------
 
-FastSlide uses ``aifocore::Status`` and ``aifocore::Result<T>`` for error handling instead of exceptions.
+FastSlide uses ``absl::Status`` and ``absl::StatusOr<T>`` for error handling instead of exceptions.
 
 **Example:**
 
@@ -298,22 +301,20 @@ Memory Management
        std::unique_ptr<fastslide::SlideReader> reader_;
        
    public:
-       aifocore::Status LoadSlide(const std::string& path) {
+       absl::Status LoadSlide(const std::string& path) {
            auto reader_or = fastslide::SlideReader::Open(path);
            if (!reader_or.ok()) {
                return reader_or.status();
            }
            
            reader_ = std::move(reader_or).value();
-           return aifocore::Status::OkStatus();
+           return absl::OkStatus();
        }
        
-       aifocore::Result<fastslide::Image> ProcessRegion(
+       absl::StatusOr<fastslide::Image> ProcessRegion(
            const fastslide::RegionSpec& spec) {
            if (!reader_) {
-               return AIFOCORE_MAKE_STATUS(
-                   aifocore::StatusCode::kFailedPrecondition,
-                   "No slide loaded");
+               return absl::FailedPreconditionError("No slide loaded");
            }
            
            return reader_->ReadRegion(spec);
@@ -404,7 +405,7 @@ FastSlide uses modern C++20 features for type safety and performance:
 - **Concepts**: Type checking at compile time
 - **Structured Bindings**: Clean tuple unpacking  
 - **Smart Pointers**: Automatic memory management
-- **aifocore::Result**: Safe error handling without exceptions
+- **absl::StatusOr**: Safe error handling without exceptions
 - **std::span**: Safe array views
 - **std::string_view**: Efficient string references
 

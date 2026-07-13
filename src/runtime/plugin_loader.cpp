@@ -14,6 +14,9 @@
 
 #include "fastslide/runtime/plugin_loader.h"
 
+#include <algorithm>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -24,8 +27,72 @@
 namespace fastslide {
 namespace runtime {
 
+// ============================================================================
+// PluginLoadContext implementation
+// ============================================================================
+
+bool PluginLoadContext::HasCapability(std::string_view capability) const {
+  // Check codecs
+  if (std::ranges::find(available_codecs, capability) !=
+      available_codecs.end()) {
+    return true;
+  }
+
+  // Check hardware
+  if (std::ranges::find(available_hardware, capability) !=
+      available_hardware.end()) {
+    return true;
+  }
+
+  return false;
+}
+
+PluginLoadContext PluginLoadContext::CreateDefault() {
+  PluginLoadContext context;
+
+  // Auto-detect available codecs
+  // TODO(fastslide): Implement actual codec detection
+  context.available_codecs = {"jpeg", "png"};
+
+  // Auto-detect hardware capabilities
+  // TODO(fastslide): Implement actual hardware detection
+  context.available_hardware = {};
+
+  // Set FastSlide version
+  context.fastslide_version = "0.0.1";
+
+  return context;
+}
+
+// ============================================================================
+// BuiltInPluginsInitializer implementation
+// ============================================================================
+
 std::vector<FormatDescriptor> BuiltInPluginsInitializer::GetDescriptors() {
   return readers::GetBuiltinFormats();
+}
+
+std::vector<FormatDescriptor> BuiltInPluginsInitializer::GetDescriptors(
+    const PluginLoadContext& context) {
+  auto all_descriptors = GetDescriptors();
+  std::vector<FormatDescriptor> filtered;
+
+  for (auto& descriptor : all_descriptors) {
+    // Check if all required capabilities are available
+    bool can_load = true;
+    for (const auto& required_cap : descriptor.required_capabilities) {
+      if (!context.HasCapability(required_cap)) {
+        can_load = false;
+        break;
+      }
+    }
+
+    if (can_load) {
+      filtered.push_back(std::move(descriptor));
+    }
+  }
+
+  return filtered;
 }
 
 aifocore::Status BuiltInPluginsInitializer::RegisterAll(
@@ -35,6 +102,42 @@ aifocore::Status BuiltInPluginsInitializer::RegisterAll(
     registry.RegisterFormat(std::move(descriptor));
   }
   return aifocore::Status::OkStatus();
+}
+
+aifocore::Status BuiltInPluginsInitializer::RegisterAll(
+    ReaderRegistry& registry, const PluginLoadContext& context) {
+  auto descriptors = GetDescriptors(context);
+
+  if (descriptors.empty()) {
+    return aifocore::Status(
+        aifocore::StatusCode::kFailedPrecondition,
+        "No built-in formats can be loaded with available capabilities");
+  }
+
+  for (auto& descriptor : descriptors) {
+    registry.RegisterFormat(std::move(descriptor));
+  }
+
+  return aifocore::Status::OkStatus();
+}
+
+bool BuiltInPluginsInitializer::CanLoadFormat(
+    std::string_view format_name, const PluginLoadContext& context) {
+  auto descriptors = GetDescriptors();
+
+  for (const auto& descriptor : descriptors) {
+    if (descriptor.format_name == format_name) {
+      // Check if all required capabilities are available
+      for (const auto& required_cap : descriptor.required_capabilities) {
+        if (!context.HasCapability(required_cap)) {
+          return false;
+        }
+      }
+      return true;
+    }
+  }
+
+  return false;
 }
 
 }  // namespace runtime

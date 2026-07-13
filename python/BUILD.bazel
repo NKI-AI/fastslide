@@ -8,8 +8,8 @@ To build a wheel for a specific Python version and platform:
     bazelisk build --platforms=//platforms:darwin_aarch64 \\
       //python:fastslide_wheel_cp311
 
-To build all wheels, use the provided script:
-    python aifo/fastslide/tools/build_artifacts.py --bazel bazelisk
+To build all wheels (and packages), use the provided script:
+    python aifo/fastslide/tools/build_artifacts.py --bazel bazelisk --skip-packages
 
 The wheels are platform-specific because they include native C++ extensions.
 Each versioned_py_wheel target uses a Starlark transition to compile the

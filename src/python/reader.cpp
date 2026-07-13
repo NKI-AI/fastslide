@@ -816,4 +816,29 @@ nb::tuple FastSlide::ConvertLevelNativeToLevel0(uint32_t x, uint32_t y,
   return nb::make_tuple(level0_x, level0_y);
 }
 
+// Channel visibility controls
+void FastSlide::SetVisibleChannels(const std::vector<size_t>& channel_indices) {
+  if (is_closed_) {
+    throw std::runtime_error(
+        "Cannot set visible channels: slide reader is closed");
+  }
+  reader_->SetVisibleChannels(channel_indices);
+}
+
+std::vector<size_t> FastSlide::GetVisibleChannels() const {
+  if (is_closed_) {
+    throw std::runtime_error(
+        "Cannot get visible channels: slide reader is closed");
+  }
+  return reader_->GetVisibleChannels();
+}
+
+void FastSlide::ShowAllChannels() {
+  if (is_closed_) {
+    throw std::runtime_error(
+        "Cannot show all channels: slide reader is closed");
+  }
+  reader_->ShowAllChannels();
+}
+
 }  // namespace fastslide::python

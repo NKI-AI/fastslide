@@ -39,6 +39,15 @@ namespace fastslide {
 /// that returns OK). This matches the brightfield WSI use case and leaves
 /// spectral/float imagery unmodified.
 ///
+/// An optional precomputed 8-bit LUT fast path can be enabled at construction
+/// (`build_lut`). It materializes the full 256^3 RGB->RGB mapping produced by
+/// the lcms2 `TYPE_RGB_8` transform into a 48 MiB table, so per-pixel color
+/// management for 8-bit interleaved RGB(A) images becomes a single O(1) table
+/// gather instead of an lcms2 (potentially CLUT-interpolated) pass. The table
+/// is filled once (about 200 ms) from that same transform, so LUT output is
+/// byte-identical to the lcms2 8-bit path. 16-bit, planar, or otherwise
+/// unsupported images always fall back to lcms2.
+///
 /// The concrete lcms2 per-format transforms are created lazily and cached, so
 /// the object is safe to share across threads (`ApplyInPlace` is `const` and
 /// internally synchronized).
@@ -56,10 +65,13 @@ class IccTransform {
   ///                      to sRGB; `kLinear` maps to a linear-light RGB space
   ///                      built from the sRGB primaries.
   /// @param intent        ICC rendering intent.
+  /// @param build_lut     When true, eagerly build the 256^3 8-bit RGB->RGB
+  ///                      LUT fast path (48 MiB, ~200 ms one-time cost). When
+  ///                      false, every image uses the lcms2 transform.
   /// @return An owned transform, or an error status if the profile is invalid.
   [[nodiscard]] static aifocore::Result<std::unique_ptr<IccTransform>> Create(
       std::span<const uint8_t> profile_bytes, ColorSpace target,
-      RenderingIntent intent);
+      RenderingIntent intent, bool build_lut = false);
 
   /// @brief Apply the transform in place on an interleaved RGB(A) image.
   /// @param image Image whose pixel buffer is transformed in place.
@@ -97,9 +109,26 @@ class IccTransform {
   [[nodiscard]] aifocore::Result<void*> GetOrBuildTransform(
       ImageFormat format, DataType dtype) const;
 
+  /// @brief Build the 256^3 8-bit RGB->RGB LUT from the lcms2 transform.
+  ///
+  /// Runs the `TYPE_RGB_8` transform over every possible input triple so LUT
+  /// output matches the lcms2 8-bit path exactly. Populates `lut8_` on success;
+  /// leaves it empty (silent fallback to lcms2) on any failure.
+  void BuildLut8();
+
+  /// @brief Apply the 8-bit LUT gather to an interleaved RGB/RGBA image.
+  ///
+  /// Precondition: `lut8_` is populated and `image` is 8-bit interleaved
+  /// `kRGB`/`kRGBA`. Alpha (RGBA) is copied through untouched.
+  void ApplyLut8(Image& image) const;
+
   ProfileHandle src_profile_;
   ProfileHandle dst_profile_;
   RenderingIntent intent_;
+
+  /// @brief Optional 256^3 RGB->RGB byte table (3 bytes/entry); empty when the
+  /// LUT fast path is disabled or could not be built.
+  std::vector<uint8_t> lut8_;
 
   mutable std::mutex mutex_;
   mutable std::vector<CachedTransform> cache_;

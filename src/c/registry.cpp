@@ -67,8 +67,10 @@ int fastslide_registry_initialize(void) {
   // This ensures formats are registered even if static initialization
   // doesn't work properly (e.g. when loaded as a shared library from Go).
   auto& registry = fastslide::runtime::GetGlobalRegistry();
+  auto context = fastslide::runtime::PluginLoadContext::CreateDefault();
   const auto status =
-      fastslide::runtime::BuiltInPluginsInitializer::RegisterAll(registry);
+      fastslide::runtime::BuiltInPluginsInitializer::RegisterAll(registry,
+                                                                 context);
 
   if (!status.ok()) {
     FASTSLIDE_DEBUG_PRINT(
@@ -162,7 +164,8 @@ FastSlideSlideReader* fastslide_create_reader_with_options(
 
   if (options != nullptr && options->apply_icc) {
     if (!fastslide_slide_reader_enable_icc_transform(
-            reader, options->target_color_space, options->rendering_intent)) {
+            reader, options->target_color_space, options->rendering_intent,
+            options->icc_use_lut)) {
       // Building the transform failed (a profile was present but unusable).
       // Surface the error and do not hand back a half-configured reader.
       fastslide_slide_reader_free(reader);

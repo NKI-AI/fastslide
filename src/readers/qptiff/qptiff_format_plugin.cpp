@@ -57,6 +57,25 @@ FormatDescriptor CreateQptiffFormatDescriptor() {
   desc.format_name = "QPTIFF";
   desc.version = "1.0.0";
 
+  // QPTIFF capabilities
+  desc.capabilities =
+      SetCapability(desc.capabilities, FormatCapability::kTiled);
+  desc.capabilities =
+      SetCapability(desc.capabilities, FormatCapability::kPyramidal);
+  desc.capabilities =
+      SetCapability(desc.capabilities, FormatCapability::kSpectral);
+  desc.capabilities =
+      SetCapability(desc.capabilities, FormatCapability::kAssociatedImages);
+  desc.capabilities =
+      SetCapability(desc.capabilities, FormatCapability::kCompressed);
+  desc.capabilities =
+      SetCapability(desc.capabilities, FormatCapability::kRandomAccess);
+
+  // Required capabilities (codecs)
+  // QPTIFF can use various compressions, not just JPEG
+  // Remove requirement so it always loads
+  // desc.required_capabilities.push_back("jpeg");
+
   // Factory function
   desc.factory = CreateQptiffReader;
 

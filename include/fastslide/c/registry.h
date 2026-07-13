@@ -56,6 +56,7 @@ typedef struct {
   int apply_icc;  ///< Non-zero to apply the embedded ICC profile on read.
   FastSlideColorSpace target_color_space;     ///< Target space (sRGB default).
   FastSlideRenderingIntent rendering_intent;  ///< Rendering intent.
+  int icc_use_lut;  ///< Non-zero to build the 256^3 8-bit LUT fast path.
 } FastSlideOpenOptions;
 
 /// @brief Create a slide reader with open options (e.g. ICC color management).

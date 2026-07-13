@@ -661,9 +661,9 @@ Best Practices
    .. code-block:: cpp
 
       auto stats = cache_mgr.GetStats();
-      std::cerr << "Cache: " << stats.hits << " hits, " 
+      LOG(INFO) << "Cache: " << stats.hits << " hits, " 
                 << stats.misses << " misses, "
-                << (stats.hit_ratio * 100.0) << "% hit ratio\n";
+                << (stats.hit_ratio * 100.0) << "% hit ratio";
 
 4. **Clear Between Datasets**
 

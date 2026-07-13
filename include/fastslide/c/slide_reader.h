@@ -236,6 +236,38 @@ FASTSLIDE_API int fastslide_slide_reader_get_channel_metadata(
 FASTSLIDE_API void fastslide_slide_reader_free_channel_metadata(
     FastSlideChannelMetadata* metadata, int num_channels);
 
+// Channel visibility controls
+
+/// @brief Set visible channels
+/// @param reader Slide reader handle
+/// @param channel_indices Array of channel indices (NULL for all channels)
+/// @param num_channels Number of channels (0 for all channels)
+/// @return 1 on success, 0 on failure
+FASTSLIDE_API int fastslide_slide_reader_set_visible_channels(
+    FastSlideSlideReader* reader, const size_t* channel_indices,
+    int num_channels);
+
+/// @brief Get visible channels
+/// @param reader Slide reader handle
+/// @param channel_indices Output array of channel indices
+/// (allocated by function)
+/// @param num_channels Output number of channels
+/// @return 1 on success, 0 on failure
+FASTSLIDE_API int fastslide_slide_reader_get_visible_channels(
+    const FastSlideSlideReader* reader, size_t** channel_indices,
+    int* num_channels);
+
+/// @brief Show all channels
+/// @param reader Slide reader handle
+/// @return 1 on success, 0 on failure
+FASTSLIDE_API int fastslide_slide_reader_show_all_channels(
+    FastSlideSlideReader* reader);
+
+/// @brief Free visible channels array
+/// @param channel_indices Channel indices array
+FASTSLIDE_API void fastslide_slide_reader_free_visible_channels(
+    size_t* channel_indices);
+
 // Region reading
 
 /// @brief Read region from slide
@@ -420,10 +452,13 @@ FASTSLIDE_API size_t fastslide_slide_reader_read_icc_profile(
 /// @param reader Slide reader handle
 /// @param target_space Target color space (sRGB recommended)
 /// @param intent ICC rendering intent
+/// @param use_lut Non-zero to build the 256^3 8-bit LUT fast path (48 MiB,
+///        ~200 ms one-time cost) so 8-bit RGB(A) regions are color-managed
+///        with an O(1) table gather instead of an lcms2 pass.
 /// @return 1 on success (including the no-profile no-op), 0 on failure.
 FASTSLIDE_API int fastslide_slide_reader_enable_icc_transform(
     FastSlideSlideReader* reader, FastSlideColorSpace target_space,
-    FastSlideRenderingIntent intent);
+    FastSlideRenderingIntent intent, int use_lut);
 
 // Memory management
 

@@ -47,6 +47,17 @@ FormatDescriptor CreateOmezarrFormatDescriptor() {
   desc.format_name = "OME-ZARR";
   desc.version = "0.5";
 
+  desc.capabilities =
+      SetCapability(desc.capabilities, FormatCapability::kTiled);
+  desc.capabilities =
+      SetCapability(desc.capabilities, FormatCapability::kPyramidal);
+  desc.capabilities =
+      SetCapability(desc.capabilities, FormatCapability::kSpectral);
+  desc.capabilities =
+      SetCapability(desc.capabilities, FormatCapability::kCompressed);
+  desc.capabilities =
+      SetCapability(desc.capabilities, FormatCapability::kRandomAccess);
+
   desc.factory = CreateOmezarrReader;
   return desc;
 }

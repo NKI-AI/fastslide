@@ -142,8 +142,9 @@ public final class FastSlideNative {
       downcall("fastslide_is_supported", FunctionDescriptor.of(JAVA_INT, ADDRESS));
 
   // FastSlideOpenOptions layout: { int apply_icc (0); int target_color_space (4);
-  //   int rendering_intent (8); } => 12 bytes (C enums are int-sized).
-  static final long OPEN_OPTIONS_SIZE = 12;
+  //   int rendering_intent (8); int icc_use_lut (12); } => 16 bytes (C enums are
+  //   int-sized).
+  static final long OPEN_OPTIONS_SIZE = 16;
 
   public static MemorySegment createReader(Arena arena, String path) {
     try {
@@ -164,6 +165,7 @@ public final class FastSlideNative {
       options.set(JAVA_INT, 0, applyIcc ? 1 : 0);
       options.set(JAVA_INT, 4, targetColorSpace);
       options.set(JAVA_INT, 8, renderingIntent);
+      options.set(JAVA_INT, 12, 0);  // icc_use_lut: disabled.
       clearLastError();
       MemorySegment reader =
           (MemorySegment) CREATE_READER_WITH_OPTIONS.invokeExact(pathSeg, options);
@@ -276,7 +278,7 @@ public final class FastSlideNative {
   private static final MethodHandle READER_ENABLE_ICC_TRANSFORM =
       downcall(
           "fastslide_slide_reader_enable_icc_transform",
-          FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT));
+          FunctionDescriptor.of(JAVA_INT, ADDRESS, JAVA_INT, JAVA_INT, JAVA_INT));
 
   // FastSlideImageDimensions layout: { uint32_t width; uint32_t height; }
   static final long DIMS_SIZE = 8;
@@ -511,7 +513,9 @@ public final class FastSlideNative {
     try {
       clearLastError();
       checkSuccess(
-          (int) READER_ENABLE_ICC_TRANSFORM.invokeExact(reader, targetColorSpace, renderingIntent),
+          (int)
+              READER_ENABLE_ICC_TRANSFORM.invokeExact(
+                  reader, targetColorSpace, renderingIntent, 0),
           "fastslide_slide_reader_enable_icc_transform");
     } catch (Throwable t) {
       throw wrap(t);

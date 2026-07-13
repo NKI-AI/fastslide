@@ -254,6 +254,67 @@ TEST(RegionConversionTest, NoChannelSelection) {
   EXPECT_TRUE(request.IsAllChannels());
 }
 
+TEST(RegionConversionTest, WithChannelSelection) {
+  MockReaderForConversion reader;
+
+  // Set visible channels
+  reader.SetVisibleChannels({0, 2, 4});
+
+  RegionSpec region;
+  region.top_left = {0, 0};
+  region.size = {256, 256};
+  region.level = 0;
+
+  auto result = reader.TestRegionToTileRequest(region);
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
+
+  const auto& request = result.value();
+  EXPECT_FALSE(request.channel_indices.empty());
+  EXPECT_FALSE(request.IsAllChannels());
+  EXPECT_EQ(request.channel_indices.size(), 3);
+  EXPECT_EQ(request.channel_indices[0], 0);
+  EXPECT_EQ(request.channel_indices[1], 2);
+  EXPECT_EQ(request.channel_indices[2], 4);
+}
+
+TEST(RegionConversionTest, SingleChannelSelection) {
+  MockReaderForConversion reader;
+
+  reader.SetVisibleChannels({1});
+
+  RegionSpec region;
+  region.top_left = {0, 0};
+  region.size = {256, 256};
+  region.level = 0;
+
+  auto result = reader.TestRegionToTileRequest(region);
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
+
+  const auto& request = result.value();
+  EXPECT_EQ(request.channel_indices.size(), 1);
+  EXPECT_EQ(request.channel_indices[0], 1);
+}
+
+TEST(RegionConversionTest, ResetChannelSelection) {
+  MockReaderForConversion reader;
+
+  // Set channels, then reset
+  reader.SetVisibleChannels({0, 1, 2});
+  reader.ShowAllChannels();
+
+  RegionSpec region;
+  region.top_left = {0, 0};
+  region.size = {256, 256};
+  region.level = 0;
+
+  auto result = reader.TestRegionToTileRequest(region);
+  ASSERT_TRUE(result.ok()) << result.status().ToString();
+
+  const auto& request = result.value();
+  EXPECT_TRUE(request.channel_indices.empty());
+  EXPECT_TRUE(request.IsAllChannels());
+}
+
 // ============================================================================
 // Coordinate Precision Tests
 // ============================================================================

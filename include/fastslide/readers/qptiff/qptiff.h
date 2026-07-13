@@ -51,6 +51,7 @@
  * **Features:**
  * - Multi-channel spectral image support
  * - Flexible planar configuration (interleaved or separated)
+ * - Selective channel loading for performance
  * - Two-stage pipeline (PrepareRequest + ExecutePlan)
  * - Per-channel metadata (biomarkers, colors, exposure times)
  *
@@ -59,8 +60,10 @@
  * - RGB: Single 3-channel brightfield image
  * - Spectral: Multiple single-channel fluorescence images
  *
- * For spectral images, channels carry custom colors and can be processed
- * separately for quantitative analysis.
+ * For spectral images, channels can be:
+ * - Loaded individually or in combination
+ * - Displayed with custom colors
+ * - Processed separately for quantitative analysis
  *
  * **Usage:**
  * ```cpp
@@ -69,6 +72,9 @@
  *   // Handle error
  * }
  * auto reader = std::move(*reader_or);
+ *
+ * // Set visible channels for fluorescence images
+ * reader->SetVisibleChannels({0, 2, 4});  // Load channels 0, 2, 4 only
  *
  * auto image = reader->ReadRegion({.top_left = {0, 0},
  *                                   .size = {512, 512},

@@ -64,6 +64,7 @@ aifocore::Result<core::TileRequest> SlideImage::RegionToTileRequest(
   // Region requests do not address a specific tile cell; PrepareRequest
   // implementations use `region_bounds` to enumerate the covered tiles.
   request.tile_coord = {0, 0};
+  request.channel_indices = visible_channels_;
   request.plane = region.plane;
   return request;
 }

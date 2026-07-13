@@ -16,16 +16,19 @@
 
 #include <lcms2.h>
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <mutex>
 #include <span>
 #include <utility>
+#include <vector>
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/image.h"
 #include "fastslide/slide_options.h"
+#include "fastslide/utilities/color_lut_hwy.h"
 
 namespace fastslide {
 namespace {
@@ -117,7 +120,7 @@ IccTransform::~IccTransform() = default;
 
 aifocore::Result<std::unique_ptr<IccTransform>> IccTransform::Create(
     std::span<const uint8_t> profile_bytes, ColorSpace target,
-    RenderingIntent intent) {
+    RenderingIntent intent, bool build_lut) {
   if (profile_bytes.empty()) {
     return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
                                 "ICC profile is empty");
@@ -138,8 +141,56 @@ aifocore::Result<std::unique_ptr<IccTransform>> IccTransform::Create(
   }
 
   // Private constructor; wrap manually since make_unique cannot access it.
-  return std::unique_ptr<IccTransform>(
+  std::unique_ptr<IccTransform> transform(
       new IccTransform(std::move(src_profile), std::move(dst_profile), intent));
+  if (build_lut) {
+    transform->BuildLut8();
+  }
+  return transform;
+}
+
+void IccTransform::BuildLut8() {
+  // Reuse the same lcms2 transform that ApplyInPlace would use for 8-bit RGB,
+  // so the LUT is byte-identical to the non-LUT path.
+  auto handle_or = GetOrBuildTransform(ImageFormat::kRGB, DataType::kUInt8);
+  if (!handle_or.ok() || handle_or.value() == nullptr) {
+    return;  // Silent fallback: leave lut8_ empty, ApplyInPlace uses lcms2.
+  }
+  void* handle = handle_or.value();
+
+  constexpr size_t kEntries = 256UL * 256UL * 256UL;  // All RGB triples.
+  // One trailing pad byte: the SIMD gather reads a full 32-bit word at byte
+  // offset `idx * 3`, so the final entry's read would otherwise run one byte
+  // past the end.
+  std::vector<uint8_t> lut(kEntries * 3 + 1);
+
+  // The LUT is indexed by `idx = R | (G << 8) | (B << 16)` (the little-endian
+  // value of an interleaved RGB(A) pixel), so red varies fastest along
+  // contiguous entries. Fill one (g, b) run of 256 red values at a time and
+  // let lcms2 transform it straight into the LUT, keeping the call count
+  // modest (~65k `cmsDoTransform` calls).
+  std::array<uint8_t, 256 * 3> row{};
+  for (int b = 0; b < 256; ++b) {
+    for (int g = 0; g < 256; ++g) {
+      for (int r = 0; r < 256; ++r) {
+        row[r * 3 + 0] = static_cast<uint8_t>(r);
+        row[r * 3 + 1] = static_cast<uint8_t>(g);
+        row[r * 3 + 2] = static_cast<uint8_t>(b);
+      }
+      const size_t base_index =
+          static_cast<size_t>(g) * 256 + static_cast<size_t>(b) * 65536;
+      cmsDoTransform(handle, row.data(), lut.data() + base_index * 3, 256);
+    }
+  }
+
+  lut8_ = std::move(lut);
+}
+
+void IccTransform::ApplyLut8(Image& image) const {
+  // Highway-accelerated gather (with a scalar fallback target); alpha (RGBA)
+  // is preserved.
+  ApplyRgbLutInterleavedHwy(lut8_.data(), image.GetData(),
+                            image.GetPixelCount(), image.GetChannels());
 }
 
 aifocore::Result<void*> IccTransform::GetOrBuildTransform(
@@ -182,6 +233,15 @@ aifocore::Status IccTransform::ApplyInPlace(Image& image) const {
   // lcms2 pixel formats used here are interleaved; a planar buffer would be
   // reinterpreted incorrectly, so leave it untouched.
   if (!image.IsInterleaved()) {
+    return aifocore::Status::OkStatus();
+  }
+
+  // Fast path: precomputed 256^3 LUT for 8-bit interleaved RGB(A). Output is
+  // byte-identical to the lcms2 8-bit transform used to build it.
+  const ImageFormat format = image.GetFormat();
+  if (!lut8_.empty() && image.GetDataType() == DataType::kUInt8 &&
+      (format == ImageFormat::kRGB || format == ImageFormat::kRGBA)) {
+    ApplyLut8(image);
     return aifocore::Status::OkStatus();
   }
 

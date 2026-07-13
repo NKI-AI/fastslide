@@ -122,6 +122,19 @@ FormatDescriptor CreateGenericTiffFormatDescriptor() {
   desc.format_name = "GenericTIFF";
   desc.version = "1.0.0";
 
+  desc.capabilities =
+      SetCapability(desc.capabilities, FormatCapability::kTiled);
+  desc.capabilities =
+      SetCapability(desc.capabilities, FormatCapability::kPyramidal);
+  desc.capabilities =
+      SetCapability(desc.capabilities, FormatCapability::kAssociatedImages);
+  desc.capabilities =
+      SetCapability(desc.capabilities, FormatCapability::kCompressed);
+  desc.capabilities =
+      SetCapability(desc.capabilities, FormatCapability::kRandomAccess);
+
+  desc.required_capabilities.push_back("jpeg");
+
   desc.factory = CreateGenericTiffReader;
   return desc;
 }

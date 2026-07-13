@@ -25,7 +25,7 @@ Core Classes Mapping
    * - ``fastslide::LevelInfo``
      - ``tuple`` of ``(width, height)``
      - Level dimensions as tuples
-   * - ``aifocore::Status``
+   * - ``absl::Status``
      - Python exceptions
      - Errors converted to exceptions
 
@@ -137,7 +137,7 @@ The coordinate system mapping:
 Error Handling Translation
 --------------------------
 
-C++ uses ``aifocore::Result`` while Python uses exceptions:
+C++ uses ``absl::StatusOr`` while Python uses exceptions:
 
 .. list-table::
    :widths: 50 50

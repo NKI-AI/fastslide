@@ -622,6 +622,79 @@ NB_MODULE(_fastslide, m) {
       .def("close", &FastSlide::Close,
            "Close the slide reader and release resources")
 
+      // Channel visibility controls
+      .def(
+          "set_visible_channels",
+          [](FastSlide& self, const nb::object& channels) {
+            std::vector<size_t> channel_indices;
+
+            // Handle None - show all channels
+            if (channels.is_none()) {
+              self.ShowAllChannels();
+              return;
+            }
+
+            // Handle single integer
+            if (nb::isinstance<nb::int_>(channels)) {
+              int channel = nb::cast<int>(channels);
+              if (channel < 0) {
+                throw nb::value_error("Channel index cannot be negative");
+              }
+              channel_indices.push_back(static_cast<size_t>(channel));
+            } else if (nb::isinstance<nb::sequence>(channels) &&
+                       !nb::isinstance<nb::str>(channels)) {
+              // Handle sequence (list, tuple, etc.)
+              nb::sequence seq = nb::cast<nb::sequence>(channels);
+              const size_t seq_len = nb::len(seq);
+              channel_indices.reserve(seq_len);
+
+              for (size_t i = 0; i < seq_len; ++i) {
+                nb::object item = seq[i];
+                if (!nb::isinstance<nb::int_>(item)) {
+                  throw nb::type_error("All channel indices must be integers");
+                }
+                int channel = nb::cast<int>(item);
+                if (channel < 0) {
+                  throw nb::value_error("Channel indices cannot be negative");
+                }
+                channel_indices.push_back(static_cast<size_t>(channel));
+              }
+
+              // Remove duplicates and sort
+              std::sort(channel_indices.begin(), channel_indices.end());
+              channel_indices.erase(
+                  std::unique(channel_indices.begin(), channel_indices.end()),
+                  channel_indices.end());
+            } else {
+              throw nb::type_error(
+                  "channels must be an integer, list/tuple of integers, or "
+                  "None");
+            }
+
+            self.SetVisibleChannels(channel_indices);
+          },
+          "Set which channels are visible during read operations\n\n"
+          "Args:\n"
+          "    channels: Channel index (int), list/tuple of channel indices,\n"
+          "              or None to show all channels\n\n"
+          "Examples:\n"
+          "    slide.set_visible_channels(0)        # Show only channel 0\n"
+          "    slide.set_visible_channels([0, 2])   # Show channels 0 and 2\n"
+          "    slide.set_visible_channels(None)     # Show all channels\n\n"
+          "Note: Channel indices are 0-based. Invalid indices will be ignored\n"
+          "during read operations.",
+          nb::arg("channels"))
+
+      .def("get_visible_channels", &FastSlide::GetVisibleChannels,
+           "Get currently visible channel indices\n\n"
+           "Returns:\n"
+           "    list: List of visible channel indices (empty = all visible)",
+           nb::rv_policy::copy)
+
+      .def("show_all_channels", &FastSlide::ShowAllChannels,
+           "Reset to show all channels\n\n"
+           "Equivalent to set_visible_channels(None)")
+
       // Context manager support
       .def("__enter__", &FastSlide::__enter__,
            nb::rv_policy::reference_internal)

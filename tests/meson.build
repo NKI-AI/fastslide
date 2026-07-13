@@ -13,9 +13,11 @@ if gtest_dep.found()
   fastslide_tests = {
     'image_test' : '../src/image_test.cpp',
     'slide_reader_test' : '../src/slide_reader_test.cpp',
+    'channel_selection_test' : '../src/channel_selection_test.cpp',
     'tile_request_test' : '../src/core/tile_request_test.cpp',
     'tile_plan_test' : '../src/core/tile_plan_test.cpp',
     'region_conversion_test' : '../src/core/region_conversion_test.cpp',
+    'color_transform_test' : 'color_transform_test.cpp',
     'isyntax_math_utils_test' : 'isyntax_math_utils_test.cpp',
     'isyntax_cpp_test' : 'isyntax_cpp_test.cpp',
     'isyntax_jpeg_cpp_test' : 'isyntax_jpeg_cpp_test.cpp',

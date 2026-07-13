@@ -201,6 +201,37 @@ bool ReaderRegistry::SupportsExtension(std::string_view extension) const {
   return GetFormat(extension) != nullptr;
 }
 
+bool ReaderRegistry::SupportsCapability(std::string_view extension,
+                                        FormatCapability capability) const {
+  const auto* format = GetFormat(extension);
+  if (!format) {
+    return false;
+  }
+
+  return HasCapability(format->capabilities, capability);
+}
+
+std::vector<std::string> ReaderRegistry::ListFormatsByCapability(
+    FormatCapability capability) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+
+  std::vector<std::string> formats;
+
+  // Collect unique format names that support the capability
+  std::map<std::string, bool> seen;
+  for (const auto& [ext, desc] : formats_) {
+    if (HasCapability(desc.capabilities, capability)) {
+      if (seen.find(desc.format_name) == seen.end()) {
+        formats.push_back(desc.format_name);
+        seen[desc.format_name] = true;
+      }
+    }
+  }
+
+  std::sort(formats.begin(), formats.end());
+  return formats;
+}
+
 std::vector<std::string> ReaderRegistry::GetSupportedExtensions() const {
   std::lock_guard<std::mutex> lock(mutex_);
 

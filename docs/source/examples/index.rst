@@ -233,7 +233,7 @@ High-Performance Tile Server
        std::mutex slides_mutex_;
        
    public:
-       aifocore::Status LoadSlide(const std::string& slide_id, 
+       absl::Status LoadSlide(const std::string& slide_id, 
                              const std::string& file_path) {
            auto reader_or = fastslide::SlideReader::Open(file_path);
            if (!reader_or.ok()) {
@@ -254,7 +254,7 @@ High-Performance Tile Server
            std::lock_guard<std::mutex> lock(slides_mutex_);
            slides_[slide_id] = std::move(info);
            
-           return aifocore::Status::OkStatus();
+           return absl::OkStatus();
        }
        
        void StartServer(int port = 8080) {
@@ -320,14 +320,13 @@ High-Performance Tile Server
            return (it != slides_.end()) ? &it->second : nullptr;
        }
        
-       aifocore::Result<fastslide::Image> ReadTile(
+       absl::StatusOr<fastslide::Image> ReadTile(
            const std::string& slide_id, int level, 
            int x, int y, int width, int height) {
            
            auto slide_info = GetSlideInfo(slide_id);
            if (!slide_info) {
-               return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
-                                           "Slide not found: " + slide_id);
+               return absl::NotFoundError("Slide not found: " + slide_id);
            }
            
            fastslide::RegionSpec spec{

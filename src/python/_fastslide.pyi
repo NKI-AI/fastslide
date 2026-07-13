@@ -501,6 +501,38 @@ class FastSlide:
     def close(self) -> None:
         """Close the slide reader and release resources"""
 
+    def set_visible_channels(self, channels: object) -> None:
+        """
+        Set which channels are visible during read operations
+
+        Args:
+            channels: Channel index (int), list/tuple of channel indices,
+                      or None to show all channels
+
+        Examples:
+            slide.set_visible_channels(0)        # Show only channel 0
+            slide.set_visible_channels([0, 2])   # Show channels 0 and 2
+            slide.set_visible_channels(None)     # Show all channels
+
+        Note: Channel indices are 0-based. Invalid indices will be ignored
+        during read operations.
+        """
+
+    def get_visible_channels(self) -> list[int]:
+        """
+        Get currently visible channel indices
+
+        Returns:
+            list: List of visible channel indices (empty = all visible)
+        """
+
+    def show_all_channels(self) -> None:
+        """
+        Reset to show all channels
+
+        Equivalent to set_visible_channels(None)
+        """
+
     def __enter__(self) -> FastSlide: ...
     def __exit__(
         self,
