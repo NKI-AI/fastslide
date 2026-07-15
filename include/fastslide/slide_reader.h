@@ -348,11 +348,15 @@ class SlideReader {
   ///
   /// @param target Target color space (sRGB by default via `kAutomatic`).
   /// @param intent ICC rendering intent.
+  /// @param use_lut When true, build the 256^3 8-bit LUT fast path (48 MiB,
+  ///        ~200 ms one-time cost) so 8-bit RGB(A) regions are color-managed
+  ///        with an O(1) table gather instead of an lcms2 pass.
   /// @return OK on success or when the slide has no profile; an error only if
   ///         a profile is present but the transform could not be built.
   aifocore::Status SetColorTransform(
       ColorSpace target = ColorSpace::kSRGB,
-      RenderingIntent intent = RenderingIntent::kPerceptual);
+      RenderingIntent intent = RenderingIntent::kPerceptual,
+      bool use_lut = false);
 
   /// @brief Whether an ICC color transform is currently active.
   [[nodiscard]] bool IsColorTransformEnabled() const {

@@ -4,7 +4,7 @@
 set -e
 
 if command -v ldconfig >/dev/null 2>&1; then
-    ldconfig
+  ldconfig
 fi
 
 exit 0

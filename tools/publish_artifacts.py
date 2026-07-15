@@ -175,6 +175,14 @@ def main() -> None:
         print(f"\u25b6\ufe0e Attaching {len(sdists)} sdist(s) from {args.sdist_dir}")
 
     debs = sorted(args.debs_dir.glob("*.deb")) if args.debs_dir.is_dir() else []
+    # pkg_deb emits both the canonical versioned file and a target-named symlink
+    # with identical bytes; drop the duplicates so the release carries one .deb
+    # per architecture (the versioned name) instead of byte-identical pairs.
+    deduped_debs = release.dedup_by_content(debs, prefer_substring=version)
+    if len(deduped_debs) < len(debs):
+        dropped = sorted({p.name for p in debs} - {p.name for p in deduped_debs})
+        print(f"\u25b6\ufe0e Dropping {len(dropped)} duplicate Debian package(s): {', '.join(dropped)}")
+    debs = deduped_debs
     if debs:
         print(f"\u25b6\ufe0e Attaching {len(debs)} Debian package(s) from {args.debs_dir}")
 

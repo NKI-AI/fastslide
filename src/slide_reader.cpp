@@ -34,7 +34,8 @@ SlideReader::SlideReader() = default;
 SlideReader::~SlideReader() = default;
 
 aifocore::Status SlideReader::SetColorTransform(ColorSpace target,
-                                                RenderingIntent intent) {
+                                                RenderingIntent intent,
+                                                bool use_lut) {
   auto profile_or = GetIccProfile();
   if (!profile_or.ok()) {
     // Leave color management disabled and keep returning native pixels. Two
@@ -55,8 +56,8 @@ aifocore::Status SlideReader::SetColorTransform(ColorSpace target,
 
   const std::vector<uint8_t>& profile = profile_or.value();
   std::unique_ptr<IccTransform> transform;
-  AIFOCORE_ASSIGN_OR_RETURN(transform,
-                            IccTransform::Create(profile, target, intent));
+  AIFOCORE_ASSIGN_OR_RETURN(
+      transform, IccTransform::Create(profile, target, intent, use_lut));
   color_transform_ = std::move(transform);
 
   // Propagate to every navigable image so per-image `ReadRegion` (used by the

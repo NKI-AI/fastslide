@@ -927,10 +927,11 @@ size_t fastslide_slide_reader_read_icc_profile(
 
 int fastslide_slide_reader_enable_icc_transform(
     FastSlideSlideReader* reader, FastSlideColorSpace target_space,
-    FastSlideRenderingIntent intent) {
+    FastSlideRenderingIntent intent, int use_lut) {
   FASTSLIDE_REQUIRE_READER(reader, 0);
   const auto status = reader->reader->SetColorTransform(
-      ColorSpaceFromCEnum(target_space), RenderingIntentFromCEnum(intent));
+      ColorSpaceFromCEnum(target_space), RenderingIntentFromCEnum(intent),
+      use_lut != 0);
   if (!status.ok()) {
     SetLastError(std::string(status.message()).c_str());
     return 0;

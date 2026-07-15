@@ -466,7 +466,15 @@ jobs:
             //package:libfastslide_${{ matrix.deb_arch }} \
             //package:libfastslide_dev
           mkdir -p artifacts/debs
-          cp "$(bazel info bazel-bin)"/package/*.deb artifacts/debs/
+          # pkg_deb emits the canonical, versioned filename (via
+          # package_file_name) AND a symlink named after the Bazel target
+          # (e.g. libfastslide_amd64.deb -> libfastslide_0.8.0_amd64.deb).
+          # Copy only the canonical files so releases don't carry byte-identical
+          # duplicates. -L dereferences in case the canonical file itself is a
+          # bazel-out symlink.
+          bin="$(bazel info bazel-bin)/package"
+          cp -L "${bin}"/libfastslide_*_*.deb artifacts/debs/
+          cp -L "${bin}"/libfastslide-dev_*_all.deb artifacts/debs/
           ls -l artifacts/debs
       - name: Upload debs
         if: steps.gate.outputs.run == 'true'

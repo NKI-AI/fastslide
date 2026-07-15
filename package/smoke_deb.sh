@@ -14,18 +14,18 @@ ARCH="${1:-amd64}"
 BAZEL="${BAZEL:-bazelisk}"
 
 case "${ARCH}" in
-    amd64)
-        RUNTIME_TARGET="//package:libfastslide_amd64"
-        DOCKER_PLATFORM="linux/amd64"
-        ;;
-    arm64)
-        RUNTIME_TARGET="//package:libfastslide_arm64"
-        DOCKER_PLATFORM="linux/arm64"
-        ;;
-    *)
-        echo "Usage: $0 [amd64|arm64]" >&2
-        exit 2
-        ;;
+amd64)
+  RUNTIME_TARGET="//package:libfastslide_amd64"
+  DOCKER_PLATFORM="linux/amd64"
+  ;;
+arm64)
+  RUNTIME_TARGET="//package:libfastslide_arm64"
+  DOCKER_PLATFORM="linux/arm64"
+  ;;
+*)
+  echo "Usage: $0 [amd64|arm64]" >&2
+  exit 2
+  ;;
 esac
 
 DEV_TARGET="//package:libfastslide_dev"
@@ -39,7 +39,11 @@ echo "==> Building ${RUNTIME_TARGET} and ${DEV_TARGET}"
 STAGE="$(mktemp -d)"
 trap 'rm -rf "${STAGE}"' EXIT
 
-cp "${BAZEL_BIN}"/package/*.deb "${STAGE}/"
+# pkg_deb emits the canonical versioned filename plus a Bazel-target-named
+# symlink to it (e.g. libfastslide_amd64.deb -> libfastslide_0.8.0_amd64.deb).
+# Stage only the canonical files so we don't install the same package twice.
+cp -L "${BAZEL_BIN}"/package/libfastslide_*_*.deb "${STAGE}/"
+cp -L "${BAZEL_BIN}"/package/libfastslide-dev_*_all.deb "${STAGE}/"
 cp "${WORKSPACE_DIR}/package/deb_smoke.cpp" "${STAGE}/"
 cp "${WORKSPACE_DIR}/package/Dockerfile" "${STAGE}/"
 

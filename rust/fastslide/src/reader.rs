@@ -121,6 +121,10 @@ pub struct OpenOptions {
     pub target_color_space: ColorSpace,
     /// Rendering intent.
     pub rendering_intent: RenderingIntent,
+    /// Build the 256^3 8-bit LUT fast path (48 MiB, ~200 ms one-time cost) so
+    /// 8-bit RGB(A) regions are color-managed with an O(1) table gather instead
+    /// of an lcms2 pass. Ignored unless `apply_icc` is set.
+    pub icc_use_lut: bool,
 }
 
 impl Default for OpenOptions {
@@ -129,6 +133,7 @@ impl Default for OpenOptions {
             apply_icc: false,
             target_color_space: ColorSpace::Srgb,
             rendering_intent: RenderingIntent::Perceptual,
+            icc_use_lut: false,
         }
     }
 }
@@ -139,6 +144,7 @@ impl OpenOptions {
             apply_icc: i32::from(self.apply_icc),
             target_color_space: self.target_color_space.to_sys(),
             rendering_intent: self.rendering_intent.to_sys(),
+            icc_use_lut: i32::from(self.icc_use_lut),
         }
     }
 }
@@ -182,16 +188,14 @@ impl SlideReader {
         ensure_initialized();
 
         let path = path.as_ref();
-        let c_path = CString::new(path.to_string_lossy().as_bytes()).map_err(|_| {
-            Error::new("open_with_options", "path contains an interior NUL byte")
-        })?;
+        let c_path = CString::new(path.to_string_lossy().as_bytes())
+            .map_err(|_| Error::new("open_with_options", "path contains an interior NUL byte"))?;
         let sys_options = options.to_sys();
 
         // SAFETY: `c_path` is a valid NUL-terminated string and `sys_options`
         // outlives the call.
-        let ptr = unsafe {
-            sys::fastslide_create_reader_with_options(c_path.as_ptr(), &sys_options)
-        };
+        let ptr =
+            unsafe { sys::fastslide_create_reader_with_options(c_path.as_ptr(), &sys_options) };
         if ptr.is_null() {
             return Err(Error::last("open_with_options"));
         }
@@ -227,16 +231,22 @@ impl SlideReader {
     /// Builds a transform from the slide's embedded ICC profile to `target`
     /// and applies it in place during [`SlideReader::read_region`]. On a slide
     /// with no embedded profile this is a successful no-op (reads stay native).
+    ///
+    /// When `use_lut` is set, the 256^3 8-bit LUT fast path is built (48 MiB,
+    /// ~200 ms one-time cost) so 8-bit RGB(A) regions are color-managed with an
+    /// O(1) table gather instead of an lcms2 pass.
     pub fn enable_icc_transform(
         &self,
         target: ColorSpace,
         intent: RenderingIntent,
+        use_lut: bool,
     ) -> Result<()> {
         let ok = unsafe {
             sys::fastslide_slide_reader_enable_icc_transform(
                 self.inner.ptr,
                 target.to_sys(),
                 intent.to_sys(),
+                i32::from(use_lut),
             )
         };
         if ok == 0 {

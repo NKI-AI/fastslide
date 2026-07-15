@@ -236,6 +236,7 @@ pub struct FastSlideOpenOptions {
     pub apply_icc: c_int,
     pub target_color_space: FastSlideColorSpace,
     pub rendering_intent: FastSlideRenderingIntent,
+    pub icc_use_lut: c_int,
 }
 
 // ===========================================================================
@@ -437,6 +438,7 @@ unsafe extern "C" {
         reader: *mut FastSlideSlideReader,
         target_space: FastSlideColorSpace,
         intent: FastSlideRenderingIntent,
+        use_lut: c_int,
     ) -> c_int;
 
     // ---- slide_image.h: per-image (per-series) API ----

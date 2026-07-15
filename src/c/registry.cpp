@@ -162,7 +162,8 @@ FastSlideSlideReader* fastslide_create_reader_with_options(
 
   if (options != nullptr && options->apply_icc) {
     if (!fastslide_slide_reader_enable_icc_transform(
-            reader, options->target_color_space, options->rendering_intent)) {
+            reader, options->target_color_space, options->rendering_intent,
+            options->icc_use_lut)) {
       // Building the transform failed (a profile was present but unusable).
       // Surface the error and do not hand back a half-configured reader.
       fastslide_slide_reader_free(reader);

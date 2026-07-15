@@ -10,9 +10,9 @@ package dev.aifo.fastslide;
 /**
  * Options controlling how a slide is opened.
  *
- * <p>When {@link #applyIcc()} is {@code true} and the slide carries an embedded ICC profile,
- * {@link SlideReader#readRegion} returns pixels already converted to {@link #targetColorSpace()}
- * using {@link #renderingIntent()}. Defaults ({@link #defaults()}) leave color unmanaged.
+ * <p>When {@link #applyIcc()} is {@code true} and the slide carries an embedded ICC profile, {@link
+ * SlideReader#readRegion} returns pixels already converted to {@link #targetColorSpace()} using
+ * {@link #renderingIntent()}. Defaults ({@link #defaults()}) leave color unmanaged.
  *
  * @param applyIcc apply the embedded ICC profile during {@code readRegion}
  * @param targetColorSpace destination color space for the transform
