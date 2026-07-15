@@ -135,7 +135,8 @@ func (sr *SlideReader) EnableICCTransform(target ColorSpace, intent RenderingInt
 
 	C.fastslide_clear_last_error()
 	rc := C.fastslide_slide_reader_enable_icc_transform(
-		sr.handle, C.FastSlideColorSpace(target), C.FastSlideRenderingIntent(intent))
+		sr.handle, C.FastSlideColorSpace(target), C.FastSlideRenderingIntent(intent),
+		C.int(0))
 	runtime.KeepAlive(sr)
 	if rc == 0 {
 		errorMsg := C.GoString(C.fastslide_get_last_error())

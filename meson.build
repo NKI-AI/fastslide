@@ -67,6 +67,7 @@ fastslide_sources = [
   'src/self_image_view.cpp',
   'src/slide_image.cpp',
   'src/slide_reader.cpp',
+  'src/utilities/color_lut_hwy.cpp',
   'src/utilities/color_transform.cpp',
   'src/utilities/colors.cpp',
   'src/utilities/hash.cpp',

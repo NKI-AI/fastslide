@@ -420,10 +420,13 @@ FASTSLIDE_API size_t fastslide_slide_reader_read_icc_profile(
 /// @param reader Slide reader handle
 /// @param target_space Target color space (sRGB recommended)
 /// @param intent ICC rendering intent
+/// @param use_lut Non-zero to build the 256^3 8-bit LUT fast path (48 MiB,
+///        ~200 ms one-time cost) so 8-bit RGB(A) regions are color-managed
+///        with an O(1) table gather instead of an lcms2 pass.
 /// @return 1 on success (including the no-profile no-op), 0 on failure.
 FASTSLIDE_API int fastslide_slide_reader_enable_icc_transform(
     FastSlideSlideReader* reader, FastSlideColorSpace target_space,
-    FastSlideRenderingIntent intent);
+    FastSlideRenderingIntent intent, int use_lut);
 
 // Memory management
 

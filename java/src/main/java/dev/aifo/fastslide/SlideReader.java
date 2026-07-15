@@ -196,9 +196,9 @@ public final class SlideReader implements AutoCloseable {
   }
 
   /**
-   * Enables in-library ICC color management for subsequent {@link #readRegion} calls, converting
-   * to {@code target} with the given {@code intent}. Enabling on a slide without an embedded
-   * profile is a no-op (reads stay native).
+   * Enables in-library ICC color management for subsequent {@link #readRegion} calls, converting to
+   * {@code target} with the given {@code intent}. Enabling on a slide without an embedded profile
+   * is a no-op (reads stay native).
    */
   public void enableIccTransform(ColorSpace target, RenderingIntent intent) {
     FastSlideNative.readerEnableIccTransform(

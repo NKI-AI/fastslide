@@ -146,6 +146,14 @@ struct SlideOpenOptions {
   /// @brief Rendering intent used when `apply_icc` is enabled
   RenderingIntent rendering_intent = RenderingIntent::kPerceptual;
 
+  /// @brief Use the precomputed 8-bit LUT fast path when `apply_icc` is enabled
+  ///
+  /// When true, a 256^3 RGB->RGB table (48 MiB, ~200 ms one-time build) is
+  /// materialized so 8-bit RGB(A) regions are color-managed with an O(1) table
+  /// gather instead of an lcms2 pass. Output is byte-identical to the lcms2
+  /// path. Ignored when `apply_icc` is false or the slide has no profile.
+  bool icc_use_lut = false;
+
   /// @brief Optional dependency bundle for shared services
   ///
   /// Allows injection of shared caches, thread pools, or other services.

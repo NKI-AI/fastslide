@@ -138,8 +138,14 @@ cc_library(
 
 cc_library(
     name = "color_transform",
-    srcs = ["src/utilities/color_transform.cpp"],
-    hdrs = ["include/fastslide/utilities/color_transform.h"],
+    srcs = [
+        "src/utilities/color_lut_hwy.cpp",
+        "src/utilities/color_transform.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/utilities/color_lut_hwy.h",
+        "include/fastslide/utilities/color_transform.h",
+    ],
     copts = WASM_COPTS,
     includes = ["include"],
     visibility = ["//visibility:public"],
@@ -148,6 +154,7 @@ cc_library(
         ":slide_options",
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
+        "@hwy",
         "@lcms2",
     ],
 )
