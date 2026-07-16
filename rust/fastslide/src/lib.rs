@@ -58,8 +58,11 @@ pub use metadata::{
     Bounds, ChannelMetadata, ColorRgb, Coordinate, DataType, Dimensions, ImageFormat, LevelInfo,
     PlanarConfig, RegionSpec, SlideProperties, StackInfo,
 };
-pub use reader::{ColorSpace, OpenOptions, RenderingIntent, SlideReader};
-pub use registry::{c_api_version, is_supported, supported_extensions, version};
+pub use reader::{CacheStats, ColorSpace, OpenOptions, RenderingIntent, SlideReader};
+pub use registry::{
+    c_api_version, clear_global_cache, global_cache_stats, is_supported,
+    set_global_cache_capacity, supported_extensions, version,
+};
 pub use slide_image::SlideImage;
 
 #[cfg(test)]
@@ -130,5 +133,38 @@ mod tests {
         assert_eq!(info.t_count, 1);
         assert_eq!(info.z_spacing_um, Some(0.5));
         assert_eq!(info.t_interval_s, None);
+    }
+
+    // Reads a 256x256 level-0 region twice and checks the cache serves the
+    // second read. Skipped unless FASTSLIDE_BENCHMARK_FILE points at a slide.
+    #[test]
+    fn cache_reuses_decoded_tiles() {
+        let Ok(path) = std::env::var("FASTSLIDE_BENCHMARK_FILE") else {
+            eprintln!("skipping: FASTSLIDE_BENCHMARK_FILE not set");
+            return;
+        };
+
+        let reader = SlideReader::open_with_cache(&path, 256 << 20)
+            .expect("open_with_cache should succeed");
+        assert!(reader.is_cache_enabled());
+
+        let region = RegionSpec::new(
+            Coordinate { x: 0, y: 0 },
+            Dimensions {
+                width: 256,
+                height: 256,
+            },
+            0,
+        );
+
+        let first = reader.read_region(&region).expect("first read");
+        let second = reader.read_region(&region).expect("second read");
+        assert_eq!(first.data(), second.data(), "cached read must be identical");
+
+        let stats = reader.cache_stats().expect("cache stats");
+        assert!(stats.hits > 0, "repeated read should hit the cache");
+
+        reader.disable_cache().expect("disable");
+        assert!(!reader.is_cache_enabled());
     }
 }
