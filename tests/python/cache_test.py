@@ -683,6 +683,64 @@ class TestCacheMemoryManagement:
         assert new_stats3.capacity_bytes == 300
 
 
+class TestFromFilePathCache:
+    """Test the `from_file_path(cache=...)` kwarg and slide cache accessors.
+
+    These require a real slide, provided via FASTSLIDE_BENCHMARK_FILE, and are
+    skipped otherwise so the suite stays hermetic by default.
+    """
+
+    @pytest.fixture
+    def slide_path(self) -> str:
+        import os
+
+        path = os.environ.get("FASTSLIDE_BENCHMARK_FILE")
+        if not path or not os.path.exists(path):
+            pytest.skip("Set FASTSLIDE_BENCHMARK_FILE to a supported slide.")
+        return path
+
+    def test_open_with_int_capacity_caches_reads(self, slide_path: str) -> None:
+        """`cache=<bytes>` attaches an LRU cache and repeated reads hit it."""
+        import numpy as np
+
+        with fastslide.FastSlide.from_file_path(slide_path, cache=256 << 20) as slide:
+            assert slide.cache_enabled
+            assert slide.cache_stats is not None
+
+            region1 = slide.read_region((0, 0), 0, (256, 256)).numpy()
+            region2 = slide.read_region((0, 0), 0, (256, 256)).numpy()
+
+            assert np.array_equal(region1, region2)
+            assert slide.cache_stats.hits > 0
+
+    def test_open_without_cache_reports_disabled(self, slide_path: str) -> None:
+        """Default open attaches no cache."""
+        with fastslide.FastSlide.from_file_path(slide_path) as slide:
+            assert not slide.cache_enabled
+            assert slide.cache_stats is None
+
+    def test_clear_cache_resets_entries(self, slide_path: str) -> None:
+        """`clear_cache` empties the attached cache."""
+        with fastslide.FastSlide.from_file_path(slide_path, cache=64 << 20) as slide:
+            slide.read_region((0, 0), 0, (256, 256))
+            assert slide.cache_stats.size > 0
+
+            slide.clear_cache()
+            assert slide.cache_stats.size == 0
+
+    def test_use_global_cache(self, slide_path: str) -> None:
+        """`use_global_cache` attaches the shared singleton cache."""
+        global_cache = fastslide.GlobalCacheManager.instance()
+        global_cache.set_capacity_bytes(128 << 20)
+        global_cache.clear()
+
+        with fastslide.FastSlide.from_file_path(slide_path) as slide:
+            slide.use_global_cache()
+            assert slide.cache_enabled
+            slide.read_region((0, 0), 0, (256, 256))
+            assert global_cache.get_stats().capacity_bytes == 128 << 20
+
+
 # Test configuration and utilities
 
 

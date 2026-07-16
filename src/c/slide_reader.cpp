@@ -15,6 +15,9 @@
 #include <vector>
 
 #include "fastslide/c/image.h"
+#include "fastslide/runtime/cache_interface.h"
+#include "fastslide/runtime/global_cache_manager.h"
+#include "fastslide/runtime/lru_tile_cache.h"
 #include "fastslide/slide_reader.h"
 #include "internal/debug.h"
 #include "internal/error.h"
@@ -936,6 +939,77 @@ int fastslide_slide_reader_enable_icc_transform(
     SetLastError(std::string(status.message()).c_str());
     return 0;
   }
+  return 1;
+}
+
+namespace {
+
+FastSlideCacheStats CacheStatsToC(
+    const fastslide::runtime::ITileCache::Stats& stats) {
+  FastSlideCacheStats out;
+  out.capacity_bytes = stats.capacity_bytes;
+  out.size = stats.size;
+  out.hits = stats.hits;
+  out.misses = stats.misses;
+  out.hit_ratio = stats.hit_ratio;
+  out.memory_usage_bytes = stats.memory_usage_bytes;
+  return out;
+}
+
+}  // namespace
+
+int fastslide_slide_reader_set_cache(FastSlideSlideReader* reader,
+                                     size_t capacity_bytes) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+
+  if (capacity_bytes == 0) {
+    reader->reader->SetCache(nullptr);
+    return 1;
+  }
+
+  auto cache_or = fastslide::runtime::LRUTileCache::Create(capacity_bytes);
+  if (!cache_or.ok()) {
+    SetLastError(std::string(cache_or.status().message()).c_str());
+    return 0;
+  }
+  reader->reader->SetCache(std::move(cache_or.value()));
+  return 1;
+}
+
+int fastslide_slide_reader_use_global_cache(FastSlideSlideReader* reader) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+  reader->reader->SetCache(
+      fastslide::runtime::GlobalCacheManager::Instance().GetCache());
+  return 1;
+}
+
+int fastslide_slide_reader_is_cache_enabled(
+    const FastSlideSlideReader* reader) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+  return reader->reader->IsCacheEnabled() ? 1 : 0;
+}
+
+void fastslide_slide_reader_clear_cache(FastSlideSlideReader* reader) {
+  if (!reader || !reader->reader) {
+    return;
+  }
+  auto cache = reader->reader->GetCache();
+  if (cache) {
+    cache->Clear();
+  }
+}
+
+int fastslide_slide_reader_get_cache_stats(const FastSlideSlideReader* reader,
+                                           FastSlideCacheStats* out_stats) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+  FASTSLIDE_REQUIRE_NOT_NULL(out_stats, "out_stats", 0);
+
+  auto cache = reader->reader->GetCache();
+  if (!cache) {
+    SetLastError("reader has no cache attached");
+    return 0;
+  }
+  *out_stats = CacheStatsToC(cache->GetStats());
   return 1;
 }
 

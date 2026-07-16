@@ -68,4 +68,16 @@ if gtest_dep.found()
       'FASTSLIDE_DICOM_TESTDATA_DIR' :
         meson.current_source_dir() / '../src/readers/dicom/testdata',
     })
+
+  # C API tile-cache test. Links the C API library; the test itself skips
+  # unless FASTSLIDE_BENCHMARK_FILE points at a supported slide.
+  if get_option('build_c_api')
+    cache_c_api = executable('cache_c_api_test',
+      '../src/c/cache_c_api_test.cpp',
+      include_directories : test_inc,
+      dependencies : [fastslide_c_dep, gtest_dep],
+      cpp_args : ['-D__ANSI__'])
+    test('cache_c_api_test', cache_c_api,
+      env : {'TEST_TMPDIR' : meson.current_build_dir()})
+  endif
 endif

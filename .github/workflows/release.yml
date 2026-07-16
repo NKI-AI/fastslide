@@ -533,8 +533,30 @@ jobs:
           cp package/Dockerfile package/deb_smoke.cpp smoke_ctx/
           cp debs/*.deb smoke_ctx/
           ls -l smoke_ctx
-          docker build --platform ${{ matrix.docker_platform }} \
-            -t fastslide-deb-smoke smoke_ctx
+          # Retry the build: the arm64 image installs deps from ports.ubuntu.com,
+          # which intermittently times out from the CI network. --no-cache on
+          # retries forces a fresh apt-get update instead of reusing a failed
+          # layer.
+          attempts=3
+          for attempt in $(seq 1 "${attempts}"); do
+            echo "::group::docker build (attempt ${attempt}/${attempts})"
+            cache_flag=""
+            if [[ "${attempt}" -gt 1 ]]; then
+              cache_flag="--no-cache"
+            fi
+            if docker build ${cache_flag} --platform ${{ matrix.docker_platform }} \
+                -t fastslide-deb-smoke smoke_ctx; then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            echo "docker build failed on attempt ${attempt}/${attempts}"
+            if [[ "${attempt}" -lt "${attempts}" ]]; then
+              sleep $((attempt * 15))
+            fi
+          done
+          echo "docker build failed after ${attempts} attempts" >&2
+          exit 1
   # TEMPORARILY DISABLED: the source build pulls simpletiff from its pinned git
   # wrap (subprojects/simpletiff.wrap @ 3886522), which predates the
   # <cstdio>-before-<jpeglib.h> fix and so fails to compile under GCC. Re-enable

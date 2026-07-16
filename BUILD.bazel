@@ -1567,7 +1567,24 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":fastslide_lib",
+        ":runtime_global_cache_manager",
         ":runtime_png_decoder",
+    ],
+)
+
+# C API tile-cache tests. Require a real slide via FASTSLIDE_BENCHMARK_FILE;
+# skipped otherwise. Run with:
+#   FASTSLIDE_BENCHMARK_FILE=/abs/path/CMU-3.ndpi \
+#       bazelisk test //:cache_c_api_test --test_output=all
+cc_test(
+    name = "cache_c_api_test",
+    size = "small",
+    srcs = ["src/c/cache_c_api_test.cpp"],
+    deps = [
+        ":fastslide_c",
+        ":formats_ndpitiff",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
     ],
 )
 

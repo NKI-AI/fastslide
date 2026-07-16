@@ -72,6 +72,41 @@ typedef struct {
 FASTSLIDE_API FastSlideSlideReader* fastslide_create_reader_with_options(
     const char* file_path, const FastSlideOpenOptions* options);
 
+/// @brief Create a slide reader with a per-reader LRU tile cache attached.
+///
+/// Equivalent to `fastslide_create_reader` followed by
+/// `fastslide_slide_reader_set_cache(reader, cache_capacity_bytes)`. A
+/// `cache_capacity_bytes` of 0 behaves like `fastslide_create_reader` (no
+/// cache).
+///
+/// @param file_path Path to slide file
+/// @param cache_capacity_bytes Cache capacity in bytes (0 = no cache)
+/// @return Slide reader handle or NULL on failure
+FASTSLIDE_API FastSlideSlideReader* fastslide_create_reader_with_cache(
+    const char* file_path, size_t cache_capacity_bytes);
+
+// Global tile cache
+
+/// @brief Resize the process-wide global tile cache.
+///
+/// Replaces the global cache with a new LRU cache of the requested capacity,
+/// dropping any currently cached tiles. Readers attached via
+/// `fastslide_slide_reader_use_global_cache` share this cache.
+///
+/// @param capacity_bytes New global cache capacity in bytes (must be > 0)
+/// @return 1 on success, 0 on failure.
+FASTSLIDE_API int fastslide_global_cache_set_capacity_bytes(
+    size_t capacity_bytes);
+
+/// @brief Read the global tile cache's statistics.
+/// @param out_stats Output statistics (must be non-null)
+/// @return 1 on success, 0 on invalid arguments.
+FASTSLIDE_API int fastslide_global_cache_get_stats(
+    FastSlideCacheStats* out_stats);
+
+/// @brief Clear all tiles from the process-wide global tile cache.
+FASTSLIDE_API void fastslide_global_cache_clear(void);
+
 // Utility functions
 
 /// @brief Get supported file extensions
