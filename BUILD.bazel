@@ -499,6 +499,7 @@ cc_library(
         ":runtime_cache_interface",
         ":runtime_format_descriptor",
         ":runtime_lru_tile_cache",
+        ":runtime_path_utils",
         ":runtime_reader_registry",
         ":runtime_tile_writer",
     ],
@@ -1415,6 +1416,18 @@ cc_library(
 )
 
 cc_library(
+    name = "runtime_path_utils",
+    hdrs = ["include/fastslide/runtime/io/path_utils.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
     name = "runtime_file_reader",
     srcs = ["src/runtime/io/file_reader.cpp"],
     hdrs = ["include/fastslide/runtime/io/file_reader.h"],
@@ -1911,6 +1924,17 @@ cc_test(
     srcs = ["src/runtime/io/binary_utils_test.cpp"],
     deps = [
         ":runtime_binary_utils",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "path_utils_test",
+    size = "small",
+    srcs = ["src/runtime/io/path_utils_test.cpp"],
+    deps = [
+        ":runtime_path_utils",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],

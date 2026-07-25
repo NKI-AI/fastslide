@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <string_view>
 #include <vector>
@@ -174,6 +175,40 @@ inline aifocore::Result<DecodedInterleavedView> ReadTileOrStrip(
         aifocore::StatusCode::kInternal,
         aifocore::fmt::format("Decoded dimensions are invalid: {}x{}",
                               decoded_w, decoded_h));
+  }
+
+  // `buffer` is sized from the actual payload, but the geometry we advertise
+  // below comes from the IFD. The two can disagree: a JPEG page declaring
+  // SamplesPerPixel=4 still decodes to three bytes per pixel, and an
+  // undersized LZW/Deflate payload inflates to fewer rows than declared.
+  // Consumers stride using the advertised geometry, so a buffer that does not
+  // back it becomes an out-of-bounds read. Reject the contradiction instead of
+  // guessing which side is right.
+  const size_t decoded_pixels =
+      static_cast<size_t>(decoded_w) * static_cast<size_t>(decoded_h);
+  const bool pixels_overflowed =
+      decoded_pixels / static_cast<size_t>(decoded_h) !=
+      static_cast<size_t>(decoded_w);
+  if (pixels_overflowed ||
+      decoded_pixels > std::numeric_limits<size_t>::max() / bytes_per_pixel) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("Decoded geometry {}x{} at {} bytes/pixel "
+                              "overflows for page {}",
+                              decoded_w, decoded_h, bytes_per_pixel,
+                              page_index));
+  }
+  const size_t required_bytes = decoded_pixels * bytes_per_pixel;
+  if (buffer.size() < required_bytes) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format(
+            "Page {} tile/strip {} decoded to {} bytes but its {}x{} geometry "
+            "at {} bytes/pixel (SamplesPerPixel={}, BitsPerSample={}) requires "
+            "{}",
+            page_index, tile_or_strip_index, buffer.size(), decoded_w,
+            decoded_h, bytes_per_pixel, page_header.samples_per_pixel,
+            page_header.bits_per_sample, required_bytes));
   }
 
   return DecodedInterleavedView{

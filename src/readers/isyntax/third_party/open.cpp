@@ -36,6 +36,7 @@
 
 #include "aifocore/platform/portability.h"
 #include "aifocore/status/result.h"
+#include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/isyntax/third_party/open_helpers.h"
 #include "fastslide/readers/isyntax/third_party/platform/common.h"
 #include "fastslide/readers/isyntax/third_party/seektable.h"
@@ -205,6 +206,18 @@ aifocore::Result<XmlHeaderInfo> ReadXmlHeader(std::FILE* fp, isyntax_t* isyntax,
 
 aifocore::Status InitializeLevelGeometry(isyntax_t* isyntax,
                                          isyntax_image_t* wsi_image) {
+  // `level_count` comes from the XML header and indexes the fixed-capacity
+  // `wsi_image->levels` array in the loops below. The parser clamps it, so a
+  // value outside the representable range means the header contradicted
+  // itself; refuse the file rather than describing geometry we did not parse.
+  if (wsi_image->level_count < 1 ||
+      wsi_image->level_count > ISYNTAX_MAX_LEVELS) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("iSyntax: level count {} outside supported "
+                              "range 1..{}",
+                              wsi_image->level_count, ISYNTAX_MAX_LEVELS));
+  }
   isyntax::open::InitializeLevelGeometry(isyntax, wsi_image);
   return aifocore::Status();
 }

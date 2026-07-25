@@ -674,6 +674,19 @@ static bool HandleAttrEnd(isyntax_t* isyntax, yxml_t* x) {
     ASSERT(parser->attribute_index == 0);
     ASSERT(std::strcmp(x->attr, "ObjectType") == 0);
     if (std::strcmp(parser->attrbuf, "DPScannedImage") == 0) {
+      // Each DPScannedImage node claims the next slot of the fixed-capacity
+      // `isyntax->images` array. The header controls how many such nodes it
+      // declares, so without this bound it can write past the array.
+      if (isyntax->image_count >= ISYNTAX_MAX_IMAGES) {
+        SetXmlErrorOnce(
+            isyntax,
+            AIFOCORE_MAKE_STATUS(
+                aifocore::StatusCode::kResourceExhausted,
+                aifocore::fmt::format(
+                    "iSyntax XML error: more than {} DPScannedImage objects",
+                    ISYNTAX_MAX_IMAGES)));
+        return false;
+      }
       parser->current_image = isyntax->images + isyntax->image_count;
       parser->running_image_index = isyntax->image_count++;
     }
