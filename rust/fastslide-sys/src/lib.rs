@@ -239,18 +239,6 @@ pub struct FastSlideOpenOptions {
     pub icc_use_lut: c_int,
 }
 
-/// Tile cache statistics mirroring `FastSlideCacheStats` in `slide_reader.h`.
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct FastSlideCacheStats {
-    pub capacity_bytes: usize,
-    pub size: usize,
-    pub hits: usize,
-    pub misses: usize,
-    pub hit_ratio: c_double,
-    pub memory_usage_bytes: usize,
-}
-
 // ===========================================================================
 // C API
 // ===========================================================================
@@ -273,13 +261,6 @@ unsafe extern "C" {
         file_path: *const c_char,
         options: *const FastSlideOpenOptions,
     ) -> *mut FastSlideSlideReader;
-    pub fn fastslide_create_reader_with_cache(
-        file_path: *const c_char,
-        cache_capacity_bytes: usize,
-    ) -> *mut FastSlideSlideReader;
-    pub fn fastslide_global_cache_set_capacity_bytes(capacity_bytes: usize) -> c_int;
-    pub fn fastslide_global_cache_get_stats(out_stats: *mut FastSlideCacheStats) -> c_int;
-    pub fn fastslide_global_cache_clear();
     pub fn fastslide_registry_get_supported_extensions(
         registry: *mut FastSlideRegistry,
         extensions: *mut *mut *mut c_char,
@@ -458,23 +439,6 @@ unsafe extern "C" {
         target_space: FastSlideColorSpace,
         intent: FastSlideRenderingIntent,
         use_lut: c_int,
-    ) -> c_int;
-
-    // ---- slide_reader.h: tile caching ----
-    pub fn fastslide_slide_reader_set_cache(
-        reader: *mut FastSlideSlideReader,
-        capacity_bytes: usize,
-    ) -> c_int;
-    pub fn fastslide_slide_reader_use_global_cache(
-        reader: *mut FastSlideSlideReader,
-    ) -> c_int;
-    pub fn fastslide_slide_reader_is_cache_enabled(
-        reader: *const FastSlideSlideReader,
-    ) -> c_int;
-    pub fn fastslide_slide_reader_clear_cache(reader: *mut FastSlideSlideReader);
-    pub fn fastslide_slide_reader_get_cache_stats(
-        reader: *const FastSlideSlideReader,
-        out_stats: *mut FastSlideCacheStats,
     ) -> c_int;
 
     // ---- slide_image.h: per-image (per-series) API ----

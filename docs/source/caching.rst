@@ -68,14 +68,21 @@ System Components
    │   - Configurable capacity           │
    └─────────────────────────────────────┘
                   │
-                  │ attached via
+                  │ injected via
                   ▼
    ┌─────────────────────────────────────┐
-   │   SlideReader::SetCache(cache)      │
-   │   - Opt-in per reader               │
-   │   - nullptr disables caching        │
+   │   ReaderDependencies                │
+   │   - tile_cache                      │
+   │   - enable_caching                  │
    └──────────────┬──────────────────────┘
-                  │ used by
+                  │ passed to
+                  ▼
+   ┌─────────────────────────────────────┐
+   │   Format Plugins                    │
+   │   - CreateMrxsReader()              │
+   │   - CreateAperioReader()            │
+   └──────────────┬──────────────────────┘
+                  │ creates
                   ▼
    ┌─────────────────────────────────────┐
    │   Slide Readers                     │
@@ -119,29 +126,49 @@ The simplest and most efficient approach:
 
    #include "fastslide/runtime/global_cache_manager.h"
    #include "fastslide/runtime/reader_registry.h"
+   #include "fastslide/runtime/reader_dependencies.h"
 
    // Configure global cache at application startup (2 GiB)
    auto& cache_manager = fastslide::GlobalCacheManager::Instance();
    cache_manager.SetCapacityBytes(static_cast<size_t>(2) << 30);
 
-   // Create a reader and attach the shared global cache.
-   auto reader = fastslide::runtime::GetGlobalRegistry()
-                     .CreateReader("slide.mrxs").value();
-   reader->SetCache(cache_manager.GetCache());
+   // Register formats
+   fastslide::ReaderRegistry registry;
+   registry.RegisterFormat(
+       fastslide::formats::mrxs::CreateMrxsFormatDescriptor());
+   registry.RegisterFormat(
+       fastslide::formats::aperio::CreateAperioFormatDescriptor());
 
-   // First read - cache miss, decodes from disk
-   auto region1 = reader->ReadRegion({
-       .top_left = {1000, 2000}, .size = {512, 512}, .level = 0});
+   // Create reader with global cache (automatic injection)
+   auto deps = fastslide::ReaderDependencies::WithGlobalCache();
+   auto reader_or = registry.CreateReader("slide.mrxs", deps);
 
-   // Second read - cache hit, no disk I/O!
-   auto region2 = reader->ReadRegion({
-       .top_left = {1000, 2000}, .size = {512, 512}, .level = 0});
-
-   // Check cache statistics
-   auto stats = cache_manager.GetStats();
-   std::cout << "Cache hits: " << stats.hits << "\n";
-   std::cout << "Cache misses: " << stats.misses << "\n";
-   std::cout << "Hit ratio: " << (stats.hit_ratio * 100.0) << "%\n";
+   if (reader_or.ok()) {
+     auto reader = std::move(*reader_or);
+     
+     // First read - cache miss, decodes from disk
+     auto region1 = reader->ReadRegion({
+         .top_left = {1000, 2000},
+         .size = {512, 512},
+         .level = 0
+     });
+     
+     // Second read - cache hit, no disk I/O!
+     auto region2 = reader->ReadRegion({
+         .top_left = {1000, 2000},
+         .size = {512, 512},
+         .level = 0
+     });
+     
+     // Check cache statistics
+     auto stats = cache_manager.GetStats();
+     std::cout << "Cache hits: " << stats.hits << "\n";
+     std::cout << "Cache misses: " << stats.misses << "\n";
+     std::cout << "Hit ratio: " << (stats.hit_ratio * 100.0) << "%\n";
+     std::cout << "Memory: " 
+               << (stats.memory_usage_bytes / 1024.0 / 1024.0) 
+               << " MB\n";
+   }
 
 Per-Reader Cache
 ----------------
@@ -152,83 +179,17 @@ For isolated caching between readers:
 
    #include "fastslide/runtime/lru_tile_cache.h"
 
-   // Create a custom cache for this reader (512 MiB)
-   auto cache = fastslide::LRUTileCache::Create(
-       static_cast<size_t>(512) << 20).value();
-
-   // Attach it to the reader.
-   auto reader = registry.CreateReader("slide.mrxs").value();
-   reader->SetCache(cache);
-
-C API
-=====
-
-The C API exposes the same cache, so C and Rust consumers get decode reuse
-without reimplementing tile-grid-aware caching:
-
-.. code-block:: c
-
-   #include "fastslide/c/fastslide.h"
-
-   fastslide_registry_initialize();
-
-   // Per-reader cache (256 MiB); 0 opens without a cache.
-   FastSlideSlideReader* reader =
-       fastslide_create_reader_with_cache("slide.svs", (size_t)256 << 20);
-
-   // ... or attach later / switch to the shared global cache:
-   fastslide_slide_reader_set_cache(reader, (size_t)512 << 20);
-   fastslide_global_cache_set_capacity_bytes((size_t)2 << 30);
-   fastslide_slide_reader_use_global_cache(reader);
-
-   FastSlideCacheStats stats;
-   if (fastslide_slide_reader_get_cache_stats(reader, &stats)) {
-     printf("hit ratio: %.1f%%\n", stats.hit_ratio * 100.0);
-   }
-   fastslide_slide_reader_free(reader);
-
-Rust API
-========
-
-The ``fastslide`` crate surfaces the cache on ``SlideReader``:
-
-.. code-block:: rust
-
-   use fastslide::{SlideReader, set_global_cache_capacity};
-
-   // Per-reader cache (256 MiB).
-   let reader = SlideReader::open_with_cache("slide.svs", 256 << 20)?;
-   assert!(reader.is_cache_enabled());
-
-   // Or attach after opening / use the shared global cache.
-   reader.set_cache(512 << 20)?;
-   set_global_cache_capacity(2 << 30)?;
-   reader.use_global_cache()?;
-
-   if let Some(stats) = reader.cache_stats() {
-       println!("hit ratio: {:.1}%", stats.hit_ratio * 100.0);
+   // Create custom cache for this reader (512 MiB)
+   auto cache_or = fastslide::LRUTileCache::Create(
+       static_cast<size_t>(512) << 20);
+   if (!cache_or.ok()) {
+     // Handle error
+     return cache_or.status();
    }
 
-Python API
-==========
-
-``FastSlide.from_file_path`` accepts a ``cache`` argument (an int byte
-capacity, a ``CacheManager``/``TileCache``, or ``None``):
-
-.. code-block:: python
-
-   import fastslide
-
-   # Per-slide LRU cache (256 MiB).
-   with fastslide.FastSlide.from_file_path("slide.svs", cache=256 << 20) as slide:
-       slide.read_region((0, 0), 0, (256, 256))
-       slide.read_region((0, 0), 0, (256, 256))  # served from cache
-       print(slide.cache_stats.hit_ratio)
-
-   # Share the process-wide global cache across slides.
-   fastslide.GlobalCacheManager.instance().set_capacity_bytes(2 << 30)
-   with fastslide.FastSlide.from_file_path("slide.svs") as slide:
-       slide.use_global_cache()
+   // Inject via dependencies
+   auto deps = fastslide::ReaderDependencies::WithCache(*cache_or);
+   auto reader_or = registry.CreateReader("slide.mrxs", deps);
 
 Use Cases for Per-Reader Cache
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -245,11 +206,13 @@ To disable caching entirely:
 
 .. code-block:: cpp
 
-   // Option 1: Never attach a cache (default) - readers decode every tile.
-   auto reader = registry.CreateReader("slide.mrxs").value();
+   // Option 1: No cache in dependencies (default)
+   auto reader_or = registry.CreateReader("slide.mrxs");
 
-   // Option 2: Detach an existing cache.
-   reader->SetCache(nullptr);
+   // Option 2: Explicitly disable
+   fastslide::ReaderDependencies deps;
+   deps.enable_caching = false;
+   auto reader_or = registry.CreateReader("slide.mrxs", deps);
 
 Cache Statistics
 ----------------
@@ -359,9 +322,9 @@ Configure a large cache for interactive panning and zooming:
    fastslide::ReaderRegistry registry;
    registry.RegisterFormat(/* ... */);
 
-   // Create reader and attach the global cache
-   auto reader = registry.CreateReader("slide.svs").value();
-   reader->SetCache(cache.GetCache());
+   // Create reader with global cache
+   auto deps = fastslide::ReaderDependencies::WithGlobalCache();
+   auto reader = registry.CreateReader("slide.svs", deps).value();
 
    // User interaction loop
    for (const auto& pan_event : user_interactions) {
@@ -385,24 +348,26 @@ Separate caches for training and validation:
    // Training cache (~4 GiB)
    auto train_cache =
        fastslide::LRUTileCache::Create(static_cast<size_t>(4) << 30).value();
+   fastslide::ReaderDependencies train_deps;
+   train_deps.tile_cache = train_cache;
 
    // Validation cache (~1 GiB)
    auto val_cache =
        fastslide::LRUTileCache::Create(static_cast<size_t>(1) << 30).value();
+   fastslide::ReaderDependencies val_deps;
+   val_deps.tile_cache = val_cache;
 
-   // Create readers with isolated caches (attach the shared cache per reader)
+   // Create readers with isolated caches
    std::vector<std::unique_ptr<fastslide::SlideReader>> train_readers;
    for (const auto& path : training_slides) {
-     auto reader = registry.CreateReader(path).value();
-     reader->SetCache(train_cache);
-     train_readers.push_back(std::move(reader));
+     train_readers.push_back(
+         registry.CreateReader(path, train_deps).value());
    }
 
    std::vector<std::unique_ptr<fastslide::SlideReader>> val_readers;
    for (const auto& path : validation_slides) {
-     auto reader = registry.CreateReader(path).value();
-     reader->SetCache(val_cache);
-     val_readers.push_back(std::move(reader));
+     val_readers.push_back(
+         registry.CreateReader(path, val_deps).value());
    }
 
    // Training loop with separate cache statistics
@@ -586,12 +551,12 @@ The cache is thread-safe and can be accessed from multiple threads:
    auto& cache_mgr = fastslide::GlobalCacheManager::Instance();
    cache_mgr.SetCapacityBytes(static_cast<size_t>(8) << 30);  // 8 GiB
 
+   auto deps = fastslide::ReaderDependencies::WithGlobalCache();
+
    // Create multiple readers sharing the same cache
    std::vector<std::unique_ptr<fastslide::SlideReader>> readers;
    for (const auto& path : slide_paths) {
-     auto reader = registry.CreateReader(path).value();
-     reader->SetCache(cache_mgr.GetCache());
-     readers.push_back(std::move(reader));
+     readers.push_back(registry.CreateReader(path, deps).value());
    }
 
    // Process in parallel - cache is thread-safe
@@ -611,9 +576,10 @@ If caching isn't providing benefits:
 
 .. code-block:: cpp
 
-   // Check that a cache is attached to the reader
-   if (!reader->IsCacheEnabled()) {
-     std::cerr << "ERROR: No cache attached to reader!\n";
+   // Check that cache is enabled
+   auto deps = fastslide::ReaderDependencies::WithGlobalCache();
+   if (!deps.HasCache()) {
+     std::cerr << "ERROR: Cache not available!\n";
    }
 
    // Verify cache is being used
@@ -686,8 +652,7 @@ Best Practices
 
    .. code-block:: cpp
 
-      auto& cache = fastslide::GlobalCacheManager::Instance();
-      reader->SetCache(cache.GetCache());
+      auto deps = fastslide::ReaderDependencies::WithGlobalCache();
 
 3. **Monitor Statistics Periodically**
 
@@ -749,7 +714,7 @@ Implement custom caching strategies by inheriting from ``ITileCache``:
 
    // Use custom cache
    auto custom_cache = std::make_shared<GPUCache>();
-   reader->SetCache(custom_cache);
+   auto deps = fastslide::ReaderDependencies::WithCache(custom_cache);
 
 Distributed Caching
 -------------------
@@ -834,36 +799,18 @@ C++ Classes
       Stats GetStats() const override;
       aifocore::Status SetCapacityBytes(size_t capacity_bytes);
 
-``SlideReader`` (cache methods)
-   Caching is attached per reader; there is no dependency-injection struct.
+``ReaderDependencies``
+   Dependency injection container.
 
    .. code-block:: cpp
 
-      void SetCache(std::shared_ptr<ITileCache> cache);  // nullptr disables
-      std::shared_ptr<ITileCache> GetCache() const;
-      bool IsCacheEnabled() const;
-
-C API
------
-
-Declared in ``fastslide/c/slide_reader.h`` and ``fastslide/c/registry.h``:
-
-.. code-block:: c
-
-   FastSlideSlideReader* fastslide_create_reader_with_cache(
-       const char* file_path, size_t cache_capacity_bytes);
-   int  fastslide_slide_reader_set_cache(
-       FastSlideSlideReader* reader, size_t capacity_bytes);  // 0 disables
-   int  fastslide_slide_reader_use_global_cache(FastSlideSlideReader* reader);
-   int  fastslide_slide_reader_is_cache_enabled(
-       const FastSlideSlideReader* reader);
-   void fastslide_slide_reader_clear_cache(FastSlideSlideReader* reader);
-   int  fastslide_slide_reader_get_cache_stats(
-       const FastSlideSlideReader* reader, FastSlideCacheStats* out_stats);
-
-   int  fastslide_global_cache_set_capacity_bytes(size_t capacity_bytes);
-   int  fastslide_global_cache_get_stats(FastSlideCacheStats* out_stats);
-   void fastslide_global_cache_clear(void);
+      static ReaderDependencies WithGlobalCache();
+      static ReaderDependencies WithCache(
+          std::shared_ptr<ITileCache> cache);
+      
+      std::shared_ptr<ITileCache> tile_cache;
+      bool enable_caching = true;
+      bool HasCache() const;
 
 Python Classes
 --------------

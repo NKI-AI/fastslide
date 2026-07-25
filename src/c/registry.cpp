@@ -13,8 +13,6 @@
 #include <string>
 #include <utility>
 
-#include "fastslide/runtime/cache_interface.h"
-#include "fastslide/runtime/global_cache_manager.h"
 #include "fastslide/runtime/plugin_loader.h"
 #include "fastslide/runtime/reader_registry.h"
 #include "fastslide/slide_reader.h"
@@ -174,69 +172,6 @@ FastSlideSlideReader* fastslide_create_reader_with_options(
   }
 
   return reader;
-}
-
-FastSlideSlideReader* fastslide_create_reader_with_cache(
-    const char* file_path, size_t cache_capacity_bytes) {
-  FastSlideSlideReader* reader = fastslide_create_reader(file_path);
-  if (reader == nullptr) {
-    return nullptr;
-  }
-
-  if (cache_capacity_bytes != 0) {
-    if (!fastslide_slide_reader_set_cache(reader, cache_capacity_bytes)) {
-      // Cache allocation failed; do not hand back a reader without the
-      // caching the caller explicitly requested.
-      fastslide_slide_reader_free(reader);
-      return nullptr;
-    }
-  }
-
-  return reader;
-}
-
-// Global tile cache
-
-namespace {
-
-FastSlideCacheStats GlobalCacheStatsToC(
-    const fastslide::runtime::ITileCache::Stats& stats) {
-  FastSlideCacheStats out;
-  out.capacity_bytes = stats.capacity_bytes;
-  out.size = stats.size;
-  out.hits = stats.hits;
-  out.misses = stats.misses;
-  out.hit_ratio = stats.hit_ratio;
-  out.memory_usage_bytes = stats.memory_usage_bytes;
-  return out;
-}
-
-}  // namespace
-
-int fastslide_global_cache_set_capacity_bytes(size_t capacity_bytes) {
-  fastslide_clear_last_error();
-  const auto status =
-      fastslide::runtime::GlobalCacheManager::Instance().SetCapacityBytes(
-          capacity_bytes);
-  if (!status.ok()) {
-    fastslide_set_last_error(std::string(status.message()).c_str());
-    return 0;
-  }
-  return 1;
-}
-
-int fastslide_global_cache_get_stats(FastSlideCacheStats* out_stats) {
-  if (out_stats == nullptr) {
-    fastslide_set_last_error("out_stats cannot be null");
-    return 0;
-  }
-  *out_stats = GlobalCacheStatsToC(
-      fastslide::runtime::GlobalCacheManager::Instance().GetStats());
-  return 1;
-}
-
-void fastslide_global_cache_clear(void) {
-  fastslide::runtime::GlobalCacheManager::Instance().Clear();
 }
 
 // Utility functions

@@ -428,64 +428,6 @@ FASTSLIDE_API int fastslide_slide_reader_enable_icc_transform(
     FastSlideSlideReader* reader, FastSlideColorSpace target_space,
     FastSlideRenderingIntent intent, int use_lut);
 
-// Tile caching
-
-/// @brief Snapshot of an internal tile cache's statistics.
-///
-/// Mirrors the C++ `fastslide::runtime::ITileCache::Stats` type. `hit_ratio`
-/// is in [0, 1]; it is 0 when no lookups have happened yet.
-typedef struct {
-  size_t capacity_bytes;      ///< Configured cache capacity in bytes.
-  size_t size;                ///< Number of tiles currently cached.
-  size_t hits;                ///< Cumulative cache hits.
-  size_t misses;              ///< Cumulative cache misses.
-  double hit_ratio;           ///< hits / (hits + misses), or 0 if none.
-  size_t memory_usage_bytes;  ///< Approximate bytes of decoded tile data held.
-} FastSlideCacheStats;
-
-/// @brief Attach a per-reader LRU tile cache (decode reuse) to the reader.
-///
-/// The reader caches decoded native tiles so overlapping or repeated
-/// `read_region` calls that map to the same tile-grid cell avoid re-decoding.
-/// Caching is opt-in: readers created via `fastslide_create_reader` have no
-/// cache until this is called.
-///
-/// @param reader Slide reader handle
-/// @param capacity_bytes Cache capacity in bytes; 0 disables and detaches any
-///        existing cache.
-/// @return 1 on success, 0 on failure (e.g. allocation failure).
-FASTSLIDE_API int fastslide_slide_reader_set_cache(FastSlideSlideReader* reader,
-                                                   size_t capacity_bytes);
-
-/// @brief Attach the process-wide global tile cache to the reader.
-///
-/// All readers that call this share one cache instance (see
-/// `fastslide_global_cache_set_capacity_bytes`). Prefer this when opening many
-/// slides that should share a single memory budget.
-///
-/// @param reader Slide reader handle
-/// @return 1 on success, 0 on failure.
-FASTSLIDE_API int fastslide_slide_reader_use_global_cache(
-    FastSlideSlideReader* reader);
-
-/// @brief Whether the reader currently has a tile cache attached.
-/// @param reader Slide reader handle
-/// @return 1 if a cache is attached, 0 otherwise (including null reader).
-FASTSLIDE_API int fastslide_slide_reader_is_cache_enabled(
-    const FastSlideSlideReader* reader);
-
-/// @brief Clear all tiles from the reader's cache (no-op if none attached).
-/// @param reader Slide reader handle
-FASTSLIDE_API void fastslide_slide_reader_clear_cache(
-    FastSlideSlideReader* reader);
-
-/// @brief Read the reader cache's statistics.
-/// @param reader Slide reader handle
-/// @param out_stats Output statistics (must be non-null)
-/// @return 1 on success, 0 if no cache is attached or on invalid arguments.
-FASTSLIDE_API int fastslide_slide_reader_get_cache_stats(
-    const FastSlideSlideReader* reader, FastSlideCacheStats* out_stats);
-
 // Memory management
 
 /// @brief Free slide reader handle

@@ -41,6 +41,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <span>
 
 #include "aifocore/status/result.h"
@@ -176,8 +177,22 @@ aifocore::Result<DecodedRgb> DecodeBmpToRgb(
   const int32_t height = std::abs(height_raw);
   const bool top_down = height_raw < 0;
 
-  const uint32_t row_stride_src =
-      ((static_cast<uint32_t>(width) * 3U) + 3U) & ~3U;
+  // `biWidth` is a 32-bit field, so computing the 4-byte-aligned row stride in
+  // 32-bit arithmetic wraps once `width * 3` exceeds 2^32: a declared width of
+  // 0x55555556 collapses the stride to 4. That understates the pixel array, so
+  // the truncation check below would accept a ~58-byte file while the row loop
+  // still walks `width` pixels. Compute in 64-bit and reject anything that will
+  // not fit. With a correct stride the truncation check then bounds the whole
+  // pixel array by the input size, which also caps the output allocation --
+  // BI_RGB is uncompressed, so it cannot expand.
+  const uint64_t row_stride_64 =
+      ((static_cast<uint64_t>(width) * 3ULL) + 3ULL) & ~3ULL;
+  if (row_stride_64 > std::numeric_limits<uint32_t>::max()) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kInvalidArgument,
+        aifocore::fmt::format("BMP row stride overflows for width {}", width));
+  }
+  const uint32_t row_stride_src = static_cast<uint32_t>(row_stride_64);
 
   const std::size_t pixel_array_bytes =
       static_cast<std::size_t>(row_stride_src) *

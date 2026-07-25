@@ -63,32 +63,6 @@ void ThrowPyErrorFromStatus(const aifocore::Status& status) {
   throw std::runtime_error(status.ToString());
 }
 
-/// @brief Resolve a Python cache argument into an ITileCache.
-///
-/// Accepts `None` (no cache), an `int` byte capacity (a new per-slide
-/// `LRUTileCache`), a `CacheManager`, or a `TileCache`. Raises on an invalid
-/// capacity or unsupported type.
-std::shared_ptr<fastslide::runtime::ITileCache> ResolveCacheObject(
-    const nb::object& cache) {
-  if (cache.is_none()) {
-    return nullptr;
-  }
-  if (nb::isinstance<nb::int_>(cache)) {
-    const auto capacity_bytes = nb::cast<size_t>(cache);
-    auto cache_or = fastslide::runtime::LRUTileCache::Create(capacity_bytes);
-    if (!cache_or.ok()) {
-      ThrowPyErrorFromStatus(cache_or.status());
-    }
-    return std::move(cache_or.value());
-  }
-  if (nb::isinstance<fastslide::python::CacheManager>(cache)) {
-    auto manager =
-        nb::cast<std::shared_ptr<fastslide::python::CacheManager>>(cache);
-    return manager ? manager->GetCache() : nullptr;
-  }
-  return nb::cast<std::shared_ptr<fastslide::runtime::ITileCache>>(cache);
-}
-
 /// @brief Build a zero-copy numpy view of an Image's pixel buffer.
 ///
 /// The returned `nb::ndarray` keeps `image_handle` alive via nanobind's
@@ -444,8 +418,7 @@ NB_MODULE(_fastslide, m) {
   nb::class_<FastSlide>(m, "FastSlide")
       .def_static(
           "from_file_path",
-          [](const nb::object& file_path, bool apply_icc,
-             const nb::object& cache) {
+          [](const nb::object& file_path, bool apply_icc) {
             std::string path_str;
             if (nb::isinstance<nb::str>(file_path)) {
               path_str = nb::cast<std::string>(file_path);
@@ -456,11 +429,7 @@ NB_MODULE(_fastslide, m) {
             } else {
               path_str = nb::cast<std::string>(file_path);
             }
-            auto slide = FastSlide::FromFilePath(path_str, apply_icc);
-            if (slide && !cache.is_none()) {
-              slide->SetCache(ResolveCacheObject(cache));
-            }
-            return slide;
+            return FastSlide::FromFilePath(path_str, apply_icc);
           },
           "Create FastSlide from file path (accepts str or pathlib.Path)\n\n"
           "Args:\n"
@@ -468,12 +437,8 @@ NB_MODULE(_fastslide, m) {
           "    apply_icc: When True and the slide has an embedded ICC\n"
           "        profile, read_region returns sRGB-corrected pixels\n"
           "        (perceptual intent). Slides without a profile are\n"
-          "        returned unchanged.\n"
-          "    cache: Optional tile cache to attach. Accepts an int byte\n"
-          "        capacity (a new per-slide LRU cache), a CacheManager, a\n"
-          "        TileCache, or None to disable caching.",
-          nb::arg("file_path"), nb::arg("apply_icc") = false,
-          nb::arg("cache").none() = nb::none())
+          "        returned unchanged.",
+          nb::arg("file_path"), nb::arg("apply_icc") = false)
       .def_static("from_uri", &FastSlide::FromUri,
                   "Create FastSlide from URI (future)", nb::arg("uri"))
 
@@ -628,47 +593,30 @@ NB_MODULE(_fastslide, m) {
 
       // Cache management.
       //
-      // `set_cache` accepts an int byte capacity (a new per-slide LRU cache),
-      // a `TileCache`, a `CacheManager`, or None. A single entrypoint
-      // dispatches on argument type so callers do not need to unwrap the
-      // manager themselves.
+      // `set_cache` accepts either a `TileCache` or a `CacheManager`. The
+      // single Python entrypoint dispatches on argument type so callers do
+      // not need to unwrap the manager themselves.
       .def(
           "set_cache",
           [](FastSlide& self, const nb::object& cache) {
-            self.SetCache(ResolveCacheObject(cache));
+            if (cache.is_none()) {
+              self.SetCache(nullptr);
+              return;
+            }
+            if (nb::isinstance<CacheManager>(cache)) {
+              auto manager = nb::cast<std::shared_ptr<CacheManager>>(cache);
+              self.SetCache(manager ? manager->GetCache() : nullptr);
+              return;
+            }
+            self.SetCache(
+                nb::cast<std::shared_ptr<fastslide::runtime::ITileCache>>(
+                    cache));
           },
-          "Set cache (accepts int bytes, TileCache, CacheManager, or None to "
-          "disable).",
+          "Set cache (accepts TileCache, CacheManager, or None to disable).",
           nb::arg("cache").none())
       .def("get_cache", &FastSlide::GetCache, "Get current cache")
       .def_prop_ro("cache_enabled", &FastSlide::IsCacheEnabled,
                    "True if caching is enabled")
-      .def(
-          "use_global_cache",
-          [](FastSlide& self) {
-            self.SetCache(
-                fastslide::runtime::GlobalCacheManager::Instance().GetCache());
-          },
-          "Attach the process-wide global tile cache to this slide.")
-      .def(
-          "clear_cache",
-          [](FastSlide& self) {
-            if (auto cache = self.GetCache()) {
-              cache->Clear();
-            }
-          },
-          "Clear all tiles from this slide's cache (no-op if none attached).")
-      .def_prop_ro(
-          "cache_stats",
-          [](FastSlide& self) -> nb::object {
-            auto cache = self.GetCache();
-            if (!cache) {
-              return nb::none();
-            }
-            return nb::cast(cache->GetStats());
-          },
-          "Cache statistics (RuntimeCacheStats), or None if no cache is "
-          "attached.")
 
       // Resource management
       .def("close", &FastSlide::Close,

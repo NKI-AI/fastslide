@@ -499,6 +499,7 @@ cc_library(
         ":runtime_cache_interface",
         ":runtime_format_descriptor",
         ":runtime_lru_tile_cache",
+        ":runtime_path_utils",
         ":runtime_reader_registry",
         ":runtime_tile_writer",
     ],
@@ -1415,6 +1416,18 @@ cc_library(
 )
 
 cc_library(
+    name = "runtime_path_utils",
+    hdrs = ["include/fastslide/runtime/io/path_utils.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
     name = "runtime_file_reader",
     srcs = ["src/runtime/io/file_reader.cpp"],
     hdrs = ["include/fastslide/runtime/io/file_reader.h"],
@@ -1567,24 +1580,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":fastslide_lib",
-        ":runtime_global_cache_manager",
         ":runtime_png_decoder",
-    ],
-)
-
-# C API tile-cache tests. Require a real slide via FASTSLIDE_BENCHMARK_FILE;
-# skipped otherwise. Run with:
-#   FASTSLIDE_BENCHMARK_FILE=/abs/path/CMU-3.ndpi \
-#       bazelisk test //:cache_c_api_test --test_output=all
-cc_test(
-    name = "cache_c_api_test",
-    size = "small",
-    srcs = ["src/c/cache_c_api_test.cpp"],
-    deps = [
-        ":fastslide_c",
-        ":formats_ndpitiff",
-        "@googletest//:gtest",
-        "@googletest//:gtest_main",
     ],
 )
 
@@ -1911,6 +1907,17 @@ cc_test(
     srcs = ["src/runtime/io/binary_utils_test.cpp"],
     deps = [
         ":runtime_binary_utils",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "path_utils_test",
+    size = "small",
+    srcs = ["src/runtime/io/path_utils_test.cpp"],
+    deps = [
+        ":runtime_path_utils",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],

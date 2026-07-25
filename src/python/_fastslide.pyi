@@ -303,11 +303,7 @@ class SlideImages:
 
 class FastSlide:
     @staticmethod
-    def from_file_path(
-        file_path: object,
-        apply_icc: bool = False,
-        cache: object | None = None,
-    ) -> FastSlide:
+    def from_file_path(file_path: object, apply_icc: bool = False) -> FastSlide:
         """Create FastSlide from file path (accepts str or pathlib.Path)
 
         Args:
@@ -315,9 +311,6 @@ class FastSlide:
             apply_icc: When True and the slide has an embedded ICC profile,
                 read_region returns sRGB-corrected pixels (perceptual intent).
                 Slides without a profile are returned unchanged.
-            cache: Optional tile cache to attach. Accepts an int byte capacity
-                (a new per-slide LRU cache), a CacheManager, a TileCache, or
-                None to disable caching.
         """
 
     @staticmethod
@@ -496,7 +489,7 @@ class FastSlide:
         """Get the best level for a given downsample factor"""
 
     def set_cache(self, cache: object) -> None:
-        """Set cache (accepts int bytes, TileCache, CacheManager, or None to disable)."""
+        """Set cache (accepts TileCache, CacheManager, or None to disable)."""
 
     def get_cache(self) -> TileCache:
         """Get current cache"""
@@ -504,16 +497,6 @@ class FastSlide:
     @property
     def cache_enabled(self) -> bool:
         """True if caching is enabled"""
-
-    def use_global_cache(self) -> None:
-        """Attach the process-wide global tile cache to this slide."""
-
-    def clear_cache(self) -> None:
-        """Clear all tiles from this slide's cache (no-op if none attached)."""
-
-    @property
-    def cache_stats(self) -> RuntimeCacheStats | None:
-        """Cache statistics, or None if no cache is attached."""
 
     def close(self) -> None:
         """Close the slide reader and release resources"""

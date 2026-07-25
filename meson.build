@@ -336,12 +336,6 @@ if get_option('build_c_api')
       cpp_args : fastslide_cpp_args,
       install : true)
   endif
-
-  # Dependency object so tests (and other consumers) can link the C API.
-  fastslide_c_dep = declare_dependency(
-    include_directories : inc,
-    link_with : fastslide_c_lib,
-    dependencies : [fastslide_dep])
 endif
 
 # ---------------------------------------------------------------------------

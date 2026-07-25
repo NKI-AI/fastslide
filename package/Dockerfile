@@ -11,13 +11,6 @@
 #   docker build --platform linux/amd64 -t fastslide-deb-smoke .
 FROM ubuntu:24.04
 
-# Harden apt against transient mirror flakiness. The arm64 image resolves to
-# ports.ubuntu.com (amd64 uses archive.ubuntu.com), which intermittently times
-# out from CI networks and would otherwise fail the very first apt-get update.
-# Retrying each fetch and bounding the connect timeout lets a hiccup self-heal.
-RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
-    > /etc/apt/apt.conf.d/80-fastslide-retries
-
 RUN apt-get update \
     && apt-get install -y --no-install-recommends g++ pkg-config ca-certificates \
     && rm -rf /var/lib/apt/lists/*
