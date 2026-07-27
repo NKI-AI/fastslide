@@ -149,38 +149,6 @@ impl OpenOptions {
     }
 }
 
-/// Statistics for a reader's (or the global) internal tile cache.
-///
-/// The analogue of the C++ `fastslide::runtime::ITileCache::Stats`.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct CacheStats {
-    /// Configured cache capacity in bytes.
-    pub capacity_bytes: usize,
-    /// Number of tiles currently cached.
-    pub size: usize,
-    /// Cumulative cache hits.
-    pub hits: usize,
-    /// Cumulative cache misses.
-    pub misses: usize,
-    /// `hits / (hits + misses)`, or `0.0` when there have been no lookups.
-    pub hit_ratio: f64,
-    /// Approximate bytes of decoded tile data currently held.
-    pub memory_usage_bytes: usize,
-}
-
-impl From<sys::FastSlideCacheStats> for CacheStats {
-    fn from(stats: sys::FastSlideCacheStats) -> Self {
-        Self {
-            capacity_bytes: stats.capacity_bytes,
-            size: stats.size,
-            hits: stats.hits,
-            misses: stats.misses,
-            hit_ratio: stats.hit_ratio,
-            memory_usage_bytes: stats.memory_usage_bytes,
-        }
-    }
-}
-
 /// A whole-slide image reader.
 ///
 /// Open one with [`SlideReader::open`] (the analogue of the C++
@@ -236,32 +204,6 @@ impl SlideReader {
         })
     }
 
-    /// Open a slide file with a per-reader LRU tile cache attached.
-    ///
-    /// The reader caches decoded native tiles so overlapping or repeated
-    /// [`SlideReader::read_region`] calls that map to the same tile-grid cell
-    /// avoid re-decoding. A `capacity_bytes` of `0` opens without a cache
-    /// (identical to [`SlideReader::open`]).
-    ///
-    /// Initializes the format registry on first use.
-    pub fn open_with_cache(path: impl AsRef<Path>, capacity_bytes: usize) -> Result<Self> {
-        ensure_initialized();
-
-        let path = path.as_ref();
-        let c_path = CString::new(path.to_string_lossy().as_bytes())
-            .map_err(|_| Error::new("open_with_cache", "path contains an interior NUL byte"))?;
-
-        // SAFETY: `c_path` is a valid NUL-terminated string for the call.
-        let ptr =
-            unsafe { sys::fastslide_create_reader_with_cache(c_path.as_ptr(), capacity_bytes) };
-        if ptr.is_null() {
-            return Err(Error::last("open_with_cache"));
-        }
-        Ok(Self {
-            inner: Arc::new(ReaderHandle { ptr }),
-        })
-    }
-
     fn ptr(&self) -> *const sys::FastSlideSlideReader {
         self.inner.ptr
     }
@@ -311,65 +253,6 @@ impl SlideReader {
             return Err(Error::last("enable_icc_transform"));
         }
         Ok(())
-    }
-
-    /// Attach a per-reader LRU tile cache of the given byte capacity.
-    ///
-    /// A `capacity_bytes` of `0` detaches any existing cache. Replaces any
-    /// cache previously attached (including the global cache).
-    pub fn set_cache(&self, capacity_bytes: usize) -> Result<()> {
-        let ok = unsafe { sys::fastslide_slide_reader_set_cache(self.inner.ptr, capacity_bytes) };
-        if ok == 0 {
-            return Err(Error::last("set_cache"));
-        }
-        Ok(())
-    }
-
-    /// Detach any tile cache from this reader.
-    pub fn disable_cache(&self) -> Result<()> {
-        self.set_cache(0)
-    }
-
-    /// Attach the process-wide global tile cache to this reader.
-    ///
-    /// All readers sharing the global cache draw from one memory budget; see
-    /// [`crate::set_global_cache_capacity`].
-    pub fn use_global_cache(&self) -> Result<()> {
-        let ok = unsafe { sys::fastslide_slide_reader_use_global_cache(self.inner.ptr) };
-        if ok == 0 {
-            return Err(Error::last("use_global_cache"));
-        }
-        Ok(())
-    }
-
-    /// Whether a tile cache is currently attached to this reader.
-    #[must_use]
-    pub fn is_cache_enabled(&self) -> bool {
-        unsafe { sys::fastslide_slide_reader_is_cache_enabled(self.ptr()) != 0 }
-    }
-
-    /// Clear all tiles from this reader's cache (no-op if none attached).
-    pub fn clear_cache(&self) {
-        unsafe { sys::fastslide_slide_reader_clear_cache(self.inner.ptr) };
-    }
-
-    /// Statistics for this reader's tile cache, or `None` if no cache is
-    /// attached.
-    #[must_use]
-    pub fn cache_stats(&self) -> Option<CacheStats> {
-        let mut stats = sys::FastSlideCacheStats {
-            capacity_bytes: 0,
-            size: 0,
-            hits: 0,
-            misses: 0,
-            hit_ratio: 0.0,
-            memory_usage_bytes: 0,
-        };
-        let ok = unsafe { sys::fastslide_slide_reader_get_cache_stats(self.ptr(), &mut stats) };
-        if ok == 0 {
-            return None;
-        }
-        Some(stats.into())
     }
 
     /// Number of pyramid levels of the primary image.

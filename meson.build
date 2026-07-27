@@ -268,6 +268,23 @@ if get_option('build_python')
   py = import('python').find_installation(pure : false)
   nanobind_dep = dependency('nanobind')
 
+  # Build against CPython's stable ABI (abi3), floored at 3.12: `limited_api`
+  # defines Py_LIMITED_API, tags the module `_fastslide.abi3.so`/`.pyd`, and on
+  # Windows links python3.lib. A single wheel then runs on every CPython >= 3.12.
+  #
+  # The nanobind WrapDB dep pulls py.dependency() in transitively, which on
+  # Windows drags python3XX.lib onto the link line and defeats the limited API
+  # (Meson's /NODEFAULTLIB only suppresses the pragma-injected default). Keep
+  # nanobind's sources/includes/compile args, drop its transitive link args;
+  # nanobind adds none of its own on Windows. Pass py.dependency() explicitly so
+  # Meson finds it as a direct dep and swaps in the limited-API copy.
+  if host_machine.system() == 'windows'
+    nanobind_ext_dep = nanobind_dep.partial_dependency(
+      compile_args : true, includes : true, sources : true)
+  else
+    nanobind_ext_dep = nanobind_dep
+  endif
+
   py.extension_module('_fastslide',
     [
       'src/python/fastslide.cpp',
@@ -275,8 +292,9 @@ if get_option('build_python')
       'src/python/reader.cpp',
     ],
     include_directories : inc,
-    dependencies : [nanobind_dep, fastslide_dep],
+    dependencies : [py.dependency(), nanobind_ext_dep, fastslide_dep],
     cpp_args : fastslide_cpp_args,
+    limited_api : '3.12',
     install : true,
     subdir : 'fastslide')
 
@@ -336,12 +354,6 @@ if get_option('build_c_api')
       cpp_args : fastslide_cpp_args,
       install : true)
   endif
-
-  # Dependency object so tests (and other consumers) can link the C API.
-  fastslide_c_dep = declare_dependency(
-    include_directories : inc,
-    link_with : fastslide_c_lib,
-    dependencies : [fastslide_dep])
 endif
 
 # ---------------------------------------------------------------------------

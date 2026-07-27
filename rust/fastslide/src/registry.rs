@@ -21,8 +21,6 @@ use std::sync::Once;
 
 use fastslide_sys as sys;
 
-use crate::error::{Error, Result};
-use crate::reader::CacheStats;
 use crate::util::{collect_strings, cstr_to_string};
 
 static INIT: Once = Once::new();
@@ -73,40 +71,4 @@ pub fn is_supported(path: impl AsRef<Path>) -> bool {
         return false;
     };
     unsafe { sys::fastslide_is_supported(c_path.as_ptr()) != 0 }
-}
-
-/// Resize the process-wide global tile cache.
-///
-/// Replaces the global cache with a new LRU cache of the requested capacity,
-/// dropping any currently cached tiles. Readers attached via
-/// [`crate::SlideReader::use_global_cache`] share this cache.
-pub fn set_global_cache_capacity(capacity_bytes: usize) -> Result<()> {
-    let ok = unsafe { sys::fastslide_global_cache_set_capacity_bytes(capacity_bytes) };
-    if ok == 0 {
-        return Err(Error::last("set_global_cache_capacity"));
-    }
-    Ok(())
-}
-
-/// Statistics for the process-wide global tile cache.
-#[must_use]
-pub fn global_cache_stats() -> Option<CacheStats> {
-    let mut stats = sys::FastSlideCacheStats {
-        capacity_bytes: 0,
-        size: 0,
-        hits: 0,
-        misses: 0,
-        hit_ratio: 0.0,
-        memory_usage_bytes: 0,
-    };
-    let ok = unsafe { sys::fastslide_global_cache_get_stats(&mut stats) };
-    if ok == 0 {
-        return None;
-    }
-    Some(stats.into())
-}
-
-/// Clear all tiles from the process-wide global tile cache.
-pub fn clear_global_cache() {
-    unsafe { sys::fastslide_global_cache_clear() };
 }

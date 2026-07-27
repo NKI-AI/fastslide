@@ -140,29 +140,27 @@ bazel_dep(name = "aspect_rules_js", version = "2.9.2", dev_dependency = True)
 bazel_dep(name = "buildifier_prebuilt", version = "8.0.3", dev_dependency = True)
 bazel_dep(name = "toolchains_llvm", version = "1.7.0", dev_dependency = True)
 
+# The Python bindings ship a single stable-ABI (abi3) wheel floored at CPython
+# 3.12, so only the 3.12 toolchain is registered. The extension built against it
+# runs unchanged on every CPython >= 3.12.
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
     is_default = True,
-    python_version = "3.11",
+    python_version = "3.12",
 )
-python.toolchain(python_version = "3.9")
-python.toolchain(python_version = "3.10")
-python.toolchain(python_version = "3.12")
-python.toolchain(python_version = "3.13")
-python.toolchain(python_version = "3.14")
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
     enable_implicit_namespace_pkgs = True,
     hub_name = "fastslide_pip",
-    python_version = "3.11",
+    python_version = "3.12",
     requirements_darwin = "//:requirements_darwin.txt",
     requirements_lock = "//:requirements_linux.txt",
 )
 pip.parse(
     enable_implicit_namespace_pkgs = True,
     hub_name = "fastslide_docs_pip",
-    python_version = "3.11",
+    python_version = "3.12",
     requirements_darwin = "//docs:requirements_darwin.txt",
     requirements_lock = "//docs:requirements_linux.txt",
 )

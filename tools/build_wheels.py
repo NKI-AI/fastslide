@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Build FastSlide wheels for multiple platforms and Python versions."""
+"""Build the FastSlide stable-ABI (cp312-abi3) wheel for one or more platforms."""
 
 from __future__ import annotations
 
 import argparse
 
 from artifacts import wheels
-from artifacts.specs import PLATFORMS, PY_TAG_TO_VERSION
+from artifacts.specs import PLATFORMS
 
 
 def main() -> None:
@@ -24,13 +24,6 @@ def main() -> None:
         help="Platform(s) to build. Defaults to all supported platforms.",
     )
     parser.add_argument(
-        "--python",
-        action="append",
-        dest="python_tags",
-        choices=sorted(PY_TAG_TO_VERSION.keys()),
-        help="Python tag(s) to build (e.g. cp311). Defaults to all supported tags.",
-    )
-    parser.add_argument(
         "--keep-going",
         action="store_true",
         help="Continue building other wheels after a failure.",
@@ -45,13 +38,11 @@ def main() -> None:
     args = parser.parse_args()
 
     platforms = args.platforms or list(PLATFORMS.keys())
-    python_tags = args.python_tags or list(PY_TAG_TO_VERSION.keys())
 
     raise SystemExit(
         wheels.build_wheels(
             bazel_cmd=args.bazel,
             platforms=platforms,
-            python_tags=python_tags,
             keep_going=args.keep_going,
             extra_bazel_args=args.bazel_args,
         )

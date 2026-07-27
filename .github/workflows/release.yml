@@ -358,9 +358,10 @@ jobs:
           package-dir: .
           output-dir: artifacts/wheels
         env:
-          # cp310 has no official Windows ARM64 CPython; cibuildwheel skips it
-          # there automatically, so the same build set is safe for both arches.
-          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
+          # A single stable-ABI (abi3) build on CPython 3.12 produces one
+          # cp312-abi3 wheel that runs on every CPython >= 3.12 (meson.build sets
+          # limited_api = '3.12').
+          CIBW_BUILD: "cp312-*"
           CIBW_ARCHS_WINDOWS: ${{ matrix.cibw_arch }}
           CIBW_BUILD_VERBOSITY: "1"
           # Force MSVC. The windows-2022/windows-11-arm images ship MinGW GCC
@@ -533,30 +534,8 @@ jobs:
           cp package/Dockerfile package/deb_smoke.cpp smoke_ctx/
           cp debs/*.deb smoke_ctx/
           ls -l smoke_ctx
-          # Retry the build: the arm64 image installs deps from ports.ubuntu.com,
-          # which intermittently times out from the CI network. --no-cache on
-          # retries forces a fresh apt-get update instead of reusing a failed
-          # layer.
-          attempts=3
-          for attempt in $(seq 1 "${attempts}"); do
-            echo "::group::docker build (attempt ${attempt}/${attempts})"
-            cache_flag=""
-            if [[ "${attempt}" -gt 1 ]]; then
-              cache_flag="--no-cache"
-            fi
-            if docker build ${cache_flag} --platform ${{ matrix.docker_platform }} \
-                -t fastslide-deb-smoke smoke_ctx; then
-              echo "::endgroup::"
-              exit 0
-            fi
-            echo "::endgroup::"
-            echo "docker build failed on attempt ${attempt}/${attempts}"
-            if [[ "${attempt}" -lt "${attempts}" ]]; then
-              sleep $((attempt * 15))
-            fi
-          done
-          echo "docker build failed after ${attempts} attempts" >&2
-          exit 1
+          docker build --platform ${{ matrix.docker_platform }} \
+            -t fastslide-deb-smoke smoke_ctx
   # TEMPORARILY DISABLED: the source build pulls simpletiff from its pinned git
   # wrap (subprojects/simpletiff.wrap @ 3886522), which predates the
   # <cstdio>-before-<jpeglib.h> fix and so fails to compile under GCC. Re-enable
@@ -586,8 +565,8 @@ jobs:
   #       shell: bash
   #       run: |
   #         set -euo pipefail
-  #         uv python install 3.11
-  #         uv venv --python 3.11 .venv
+  #         uv python install 3.12
+  #         uv venv --python 3.12 .venv
   #         uv pip install --python .venv/bin/python --no-binary fastslide dist/*.tar.gz
   #         .venv/bin/python tools/smoke_test_python.py
   smoke-wheels:
@@ -597,7 +576,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        # One cp312-abi3 wheel per platform, imported on every supported CPython
+        # (3.12-3.14) to prove the stable-ABI tag actually loads across versions.
+        python: ["3.12", "3.13", "3.14"]
         target:
           - platform: linux_x86_64
             runner: ubuntu-24.04
@@ -614,12 +595,6 @@ jobs:
             runner: windows-2022
           - platform: windows_arm64
             runner: windows-11-arm
-        # No official CPython 3.10 for Windows ARM64, so no cp310 win_arm64 wheel
-        # is built; drop that smoke combination.
-        exclude:
-          - python: "3.10"
-            target:
-              platform: windows_arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v5

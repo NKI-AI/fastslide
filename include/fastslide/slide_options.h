@@ -16,11 +16,16 @@
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_SLIDE_OPTIONS_H_
 
 #include <cstdint>
+#include <memory>
 #include <optional>
+#include <string>
 
 #include "fastslide/utilities/colors.h"
 
 namespace fastslide {
+
+// Forward declarations
+class TileCache;
 
 /// @brief Color space for image data
 enum class ColorSpace {
@@ -51,6 +56,7 @@ enum class RenderingIntent {
 /// Example usage:
 /// @code
 /// DependencyBundle deps;
+/// deps.tile_cache = std::make_shared<TileCache>(1024 * 1024 * 1024); // 1GB
 /// deps.background_color = ColorRGB{255, 255, 255};  // White background
 ///
 /// SlideOpenOptions options;
@@ -59,6 +65,12 @@ enum class RenderingIntent {
 /// auto reader = registry.CreateReader("slide.mrxs", options);
 /// @endcode
 struct DependencyBundle {
+  /// @brief Optional tile cache for decoded tiles
+  ///
+  /// Readers can use this cache to store decoded tiles for faster access.
+  /// If nullptr, readers should manage their own caching or disable caching.
+  std::shared_ptr<TileCache> tile_cache;
+
   /// @brief Background color for empty regions
   ///
   /// Used when filling regions that don't have tile data (e.g., sparse MRXS
@@ -89,16 +101,26 @@ struct DependencyBundle {
 /// Example usage:
 /// @code
 /// SlideOpenOptions options;
+/// options.enable_caching = true;
+/// options.cache_size_mb = 512;
 /// options.dependencies.max_threads = 4;
 ///
 /// auto reader = SlideReaderRegistry::GetInstance().CreateReader(
 ///     "slide.svs", options);
 /// @endcode
-///
-/// @note Tile caching is configured separately via the reader's `SetCache`
-///       (see `fastslide::runtime::LRUTileCache` /
-///       `fastslide::runtime::GlobalCacheManager`), not through this struct.
 struct SlideOpenOptions {
+  /// @brief Enable internal tile caching
+  ///
+  /// If true and no external cache is provided via dependencies, the reader
+  /// should create its own internal cache.
+  bool enable_caching = true;
+
+  /// @brief Cache size in megabytes
+  ///
+  /// Hint for cache size if the reader creates its own cache. Ignored if
+  /// an external cache is provided via dependencies.
+  uint32_t cache_size_mb = 256;
+
   /// @brief Read-only mode
   ///
   /// If true, the reader should open files in read-only mode and not attempt

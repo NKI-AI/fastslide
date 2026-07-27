@@ -60,10 +60,6 @@ PLATFORMS: dict[str, PlatformSpec] = {
 }
 
 
-PY_TAG_TO_VERSION: dict[str, str] = {
-    "cp310": "3.10",
-    "cp311": "3.11",
-    "cp312": "3.12",
-    "cp313": "3.13",
-    "cp314": "3.14",
-}
+# The Python bindings ship a single stable-ABI (abi3) wheel floored at CPython
+# 3.12 (tag cp312-abi3), which runs on every CPython >= 3.12.
+ABI3_PY_TAG: str = "cp312"
