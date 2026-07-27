@@ -28,6 +28,7 @@ if gtest_dep.found()
     'lru_tile_cache_test' : '../src/runtime/lru_tile_cache_test.cpp',
     'cache_interface_test' : '../src/runtime/cache_interface_test.cpp',
     'binary_utils_test' : '../src/runtime/io/binary_utils_test.cpp',
+    'path_utils_test' : '../src/runtime/io/path_utils_test.cpp',
     'png_decoder_test' : '../src/runtime/decoders/png_decoder_test.cpp',
     'bmp_decoder_test' : '../src/runtime/decoders/bmp_decoder_test.cpp',
     'mrxs_index_reader_test' : '../src/readers/mrxs/mrxs_index_reader_test.cpp',

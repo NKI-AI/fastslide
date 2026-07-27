@@ -35,6 +35,7 @@
 #include "fastslide/readers/omezarr/omezarr_metadata.h"
 #include "fastslide/readers/omezarr/omezarr_plan_builder.h"
 #include "fastslide/readers/omezarr/omezarr_tile_executor.h"
+#include "fastslide/runtime/io/path_utils.h"
 
 namespace fs = std::filesystem;
 
@@ -214,8 +215,13 @@ aifocore::Status OmeZarrReader::LoadMetadata() {
   pyramid_.reserve(ngff_.datasets.size());
   for (const auto& dataset : ngff_.datasets) {
     OmeZarrLevelInfo level;
-    level.array_dir = (root_dir_ / dataset.path).string();
-    const fs::path array_json_path = fs::path(level.array_dir) / "zarr.json";
+    // `dataset.path` comes straight out of the store's zarr.json, so it has to
+    // be confined to the store directory before it reaches the filesystem.
+    AIFOCORE_ASSIGN_OR_RETURN(
+        const fs::path array_dir,
+        runtime::io::ResolveContainedPath(root_dir_, dataset.path));
+    level.array_dir = array_dir.string();
+    const fs::path array_json_path = array_dir / "zarr.json";
     AIFOCORE_ASSIGN_OR_RETURN(const std::string array_text,
                               ReadFileToString(array_json_path));
     AIFOCORE_ASSIGN_OR_RETURN(
