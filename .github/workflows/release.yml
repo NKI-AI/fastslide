@@ -358,9 +358,11 @@ jobs:
           package-dir: .
           output-dir: artifacts/wheels
         env:
-          # cp310 has no official Windows ARM64 CPython; cibuildwheel skips it
-          # there automatically, so the same build set is safe for both arches.
-          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
+          # Two builds per platform: the CPython 3.12 one is a stable-ABI build
+          # (meson.build sets limited_api = '3.12') yielding one cp312-abi3 wheel
+          # that runs on every CPython >= 3.12, plus a version-specific cp311
+          # wheel for the release predating the stable-ABI floor.
+          CIBW_BUILD: "cp311-* cp312-*"
           CIBW_ARCHS_WINDOWS: ${{ matrix.cibw_arch }}
           CIBW_BUILD_VERBOSITY: "1"
           # Force MSVC. The windows-2022/windows-11-arm images ship MinGW GCC
@@ -586,8 +588,8 @@ jobs:
   #       shell: bash
   #       run: |
   #         set -euo pipefail
-  #         uv python install 3.11
-  #         uv venv --python 3.11 .venv
+  #         uv python install 3.12
+  #         uv venv --python 3.12 .venv
   #         uv pip install --python .venv/bin/python --no-binary fastslide dist/*.tar.gz
   #         .venv/bin/python tools/smoke_test_python.py
   smoke-wheels:
@@ -597,7 +599,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        # Two wheels per platform: a cp311 one, and a cp312-abi3 one imported on
+        # every CPython >= 3.12 to prove the stable-ABI tag really does load
+        # across versions. uv resolves each interpreter to its matching wheel.
+        python: ["3.11", "3.12", "3.13", "3.14"]
         target:
           - platform: linux_x86_64
             runner: ubuntu-24.04
@@ -614,12 +619,6 @@ jobs:
             runner: windows-2022
           - platform: windows_arm64
             runner: windows-11-arm
-        # No official CPython 3.10 for Windows ARM64, so no cp310 win_arm64 wheel
-        # is built; drop that smoke combination.
-        exclude:
-          - python: "3.10"
-            target:
-              platform: windows_arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -650,11 +649,14 @@ jobs:
       # Build a venv on the right interpreter (x86_64 CPython for the Rosetta
       # leg), install the local wheel under test (uv picks the dist wheel whose
       # tags match the venv's Python/arch), and run the import + open-sample
-      # smoke. --find-links dist makes the local wheel the source for fastslide,
-      # while the index supplies its runtime dep (numpy>=1.20), which is NOT
-      # vendored in dist. Do NOT add --no-index here: that made the install fail
-      # to resolve numpy on a cold uv cache (it only "worked" elsewhere by
-      # accident, off a warm cache that already had numpy).
+      # smoke.
+      #
+      # numpy (the only runtime dep, and NOT vendored in dist) is installed from
+      # the index in a separate step so that fastslide itself can be installed
+      # with --no-index. That pin matters: pip/uv prefer an exact cpXY tag over
+      # an abi3 one, so with the index enabled a same-version wheel already on
+      # PyPI would outrank the local cp312-abi3 wheel on 3.13/3.14 and the job
+      # would silently smoke-test the published artifact instead of this build.
       - name: Import + open-sample smoke (${{ matrix.target.platform }} py${{ matrix.python }})
         if: steps.gate.outputs.run == 'true'
         shell: bash
@@ -671,7 +673,8 @@ jobs:
           else
             py=".venv/bin/python"
           fi
-          uv pip install --python "$py" --find-links dist fastslide
+          uv pip install --python "$py" numpy
+          uv pip install --python "$py" --no-index --find-links dist fastslide
           "$py" tools/smoke_test_python.py
   publish-pypi:
     name: Publish wheels + sdist to PyPI

@@ -1,5 +1,5 @@
 project('fastslide', 'c', 'cpp',
-  version : '0.8.0',
+  version : '0.8.1',
   license : 'Apache-2.0',
   meson_version : '>=1.3',
   default_options : [
@@ -268,6 +268,32 @@ if get_option('build_python')
   py = import('python').find_installation(pure : false)
   nanobind_dep = dependency('nanobind')
 
+  # Build against CPython's stable ABI (abi3) from 3.12 onwards: `limited_api`
+  # defines Py_LIMITED_API, tags the module `_fastslide.abi3.so`/`.pyd`, and on
+  # Windows links python3.lib, so one cp312-abi3 wheel serves every CPython
+  # >= 3.12. 3.11 predates that floor (and Meson rejects a `limited_api` newer
+  # than the interpreter it is building for), so it gets a conventional
+  # version-specific extension instead; '' is Meson's "no limited API" default.
+  if py.language_version().version_compare('>=3.12')
+    limited_api = '3.12'
+  else
+    limited_api = ''
+  endif
+
+  # The nanobind WrapDB dep pulls py.dependency() in transitively, which on
+  # Windows drags python3XX.lib onto the link line and defeats the limited API
+  # (Meson's /NODEFAULTLIB only suppresses the pragma-injected default). Keep
+  # nanobind's sources/includes/compile args, drop its transitive link args;
+  # nanobind adds none of its own on Windows. Pass py.dependency() explicitly so
+  # Meson finds it as a direct dep and swaps in the limited-API copy. Only needed
+  # for a limited-API build; otherwise linking python3XX.lib is correct.
+  if host_machine.system() == 'windows' and limited_api != ''
+    nanobind_ext_dep = nanobind_dep.partial_dependency(
+      compile_args : true, includes : true, sources : true)
+  else
+    nanobind_ext_dep = nanobind_dep
+  endif
+
   py.extension_module('_fastslide',
     [
       'src/python/fastslide.cpp',
@@ -275,8 +301,9 @@ if get_option('build_python')
       'src/python/reader.cpp',
     ],
     include_directories : inc,
-    dependencies : [nanobind_dep, fastslide_dep],
+    dependencies : [py.dependency(), nanobind_ext_dep, fastslide_dep],
     cpp_args : fastslide_cpp_args,
+    limited_api : limited_api,
     install : true,
     subdir : 'fastslide')
 

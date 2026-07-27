@@ -465,12 +465,8 @@ unsafe extern "C" {
         reader: *mut FastSlideSlideReader,
         capacity_bytes: usize,
     ) -> c_int;
-    pub fn fastslide_slide_reader_use_global_cache(
-        reader: *mut FastSlideSlideReader,
-    ) -> c_int;
-    pub fn fastslide_slide_reader_is_cache_enabled(
-        reader: *const FastSlideSlideReader,
-    ) -> c_int;
+    pub fn fastslide_slide_reader_use_global_cache(reader: *mut FastSlideSlideReader) -> c_int;
+    pub fn fastslide_slide_reader_is_cache_enabled(reader: *const FastSlideSlideReader) -> c_int;
     pub fn fastslide_slide_reader_clear_cache(reader: *mut FastSlideSlideReader);
     pub fn fastslide_slide_reader_get_cache_stats(
         reader: *const FastSlideSlideReader,

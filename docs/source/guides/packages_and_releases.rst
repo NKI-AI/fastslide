@@ -75,9 +75,12 @@ so no native path configuration is needed.
 Python wheels
 -------------
 
-The Python package is distributed as platform wheels (one per
-platform/CPython version, cp310--cp314) built with Bazel and **published to
-PyPI**, so consumers just::
+The Python package is distributed as two wheels per platform. The first is
+tagged ``cp312-abi3`` and built against CPython's stable ABI, so it runs
+unchanged on every CPython >= 3.12; the second is tagged ``cp311``, a
+conventional version-specific build for 3.11, which predates the stable-ABI
+floor. Wheels are built with Bazel and **published to PyPI**, so consumers
+just::
 
    pip install fastslide
 
@@ -130,7 +133,7 @@ a faithful preview of the real release.
 
 To build wheels locally (optionally narrowing the platform/Python matrix)::
 
-   python3 tools/build_wheels.py --platform darwin_aarch64 --python cp311
+   python3 tools/build_wheels.py --platform darwin_aarch64
    # -> artifacts/wheels/*.whl
 
 ``publish_java_artifacts.py`` also attaches any wheels in ``artifacts/wheels``
@@ -180,12 +183,12 @@ single aggregate **GitHub Release**:
            smx["darwin x86_64 (Rosetta) / aarch64"]
            swx["windows_x86_64 / windows-2022"]
        end
-       subgraph bw [build-wheels: cp310-cp314 per platform]
+       subgraph bw [build-wheels: cp312-abi3 + cp311 wheels per platform]
            wl["linux x86_64/arm64"]
            wm["darwin x86_64/aarch64"]
            ww["windows_x86_64"]
        end
-       subgraph sw [smoke-wheels: import + open sample, every platform x cp310-cp314]
+       subgraph sw [smoke-wheels: import + open sample, every platform x cp311-cp314]
            swl["linux x86_64/arm64"]
            swm["darwin x86_64 (Rosetta) / aarch64"]
            sww["windows_x86_64 / windows-2022"]
@@ -217,8 +220,11 @@ Why the split:
 - **Smoke tests always run on the real target runner** (including native
   Windows). The Java smoke needs only a JDK + the JARs; the wheel smoke
   (``smoke-wheels``) installs the built wheel into a fresh ``uv`` venv on each
-  platform x CPython (3.10--3.14), then ``import fastslide`` and opens the
-  bundled sample (``tools/smoke_test_python.py``). No Bazel -- so both validate
+  platform x CPython (3.11--3.14), then ``import fastslide`` and opens the
+  bundled sample (``tools/smoke_test_python.py``). ``uv`` resolves 3.11 to the
+  cp311 wheel and everything above it to the abi3 one, so importing on every
+  version proves the stable-ABI tag actually loads. No Bazel -- so both
+  validate
   the exact artifact a consumer would load. PyPI/TestPyPI publishing
   ``needs:`` the wheel smoke, so broken wheels never reach an index.
 

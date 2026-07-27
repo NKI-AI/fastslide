@@ -7,7 +7,7 @@ import platform as host_platform
 import subprocess
 
 from . import common
-from .specs import PLATFORMS, PY_TAG_TO_VERSION, PlatformSpec
+from .specs import PLATFORMS, WHEELS, PlatformSpec
 
 ARTIFACT_DIR = common.WORKSPACE_ROOT / "artifacts" / "wheels"
 
@@ -37,7 +37,6 @@ def build_wheels(
     *,
     bazel_cmd: str,
     platforms: list[str],
-    python_tags: list[str],
     keep_going: bool,
     extra_bazel_args: list[str],
 ) -> int:
@@ -62,34 +61,23 @@ def build_wheels(
             extra_bazel_args=extra_bazel_args,
         )
 
-        for py_tag in python_tags:
-            if py_tag not in PY_TAG_TO_VERSION:
-                raise ValueError(
-                    f"Unsupported python tag '{py_tag}'. Supported: {', '.join(sorted(PY_TAG_TO_VERSION))}"
-                )
+        for wheel in WHEELS:
+            label = f"{platform_key} {wheel.tag}"
+            print(f"\n▶︎ Building {wheel.tag} wheel for {platform_key} with {bazel_cmd}")
 
-        # Build all Python versions for this platform in a single Bazel
-        # invocation so Bazel can parallelise the four transitioned configs.
-        targets = [f"//python:fastslide_wheel_{t}" for t in python_tags]
-        tags_label = ", ".join(python_tags)
-        print(f"\n▶︎ Building {tags_label} wheels for {platform_key} with {bazel_cmd}")
+            try:
+                common.run([bazel_cmd, "build", *bazel_flags, wheel.target], env=env)
+            except subprocess.CalledProcessError:
+                failures.append(label)
+                print(f"❌ Build failed for {label}")
+                if not keep_going:
+                    return 1
+                continue
 
-        try:
-            common.run([bazel_cmd, "build", *bazel_flags, *targets], env=env)
-        except subprocess.CalledProcessError:
-            for t in python_tags:
-                failures.append(f"{platform_key}:{t}")
-            print(f"❌ Build failed for {platform_key}")
-            if not keep_going:
-                return 1
-            continue
-
-        for py_tag in python_tags:
-            target = f"//python:fastslide_wheel_{py_tag}"
             try:
                 files = common.cquery_target_files(
                     bazel_cmd=bazel_cmd,
-                    target=target,
+                    target=wheel.target,
                     bazel_flags=bazel_flags,
                     env=env,
                 )
@@ -98,13 +86,13 @@ def build_wheels(
                     if f.suffix != ".whl":
                         continue
                     dst = common.copy_to_dir(f, ARTIFACT_DIR, mode=0o644)
-                    print(f"  ✔ {py_tag} -> {dst}")
+                    print(f"  ✔ {label} -> {dst}")
                     copied_any = True
                 if not copied_any:
-                    raise FileNotFoundError(f"No .whl outputs found for {target} (got {len(files)} files)")
+                    raise FileNotFoundError(f"No .whl outputs found for {wheel.target} (got {len(files)} files)")
             except Exception as e:
-                failures.append(f"{platform_key}:{py_tag}")
-                print(f"  ❌ Error collecting {py_tag} wheel for {platform_key}: {e}")
+                failures.append(label)
+                print(f"  ❌ Error collecting wheel for {label}: {e}")
                 if not keep_going:
                     return 1
 
