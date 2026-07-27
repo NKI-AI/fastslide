@@ -11,6 +11,10 @@ project('fastslide', 'c', 'cpp',
     # with e.g. `meson setup builddir --buildtype=debug` for an unoptimized build.
     'buildtype=release',
     'b_ndebug=if-release',
+    # Stable-ABI (abi3) builds are opt-in; see the Python extension section
+    # below. Off by default so that a plain source build targets the running
+    # interpreter and works on every supported version.
+    'python.allow_limited_api=false',
   ])
 
 fs = import('fs')
@@ -268,13 +272,18 @@ if get_option('build_python')
   py = import('python').find_installation(pure : false)
   nanobind_dep = dependency('nanobind')
 
-  # Build against CPython's stable ABI (abi3) from 3.12 onwards: `limited_api`
-  # defines Py_LIMITED_API, tags the module `_fastslide.abi3.so`/`.pyd`, and on
-  # Windows links python3.lib, so one cp312-abi3 wheel serves every CPython
-  # >= 3.12. 3.11 predates that floor (and Meson rejects a `limited_api` newer
-  # than the interpreter it is building for), so it gets a conventional
-  # version-specific extension instead; '' is Meson's "no limited API" default.
-  if py.language_version().version_compare('>=3.12')
+  # Build against CPython's stable ABI (abi3): `limited_api` defines
+  # Py_LIMITED_API, tags the module `_fastslide.abi3.so`/`.pyd`, and on Windows
+  # links python3.lib, so one cp312-abi3 wheel serves every CPython >= 3.12.
+  # ('' is Meson's "no limited API" default.)
+  #
+  # Two conditions must hold. `python.allow_limited_api` is opt-in (see
+  # default_options above): a stable-ABI extension only pays off in a
+  # redistributable wheel, so the release job turns it on and plain source
+  # builds leave it off and target the running interpreter. And the floor is
+  # 3.12, because nanobind only supports the limited API from that version --
+  # 3.11 always gets a version-specific extension, whatever the option says.
+  if get_option('python.allow_limited_api') and py.language_version().version_compare('>=3.12')
     limited_api = '3.12'
   else
     limited_api = ''

@@ -47,6 +47,21 @@ Documentation = "https://docs.aifo.dev/fastslide/"
 Repository = "https://github.com/NKI-AI/fastslide"
 Issues = "https://github.com/NKI-AI/fastslide/issues"
 
+[tool.meson-python]
+# Master switch for stable-ABI (abi3) wheel tagging. Building the extension
+# against the limited API is not enough on its own: meson-python reads the wheel
+# ABI tag from THIS key, so without it a limited-API build still ships as
+# `cp3XX-cp3XX` and pip refuses to install it on any later Python.
+#
+# It is deliberately paired with `python.allow_limited_api=false` in
+# meson.build's default_options, which is the only per-build override
+# meson-python honours (it can disable, never enable). Defaulting to disabled
+# means an unflagged source build is version-specific and always succeeds --
+# including on 3.11, which nanobind cannot build against the limited API at all.
+# Only the release job's 3.12 leg opts back in with
+# `-Dpython.allow_limited_api=true`, which is what produces the cp312-abi3 wheel.
+limited-api = true
+
 [tool.meson-python.args]
 setup = [
     "--wrap-mode=forcefallback",

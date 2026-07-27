@@ -90,6 +90,25 @@ built for ``linux``/``darwin`` (x86_64 + aarch64) and ``windows`` (x86_64);
 matching the Java side). Build them locally with ``tools/build_wheels.py``
 (see below).
 
+How the stable ABI is turned on differs per build system, and on the Meson side
+it takes **two** cooperating switches:
+
+- **Bazel** (``linux``/``darwin``): ``//python:fastslide_wheel`` pins
+  ``@nanobind_bazel//:py-limited-api=cp312`` through its Starlark transition,
+  while ``//python:fastslide_wheel_cp311`` pins it to ``unset``.
+- **Meson** (``windows``): ``meson.build``'s ``limited_api`` kwarg controls how
+  the *extension* is compiled, but meson-python reads the *wheel tag* from the
+  separate ``[tool.meson-python] limited-api`` key in ``pyproject.toml``. Set
+  one without the other and you get a limited-API binary shipped under a
+  ``cp3XX-cp3XX`` tag, installable only on the exact version that built it.
+  Because that key is static, the Meson build option
+  ``python.allow_limited_api`` (which meson-python honours as a one-way
+  disable) defaults to ``false``, so ordinary source builds stay
+  version-specific and work on any supported interpreter. Only the release
+  job's 3.12 leg passes ``-Dpython.allow_limited_api=true``, which is what
+  actually yields the ``cp312-abi3`` wheel. 3.11 never opts in: nanobind
+  supports the limited API from 3.12 onwards only.
+
 .. _java-local-release:
 
 Building and testing locally (no GitHub)

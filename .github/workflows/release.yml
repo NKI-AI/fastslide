@@ -351,27 +351,45 @@ jobs:
       # setup args from pyproject.toml, so every dependency (aifocore/simpletiff
       # via git wraps, codecs via WrapDB) is built from source and linked
       # statically into the self-contained _fastslide.pyd. No DLLs to bundle.
-      - name: Build wheels (${{ matrix.platform }})
+      # Two cibuildwheel invocations, because the stable-ABI and version-specific
+      # wheels need different Meson setup args and cibuildwheel applies
+      # config-settings uniformly across one run. Both write to the same
+      # output-dir. `--vsenv` forces MSVC: the windows-2022/windows-11-arm images
+      # ship MinGW GCC (C:\mingw64\bin) on PATH and Meson's auto-detection picks
+      # that `cc` over MSVC, producing a GCC build (which also hits the
+      # MinGW-only jpeglib.h/<cstdio> FILE error). It makes Meson activate the
+      # Visual Studio environment even when another compiler is already on PATH,
+      # matching the MSVC toolchain used by the Java native build.
+      - name: Build cp311 wheel (${{ matrix.platform }})
         if: steps.gate.outputs.run == 'true' && matrix.method == 'meson'
         uses: pypa/cibuildwheel@v3.2.0
         with:
           package-dir: .
           output-dir: artifacts/wheels
         env:
-          # Two builds per platform: the CPython 3.12 one is a stable-ABI build
-          # (meson.build sets limited_api = '3.12') yielding one cp312-abi3 wheel
-          # that runs on every CPython >= 3.12, plus a version-specific cp311
-          # wheel for the release predating the stable-ABI floor.
-          CIBW_BUILD: "cp311-* cp312-*"
+          # 3.11 predates nanobind's stable-ABI floor, so this is a conventional
+          # version-specific build. `python.allow_limited_api` defaults to false
+          # in meson.build, which is what keeps meson-python from trying to tag
+          # the result abi3 (it errors out rather than mislabel the wheel).
+          CIBW_BUILD: "cp311-*"
           CIBW_ARCHS_WINDOWS: ${{ matrix.cibw_arch }}
           CIBW_BUILD_VERBOSITY: "1"
-          # Force MSVC. The windows-2022/windows-11-arm images ship MinGW GCC
-          # (C:\mingw64\bin) on PATH, and Meson's auto-detection picks that `cc`
-          # over MSVC, producing a GCC build (which also hits the MinGW-only
-          # jpeglib.h/<cstdio> FILE error). `--vsenv` makes Meson activate the
-          # Visual Studio environment even when another compiler is already on
-          # PATH, matching the MSVC toolchain used by the Java native build.
           CIBW_CONFIG_SETTINGS_WINDOWS: "setup-args=--vsenv"
+      - name: Build cp312-abi3 wheel (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true' && matrix.method == 'meson'
+        uses: pypa/cibuildwheel@v3.2.0
+        with:
+          package-dir: .
+          output-dir: artifacts/wheels
+        env:
+          # Opting in to the limited API here is what makes meson-python stamp
+          # the wheel `cp312-abi3` instead of `cp312-cp312`; the pyproject.toml
+          # `limited-api = true` key alone is inert while the Meson option is
+          # off. The result installs on every CPython >= 3.12.
+          CIBW_BUILD: "cp312-*"
+          CIBW_ARCHS_WINDOWS: ${{ matrix.cibw_arch }}
+          CIBW_BUILD_VERBOSITY: "1"
+          CIBW_CONFIG_SETTINGS_WINDOWS: "setup-args=--vsenv setup-args=-Dpython.allow_limited_api=true"
       - name: Upload wheels
         if: steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v6

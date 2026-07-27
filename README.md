@@ -104,6 +104,15 @@ uv build
 self-contained: all codecs are statically linked into the `_fastslide`
 extension, so the resulting wheel has no native runtime dependencies.
 
+A source build targets the interpreter running it, producing a `cp3XX` wheel.
+That is the right default locally, where a stable-ABI build buys nothing. To
+reproduce the redistributable `cp312-abi3` wheel instead, opt in explicitly (on
+CPython >= 3.12; 3.11 cannot use the limited API):
+
+```bash
+uv build --wheel -Csetup-args=-Dpython.allow_limited_api=true
+```
+
 #### Option 3: Build from source with Bazel
 
 FastSlide is a [Bazel module](https://bazel.build/external/module). Builds are
