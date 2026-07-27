@@ -351,25 +351,45 @@ jobs:
       # setup args from pyproject.toml, so every dependency (aifocore/simpletiff
       # via git wraps, codecs via WrapDB) is built from source and linked
       # statically into the self-contained _fastslide.pyd. No DLLs to bundle.
-      - name: Build wheels (${{ matrix.platform }})
+      # Two cibuildwheel invocations, because the stable-ABI and version-specific
+      # wheels need different Meson setup args and cibuildwheel applies
+      # config-settings uniformly across one run. Both write to the same
+      # output-dir. `--vsenv` forces MSVC: the windows-2022/windows-11-arm images
+      # ship MinGW GCC (C:\mingw64\bin) on PATH and Meson's auto-detection picks
+      # that `cc` over MSVC, producing a GCC build (which also hits the
+      # MinGW-only jpeglib.h/<cstdio> FILE error). It makes Meson activate the
+      # Visual Studio environment even when another compiler is already on PATH,
+      # matching the MSVC toolchain used by the Java native build.
+      - name: Build cp311 wheel (${{ matrix.platform }})
         if: steps.gate.outputs.run == 'true' && matrix.method == 'meson'
         uses: pypa/cibuildwheel@v3.2.0
         with:
           package-dir: .
           output-dir: artifacts/wheels
         env:
-          # cp310 has no official Windows ARM64 CPython; cibuildwheel skips it
-          # there automatically, so the same build set is safe for both arches.
-          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
+          # 3.11 predates nanobind's stable-ABI floor, so this is a conventional
+          # version-specific build. `python.allow_limited_api` defaults to false
+          # in meson.build, which is what keeps meson-python from trying to tag
+          # the result abi3 (it errors out rather than mislabel the wheel).
+          CIBW_BUILD: "cp311-*"
           CIBW_ARCHS_WINDOWS: ${{ matrix.cibw_arch }}
           CIBW_BUILD_VERBOSITY: "1"
-          # Force MSVC. The windows-2022/windows-11-arm images ship MinGW GCC
-          # (C:\mingw64\bin) on PATH, and Meson's auto-detection picks that `cc`
-          # over MSVC, producing a GCC build (which also hits the MinGW-only
-          # jpeglib.h/<cstdio> FILE error). `--vsenv` makes Meson activate the
-          # Visual Studio environment even when another compiler is already on
-          # PATH, matching the MSVC toolchain used by the Java native build.
           CIBW_CONFIG_SETTINGS_WINDOWS: "setup-args=--vsenv"
+      - name: Build cp312-abi3 wheel (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true' && matrix.method == 'meson'
+        uses: pypa/cibuildwheel@v3.2.0
+        with:
+          package-dir: .
+          output-dir: artifacts/wheels
+        env:
+          # Opting in to the limited API here is what makes meson-python stamp
+          # the wheel `cp312-abi3` instead of `cp312-cp312`; the pyproject.toml
+          # `limited-api = true` key alone is inert while the Meson option is
+          # off. The result installs on every CPython >= 3.12.
+          CIBW_BUILD: "cp312-*"
+          CIBW_ARCHS_WINDOWS: ${{ matrix.cibw_arch }}
+          CIBW_BUILD_VERBOSITY: "1"
+          CIBW_CONFIG_SETTINGS_WINDOWS: "setup-args=--vsenv setup-args=-Dpython.allow_limited_api=true"
       - name: Upload wheels
         if: steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v6
@@ -586,8 +606,8 @@ jobs:
   #       shell: bash
   #       run: |
   #         set -euo pipefail
-  #         uv python install 3.11
-  #         uv venv --python 3.11 .venv
+  #         uv python install 3.12
+  #         uv venv --python 3.12 .venv
   #         uv pip install --python .venv/bin/python --no-binary fastslide dist/*.tar.gz
   #         .venv/bin/python tools/smoke_test_python.py
   smoke-wheels:
@@ -597,7 +617,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        # Two wheels per platform: a cp311 one, and a cp312-abi3 one imported on
+        # every CPython >= 3.12 to prove the stable-ABI tag really does load
+        # across versions. uv resolves each interpreter to its matching wheel.
+        python: ["3.11", "3.12", "3.13", "3.14"]
         target:
           - platform: linux_x86_64
             runner: ubuntu-24.04
@@ -614,12 +637,6 @@ jobs:
             runner: windows-2022
           - platform: windows_arm64
             runner: windows-11-arm
-        # No official CPython 3.10 for Windows ARM64, so no cp310 win_arm64 wheel
-        # is built; drop that smoke combination.
-        exclude:
-          - python: "3.10"
-            target:
-              platform: windows_arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -650,11 +667,14 @@ jobs:
       # Build a venv on the right interpreter (x86_64 CPython for the Rosetta
       # leg), install the local wheel under test (uv picks the dist wheel whose
       # tags match the venv's Python/arch), and run the import + open-sample
-      # smoke. --find-links dist makes the local wheel the source for fastslide,
-      # while the index supplies its runtime dep (numpy>=1.20), which is NOT
-      # vendored in dist. Do NOT add --no-index here: that made the install fail
-      # to resolve numpy on a cold uv cache (it only "worked" elsewhere by
-      # accident, off a warm cache that already had numpy).
+      # smoke.
+      #
+      # numpy (the only runtime dep, and NOT vendored in dist) is installed from
+      # the index in a separate step so that fastslide itself can be installed
+      # with --no-index. That pin matters: pip/uv prefer an exact cpXY tag over
+      # an abi3 one, so with the index enabled a same-version wheel already on
+      # PyPI would outrank the local cp312-abi3 wheel on 3.13/3.14 and the job
+      # would silently smoke-test the published artifact instead of this build.
       - name: Import + open-sample smoke (${{ matrix.target.platform }} py${{ matrix.python }})
         if: steps.gate.outputs.run == 'true'
         shell: bash
@@ -671,7 +691,8 @@ jobs:
           else
             py=".venv/bin/python"
           fi
-          uv pip install --python "$py" --find-links dist fastslide
+          uv pip install --python "$py" numpy
+          uv pip install --python "$py" --no-index --find-links dist fastslide
           "$py" tools/smoke_test_python.py
   publish-pypi:
     name: Publish wheels + sdist to PyPI

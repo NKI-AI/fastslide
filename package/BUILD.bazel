@@ -17,7 +17,7 @@ load(":defs.bzl", "fastslide_dev_deb", "fastslide_runtime_deb")
 
 package(default_visibility = ["//visibility:public"])
 
-FASTSLIDE_VERSION = "0.8.0"
+FASTSLIDE_VERSION = "0.8.1"
 
 exports_files([
     "versions.json",

@@ -7,7 +7,7 @@ local_path_override.
 
 module(
     name = "fastslide",
-    version = "0.8.0",
+    version = "0.8.1",
 )
 
 bazel_dep(name = "rules_cc", version = "0.2.17")
@@ -140,29 +140,29 @@ bazel_dep(name = "aspect_rules_js", version = "2.9.2", dev_dependency = True)
 bazel_dep(name = "buildifier_prebuilt", version = "8.0.3", dev_dependency = True)
 bazel_dep(name = "toolchains_llvm", version = "1.7.0", dev_dependency = True)
 
+# The Python bindings ship two wheels: a stable-ABI (abi3) wheel built against
+# 3.12 that runs on every CPython >= 3.12, plus a version-specific cp311 wheel
+# for the one release still predating the stable-ABI floor. 3.12 is the default
+# toolchain; 3.11 is registered only so the cp311 wheel's transition can resolve.
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
     is_default = True,
-    python_version = "3.11",
+    python_version = "3.12",
 )
-python.toolchain(python_version = "3.9")
-python.toolchain(python_version = "3.10")
-python.toolchain(python_version = "3.12")
-python.toolchain(python_version = "3.13")
-python.toolchain(python_version = "3.14")
+python.toolchain(python_version = "3.11")
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(
     enable_implicit_namespace_pkgs = True,
     hub_name = "fastslide_pip",
-    python_version = "3.11",
+    python_version = "3.12",
     requirements_darwin = "//:requirements_darwin.txt",
     requirements_lock = "//:requirements_linux.txt",
 )
 pip.parse(
     enable_implicit_namespace_pkgs = True,
     hub_name = "fastslide_docs_pip",
-    python_version = "3.11",
+    python_version = "3.12",
     requirements_darwin = "//docs:requirements_darwin.txt",
     requirements_lock = "//docs:requirements_linux.txt",
 )

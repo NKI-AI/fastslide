@@ -23,6 +23,17 @@ build --cxxopt=-std=c++20
 build --host_cxxopt=-std=c++20
 
 # =============================================================================
+# Python Stable ABI (nanobind)
+# =============================================================================
+# Build the nanobind extension against CPython's stable ABI (abi3), floored at
+# 3.12. A single `cp312-abi3` extension then runs on every CPython >= 3.12, so
+# dev/test builds here exercise the exact artifact shipped in the main wheel.
+# Each wheel target re-pins this via its Starlark transition, so the artifact is
+# correct even in a host workspace whose .bazelrc lacks this flag, and so
+# //python:fastslide_wheel_cp311 can opt back out for the 3.11 build.
+build --@nanobind_bazel//:py-limited-api=cp312
+
+# =============================================================================
 # Release Config (opt + strip)
 # =============================================================================
 # Without an explicit compilation_mode, Bazel defaults to `fastbuild` (-O0).

@@ -60,8 +60,8 @@ pub use metadata::{
 };
 pub use reader::{CacheStats, ColorSpace, OpenOptions, RenderingIntent, SlideReader};
 pub use registry::{
-    c_api_version, clear_global_cache, global_cache_stats, is_supported,
-    set_global_cache_capacity, supported_extensions, version,
+    c_api_version, clear_global_cache, global_cache_stats, is_supported, set_global_cache_capacity,
+    supported_extensions, version,
 };
 pub use slide_image::SlideImage;
 
@@ -144,8 +144,8 @@ mod tests {
             return;
         };
 
-        let reader = SlideReader::open_with_cache(&path, 256 << 20)
-            .expect("open_with_cache should succeed");
+        let reader =
+            SlideReader::open_with_cache(&path, 256 << 20).expect("open_with_cache should succeed");
         assert!(reader.is_cache_enabled());
 
         let region = RegionSpec::new(

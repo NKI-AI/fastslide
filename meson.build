@@ -1,5 +1,5 @@
 project('fastslide', 'c', 'cpp',
-  version : '0.8.0',
+  version : '0.8.1',
   license : 'Apache-2.0',
   meson_version : '>=1.3',
   default_options : [
@@ -11,6 +11,10 @@ project('fastslide', 'c', 'cpp',
     # with e.g. `meson setup builddir --buildtype=debug` for an unoptimized build.
     'buildtype=release',
     'b_ndebug=if-release',
+    # Stable-ABI (abi3) builds are opt-in; see the Python extension section
+    # below. Off by default so that a plain source build targets the running
+    # interpreter and works on every supported version.
+    'python.allow_limited_api=false',
   ])
 
 fs = import('fs')
@@ -268,6 +272,37 @@ if get_option('build_python')
   py = import('python').find_installation(pure : false)
   nanobind_dep = dependency('nanobind')
 
+  # Build against CPython's stable ABI (abi3): `limited_api` defines
+  # Py_LIMITED_API, tags the module `_fastslide.abi3.so`/`.pyd`, and on Windows
+  # links python3.lib, so one cp312-abi3 wheel serves every CPython >= 3.12.
+  # ('' is Meson's "no limited API" default.)
+  #
+  # Two conditions must hold. `python.allow_limited_api` is opt-in (see
+  # default_options above): a stable-ABI extension only pays off in a
+  # redistributable wheel, so the release job turns it on and plain source
+  # builds leave it off and target the running interpreter. And the floor is
+  # 3.12, because nanobind only supports the limited API from that version --
+  # 3.11 always gets a version-specific extension, whatever the option says.
+  if get_option('python.allow_limited_api') and py.language_version().version_compare('>=3.12')
+    limited_api = '3.12'
+  else
+    limited_api = ''
+  endif
+
+  # The nanobind WrapDB dep pulls py.dependency() in transitively, which on
+  # Windows drags python3XX.lib onto the link line and defeats the limited API
+  # (Meson's /NODEFAULTLIB only suppresses the pragma-injected default). Keep
+  # nanobind's sources/includes/compile args, drop its transitive link args;
+  # nanobind adds none of its own on Windows. Pass py.dependency() explicitly so
+  # Meson finds it as a direct dep and swaps in the limited-API copy. Only needed
+  # for a limited-API build; otherwise linking python3XX.lib is correct.
+  if host_machine.system() == 'windows' and limited_api != ''
+    nanobind_ext_dep = nanobind_dep.partial_dependency(
+      compile_args : true, includes : true, sources : true)
+  else
+    nanobind_ext_dep = nanobind_dep
+  endif
+
   py.extension_module('_fastslide',
     [
       'src/python/fastslide.cpp',
@@ -275,8 +310,9 @@ if get_option('build_python')
       'src/python/reader.cpp',
     ],
     include_directories : inc,
-    dependencies : [nanobind_dep, fastslide_dep],
+    dependencies : [py.dependency(), nanobind_ext_dep, fastslide_dep],
     cpp_args : fastslide_cpp_args,
+    limited_api : limited_api,
     install : true,
     subdir : 'fastslide')
 

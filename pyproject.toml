@@ -1,17 +1,22 @@
 [build-system]
-requires = ["meson-python>=0.15.0", "ninja", "nanobind>=2.0.0"]
+# meson-python >= 0.17 for robust limited-API (abi3) wheel handling (it refuses
+# limited-API + free-threaded builds rather than emitting a broken wheel).
+requires = ["meson-python>=0.17.0", "ninja", "nanobind>=2.0.0"]
 build-backend = "mesonpy"
 
 [project]
 name = "fastslide"
-version = "0.8.0"
+version = "0.8.1"
 description = "High-performance whole slide image reader for digital pathology"
 readme = "README.md"
 authors = [
     {name = "Jonas Teuwen", email = "j.teuwen@nki.nl"}
 ]
 license = {text = "Apache-2.0"}
-requires-python = ">=3.10"
+# From 3.12 the extension is built against CPython's stable ABI (abi3), so a
+# single cp312-abi3 wheel serves every CPython >= 3.12. 3.11 predates that floor
+# and is served by a separate version-specific cp311 wheel.
+requires-python = ">=3.11"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
@@ -19,7 +24,6 @@ classifiers = [
     "License :: OSI Approved :: Apache Software License",
     "Programming Language :: C++",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -42,6 +46,21 @@ Homepage = "https://github.com/NKI-AI/fastslide"
 Documentation = "https://docs.aifo.dev/fastslide/"
 Repository = "https://github.com/NKI-AI/fastslide"
 Issues = "https://github.com/NKI-AI/fastslide/issues"
+
+[tool.meson-python]
+# Master switch for stable-ABI (abi3) wheel tagging. Building the extension
+# against the limited API is not enough on its own: meson-python reads the wheel
+# ABI tag from THIS key, so without it a limited-API build still ships as
+# `cp3XX-cp3XX` and pip refuses to install it on any later Python.
+#
+# It is deliberately paired with `python.allow_limited_api=false` in
+# meson.build's default_options, which is the only per-build override
+# meson-python honours (it can disable, never enable). Defaulting to disabled
+# means an unflagged source build is version-specific and always succeeds --
+# including on 3.11, which nanobind cannot build against the limited API at all.
+# Only the release job's 3.12 leg opts back in with
+# `-Dpython.allow_limited_api=true`, which is what produces the cp312-abi3 wheel.
+limited-api = true
 
 [tool.meson-python.args]
 setup = [

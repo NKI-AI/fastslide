@@ -2,18 +2,22 @@
 
 This BUILD file defines:
 - py_library: The FastSlide Python package with native extension
-- versioned_py_wheel: Platform-specific wheels for distribution (Python 3.10-3.13)
+- versioned_py_wheel: two platform-specific wheels per platform:
+    * `fastslide_wheel`       -> cp312-abi3, built against CPython's stable ABI,
+                                 installable on every CPython >= 3.12.
+    * `fastslide_wheel_cp311` -> cp311, a version-specific build for the one
+                                 release predating the stable-ABI floor (3.12).
 
-To build a wheel for a specific Python version and platform:
+To build both wheels for a platform:
     bazelisk build --platforms=//platforms:darwin_aarch64 \\
-      //python:fastslide_wheel_cp311
+      //python:all_wheels
 
-To build all wheels, use the provided script:
-    python aifo/fastslide/tools/build_artifacts.py --bazel bazelisk
+To build wheels for all platforms, use the provided script:
+    python aifo/fastslide/tools/build_wheels.py --bazel bazelisk
 
-The wheels are platform-specific because they include native C++ extensions.
+The wheels are platform-specific because they include a native C++ extension.
 Each versioned_py_wheel target uses a Starlark transition to compile the
-extension against the correct Python headers for its target version.
+extension against the right Python toolchain and ABI level.
 
 Built wheels are collected into:
     aifo/fastslide/artifacts/wheels/
@@ -21,7 +25,7 @@ Built wheels are collected into:
 
 load("@aspect_rules_py//py:defs.bzl", "py_binary", "py_library")
 load("@rules_multirun//:defs.bzl", "multirun")
-load("//tools:versioned_py_wheel.bzl", "multi_version_py_wheel")
+load("//tools:versioned_py_wheel.bzl", "versioned_py_wheel")
 
 # Platform-specific compatibility - supports Linux, macOS, and Windows
 COMPATIBLE_TARGETS = select({
@@ -43,13 +47,26 @@ WHEEL_PLATFORM = select({
     "//conditions:default": "any",
 })
 
-FASTSLIDE_VERSION = "0.8.0"
+FASTSLIDE_VERSION = "0.8.1"
 # ==============================================================================
 # Copy extension binary
 # ==============================================================================
 # The extension is built by nanobind_extension. Each versioned_py_wheel target
 # applies a Starlark transition that selects the correct Python toolchain, so
 # the extension is rebuilt with the correct Python headers for each version.
+
+# nanobind_extension emits the same binary under three names (`.so`,
+# `.abi3.so`, `.pyd`); which one belongs in the wheel depends on the ABI the
+# extension was actually compiled for. Both variants are declared here and the
+# py_library below picks one via the same config settings nanobind itself uses,
+# so each wheel's transitioned configuration gets the correctly named file:
+# `.abi3.so` for the stable-ABI build, plain `.so` for the cp311 build.
+genrule(
+    name = "copy_extension_abi3_so",
+    srcs = ["//src/python:_fastslide.abi3.so"],
+    outs = ["fastslide/_fastslide.abi3.so"],
+    cmd = "cp $< $@",
+)
 
 genrule(
     name = "copy_extension_so",
@@ -78,12 +95,19 @@ genrule(
     cmd = "cp $< $@",
 )
 
+# The extension file belonging in the wheel, keyed on target OS and on whether a
+# stable-ABI build was requested. Mirrors nanobind's own `extension_name()`
+# select, whose three conditions are mutually exclusive. Each wheel target's
+# transition sets `py-limited-api`, so this resolves per wheel.
+EXTENSION_FILE = select({
+    "@platforms//os:windows": [":copy_extension_pyd"],
+    "@nanobind_bazel//:stable-abi-unix": [":copy_extension_abi3_so"],
+    "@nanobind_bazel//:unstable-abi-unix": [":copy_extension_so"],
+})
+
 py_library(
     name = "fastslide",
-    srcs = glob(["fastslide/**/*.py"]) + [":copy_extension_pyi"] + select({
-        "@platforms//os:windows": [":copy_extension_pyd"],
-        "//conditions:default": [":copy_extension_so"],
-    }),
+    srcs = glob(["fastslide/**/*.py"]) + [":copy_extension_pyi"] + EXTENSION_FILE,
     imports = ["."],
     visibility = ["//visibility:public"],
 )
@@ -93,39 +117,71 @@ alias(
     name = "copy_extension",
     actual = select({
         "@platforms//os:windows": ":copy_extension_pyd",
-        "//conditions:default": ":copy_extension_so",
+        "@nanobind_bazel//:stable-abi-unix": ":copy_extension_abi3_so",
+        "@nanobind_bazel//:unstable-abi-unix": ":copy_extension_so",
     }),
 )
 
 # ==============================================================================
-# Build wheels for multiple Python versions
+# Wheels
 # ==============================================================================
-# multi_version_py_wheel applies a Starlark configuration transition per
-# Python version, ensuring native extensions are compiled against the matching
-# Python headers.
+# versioned_py_wheel applies a Starlark configuration transition that pins both
+# the Python toolchain and nanobind's `py-limited-api` flag, so each target
+# rebuilds the native extension against the right headers and ABI level.
+#
+# `fastslide_wheel` is the stable-ABI artifact: built once against the CPython
+# 3.12 headers, stamped `cp312-abi3-<platform>`, and installable on every
+# CPython >= 3.12. `fastslide_wheel_cp311` is a conventional version-specific
+# build for 3.11, which predates the stable-ABI floor and so cannot be served by
+# the abi3 wheel.
 
-PYTHON_VERSIONS = {
-    "3.10": "cp310",
-    "3.11": "cp311",
-    "3.12": "cp312",
-    "3.13": "cp313",
-    "3.14": "cp314",
-}
-
-multi_version_py_wheel(
+versioned_py_wheel(
+    name = "fastslide_wheel",
+    abi = "abi3",
     author = "Jonas Teuwen",
     author_email = "j.teuwen@nki.nl",
-    default_version = "3.11",
     distribution = "fastslide",
     homepage = "https://github.com/NKI-AI/fastslide",
     license = "Apache-2.0",
-    name_prefix = "fastslide_wheel",
     platform = WHEEL_PLATFORM,
-    python_requires = ">=3.10",
-    python_versions = PYTHON_VERSIONS,
+    py_limited_api = "cp312",
+    python_requires = ">=3.12",
+    python_tag = "cp312",
+    python_version = "3.12",
     strip_path_prefixes = ["python/"],
     summary = "High-performance, thread-safe digital pathology slide reader",
     target_compatible_with = COMPATIBLE_TARGETS,
     version = FASTSLIDE_VERSION,
+    visibility = ["//visibility:public"],
     deps = [":fastslide"],
+)
+
+versioned_py_wheel(
+    name = "fastslide_wheel_cp311",
+    abi = "cp311",
+    author = "Jonas Teuwen",
+    author_email = "j.teuwen@nki.nl",
+    distribution = "fastslide",
+    homepage = "https://github.com/NKI-AI/fastslide",
+    license = "Apache-2.0",
+    platform = WHEEL_PLATFORM,
+    py_limited_api = "unset",
+    python_requires = ">=3.11,<3.12",
+    python_tag = "cp311",
+    python_version = "3.11",
+    strip_path_prefixes = ["python/"],
+    summary = "High-performance, thread-safe digital pathology slide reader",
+    target_compatible_with = COMPATIBLE_TARGETS,
+    version = FASTSLIDE_VERSION,
+    visibility = ["//visibility:public"],
+    deps = [":fastslide"],
+)
+
+filegroup(
+    name = "all_wheels",
+    srcs = [
+        ":fastslide_wheel",
+        ":fastslide_wheel_cp311",
+    ],
+    visibility = ["//visibility:public"],
 )
