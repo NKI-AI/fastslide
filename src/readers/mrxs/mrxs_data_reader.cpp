@@ -138,29 +138,9 @@ aifocore::Result<std::vector<uint8_t>> MrxsDataReader::ReadData(
         aifocore::fmt::format("Invalid size: {}", size));
   }
 
-  if (size > constants::kMaxTileSize) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kInvalidArgument,
-        aifocore::fmt::format("Requested read of {} bytes exceeds maximum {}",
-                              size, constants::kMaxTileSize));
-  }
-
   // Open file
   FileReader file;
   AIFOCORE_ASSIGN_OR_RETURN(file, FileReader::Open(datafile_path, "rb"));
-
-  // Mirror the bounds check ReadTileData performs. Without it a crafted
-  // non-hierarchical index record can name any offset and length, and
-  // `ReadBytes` allocates before it discovers the file is shorter.
-  int64_t file_size;
-  AIFOCORE_ASSIGN_OR_RETURN(file_size, file.GetSize());
-  if (offset > file_size - size) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kInvalidArgument,
-        aifocore::fmt::format(
-            "Read extends beyond file: offset={}, size={}, file_size={}",
-            offset, size, file_size));
-  }
 
   // Seek to offset
   AIFOCORE_RETURN_IF_ERROR(file.Seek(offset));

@@ -45,6 +45,7 @@ trap 'rm -rf "${STAGE}"' EXIT
 cp -L "${BAZEL_BIN}"/package/libfastslide_*_*.deb "${STAGE}/"
 cp -L "${BAZEL_BIN}"/package/libfastslide-dev_*_all.deb "${STAGE}/"
 cp "${WORKSPACE_DIR}/package/deb_smoke.cpp" "${STAGE}/"
+cp "${WORKSPACE_DIR}/package/deb_smoke_c.c" "${STAGE}/"
 cp "${WORKSPACE_DIR}/package/Dockerfile" "${STAGE}/"
 
 echo "==> Staged packages:"

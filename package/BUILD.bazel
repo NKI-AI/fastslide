@@ -23,6 +23,7 @@ exports_files([
     "versions.json",
     "ldconfig_postinst.sh",
     "deb_smoke.cpp",
+    "deb_smoke_c.c",
     "Dockerfile",
 ])
 

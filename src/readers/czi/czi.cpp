@@ -44,6 +44,7 @@
 #include "fastslide/runtime/io/ascii_utils.h"
 #include "fastslide/runtime/io/binary_utils.h"
 #include "fastslide/runtime/io/file_reader.h"
+#include "fastslide/runtime/io/filesystem_utils.h"
 #include "fastslide/utilities/colors.h"
 
 namespace fastslide {
@@ -129,11 +130,8 @@ aifocore::Status CziReader::ValidateInput(const fs::path& filename) {
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("File does not have {} extension", kCziExt));
   }
-  if (!fs::exists(filename)) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kNotFound,
-        aifocore::fmt::format("File does not exist: {}", filename.string()));
-  }
+  AIFOCORE_RETURN_IF_ERROR(
+      runtime::io::RequireExists(filename, "CZI slide file"));
   return aifocore::Status::OkStatus();
 }
 

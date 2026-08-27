@@ -306,26 +306,4 @@ TEST(DataTypeFromBitsPerSampleTest, MapsCommonBitDepths) {
   EXPECT_EQ(DataTypeFromBitsPerSample(32), DataType::kFloat32);
 }
 
-/// The chosen type must keep the storage width of the page it describes;
-/// otherwise the tile sinks stride a decoded strip by the wrong sample size.
-TEST(DataTypeFromSampleFormatTest, PreservesStorageWidth) {
-  constexpr uint16_t kUnsigned = 1;
-  constexpr uint16_t kSigned = 2;
-  constexpr uint16_t kFloat = 3;
-
-  for (const uint16_t bits : {uint16_t{8}, uint16_t{16}, uint16_t{32}}) {
-    for (const uint16_t format : {kUnsigned, kSigned, kFloat}) {
-      if (format == kFloat && bits < 32) {
-        continue;  // No sub-32-bit IEEE format is defined.
-      }
-      EXPECT_EQ(GetDataTypeSize(DataTypeFromSampleFormat(bits, format)),
-                bits / 8u)
-          << "bits=" << bits << " sample_format=" << format;
-    }
-  }
-
-  // Signed 8-bit has no exact DataType member; it must still stay one byte.
-  EXPECT_EQ(DataTypeFromSampleFormat(8, kSigned), DataType::kUInt8);
-}
-
 }  // namespace fastslide

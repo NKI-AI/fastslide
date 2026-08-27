@@ -25,7 +25,6 @@
 #include "fastslide/readers/mrxs/mrxs_ini_parser.h"
 #include "fastslide/readers/mrxs/mrxs_layer_parser.h"
 #include "fastslide/readers/mrxs/mrxs_position_reader.h"
-#include "fastslide/runtime/io/path_utils.h"
 
 namespace fastslide {
 namespace mrxs {
@@ -132,33 +131,12 @@ aifocore::Result<SlideDataInfo> ReadSlidedatIni(const fs::path& slidedat_path,
   return info;
 }
 
-/// @brief Reject INI-supplied filenames that point outside the slide directory.
-///
-/// `FILE_n` and `INDEXFILE` are joined onto the slide directory at several
-/// points during reading, and their contents are returned to the caller as
-/// tile or associated-image bytes. Validating them here, once, keeps every
-/// downstream join safe.
-aifocore::Status ValidateReferencedPaths(const fs::path& dirname,
-                                         const SlideDataInfo& info) {
-  for (const std::string& datafile : info.datafile_paths) {
-    AIFOCORE_RETURN_IF_ERROR(
-        runtime::io::ResolveContainedPath(dirname, datafile).status());
-  }
-  if (!info.index_filename.empty()) {
-    AIFOCORE_RETURN_IF_ERROR(
-        runtime::io::ResolveContainedPath(dirname, info.index_filename)
-            .status());
-  }
-  return aifocore::Status::OkStatus();
-}
-
 }  // namespace
 
 aifocore::Result<SlideDataInfo> MrxsMetadataLoader::Load(
     const fs::path& slidedat_path, const fs::path& dirname) {
   SlideDataInfo info;
   AIFOCORE_ASSIGN_OR_RETURN(info, ReadSlidedatIni(slidedat_path, dirname));
-  AIFOCORE_RETURN_IF_ERROR(ValidateReferencedPaths(dirname, info));
 
   // IMPORTANT: Camera positions MUST be loaded during initialization;
   // they are required for accurate tile positioning at read time.

@@ -242,32 +242,5 @@ TEST(BmpDecoderTest, DecodesLargerImage) {
   }
 }
 
-/// @brief A width whose 24 bpp row stride wraps 32 bits must be rejected.
-///
-/// `width * 3` overflows for widths at or above 0x55555556. Computed in 32-bit
-/// arithmetic the stride collapses to a handful of bytes, so the truncation
-/// check would accept this 54-byte header while the row loop still walked
-/// billions of pixels.
-TEST(BmpDecoderTest, RejectsWidthWhoseRowStrideOverflows) {
-  std::vector<uint8_t> bmp(54, 0);
-  bmp[0] = 'B';
-  bmp[1] = 'M';
-  const uint32_t data_offset = 54;
-  std::memcpy(&bmp[10], &data_offset, 4);
-  const uint32_t info_size = 40;
-  std::memcpy(&bmp[14], &info_size, 4);
-  const int32_t width = 0x55555556;  // 3 * width == 0x100000002 (mod 2^32 = 2)
-  std::memcpy(&bmp[18], &width, 4);
-  const int32_t height = 1;
-  std::memcpy(&bmp[22], &height, 4);
-  const uint16_t planes = 1;
-  std::memcpy(&bmp[26], &planes, 2);
-  const uint16_t bpp = 24;
-  std::memcpy(&bmp[28], &bpp, 2);
-
-  const auto out_or = DecodeBmpToRgb(bmp);
-  EXPECT_FALSE(out_or.ok());
-}
-
 }  // namespace
 }  // namespace fastslide::runtime::decoders

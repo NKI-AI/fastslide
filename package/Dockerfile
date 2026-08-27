@@ -19,12 +19,13 @@ RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https:
     > /etc/apt/apt.conf.d/80-fastslide-retries
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends g++ pkg-config ca-certificates \
+    && apt-get install -y --no-install-recommends gcc g++ pkg-config ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /work
 COPY *.deb ./
 COPY deb_smoke.cpp ./
+COPY deb_smoke_c.c ./
 
 # Install runtime + dev together so libfastslide-dev's exact-version dependency
 # on libfastslide is satisfied from the local .deb files.
@@ -40,6 +41,13 @@ RUN pkg-config --exists fastslide \
     && g++ -std=c++20 -Wall -Wextra $(pkg-config --cflags fastslide) \
         deb_smoke.cpp -o /usr/local/bin/deb_smoke $(pkg-config --libs fastslide) \
     && /usr/local/bin/deb_smoke
+
+# Compile and run the C smoke program with the SYSTEM C compiler. This proves
+# the runtime package exports the fastslide_* C symbols (needed by C and Rust
+# consumers) and that the shipped C headers compile as C.
+RUN gcc -std=c17 -Wall -Wextra $(pkg-config --cflags fastslide) \
+        deb_smoke_c.c -o /usr/local/bin/deb_smoke_c $(pkg-config --libs fastslide) \
+    && /usr/local/bin/deb_smoke_c
 
 # Exercise the CLI binary shipped in the runtime package.
 RUN fastslidetool --help
