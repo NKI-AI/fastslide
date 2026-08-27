@@ -14,32 +14,15 @@
 
 #include "fastslide/runtime/tile_writer.h"
 
-#include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <mutex>
 #include <span>
 
 #include "aifocore/status/result.h"
-#include "aifocore/utilities/fmt.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/image.h"
 
 namespace fastslide::runtime {
-
-namespace {
-
-/// @brief Multiply without wrapping.
-/// @return False when the product would exceed `size_t`.
-bool CheckedMul(size_t a, size_t b, size_t* out) {
-  if (a != 0 && b > std::numeric_limits<size_t>::max() / a) {
-    return false;
-  }
-  *out = a * b;
-  return true;
-}
-
-}  // namespace
 
 aifocore::Status Canvas::PaintTileLocked(const core::TileReadOp& op,
                                          std::span<const uint8_t> pixel_data,
@@ -49,44 +32,6 @@ aifocore::Status Canvas::PaintTileLocked(const core::TileReadOp& op,
   if (!output_image_) {
     return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
                                 "Canvas has null image pointer");
-  }
-
-  // The paint sinks below take a bare pointer and derive every source offset
-  // from the declared tile geometry, which originates in file metadata. If the
-  // decoded buffer is shorter than that geometry implies, they read past its
-  // end and the stale bytes land in the image handed back to the caller.
-  // Reconcile the two here, once, before any sink sees the pointer.
-  if (tile_channels == 0) {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                "Tile declares zero channels");
-  }
-
-  // `CopyTilePlanar` strides the source as a single-channel plane; every other
-  // sink reads interleaved samples.
-  const bool planar_plane_source =
-      !use_rgb8_blending_ && !use_rgb16_copy_blending_ &&
-      config_.planar_config == PlanarConfig::kSeparate;
-  const uint32_t source_channels = planar_plane_source ? 1U : tile_channels;
-
-  size_t required = output_image_->GetBytesPerSample();
-  const bool fits = CheckedMul(required, tile_width, &required) &&
-                    CheckedMul(required, tile_height, &required) &&
-                    CheckedMul(required, source_channels, &required);
-  if (!fits) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kInvalidArgument,
-        aifocore::fmt::format(
-            "Tile geometry {}x{}x{} overflows an address-space-sized buffer",
-            tile_width, tile_height, source_channels));
-  }
-  if (pixel_data.size() < required) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kInvalidArgument,
-        aifocore::fmt::format(
-            "Tile buffer holds {} bytes but declared geometry {}x{}x{} at {} "
-            "bytes/sample requires {}",
-            pixel_data.size(), tile_width, tile_height, source_channels,
-            output_image_->GetBytesPerSample(), required));
   }
 
   if (use_rgb8_blending_) {

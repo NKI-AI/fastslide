@@ -550,7 +550,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p smoke_ctx
-          cp package/Dockerfile package/deb_smoke.cpp smoke_ctx/
+          cp package/Dockerfile package/deb_smoke.cpp package/deb_smoke_c.c smoke_ctx/
           cp debs/*.deb smoke_ctx/
           ls -l smoke_ctx
           # Retry the build: the arm64 image installs deps from ports.ubuntu.com,

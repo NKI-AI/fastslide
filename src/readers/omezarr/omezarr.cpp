@@ -35,7 +35,7 @@
 #include "fastslide/readers/omezarr/omezarr_metadata.h"
 #include "fastslide/readers/omezarr/omezarr_plan_builder.h"
 #include "fastslide/readers/omezarr/omezarr_tile_executor.h"
-#include "fastslide/runtime/io/path_utils.h"
+#include "fastslide/runtime/io/filesystem_utils.h"
 
 namespace fs = std::filesystem;
 
@@ -179,24 +179,11 @@ OmeZarrReader::OmeZarrReader(std::string path)
     : filename_(std::move(path)), root_dir_(filename_) {}
 
 aifocore::Status OmeZarrReader::LoadMetadata() {
-  if (!fs::exists(root_dir_)) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kNotFound,
-        aifocore::fmt::format("OME-Zarr root '{}' not found", filename_));
-  }
-  if (!fs::is_directory(root_dir_)) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kInvalidArgument,
-        aifocore::fmt::format("OME-Zarr root '{}' is not a directory",
-                              filename_));
-  }
+  AIFOCORE_RETURN_IF_ERROR(
+      runtime::io::RequireDirectory(root_dir_, "OME-Zarr root"));
 
   const fs::path root_json = root_dir_ / "zarr.json";
-  if (!fs::exists(root_json)) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kNotFound,
-        aifocore::fmt::format("Missing zarr.json in '{}'", filename_));
-  }
+  AIFOCORE_RETURN_IF_ERROR(runtime::io::RequireExists(root_json, "zarr.json"));
 
   AIFOCORE_ASSIGN_OR_RETURN(const std::string root_text,
                             ReadFileToString(root_json));
@@ -215,13 +202,8 @@ aifocore::Status OmeZarrReader::LoadMetadata() {
   pyramid_.reserve(ngff_.datasets.size());
   for (const auto& dataset : ngff_.datasets) {
     OmeZarrLevelInfo level;
-    // `dataset.path` comes straight out of the store's zarr.json, so it has to
-    // be confined to the store directory before it reaches the filesystem.
-    AIFOCORE_ASSIGN_OR_RETURN(
-        const fs::path array_dir,
-        runtime::io::ResolveContainedPath(root_dir_, dataset.path));
-    level.array_dir = array_dir.string();
-    const fs::path array_json_path = array_dir / "zarr.json";
+    level.array_dir = (root_dir_ / dataset.path).string();
+    const fs::path array_json_path = fs::path(level.array_dir) / "zarr.json";
     AIFOCORE_ASSIGN_OR_RETURN(const std::string array_text,
                               ReadFileToString(array_json_path));
     AIFOCORE_ASSIGN_OR_RETURN(

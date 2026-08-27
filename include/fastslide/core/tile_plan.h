@@ -199,32 +199,20 @@ struct OutputSpec {
 };
 
 /// @brief Convert a DataType to the closest OutputSpec::PixelFormat
-///
-/// The tile sinks memcpy raw samples out of the decoded tile using the
-/// canvas's sample width, so this mapping must preserve the source's bytes per
-/// sample. `PixelFormat` has no signed members; the signed types therefore map
-/// onto the unsigned member of the same width, which keeps the bit pattern
-/// intact. Falling back to `kFloat32` instead would widen a 16-bit sample to
-/// four bytes and make the sinks stride off the end of the tile.
-///
 /// @param dtype Source data type
-/// @return Pixel format with the same width as @p dtype
+/// @return Matching pixel format (kUInt8, kUInt16, kUInt32, or kFloat32)
 constexpr OutputSpec::PixelFormat ToOutputPixelFormat(
     fastslide::DataType dtype) {
   switch (dtype) {
     case fastslide::DataType::kUInt8:
       return OutputSpec::PixelFormat::kUInt8;
     case fastslide::DataType::kUInt16:
-    case fastslide::DataType::kInt16:
       return OutputSpec::PixelFormat::kUInt16;
     case fastslide::DataType::kUInt32:
-    case fastslide::DataType::kInt32:
       return OutputSpec::PixelFormat::kUInt32;
-    case fastslide::DataType::kFloat32:
-    case fastslide::DataType::kFloat64:
+    default:
       return OutputSpec::PixelFormat::kFloat32;
   }
-  return OutputSpec::PixelFormat::kUInt8;
 }
 
 /// @brief Complete tile reading plan

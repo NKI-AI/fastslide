@@ -36,6 +36,7 @@
 #include "fastslide/readers/olympusvsi/olympusvsi_plan_builder.h"
 #include "fastslide/readers/olympusvsi/olympusvsi_tile_executor.h"
 #include "fastslide/readers/simpletiff_decode_utils.h"
+#include "fastslide/runtime/io/filesystem_utils.h"
 #include "simpletiff/index.h"
 #include "simpletiff/tiff_parser.h"
 
@@ -114,36 +115,36 @@ std::vector<fs::path> DiscoverStacks(const fs::path& path) {
   fs::path data_dir;
   if (ext == ".vsi") {
     data_dir = path.parent_path() / ("_" + path.stem().string() + "_");
-  } else if (fs::is_directory(path)) {
+  } else if (runtime::io::IsDirectoryOrFalse(path)) {
     data_dir = path;
   } else {
     return {};
   }
 
   std::vector<fs::path> stacks;
-  std::error_code ec;
-  if (!fs::is_directory(data_dir, ec) || ec) {
+  auto entries_or = runtime::io::ListDirectory(data_dir);
+  if (!entries_or.ok()) {
     return {};
   }
-  for (const auto& entry : fs::directory_iterator(data_dir, ec)) {
-    if (ec)
-      break;
-    if (!entry.is_directory()) {
+  for (const fs::path& entry : entries_or.value()) {
+    if (!runtime::io::IsDirectoryOrFalse(entry)) {
       continue;
     }
-    const std::string folder = entry.path().filename().string();
+    const std::string folder = entry.filename().string();
     if (folder.rfind("stack", 0) != 0) {
       continue;
     }
-    std::error_code dec;
-    for (const auto& file : fs::directory_iterator(entry.path(), dec)) {
-      if (dec)
-        break;
-      if (!file.is_regular_file()) {
+    auto files_or = runtime::io::ListDirectory(entry);
+    if (!files_or.ok()) {
+      continue;
+    }
+    for (const fs::path& file : files_or.value()) {
+      std::error_code fec;
+      if (!fs::is_regular_file(file, fec) || fec) {
         continue;
       }
-      if (LowerExt(file.path()) == ".ets" && IsPixelEtsName(file.path())) {
-        stacks.push_back(file.path());
+      if (LowerExt(file) == ".ets" && IsPixelEtsName(file)) {
+        stacks.push_back(file);
       }
     }
   }

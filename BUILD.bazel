@@ -499,7 +499,6 @@ cc_library(
         ":runtime_cache_interface",
         ":runtime_format_descriptor",
         ":runtime_lru_tile_cache",
-        ":runtime_path_utils",
         ":runtime_reader_registry",
         ":runtime_tile_writer",
     ],
@@ -647,6 +646,7 @@ cc_library(
         ":image",
         ":readers",
         ":runtime",
+        ":runtime_filesystem_utils",
         ":simpletiff_plan_builder_utils",
         ":slide_reader",
         "@aifocore-cpp//:concepts",
@@ -689,6 +689,7 @@ cc_library(
         ":readers",
         ":runtime",
         ":runtime_file_reader",
+        ":runtime_filesystem_utils",
         ":runtime_j2k_decoder",
         ":runtime_jpeg_decoder",
         ":simpletiff_plan_builder_utils",
@@ -858,6 +859,7 @@ cc_library(
         ":image",
         ":readers",
         ":runtime",
+        ":runtime_filesystem_utils",
         ":runtime_j2k_decoder",
         ":runtime_jpeg_decoder",
         ":slide_reader",
@@ -908,6 +910,7 @@ cc_library(
         ":runtime",
         ":runtime_binary_utils",
         ":runtime_file_reader",
+        ":runtime_filesystem_utils",
         ":runtime_jpeg_decoder",
         ":runtime_jpeg_xr_decoder",
         ":slide_reader",
@@ -992,6 +995,7 @@ cc_library(
         ":libisyntax",
         ":readers",
         ":runtime",
+        ":runtime_filesystem_utils",
         ":slide_reader",
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
@@ -1151,6 +1155,7 @@ cc_library(
         ":runtime_binary_utils",
         ":runtime_bmp_decoder",
         ":runtime_file_reader",
+        ":runtime_filesystem_utils",
         ":runtime_jpeg_decoder",
         ":runtime_jpeg_xr_decoder",
         ":runtime_png_decoder",
@@ -1416,18 +1421,6 @@ cc_library(
 )
 
 cc_library(
-    name = "runtime_path_utils",
-    hdrs = ["include/fastslide/runtime/io/path_utils.h"],
-    copts = WASM_COPTS,
-    includes = ["include"],
-    visibility = ["//visibility:public"],
-    deps = [
-        "@aifocore-cpp//:result",
-        "@aifocore-cpp//:utilities-core",
-    ],
-)
-
-cc_library(
     name = "runtime_file_reader",
     srcs = ["src/runtime/io/file_reader.cpp"],
     hdrs = ["include/fastslide/runtime/io/file_reader.h"],
@@ -1435,6 +1428,22 @@ cc_library(
     includes = ["include"],
     deps = [
         "@aifocore-cpp//:portability",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+# Non-throwing `std::filesystem` probes. Readers must use these instead of the
+# path-taking standard overloads, which throw on an unreadable parent directory
+# or a stale mount and would unwind out of the C ABI.
+cc_library(
+    name = "runtime_filesystem_utils",
+    srcs = ["src/runtime/io/filesystem_utils.cpp"],
+    hdrs = ["include/fastslide/runtime/io/filesystem_utils.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
     ],
@@ -1583,6 +1592,14 @@ cc_library(
         ":runtime_global_cache_manager",
         ":runtime_png_decoder",
     ],
+    # The C API entry points are only reached through dlsym/FFI, never from
+    # within the C++ library, so nothing in the shared library references them.
+    # When this archive is linked into `fastslide_bin` (cc_binary with
+    # linkshared = True), the linker would drop every unreferenced object,
+    # leaving libfastslide.{so,dylib,dll} without any fastslide_* C symbols.
+    # alwayslink is the portable --whole-archive/-force_load/WHOLEARCHIVE that
+    # keeps the C API in the shipped shared library for C and Rust consumers.
+    alwayslink = 1,
 )
 
 # C API tile-cache tests. Require a real slide via FASTSLIDE_BENCHMARK_FILE;
@@ -1802,6 +1819,30 @@ cc_test(
 )
 
 cc_test(
+    name = "mrxs_open_errors_test",
+    size = "small",
+    srcs = ["src/readers/mrxs/mrxs_open_errors_test.cpp"],
+    deps = [
+        ":formats_mrxs",
+        "@aifocore-cpp//:result",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "runtime_filesystem_utils_test",
+    size = "small",
+    srcs = ["src/runtime/io/filesystem_utils_test.cpp"],
+    deps = [
+        ":runtime_filesystem_utils",
+        "@aifocore-cpp//:result",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "reader_registry_test",
     size = "small",
     srcs = ["src/runtime/reader_registry_test.cpp"],
@@ -1924,17 +1965,6 @@ cc_test(
     srcs = ["src/runtime/io/binary_utils_test.cpp"],
     deps = [
         ":runtime_binary_utils",
-        "@googletest//:gtest",
-        "@googletest//:gtest_main",
-    ],
-)
-
-cc_test(
-    name = "path_utils_test",
-    size = "small",
-    srcs = ["src/runtime/io/path_utils_test.cpp"],
-    deps = [
-        ":runtime_path_utils",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],
