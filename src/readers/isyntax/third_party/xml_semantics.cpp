@@ -18,6 +18,7 @@
 
 #include "fastslide/readers/isyntax/third_party/xml_semantics.h"
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -449,10 +450,16 @@ void ParseDimensionRange(isyntax_t* isyntax, isyntax_image_t* image,
       case 2:
         break;  // always 3 color channels
       case 3: {
-        image->level_count = range.numsteps;
-        image->max_scale = range.numsteps - 1;
+        // `numsteps` is attacker-controlled and indexes the fixed
+        // `image->levels` array, and is also used as a shift distance below.
+        // Bound it to the array capacity so neither can run out of range; the
+        // Status check in InitializeLevelGeometry rejects the file afterwards.
+        const int32_t level_count =
+            std::clamp(range.numsteps, 1, ISYNTAX_MAX_LEVELS);
+        image->level_count = level_count;
+        image->max_scale = level_count - 1;
         image->level0_padding =
-            (kPerLevelPadding << range.numsteps) - kPerLevelPadding;
+            (kPerLevelPadding << level_count) - kPerLevelPadding;
         image->width =
             image->width_including_padding - 2 * image->level0_padding;
         image->height =

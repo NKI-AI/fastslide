@@ -16,16 +16,12 @@
 /// @brief Standalone C smoke test for the installed FastSlide Debian packages.
 ///
 /// This program is compiled OUTSIDE the Bazel build (see package/Dockerfile)
-/// with the SYSTEM C compiler, using only the C headers shipped in
-/// libfastslide-dev and linking against the libfastslide.so shipped in the
-/// runtime package. It exercises the public C API: it reads the version
-/// strings, initializes the library, lists the supported slide extensions via
-/// the C registry path, and cleans up. A non-empty extension list proves that
-/// the runtime package actually exports the fastslide_* C symbols (they are
-/// only reached through FFI, so they must be force-linked into the .so), that
-/// the -dev package ships C headers that compile with a C compiler, and that
-/// built-in format registration works through the C API. This is the linkable
-/// surface that C and Rust (fastslide-sys) consumers depend on.
+/// with a pure C compiler (gcc -std=c11, NOT g++), so it doubles as proof that
+/// the shipped fastslide/c/*.h headers are C-clean and thus usable by tools
+/// like bindgen. It links only against the installed libfastslide.so and calls
+/// the public C API: a passing run proves the runtime package actually exports
+/// the fastslide_* C symbols (the whole point of a C ABI for Rust / ctypes /
+/// other FFI consumers), which the C++-only deb_smoke.cpp does not exercise.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,39 +29,43 @@
 #include "fastslide/c/fastslide.h"
 
 int main(void) {
-  printf("FastSlide C API version: %s\n", fastslide_c_api_get_version());
-  printf("FastSlide version: %s\n", fastslide_get_version());
-
-  if (fastslide_initialize() == 0) {
+  // The C API returns 1 on success, 0 on failure.
+  if (fastslide_initialize() != 1) {
+    const char* error = fastslide_get_last_error();
     fprintf(stderr, "ERROR: fastslide_initialize() failed: %s\n",
-            fastslide_get_last_error());
+            error != NULL ? error : "(no error message)");
     return EXIT_FAILURE;
   }
 
+  printf("FastSlide C API version: %s\n", fastslide_c_api_get_version());
+  printf("FastSlide library version: %s\n", fastslide_get_version());
+
   char** extensions = NULL;
   int num_extensions = 0;
-  if (fastslide_get_supported_extensions(&extensions, &num_extensions) == 0) {
+  if (fastslide_get_supported_extensions(&extensions, &num_extensions) != 1) {
+    const char* error = fastslide_get_last_error();
     fprintf(stderr, "ERROR: fastslide_get_supported_extensions() failed: %s\n",
-            fastslide_get_last_error());
+            error != NULL ? error : "(no error message)");
     fastslide_cleanup();
     return EXIT_FAILURE;
   }
 
-  printf("FastSlide supports %d extension(s):\n", num_extensions);
+  printf("FastSlide supports %d file extension(s):\n", num_extensions);
   for (int i = 0; i < num_extensions; ++i) {
     printf("  - %s\n", extensions[i]);
   }
+
+  const int had_extensions = num_extensions > 0;
   fastslide_registry_free_extensions(extensions, num_extensions);
 
-  if (num_extensions == 0) {
+  if (!had_extensions) {
     fprintf(stderr,
-            "ERROR: no extensions supported; the runtime package is broken.\n");
+            "ERROR: no extensions registered; the runtime package is broken.\n");
     fastslide_cleanup();
     return EXIT_FAILURE;
   }
 
   fastslide_cleanup();
-
-  printf("FastSlide Debian package C API smoke test passed.\n");
+  printf("FastSlide Debian package C smoke test passed.\n");
   return EXIT_SUCCESS;
 }

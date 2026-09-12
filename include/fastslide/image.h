@@ -89,6 +89,13 @@ constexpr DataType DataTypeFromSampleFormat(uint16_t bits_per_sample,
     case 3:  // IEEE floating point.
       return bits_per_sample >= 64 ? DataType::kFloat64 : DataType::kFloat32;
     case 2:  // Two's-complement signed integer.
+      // `DataType` has no signed 8-bit member. Map an 8-bit signed page onto
+      // kUInt8 rather than widening it to kInt16: the bit pattern survives and,
+      // more importantly, so does the one-byte sample width that the tile sinks
+      // assume when they copy out of the decoded strip.
+      if (bits_per_sample <= 8) {
+        return DataType::kUInt8;
+      }
       return bits_per_sample <= 16 ? DataType::kInt16 : DataType::kInt32;
     case 1:  // Unsigned integer.
     default:

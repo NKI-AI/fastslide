@@ -171,6 +171,33 @@ TEST(CanvasTest, PaintSingleTileRGB) {
   EXPECT_FALSE(output.Empty());
 }
 
+/// @brief A tile buffer shorter than its declared geometry must be refused.
+///
+/// The paint sinks derive every source offset from the declared tile geometry,
+/// which comes from file metadata. A malicious or corrupt slide can declare a
+/// larger tile than it actually stores; without this check the sinks read past
+/// the end of the decoded buffer and the stale bytes reach the caller.
+TEST(CanvasTest, RejectsTileBufferShorterThanDeclaredGeometry) {
+  auto plan = CreateSimpleRGBPlan(256, 256);
+  Canvas canvas(plan);
+
+  // Declare a 256x256x3 tile but supply one byte less than that needs.
+  std::vector<uint8_t> truncated(256U * 256U * 3U - 1U, 0);
+
+  const auto& op = plan.operations[0];
+  const auto status = canvas.PaintTile(op, truncated, 256, 256, 3);
+  EXPECT_FALSE(status.ok());
+}
+
+TEST(CanvasTest, RejectsTileDeclaringZeroChannels) {
+  auto plan = CreateSimpleRGBPlan(256, 256);
+  Canvas canvas(plan);
+
+  auto pixel_data = CreateTestPixelData(256, 256, 3);
+  const auto& op = plan.operations[0];
+  EXPECT_FALSE(canvas.PaintTile(op, pixel_data, 256, 256, 0).ok());
+}
+
 TEST(CanvasTest, PaintPartialTile) {
   auto plan = CreateSimpleRGBPlan(512, 512);
   Canvas canvas(plan);

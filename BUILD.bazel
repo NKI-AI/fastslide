@@ -499,6 +499,7 @@ cc_library(
         ":runtime_cache_interface",
         ":runtime_format_descriptor",
         ":runtime_lru_tile_cache",
+        ":runtime_path_utils",
         ":runtime_reader_registry",
         ":runtime_tile_writer",
     ],
@@ -647,6 +648,7 @@ cc_library(
         ":readers",
         ":runtime",
         ":runtime_filesystem_utils",
+        ":runtime_path_utils",
         ":simpletiff_plan_builder_utils",
         ":slide_reader",
         "@aifocore-cpp//:concepts",
@@ -1158,6 +1160,7 @@ cc_library(
         ":runtime_filesystem_utils",
         ":runtime_jpeg_decoder",
         ":runtime_jpeg_xr_decoder",
+        ":runtime_path_utils",
         ":runtime_png_decoder",
         ":slide_reader",
         ":spatial_index",
@@ -1421,6 +1424,18 @@ cc_library(
 )
 
 cc_library(
+    name = "runtime_path_utils",
+    hdrs = ["include/fastslide/runtime/io/path_utils.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
     name = "runtime_file_reader",
     srcs = ["src/runtime/io/file_reader.cpp"],
     hdrs = ["include/fastslide/runtime/io/file_reader.h"],
@@ -1587,19 +1602,18 @@ cc_library(
         "//conditions:default": [],
     }),
     visibility = ["//visibility:public"],
+    # Nothing inside the fastslide shared library references the C entry points
+    # (the C++ core and the format registrar do), so when this archive is fed to
+    # the linkshared //:fastslide link the linker drops every object -- leaving
+    # libfastslide.so with no fastslide_* C symbols and thus unusable from Rust,
+    # ctypes, or any non-C++ FFI consumer. Force-link the whole archive, exactly
+    # as runtime_register_builtin_formats does for the self-registering readers.
+    alwayslink = 1,
     deps = [
         ":fastslide_lib",
         ":runtime_global_cache_manager",
         ":runtime_png_decoder",
     ],
-    # The C API entry points are only reached through dlsym/FFI, never from
-    # within the C++ library, so nothing in the shared library references them.
-    # When this archive is linked into `fastslide_bin` (cc_binary with
-    # linkshared = True), the linker would drop every unreferenced object,
-    # leaving libfastslide.{so,dylib,dll} without any fastslide_* C symbols.
-    # alwayslink is the portable --whole-archive/-force_load/WHOLEARCHIVE that
-    # keeps the C API in the shipped shared library for C and Rust consumers.
-    alwayslink = 1,
 )
 
 # C API tile-cache tests. Require a real slide via FASTSLIDE_BENCHMARK_FILE;
@@ -1965,6 +1979,17 @@ cc_test(
     srcs = ["src/runtime/io/binary_utils_test.cpp"],
     deps = [
         ":runtime_binary_utils",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "path_utils_test",
+    size = "small",
+    srcs = ["src/runtime/io/path_utils_test.cpp"],
+    deps = [
+        ":runtime_path_utils",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],

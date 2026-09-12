@@ -38,6 +38,12 @@ typedef struct isyntax_xml_cpp_state_t isyntax_xml_cpp_state_t;
 
 #include "fastslide/readers/isyntax/third_party/third_party/yxml.h"
 
+// Capacities of the inline arrays in `isyntax_image_t` and `isyntax_t`. Both
+// are filled from counts parsed out of the file's XML header, so every writer
+// must bound the count against these before indexing.
+#define ISYNTAX_MAX_LEVELS 16
+#define ISYNTAX_MAX_IMAGES 16
+
 enum isyntax_image_type_enum {
   ISYNTAX_IMAGE_TYPE_NONE = 0,
   ISYNTAX_IMAGE_TYPE_MACROIMAGE = 1,
@@ -305,7 +311,7 @@ typedef struct isyntax_image_t {
   int32_t offset_y;
   int32_t level_count;
   int32_t max_scale;
-  isyntax_level_t levels[16];
+  isyntax_level_t levels[ISYNTAX_MAX_LEVELS];
   int32_t compressor_version;
   bool compression_is_lossy;
   int32_t lossy_image_compression_ratio;
@@ -376,7 +382,7 @@ typedef struct isyntax_t {
   isyntax_open_flags_t open_flags;
   int64_t filesize;
   file_handle_t file_handle;
-  isyntax_image_t images[16];
+  isyntax_image_t images[ISYNTAX_MAX_IMAGES];
   int32_t image_count;
   isyntax_block_header_template_t block_header_templates[64];
   int32_t block_header_template_count;

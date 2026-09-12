@@ -69,6 +69,14 @@ def fastslide_runtime_deb(name, *, version, deb_arch, tool, lib):
         name = name,
         data = ":" + name + "_data",
         architecture = deb_arch,
+        # libfastslide.so is self-contained (all third-party deps are statically
+        # linked in), so the only runtime deps are the C/C++ system libraries it
+        # is DT_NEEDED-linked against: libc, libgcc_s and libstdc++.
+        depends = [
+            "libc6",
+            "libgcc-s1",
+            "libstdc++6",
+        ],
         description = "FastSlide digital pathology slide reader (shared library + CLI).",
         homepage = _HOMEPAGE,
         maintainer = _MAINTAINER,
