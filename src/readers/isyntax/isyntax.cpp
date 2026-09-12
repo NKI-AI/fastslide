@@ -31,6 +31,7 @@
 #include "fastslide/readers/isyntax/isyntax_tile_executor.h"
 #include "fastslide/readers/isyntax/third_party/file.h"
 #include "fastslide/readers/isyntax/third_party/isyntax.h"
+#include "fastslide/runtime/io/filesystem_utils.h"
 #include "fastslide/runtime/tile_writer.h"
 
 namespace fastslide {
@@ -57,11 +58,8 @@ aifocore::Status IsyntaxReader::ValidateInput(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid extension for iSyntax: {}", ext));
   }
-  if (!std::filesystem::exists(filename)) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kNotFound,
-        aifocore::fmt::format("File not found: {}", filename.string()));
-  }
+  AIFOCORE_RETURN_IF_ERROR(
+      runtime::io::RequireExists(filename, "iSyntax slide file"));
   return aifocore::Status::OkStatus();
 }
 
