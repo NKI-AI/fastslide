@@ -62,6 +62,7 @@ extern "C" {
 #include "fastslide/readers/dicom/dicom_plan_builder.h"
 #include "fastslide/readers/dicom/dicom_plan_context.h"
 #include "fastslide/readers/dicom/dicom_tile_executor.h"
+#include "fastslide/runtime/io/filesystem_utils.h"
 #include "fastslide/runtime/tile_writer.h"
 
 namespace fastslide {
@@ -724,24 +725,20 @@ aifocore::Status DicomReader::Initialize() {
   // If the user pointed us at a directory, find the first DICOM file
   // inside and use that as the starting point. The sibling scan below will
   // then pick up the rest of the series.
-  std::error_code ec;
-  if (fs::is_directory(filename_, ec)) {
+  if (runtime::io::IsDirectoryOrFalse(filename_)) {
     fs::path chosen;
-    for (const auto& entry : fs::directory_iterator(filename_, ec)) {
-      if (ec) {
-        return AIFOCORE_MAKE_STATUS(
-            aifocore::StatusCode::kInternal,
-            aifocore::fmt::format("Failed to scan directory '{}': {}",
-                                  filename_, ec.message()));
-      }
-      if (!entry.is_regular_file(ec) || ec) {
+    AIFOCORE_ASSIGN_OR_RETURN(const auto entries,
+                              runtime::io::ListDirectory(filename_));
+    for (const fs::path& entry : entries) {
+      std::error_code ec;
+      if (!fs::is_regular_file(entry, ec) || ec) {
         continue;
       }
       // Prefer a `.dcm` file if present, otherwise any file with the magic.
-      auto ext = entry.path().extension().string();
+      auto ext = entry.extension().string();
       std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-      if (ext == ".dcm" || ::fastslide::dicom::HasDicomMagic(entry.path())) {
-        chosen = entry.path();
+      if (ext == ".dcm" || ::fastslide::dicom::HasDicomMagic(entry)) {
+        chosen = entry;
         if (ext == ".dcm") {
           break;  // Strong signal — stop searching.
         }
@@ -768,22 +765,27 @@ aifocore::Status DicomReader::Initialize() {
   fs::path parent = fs::path(filename_).parent_path();
   std::string start_basename = fs::path(filename_).filename().string();
 
-  if (fs::is_directory(parent)) {
-    for (const auto& entry : fs::directory_iterator(parent)) {
-      if (!entry.is_regular_file())
+  if (runtime::io::IsDirectoryOrFalse(parent)) {
+    // A directory we cannot enumerate is reported rather than skipped: the
+    // series would silently lose the levels stored in its sibling files.
+    AIFOCORE_ASSIGN_OR_RETURN(const auto entries,
+                              runtime::io::ListDirectory(parent));
+    for (const fs::path& entry : entries) {
+      std::error_code ec;
+      if (!fs::is_regular_file(entry, ec) || ec)
         continue;
-      std::string name = entry.path().filename().string();
+      std::string name = entry.filename().string();
       if (name == start_basename)
         continue;
 
-      auto ext = entry.path().extension().string();
+      auto ext = entry.extension().string();
       std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
       const bool has_dcm_ext = (ext == ".dcm");
-      if (!has_dcm_ext && !::fastslide::dicom::HasDicomMagic(entry.path())) {
+      if (!has_dcm_ext && !::fastslide::dicom::HasDicomMagic(entry)) {
         continue;
       }
 
-      auto sibling_or = OpenDicomFile(entry.path().string(), true);
+      auto sibling_or = OpenDicomFile(entry.string(), true);
       if (!sibling_or.ok())
         continue;
 
