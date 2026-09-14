@@ -204,6 +204,7 @@ fastslide_sources = [
   'src/runtime/global_cache_manager.cpp',
   'src/runtime/io/binary_utils.cpp',
   'src/runtime/io/file_reader.cpp',
+  'src/runtime/io/filesystem_utils.cpp',
   'src/runtime/lru_tile_cache.cpp',
   'src/runtime/plugin_loader.cpp',
   'src/runtime/reader_registry.cpp',
