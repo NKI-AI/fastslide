@@ -64,6 +64,7 @@ extern "C" {
 #include "fastslide/readers/dicom/dicom_tile_executor.h"
 #include "fastslide/runtime/io/filesystem_utils.h"
 #include "fastslide/runtime/tile_writer.h"
+#include "fastslide/utilities/hash.h"
 
 namespace fastslide {
 
@@ -1004,6 +1005,25 @@ ImageDimensions DicomReader::GetTileSize() const {
   if (levels_.empty())
     return {0, 0};
   return {levels_[0].tile_w, levels_[0].tile_h};
+}
+
+aifocore::Result<std::string> DicomReader::GetQuickHash() const {
+  if (levels_.empty() || levels_[0].parts.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "No DICOM levels to identify the slide");
+  }
+  const std::string& slide_id = levels_[0].PrimaryFile().slide_id;
+  if (slide_id.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "Slide has an empty SeriesInstanceUID");
+  }
+
+  // OpenSlide hashes the UID as a NUL-terminated string
+  // (_openslide_hash_string), so the terminator is part of the digest.
+  QuickHashBuilder hasher;
+  AIFOCORE_RETURN_IF_ERROR(hasher.HashData(
+      reinterpret_cast<const uint8_t*>(slide_id.c_str()), slide_id.size() + 1));
+  return hasher.Finalize();
 }
 
 aifocore::Result<core::TilePlan> DicomReader::PrepareRequest(

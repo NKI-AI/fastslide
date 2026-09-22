@@ -15,6 +15,7 @@
 #ifndef AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_CZI_CZI_H_
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_CZI_CZI_H_
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -107,6 +108,14 @@ class CziReader : public SlideReader, public ReaderFactory<CziReader> {
 
   [[nodiscard]] Metadata GetMetadata() const override;
 
+  /// @brief SHA-256 of the two ZISRAW file GUIDs plus the metadata XML.
+  ///
+  /// Byte-compatible with OpenSlide's Zeiss reader, which fingerprints a CZI
+  /// from its identifiers alone and never touches pixel data.
+  ///
+  /// @return Lowercase 64-character hex digest, never empty.
+  [[nodiscard]] aifocore::Result<std::string> GetQuickHash() const override;
+
   [[nodiscard]] std::string GetFormatName() const override { return "CZI"; }
 
   [[nodiscard]] ImageFormat GetImageFormat() const override {
@@ -180,6 +189,11 @@ class CziReader : public SlideReader, public ReaderFactory<CziReader> {
   // Parsed data.
   std::string filename_;
   std::vector<Subblock> subblocks_;
+
+  /// @brief ZISRAWFILE PrimaryFileGuid / FileGuid, kept verbatim for
+  ///        GetQuickHash().
+  std::array<uint8_t, 16> primary_file_guid_{};
+  std::array<uint8_t, 16> file_guid_{};
 
   // Metadata fields (whole file).
   std::optional<ImageDimensions> metadata_size_l0_;

@@ -297,6 +297,19 @@ ImageDimensions BifReader::GetTileSize() const {
   return ImageDimensions{512, 512};
 }
 
+aifocore::Result<readers::tiff_quickhash::Spec> BifReader::GetQuickHashSpec()
+    const {
+  if (!tiff_index_ || levels_.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "No pyramid levels to hash");
+  }
+  return readers::tiff_quickhash::Spec{
+      .index = tiff_index_.get(),
+      .level_pages = {levels_.back().page},
+      .property_page = 0,
+  };
+}
+
 aifocore::Result<const bif::BifSpatialIndex*> BifReader::GetSpatialIndex(
     int level) const {
   if (level < 0 || level >= static_cast<int>(levels_.size())) {

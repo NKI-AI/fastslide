@@ -181,28 +181,17 @@ ImageDimensions GenericTiffReader::GetTileSize() const {
   return ImageDimensions{256, 256};
 }
 
-aifocore::Result<std::string> GenericTiffReader::GetQuickHash() const {
-  // OpenSlide-compatible TIFF quickhash:
-  // 1) hash raw compressed bytes from the smallest (lowest-res) level
-  // 2) hash selected TIFF properties as NUL-terminated name + value strings
-  //
-  // OpenSlide also disables quickhash if the smallest level exceeds ~5MiB
-  // compressed to keep open() fast.
+aifocore::Result<readers::tiff_quickhash::Spec>
+GenericTiffReader::GetQuickHashSpec() const {
   if (!tiff_index_ || pyramid_levels_.empty()) {
-    return std::string("");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "No pyramid levels to hash");
   }
-
-  QuickHashBuilder hasher;
-
-  const uint16_t lowest_page = pyramid_levels_.back().page;
-  if (!readers::tiff_quickhash::HashPageRawCompressedBytes(
-           *tiff_index_, lowest_page, fs::path(GetFilename()), hasher)
-           .ok()) {
-    return std::string("");
-  }
-
-  readers::tiff_quickhash::HashTiffProperties(*tiff_index_, hasher);
-  return hasher.Finalize();
+  return readers::tiff_quickhash::Spec{
+      .index = tiff_index_.get(),
+      .level_pages = {pyramid_levels_.back().page},
+      .property_page = 0,
+  };
 }
 
 uint16_t GenericTiffReader::GetLevel0Page() const {

@@ -165,6 +165,7 @@ For completely custom formats:
        SlideProperties GetProperties() const override;
        int GetLevelCount() const override;
        LevelInfo GetLevelInfo(int level) const override;
+       aifocore::Result<std::string> GetQuickHash() const override;
        // ... other required methods
        
    private:
@@ -172,6 +173,11 @@ For completely custom formats:
    };
    
    } // namespace fastslide
+
+.. note::
+
+   ``GetQuickHash()`` is pure virtual, so a new reader will not compile until
+   it decides what identifies its slides. See :ref:`quickhash-recipe` below.
 
 Step 3: Implement Core Methods
 ------------------------------
@@ -212,6 +218,44 @@ Always validate the file format first:
        
        return aifocore::Status::OkStatus();
    }
+
+.. _quickhash-recipe:
+
+Choosing a QuickHash
+~~~~~~~~~~~~~~~~~~~~
+
+``GetQuickHash()`` returns a SHA-256 that identifies the slide's image data.
+It is pure virtual precisely so that a new format cannot silently ship without
+one. There are two recipes, both following OpenSlide:
+
+**The format carries a unique identifier.** Hash that alone and do not touch
+pixel data. DICOM hashes its ``SeriesInstanceUID``; CZI hashes its two ZISRAW
+file GUIDs plus the metadata XML. Hash identifier strings NUL-terminated, so
+that adjacent fields cannot run together and collide:
+
+.. code-block:: cpp
+
+   aifocore::Result<std::string> MyFormatReader::GetQuickHash() const {
+       if (slide_uid_.empty()) {
+           return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                       "Slide has no unique identifier");
+       }
+       QuickHashBuilder hasher;
+       AIFOCORE_RETURN_IF_ERROR(hasher.HashData(
+           reinterpret_cast<const uint8_t*>(slide_uid_.c_str()),
+           slide_uid_.size() + 1));
+       return hasher.Finalize();
+   }
+
+**The format carries no identifier.** Hash the identifying metadata plus the
+raw compressed bytes of the *lowest-resolution* level, in a deterministic
+order. TIFF-based readers get this for free: derive from ``TiffBasedReader``
+and override ``GetQuickHashSpec()`` only, naming the pages to digest.
+
+Two rules apply to every recipe. Never return an empty string; return a failed
+``Status`` instead, and note that ``Finalize()`` already refuses to digest zero
+bytes. And never skip input on a read error, because a partial digest looks
+valid while identifying the wrong slide.
 
 Metadata Loading
 ~~~~~~~~~~~~~~~~

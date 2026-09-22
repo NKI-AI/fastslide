@@ -4,7 +4,7 @@
 # subprojects/simpletiff -> ../../simpletiff.
 [wrap-git]
 url = https://github.com/NKI-AI/simpletiff.git
-revision = babc4f958b60f493f3d5092cbd4a11af350ea6fa
+revision = 1497e8c8759096151da35201b79b16f32aa8e07f
 
 [provide]
 dependency_names = simpletiff

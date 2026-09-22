@@ -203,6 +203,20 @@ ImageDimensions QpTiffReader::GetTileSize() const {
   return ImageDimensions{512, 512};  // Default for QPTIFF
 }
 
+aifocore::Result<readers::tiff_quickhash::Spec> QpTiffReader::GetQuickHashSpec()
+    const {
+  if (!tiff_index_ || pyramid_.empty() || pyramid_.back().pages.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "No pyramid levels to hash");
+  }
+  const auto& pages = pyramid_.back().pages;
+  return readers::tiff_quickhash::Spec{
+      .index = tiff_index_.get(),
+      .level_pages = std::vector<uint32_t>(pages.begin(), pages.end()),
+      .property_page = 0,
+  };
+}
+
 Metadata QpTiffReader::GetMetadata() const {
   Metadata metadata;
 

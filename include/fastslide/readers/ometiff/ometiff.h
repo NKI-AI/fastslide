@@ -112,6 +112,11 @@ class OmeTiffReader : public TiffBasedReader,
     return *tiff_index_;
   }
 
+ protected:
+  /// @brief Hash every channel page of the smallest level's first plane.
+  [[nodiscard]] aifocore::Result<readers::tiff_quickhash::Spec>
+  GetQuickHashSpec() const override;
+
  private:
   friend class TiffReaderFactory<OmeTiffReader>;
 

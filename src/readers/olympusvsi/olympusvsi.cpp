@@ -36,7 +36,9 @@
 #include "fastslide/readers/olympusvsi/olympusvsi_plan_builder.h"
 #include "fastslide/readers/olympusvsi/olympusvsi_tile_executor.h"
 #include "fastslide/readers/simpletiff_decode_utils.h"
+#include "fastslide/readers/tiff_quickhash.h"
 #include "fastslide/runtime/io/filesystem_utils.h"
+#include "fastslide/utilities/hash.h"
 #include "simpletiff/index.h"
 #include "simpletiff/tiff_parser.h"
 
@@ -1017,6 +1019,65 @@ ImageDimensions OlympusVsiReader::GetTileSize() const {
 
 StackInfo OlympusVsiReader::GetStackInfo() const {
   return Primary().GetStackInfo();
+}
+
+aifocore::Result<std::string> OlympusVsiReader::GetQuickHash() const {
+  // Preferred path: the `.vsi` container is itself a TIFF, and the reference
+  // OpenSlide Olympus reader fingerprints a slide from its IFD 0 plus TIFF
+  // properties.
+  if (vsi_tiff_ != nullptr && vsi_tiff_->NumPages() > 0) {
+    return readers::tiff_quickhash::Compute(readers::tiff_quickhash::Spec{
+        .index = vsi_tiff_.get(),
+        .level_pages = {0},
+        .property_page = 0,
+    });
+  }
+
+  // Opened as a bare `.ets`: there is no container, so fingerprint the ETS
+  // headers plus the tile directory. Offsets and sizes track the pixel data
+  // without decoding or even reading it.
+  const auto& ets = Primary().GetEtsData();
+  if (ets.tiles.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "ETS file has no tiles to identify the slide");
+  }
+
+  QuickHashBuilder hasher;
+  const auto hash_u32 = [&hasher](uint32_t value) {
+    const std::array<uint8_t, 4> le = {
+        static_cast<uint8_t>(value & 0xFF),
+        static_cast<uint8_t>((value >> 8) & 0xFF),
+        static_cast<uint8_t>((value >> 16) & 0xFF),
+        static_cast<uint8_t>((value >> 24) & 0xFF)};
+    return hasher.HashData(le.data(), le.size());
+  };
+  const auto hash_u64 = [&hasher](uint64_t value) {
+    std::array<uint8_t, 8> le{};
+    for (size_t i = 0; i < le.size(); ++i) {
+      le[i] = static_cast<uint8_t>((value >> (i * 8)) & 0xFF);
+    }
+    return hasher.HashData(le.data(), le.size());
+  };
+
+  AIFOCORE_RETURN_IF_ERROR(hash_u32(ets.sis.version));
+  AIFOCORE_RETURN_IF_ERROR(hash_u32(ets.sis.ndim));
+  AIFOCORE_RETURN_IF_ERROR(hash_u32(ets.sis.n_tiles));
+  AIFOCORE_RETURN_IF_ERROR(hash_u32(ets.ets.version));
+  AIFOCORE_RETURN_IF_ERROR(hash_u32(ets.ets.n_channels));
+  AIFOCORE_RETURN_IF_ERROR(hash_u32(ets.ets.color_space));
+  AIFOCORE_RETURN_IF_ERROR(
+      hash_u32(static_cast<uint32_t>(ets.ets.compression)));
+  AIFOCORE_RETURN_IF_ERROR(hash_u32(ets.ets.quality));
+  AIFOCORE_RETURN_IF_ERROR(hash_u32(ets.ets.tile_w));
+  AIFOCORE_RETURN_IF_ERROR(hash_u32(ets.ets.tile_h));
+  for (const auto& tile : ets.tiles) {
+    AIFOCORE_RETURN_IF_ERROR(hash_u32(tile.x));
+    AIFOCORE_RETURN_IF_ERROR(hash_u32(tile.y));
+    AIFOCORE_RETURN_IF_ERROR(hash_u32(tile.level));
+    AIFOCORE_RETURN_IF_ERROR(hash_u64(tile.offset));
+    AIFOCORE_RETURN_IF_ERROR(hash_u32(tile.n_bytes));
+  }
+  return hasher.Finalize();
 }
 
 aifocore::Result<core::TilePlan> OlympusVsiReader::PrepareRequest(

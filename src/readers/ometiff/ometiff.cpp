@@ -165,6 +165,22 @@ ImageDimensions OmeTiffReader::GetTileSize() const {
   return ImageDimensions{512, 512};
 }
 
+aifocore::Result<readers::tiff_quickhash::Spec>
+OmeTiffReader::GetQuickHashSpec() const {
+  if (!tiff_index_ || pyramid_.empty() || pyramid_.back().pages.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "No pyramid levels to hash");
+  }
+  // `pages` holds the channel pages of the selected (z, t) plane, which is the
+  // plane the single-plane reader API exposes. Z/T stacks therefore hash their
+  // representative plane rather than the whole cube.
+  return readers::tiff_quickhash::Spec{
+      .index = tiff_index_.get(),
+      .level_pages = pyramid_.back().pages,
+      .property_page = 0,
+  };
+}
+
 StackInfo OmeTiffReader::GetStackInfo() const {
   StackInfo info;
   info.z_count = metadata_.z_count;

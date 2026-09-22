@@ -46,6 +46,7 @@
 #include "fastslide/runtime/io/file_reader.h"
 #include "fastslide/runtime/io/filesystem_utils.h"
 #include "fastslide/utilities/colors.h"
+#include "fastslide/utilities/hash.h"
 
 namespace fastslide {
 
@@ -181,10 +182,13 @@ aifocore::Status CziReader::ParseFileHeader(FileReader& file) {
   (void)ReadLeInt32(file.Get());  // minor
   (void)ReadLeInt32(file.Get());  // reserved
   (void)ReadLeInt32(file.Get());  // reserved
-  char guid_primary[16];
-  char guid_file[16];
-  AIFOCORE_RETURN_IF_ERROR(file.Read(guid_primary, sizeof(guid_primary)));
-  AIFOCORE_RETURN_IF_ERROR(file.Read(guid_file, sizeof(guid_file)));
+  // Retained for GetQuickHash(): these two GUIDs are what OpenSlide's Zeiss
+  // reader fingerprints a CZI with.
+  AIFOCORE_RETURN_IF_ERROR(
+      file.Read(reinterpret_cast<char*>(primary_file_guid_.data()),
+                primary_file_guid_.size()));
+  AIFOCORE_RETURN_IF_ERROR(
+      file.Read(reinterpret_cast<char*>(file_guid_.data()), file_guid_.size()));
   (void)ReadLeInt32(file.Get());  // file_part
 
   AIFOCORE_ASSIGN_OR_RETURN(subblk_dir_pos_, ReadLeInt64(file.Get()));
@@ -852,6 +856,21 @@ aifocore::Result<Image> CziReader::ReadAssociatedImage(
   Image img(ImageDimensions{sb.w, sb.h}, ImageFormat::kRGB, rgb.data_type);
   std::memcpy(img.GetData(), rgb.bytes.data(), rgb.bytes.size());
   return img;
+}
+
+aifocore::Result<std::string> CziReader::GetQuickHash() const {
+  // Matches OpenSlide's zeiss_open(): the two file GUIDs followed by the
+  // metadata XML as a NUL-terminated string. CZI carries its own identity, so
+  // no pixel data is read.
+  QuickHashBuilder hasher;
+  AIFOCORE_RETURN_IF_ERROR(
+      hasher.HashData(primary_file_guid_.data(), primary_file_guid_.size()));
+  AIFOCORE_RETURN_IF_ERROR(
+      hasher.HashData(file_guid_.data(), file_guid_.size()));
+  AIFOCORE_RETURN_IF_ERROR(
+      hasher.HashData(reinterpret_cast<const uint8_t*>(metadata_xml_.c_str()),
+                      metadata_xml_.size() + 1));
+  return hasher.Finalize();
 }
 
 Metadata CziReader::GetMetadata() const {

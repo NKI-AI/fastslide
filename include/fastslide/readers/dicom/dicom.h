@@ -85,6 +85,16 @@ class DicomReader : public SlideReader, public ReaderFactory<DicomReader> {
 
   ImageDimensions GetTileSize() const override;
 
+  /// @brief SHA-256 of the SeriesInstanceUID, matching OpenSlide's DICOM
+  ///        quickhash-1.
+  ///
+  /// DICOM already carries a globally unique slide identifier, so there is
+  /// nothing to gain from digesting pixel data.
+  ///
+  /// @return Lowercase 64-character hex digest, never empty.
+  /// @retval kUnavailable if the slide has no usable SeriesInstanceUID.
+  [[nodiscard]] aifocore::Result<std::string> GetQuickHash() const override;
+
   aifocore::Result<core::TilePlan> PrepareRequest(
       const core::TileRequest& request) const override;
   aifocore::Status ExecutePlan(const core::TilePlan& plan,

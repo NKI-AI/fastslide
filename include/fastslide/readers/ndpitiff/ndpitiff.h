@@ -97,6 +97,11 @@ class NdpiTiffReader : public TiffBasedReader,
                                           uint16_t tile_height,
                                           std::vector<uint8_t>& out) const;
 
+ protected:
+  /// @brief Hash the smallest level of the default focal plane.
+  [[nodiscard]] aifocore::Result<readers::tiff_quickhash::Spec>
+  GetQuickHashSpec() const override;
+
  private:
   friend class TiffReaderFactory<NdpiTiffReader>;
 

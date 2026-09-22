@@ -107,6 +107,11 @@ class ImageJTiffReader : public TiffBasedReader,
   ///        between readers without opening the file twice on the hot path.
   [[nodiscard]] static bool IsImageJTiff(const simpletiff::TiffIndex& index);
 
+ protected:
+  /// @brief Hash every channel page of the smallest level.
+  [[nodiscard]] aifocore::Result<readers::tiff_quickhash::Spec>
+  GetQuickHashSpec() const override;
+
  private:
   friend class TiffReaderFactory<ImageJTiffReader>;
 

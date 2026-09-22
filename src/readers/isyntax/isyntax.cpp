@@ -33,6 +33,7 @@
 #include "fastslide/readers/isyntax/third_party/isyntax.h"
 #include "fastslide/runtime/io/filesystem_utils.h"
 #include "fastslide/runtime/tile_writer.h"
+#include "fastslide/utilities/hash.h"
 
 namespace fastslide {
 
@@ -253,6 +254,62 @@ aifocore::Result<RGBImage> IsyntaxReader::ReadAssociatedImage(
   }
 
   return image;
+}
+
+aifocore::Result<std::string> IsyntaxReader::GetQuickHash() const {
+  const isyntax_t* handle = GetIsyntaxFile().handle();
+  if (handle == nullptr) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "iSyntax file is not open");
+  }
+  const int32_t wsi_index = handle->wsi_image_index;
+  if (wsi_index < 0 || wsi_index >= handle->image_count) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "iSyntax file has no WSI image to hash");
+  }
+  const isyntax_image_t& wsi = handle->images[wsi_index];
+  if (wsi.codeblocks == nullptr || wsi.codeblock_count <= 0) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kFailedPrecondition,
+        "iSyntax WSI image has no codeblocks to identify the slide");
+  }
+
+  QuickHashBuilder hasher;
+  if (handle->is_barcode_read) {
+    // NUL-terminated, matching how OpenSlide folds identifier strings in.
+    const std::string_view barcode(handle->barcode);
+    AIFOCORE_RETURN_IF_ERROR(hasher.HashData(
+        reinterpret_cast<const uint8_t*>(barcode.data()), barcode.size() + 1));
+  }
+
+  // The coarsest scale is the top of the wavelet pyramid: a handful of
+  // codeblocks, hashed in file order so the digest does not depend on how the
+  // header happened to enumerate them.
+  std::vector<const isyntax_codeblock_t*> coarsest;
+  for (int32_t i = 0; i < wsi.codeblock_count; ++i) {
+    const isyntax_codeblock_t& block = wsi.codeblocks[i];
+    if (static_cast<int32_t>(block.scale) == wsi.max_scale &&
+        block.block_size > 0) {
+      coarsest.push_back(&block);
+    }
+  }
+  if (coarsest.empty()) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kFailedPrecondition,
+        aifocore::fmt::format(
+            "iSyntax WSI image has no codeblock data at its coarsest scale {}",
+            wsi.max_scale));
+  }
+  std::sort(coarsest.begin(), coarsest.end(),
+            [](const isyntax_codeblock_t* lhs, const isyntax_codeblock_t* rhs) {
+              return lhs->block_data_offset < rhs->block_data_offset;
+            });
+  for (const isyntax_codeblock_t* block : coarsest) {
+    AIFOCORE_RETURN_IF_ERROR(hasher.HashFilePart(
+        filename_, static_cast<int64_t>(block->block_data_offset),
+        static_cast<int64_t>(block->block_size)));
+  }
+  return hasher.Finalize();
 }
 
 Metadata IsyntaxReader::GetMetadata() const {

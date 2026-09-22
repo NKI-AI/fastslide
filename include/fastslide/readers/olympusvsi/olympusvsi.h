@@ -97,6 +97,9 @@ class OlympusVsiStackImage final : public SlideImage {
     return ets_.path;
   }
 
+  /// @brief Parsed headers and tile directory of the backing `.ets` file.
+  [[nodiscard]] const EtsFileData& GetEtsData() const { return ets_; }
+
   /// @brief Declared tile codec for this image (JPEG or JP2 in practice).
   [[nodiscard]] TileCodec GetCodec() const { return ets_.ets.compression; }
 
@@ -249,6 +252,19 @@ class OlympusVsiReader : public SlideReader {
       const core::TileRequest& request) const override;
   [[nodiscard]] aifocore::Status ExecutePlan(
       const core::TilePlan& plan, runtime::Canvas& canvas) const override;
+
+  /// @brief SHA-256 identifying the slide.
+  ///
+  /// When opened through the `.vsi` container this hashes IFD 0 of that TIFF
+  /// plus its `tiff.*` properties, matching the third-party OpenSlide Olympus
+  /// reader, which likewise ignores the `.ets` pixel data.
+  ///
+  /// Opening a bare `.ets` gives no container to hash, so that case falls back
+  /// to the ETS headers plus the primary image's tile directory (per-tile
+  /// offsets and sizes), which tracks the pixel data without decoding it.
+  ///
+  /// @return Lowercase 64-character hex digest, never empty.
+  [[nodiscard]] aifocore::Result<std::string> GetQuickHash() const override;
 
   [[nodiscard]] const std::string& GetFilename() const { return input_path_; }
 

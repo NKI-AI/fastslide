@@ -37,6 +37,7 @@
 #include "fastslide/readers/omezarr/omezarr_tile_executor.h"
 #include "fastslide/runtime/io/filesystem_utils.h"
 #include "fastslide/runtime/io/path_utils.h"
+#include "fastslide/utilities/hash.h"
 
 namespace fs = std::filesystem;
 
@@ -357,6 +358,49 @@ aifocore::Result<RGBImage> OmeZarrReader::ReadAssociatedImage(
   (void)name;
   return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
                               "OME-Zarr does not expose associated images");
+}
+
+size_t OmeZarrReader::CoarsestLevelIndex() const {
+  const auto smallest = std::min_element(
+      pyramid_.begin(), pyramid_.end(),
+      [](const OmeZarrLevelInfo& lhs, const OmeZarrLevelInfo& rhs) {
+        return lhs.y_size * lhs.x_size < rhs.y_size * rhs.x_size;
+      });
+  return static_cast<size_t>(std::distance(pyramid_.begin(), smallest));
+}
+
+aifocore::Result<std::string> OmeZarrReader::GetQuickHash() const {
+  if (pyramid_.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "OME-Zarr store has no pyramid levels to hash");
+  }
+  const OmeZarrLevelInfo& level = pyramid_[CoarsestLevelIndex()];
+
+  QuickHashBuilder hasher;
+  AIFOCORE_RETURN_IF_ERROR(hasher.HashFile((root_dir_ / "zarr.json").string()));
+  AIFOCORE_RETURN_IF_ERROR(
+      hasher.HashFile((fs::path(level.array_dir) / "zarr.json").string()));
+
+  // Row-major over the chunk grid so the digest is independent of directory
+  // iteration order. Sparse stores legitimately omit chunks; a missing file is
+  // part of the slide's identity, so it is skipped rather than failing.
+  const uint64_t chunks_c = level.ChunkCountC();
+  const uint64_t chunks_y = level.ChunkCountY();
+  const uint64_t chunks_x = level.ChunkCountX();
+  for (uint64_t cc = 0; cc < chunks_c; ++cc) {
+    for (uint64_t cy = 0; cy < chunks_y; ++cy) {
+      for (uint64_t cx = 0; cx < chunks_x; ++cx) {
+        const fs::path chunk_path = fs::path(level.array_dir) /
+                                    BuildChunkRelativePath(level, cy, cx, cc);
+        std::error_code ec;
+        if (!fs::exists(chunk_path, ec) || ec) {
+          continue;
+        }
+        AIFOCORE_RETURN_IF_ERROR(hasher.HashFile(chunk_path.string()));
+      }
+    }
+  }
+  return hasher.Finalize();
 }
 
 Metadata OmeZarrReader::GetMetadata() const {
