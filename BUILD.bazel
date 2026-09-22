@@ -198,6 +198,7 @@ cc_library(
     hdrs = [
         "include/fastslide/python/cache.h",
         "include/fastslide/python/reader.h",
+        "include/fastslide/python/status_error.h",
     ],
     includes = ["include"],
     visibility = ["//src/python:__pkg__"],
@@ -562,6 +563,7 @@ cc_library(
         ":runtime",
         ":runtime_binary_utils",
         ":slide_reader",
+        ":tiff_quickhash",
         ":tiff_utilities",
         "@aifocore-cpp//:concepts",
         "@aifocore-cpp//:result",
@@ -644,6 +646,7 @@ cc_library(
         ":cache",
         ":colors",
         ":core",
+        ":hash",
         ":image",
         ":readers",
         ":runtime",
@@ -687,6 +690,7 @@ cc_library(
         ":cache",
         ":colors",
         ":core",
+        ":hash",
         ":image",
         ":readers",
         ":runtime",
@@ -696,6 +700,7 @@ cc_library(
         ":runtime_jpeg_decoder",
         ":simpletiff_plan_builder_utils",
         ":slide_reader",
+        ":tiff_quickhash",
         "@aifocore-cpp//:concepts",
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
@@ -858,6 +863,7 @@ cc_library(
     deps = [
         ":cache",
         ":core",
+        ":hash",
         ":image",
         ":readers",
         ":runtime",
@@ -907,6 +913,7 @@ cc_library(
         ":cache",
         ":colors",
         ":core",
+        ":hash",
         ":image",
         ":readers",
         ":runtime",
@@ -993,6 +1000,7 @@ cc_library(
     deps = [
         ":colors",
         ":core",
+        ":hash",
         ":image",
         ":libisyntax",
         ":readers",
@@ -1658,6 +1666,7 @@ cc_library(
     hdrs = ["src/testing/minimal_slide_reader.h"],
     strip_include_prefix = "src",
     deps = [
+        ":hash",
         ":image",
         ":metadata",
         ":slide_reader",
@@ -1963,6 +1972,30 @@ cc_test(
         ":runtime_cache_interface",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "hash_test",
+    size = "small",
+    srcs = ["src/utilities/hash_test.cpp"],
+    deps = [
+        ":hash",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "tiff_quickhash_test",
+    size = "small",
+    srcs = ["src/readers/tiff_quickhash_test.cpp"],
+    deps = [
+        ":hash",
+        ":tiff_quickhash",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@simpletiff//:simpletiff_lib",
     ],
 )
 

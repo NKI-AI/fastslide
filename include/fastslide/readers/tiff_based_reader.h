@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "aifocore/status/result.h"
+#include "fastslide/readers/tiff_quickhash.h"
 #include "fastslide/slide_reader.h"
 #include "fastslide/utilities/tiff/tile_utilities.h"
 
@@ -91,10 +92,33 @@ class TiffBasedReader : public SlideReader {
   /// @return Path to the slide file as string
   [[nodiscard]] std::string GetFilename() const { return filename_.string(); }
 
+  /// @brief OpenSlide-shaped quickhash, implemented once for every TIFF-based
+  ///        reader in terms of GetQuickHashSpec().
+  ///
+  /// Deliberately `final`: the hashing recipe used to be copied into each
+  /// reader, which let them drift apart and let failures leak out as empty
+  /// strings. Readers describe *what* to hash, never *how*.
+  ///
+  /// @return Lowercase 64-character hex digest, never empty.
+  /// @retval kUnimplemented if the reader does not define a spec.
+  /// @retval kUnavailable if this particular file cannot be hashed, e.g. its
+  ///         smallest level exceeds the size budget.
+  [[nodiscard]] aifocore::Result<std::string> GetQuickHash() const final;
+
  protected:
   /// @brief Constructor for derived classes
   /// @param filename Path to the TIFF file
   explicit TiffBasedReader(fs::path filename);
+
+  /// @brief Name the pages the shared quickhash should digest.
+  ///
+  /// The only thing a TIFF-based reader contributes to its quickhash. Pure so
+  /// that adding a TIFF format forces the question; the recipe itself lives in
+  /// GetQuickHash() and is not overridable.
+  ///
+  /// @return Spec naming the TIFF index and pages to hash.
+  [[nodiscard]] virtual aifocore::Result<readers::tiff_quickhash::Spec>
+  GetQuickHashSpec() const = 0;
 
   /// @brief Path to the TIFF file
   fs::path filename_;

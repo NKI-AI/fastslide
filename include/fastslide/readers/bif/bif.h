@@ -89,6 +89,11 @@ class BifReader : public TiffBasedReader, public TiffReaderFactory<BifReader> {
     return *tiff_index_;
   }
 
+ protected:
+  /// @brief Hash the smallest level, with properties from directory 0.
+  [[nodiscard]] aifocore::Result<readers::tiff_quickhash::Spec>
+  GetQuickHashSpec() const override;
+
  private:
   friend class TiffReaderFactory<BifReader>;
 

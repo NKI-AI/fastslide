@@ -278,23 +278,17 @@ ImageDimensions PhilipsTiffReader::GetTileSize() const {
   return ImageDimensions{256, 256};
 }
 
-aifocore::Result<std::string> PhilipsTiffReader::GetQuickHash() const {
-  // Reuse OpenSlide-compatible quickhash logic already implemented for
-  // GenericTIFF. The OpenSlide tifflike quickhash is based on smallest level
-  // raw compressed bytes plus hashed TIFF properties.
+aifocore::Result<readers::tiff_quickhash::Spec>
+PhilipsTiffReader::GetQuickHashSpec() const {
   if (!tiff_index_ || pyramid_levels_.empty()) {
-    return std::string("");
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "No pyramid levels to hash");
   }
-  QuickHashBuilder hasher;
-  const uint16_t lowest_page = pyramid_levels_.back().page;
-  if (!readers::tiff_quickhash::HashPageRawCompressedBytes(
-           *tiff_index_, lowest_page, fs::path(GetFilename()), hasher)
-           .ok()) {
-    return std::string("");
-  }
-  readers::tiff_quickhash::HashTiffProperties(*tiff_index_, hasher);
-
-  return hasher.Finalize();
+  return readers::tiff_quickhash::Spec{
+      .index = tiff_index_.get(),
+      .level_pages = {pyramid_levels_.back().page},
+      .property_page = 0,
+  };
 }
 
 aifocore::Result<core::TilePlan> PhilipsTiffReader::PrepareRequest(

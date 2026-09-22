@@ -241,6 +241,11 @@ class QpTiffReader : public TiffBasedReader,
   /// @return Text content
   static std::string GetText(const void* node, const char* tag);
 
+ protected:
+  /// @brief Hash every channel page of the smallest level.
+  [[nodiscard]] aifocore::Result<readers::tiff_quickhash::Spec>
+  GetQuickHashSpec() const override;
+
  private:
   /// @brief Allow factory access to private constructor and methods
   friend class TiffReaderFactory<QpTiffReader>;

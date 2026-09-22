@@ -306,16 +306,22 @@ class SlideReader {
   /// 2D formats.
   [[nodiscard]] virtual StackInfo GetStackInfo() const;
 
-  /// @brief Get QuickHash (unique identifier for slide data)
-  /// @return SHA-256 hash string (compatible with OpenSlide), or empty string
-  /// if unavailable
-  /// @details The quickhash is a unique identifier computed from:
-  ///   - For MRXS: Slidedat.ini + all lowest resolution tile data
-  ///   - For SVS/TIFF: TIFF header/metadata + lowest resolution tile data
-  [[nodiscard]] virtual aifocore::Result<std::string> GetQuickHash() const {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,
-                                "GetQuickHash not implemented for this reader");
-  }
+  /// @brief SHA-256 fingerprint identifying this slide's image data.
+  ///
+  /// Every reader must define one. There is deliberately no default: a
+  /// fallback returning "unimplemented" is how most of these readers silently
+  /// shipped without a digest, so a new format cannot compile until it decides
+  /// what identifies its slides.
+  ///
+  /// The recipe is per format, following OpenSlide: where the format already
+  /// carries a reliable unique identifier (DICOM's SeriesInstanceUID, CZI's
+  /// file GUIDs) that is hashed on its own; otherwise it is the identifying
+  /// metadata plus the raw bytes of the lowest-resolution level.
+  ///
+  /// @return Lowercase 64-character hex digest. Never empty and never
+  ///         OK-but-blank: a reader that cannot produce a digest returns a
+  ///         failed Status instead.
+  [[nodiscard]] virtual aifocore::Result<std::string> GetQuickHash() const = 0;
 
   /// @brief Set tile cache for caching decoded internal tiles
   /// @param cache Shared pointer to tile cache (nullptr to disable caching)

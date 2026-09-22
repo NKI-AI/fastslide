@@ -100,8 +100,6 @@ class GenericTiffReader : public TiffBasedReader,
 
   [[nodiscard]] ImageDimensions GetTileSize() const override;
 
-  [[nodiscard]] aifocore::Result<std::string> GetQuickHash() const override;
-
   // Two-stage pipeline implementation
   [[nodiscard]] aifocore::Result<core::TilePlan> PrepareRequest(
       const core::TileRequest& request) const override;
@@ -125,6 +123,11 @@ class GenericTiffReader : public TiffBasedReader,
   [[nodiscard]] const simpletiff::TiffIndex& GetTiffIndex() const {
     return *tiff_index_;
   }
+
+ protected:
+  /// @brief Hash the smallest level, with properties from directory 0.
+  [[nodiscard]] aifocore::Result<readers::tiff_quickhash::Spec>
+  GetQuickHashSpec() const override;
 
  private:
   /// @brief Allow factory access to private constructor and methods

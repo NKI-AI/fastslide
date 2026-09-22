@@ -28,6 +28,7 @@
 #include <utility>
 #include <vector>
 
+#include "fastslide/python/status_error.h"
 #include "fastslide/readers/mrxs/mrxs.h"
 #include "fastslide/readers/tiff_based_reader.h"
 #include "fastslide/runtime/global_cache_manager.h"
@@ -117,8 +118,8 @@ std::shared_ptr<fastslide::Image> AssociatedImages::GetItem(
   auto reader = GetReader();
   auto result = reader->ReadAssociatedImage(name);
   if (!result.ok()) {
-    throw std::runtime_error("Failed to read associated image '" + name +
-                             "': " + std::string(result.status().message()));
+    ThrowPyErrorFromStatus(result.status(),
+                           "Failed to read associated image '" + name + "'");
   }
 
   auto result_image =
@@ -148,8 +149,8 @@ nb::tuple AssociatedImages::GetDimensions(const std::string& name) const {
   auto reader = GetReader();
   auto dims_or = reader->GetAssociatedImageDimensions(name);
   if (!dims_or.ok()) {
-    throw std::runtime_error("Failed to get dimensions for '" + name +
-                             "': " + std::string(dims_or.status().message()));
+    ThrowPyErrorFromStatus(dims_or.status(),
+                           "Failed to get dimensions for '" + name + "'");
   }
   const auto& dims = dims_or.value();
   return nb::make_tuple(dims[0], dims[1]);
@@ -211,8 +212,8 @@ nb::object AssociatedData::GetItem(const std::string& name) const {
 
   auto data_or = mrxs_reader->LoadAssociatedData(name);
   if (!data_or.ok()) {
-    throw std::runtime_error("Failed to load associated data '" + name +
-                             "': " + std::string(data_or.status().message()));
+    ThrowPyErrorFromStatus(data_or.status(),
+                           "Failed to load associated data '" + name + "'");
   }
 
   const auto& data = *data_or;
@@ -300,9 +301,8 @@ const SlideImage* SlideImageView::GetImage() const {
   auto reader = GetReader();
   auto image_or = reader->GetImage(index_);
   if (!image_or.ok()) {
-    throw std::runtime_error("Failed to access image " +
-                             std::to_string(index_) + ": " +
-                             std::string(image_or.status().message()));
+    ThrowPyErrorFromStatus(image_or.status(),
+                           "Failed to access image " + std::to_string(index_));
   }
   return image_or.value();
 }
@@ -372,9 +372,9 @@ std::shared_ptr<fastslide::Image> SlideImageView::ReadRegion(
                     .plane = {z, t}};
   auto result = image->ReadRegion(region);
   if (!result.ok()) {
-    throw std::runtime_error("Failed to read region from image " +
-                             std::to_string(index_) + ": " +
-                             std::string(result.status().message()));
+    ThrowPyErrorFromStatus(
+        result.status(),
+        "Failed to read region from image " + std::to_string(index_));
   }
   return std::make_shared<fastslide::Image>(std::move(result.value()));
 }
@@ -462,8 +462,8 @@ std::unique_ptr<FastSlide> FastSlide::FromFilePath(const std::string& file_path,
   auto reader_or =
       fastslide::runtime::GetGlobalRegistry().CreateReader(file_path);
   if (!reader_or.ok()) {
-    throw std::runtime_error("Failed to open slide '" + file_path +
-                             "': " + std::string(reader_or.status().message()));
+    ThrowPyErrorFromStatus(reader_or.status(),
+                           "Failed to open slide '" + file_path + "'");
   }
 
   auto reader = std::move(reader_or.value());
@@ -483,7 +483,7 @@ std::unique_ptr<FastSlide> FastSlide::FromFilePath(const std::string& file_path,
 
 std::unique_ptr<FastSlide> FastSlide::FromUri(const std::string& uri) {
   // TODO(jonasteuwen): Implement URI-based loading
-  throw std::runtime_error("URI-based loading not yet implemented");
+  throw NotImplementedError("URI-based loading not yet implemented");
 }
 
 void FastSlide::Close() {
@@ -527,8 +527,7 @@ std::shared_ptr<fastslide::Image> FastSlide::ReadRegion(uint32_t x, uint32_t y,
 
   auto result = reader_->ReadRegion(region);
   if (!result.ok()) {
-    throw std::runtime_error("Failed to read region: " +
-                             std::string(result.status().message()));
+    ThrowPyErrorFromStatus(result.status(), "Failed to read region");
   }
 
   return std::make_shared<fastslide::Image>(std::move(result.value()));
@@ -692,8 +691,14 @@ std::string FastSlide::GetQuickHash() const {
   }
   auto hash_or = reader_->GetQuickHash();
   if (!hash_or.ok()) {
-    throw std::runtime_error("Failed to get quickhash: " +
-                             std::string(hash_or.status().message()));
+    ThrowPyErrorFromStatus(hash_or.status(), "Failed to get quickhash");
+  }
+  // Belt and braces: readers used to signal "no hash" by returning an empty
+  // string, which silently became a valid-looking `""` in Python. Nothing may
+  // reintroduce that.
+  if (hash_or.value().empty()) {
+    throw std::runtime_error(
+        "Reader returned an empty quickhash, which is never a valid digest");
   }
   return hash_or.value();
 }
@@ -781,8 +786,8 @@ nb::tuple FastSlide::ConvertLevel0ToLevelNative(int64_t x, int64_t y,
 
   auto level_info_or = reader_->GetLevelInfo(level);
   if (!level_info_or.ok()) {
-    throw std::runtime_error("Invalid level " + std::to_string(level) + ": " +
-                             std::string(level_info_or.status().message()));
+    ThrowPyErrorFromStatus(level_info_or.status(),
+                           "Invalid level " + std::to_string(level));
   }
 
   double downsample = level_info_or.value().downsample_factor;
@@ -805,8 +810,8 @@ nb::tuple FastSlide::ConvertLevelNativeToLevel0(uint32_t x, uint32_t y,
 
   auto level_info_or = reader_->GetLevelInfo(level);
   if (!level_info_or.ok()) {
-    throw std::runtime_error("Invalid level " + std::to_string(level) + ": " +
-                             std::string(level_info_or.status().message()));
+    ThrowPyErrorFromStatus(level_info_or.status(),
+                           "Invalid level " + std::to_string(level));
   }
 
   double downsample = level_info_or.value().downsample_factor;

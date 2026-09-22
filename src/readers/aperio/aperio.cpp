@@ -157,110 +157,17 @@ ImageDimensions AperioReader::GetTileSize() const {
   return ImageDimensions{256, 256};  // Default for Aperio
 }
 
-aifocore::Result<std::string> AperioReader::GetQuickHash() const {
-  // OpenSlide-compatible quickhash for TIFF-based formats:
-  // 1. Hash raw compressed tile data from lowest resolution level
-  // 2. Hash TIFF property strings (name + value, each with null terminators)
-  //
-  // This matches OpenSlide's _openslide_tifflike_init_properties_and_hash():
-  // - Uses raw compressed bytes (not decoded)
-  // - Hashes property name and value as null-terminated strings
-  // - Properties hashed: ImageDescription, Make, Model, Software, DateTime,
-  //   Artist, HostComputer, Copyright, DocumentName (in this order)
-  QuickHashBuilder hasher;
-
-  // Hash tile data from the lowest resolution level
-  if (pyramid_levels_.empty() || !tiff_index_) {
-    return hasher.Finalize();
+aifocore::Result<readers::tiff_quickhash::Spec> AperioReader::GetQuickHashSpec()
+    const {
+  if (!tiff_index_ || pyramid_levels_.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "No pyramid levels to hash");
   }
-
-  const auto& lowest_res = pyramid_levels_.back();
-  const uint16_t page = lowest_res.page;
-
-  if (page >= tiff_index_->NumPages()) {
-    return hasher.Finalize();
-  }
-
-  const auto& page_header = tiff_index_->Page(page);
-
-  // Get tile/strip info
-  uint32_t total_tiles = 0;
-  if (page_header.storage == simpletiff::Storage::kTiles) {
-    const auto& tiles = tiff_index_->Tiles(page_header.payload_id);
-    total_tiles = tiles.tiles_x * tiles.tiles_y;
-  } else if (page_header.storage == simpletiff::Storage::kStrips) {
-    const auto& strips = tiff_index_->Strips(page_header.payload_id);
-    // Calculate number of strips
-    const uint32_t rows_per_strip =
-        strips.rows_per_strip > 0 ? strips.rows_per_strip : lowest_res.size[1];
-    total_tiles = (lowest_res.size[1] + rows_per_strip - 1) / rows_per_strip;
-  } else {
-    return hasher.Finalize();
-  }
-
-  // Hash all tiles/strips from lowest resolution using ReadRawTile
-  std::vector<uint8_t> raw_tile_data;
-  for (uint32_t i = 0; i < total_tiles; ++i) {
-    // Read raw compressed tile data using new simpletiff API
-    auto result = simpletiff::ReadRawTile(*tiff_index_, page, i, raw_tile_data);
-
-    if (result && !raw_tile_data.empty()) {
-      auto hash_status = hasher.HashData(raw_tile_data);
-      if (!hash_status.ok()) {
-        // Continue hashing even if one tile fails
-        continue;
-      }
-    }
-  }
-
-  // Hash TIFF properties from directory 0
-  if (tiff_index_->NumPages() > 0) {
-    const auto& page0 = tiff_index_->Page(0);
-
-    // Helper lambda to hash property name + value (with null terminators)
-    auto hash_string_prop = [&](const char* prop_name,
-                                const std::string& value_str) {
-      // Hash property name (with null terminator)
-      auto name_status = hasher.HashData(
-          reinterpret_cast<const uint8_t*>(prop_name), strlen(prop_name) + 1);
-      if (!name_status.ok()) {
-        return;  // Skip this property if hashing fails
-      }
-
-      // Hash property value (with null terminator)
-      aifocore::Status value_status;
-      if (!value_str.empty()) {
-        value_status =
-            hasher.HashData(reinterpret_cast<const uint8_t*>(value_str.c_str()),
-                            value_str.length() + 1);
-      } else {
-        // Hash empty string with null terminator if property doesn't exist
-        value_status = hasher.HashData(reinterpret_cast<const uint8_t*>(""), 1);
-      }
-      // Continue even if value hashing fails (quickhash is best-effort)
-      if (!value_status.ok()) {
-        std::cerr << "Failed to hash TIFF property " << prop_name;
-      }
-    };
-
-    // Hash TIFF properties in the same order as OpenSlide
-    // SimpleTiff stores ImageDescription in PageHeader::description
-    hash_string_prop("tiff.ImageDescription", page0.description);
-
-    // Other properties (Make, Model, Software, DateTime, Artist, HostComputer,
-    // Copyright, DocumentName) are not currently extracted by simpletiff,
-    // so we hash empty strings for them to maintain OpenSlide compatibility
-    hash_string_prop("tiff.Make", "");
-    hash_string_prop("tiff.Model", "");
-    hash_string_prop("tiff.Software", "");
-    hash_string_prop("tiff.DateTime", "");
-    hash_string_prop("tiff.Artist", "");
-    hash_string_prop("tiff.HostComputer", "");
-    hash_string_prop("tiff.Copyright", "");
-    hash_string_prop("tiff.DocumentName", "");
-  }
-
-  return hasher.Finalize();
+  return readers::tiff_quickhash::Spec{
+      .index = tiff_index_.get(),
+      .level_pages = {pyramid_levels_.back().page},
+      .property_page = 0,
+  };
 }
 
 Metadata AperioReader::GetMetadata() const {

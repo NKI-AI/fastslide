@@ -309,6 +309,7 @@ if get_option('build_python')
       'src/python/fastslide.cpp',
       'src/python/cache.cpp',
       'src/python/reader.cpp',
+      'src/python/status_error.cpp',
     ],
     include_directories : inc,
     dependencies : [py.dependency(), nanobind_ext_dep, fastslide_dep],

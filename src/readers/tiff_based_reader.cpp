@@ -43,4 +43,10 @@ using TiffTileCoordinate = tiff::TileCoordinate;
 TiffBasedReader::TiffBasedReader(fs::path filename)
     : filename_(std::move(filename)) {}
 
+aifocore::Result<std::string> TiffBasedReader::GetQuickHash() const {
+  readers::tiff_quickhash::Spec spec;
+  AIFOCORE_ASSIGN_OR_RETURN(spec, GetQuickHashSpec());
+  return readers::tiff_quickhash::Compute(spec);
+}
+
 }  // namespace fastslide

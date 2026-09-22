@@ -64,7 +64,7 @@ class TestFastSlideFactory:
 
     def test_from_uri_not_implemented(self) -> None:
         """Test that URI loading is not yet implemented."""
-        with pytest.raises(RuntimeError, match="URI-based loading not yet implemented"):
+        with pytest.raises(NotImplementedError, match="URI-based loading not yet implemented"):
             fastslide.FastSlide.from_uri("gs://bucket/slide.svs")
 
     def test_from_file_path_with_spaces(self, tmp_path: Path) -> None:
@@ -266,11 +266,16 @@ class TestFastSlideRegionReading:
             slide.read_region((0, level_height + 1000), 0, (256, 256))
 
     def test_read_region_invalid_level(self, slide: fastslide.FastSlide) -> None:
-        """Test error handling for invalid pyramid levels."""
-        with pytest.raises(RuntimeError, match="Invalid level"):
+        """Test error handling for invalid pyramid levels.
+
+        The exception type follows the reader's status code: a missing level is
+        reported as a plain RuntimeError, while a malformed request (a negative
+        level) is an invalid argument and therefore a ValueError.
+        """
+        with pytest.raises(RuntimeError, match="Failed to read region"):
             slide.read_region((0, 0), slide.level_count + 1, (256, 256))
 
-        with pytest.raises(RuntimeError, match="Invalid level"):
+        with pytest.raises(ValueError, match="Failed to read region"):
             slide.read_region((0, 0), -1, (256, 256))
 
     def test_read_region_closed_slide(self, sample_slide_path: str) -> None:
@@ -768,12 +773,48 @@ class TestErrorHandling:
     def test_invalid_region_parameters(self, sample_slide_path: str) -> None:
         """Test error handling for invalid region parameters."""
         with fastslide.FastSlide.from_file_path(sample_slide_path) as slide:
-            # Zero or negative dimensions
-            with pytest.raises(RuntimeError):
+            # A zero-sized region is rejected by the reader as an invalid
+            # argument, which surfaces as ValueError.
+            with pytest.raises(ValueError):
                 slide.read_region((0, 0), 0, (0, 256))
 
-            with pytest.raises(RuntimeError):
+            # A negative extent never reaches the reader: the size is unsigned,
+            # so nanobind rejects the argument itself.
+            with pytest.raises(TypeError):
                 slide.read_region((0, 0), 0, (-256, 256))
+
+
+class TestStatusExceptionMapping:
+    """Status codes from the C++ core map onto builtin Python exceptions.
+
+    ``kInvalidArgument`` becomes ValueError, ``kUnimplemented`` becomes
+    NotImplementedError and every remaining code stays a RuntimeError. These
+    cases deliberately avoid the slide fixtures so they also run where no test
+    slide is available.
+    """
+
+    def test_unimplemented_status_raises_not_implemented_error(self) -> None:
+        """A kUnimplemented status reaches Python as NotImplementedError."""
+        with pytest.raises(NotImplementedError):
+            fastslide.FastSlide.from_uri("gs://bucket/slide.svs")
+
+    def test_not_implemented_error_is_also_a_runtime_error(self) -> None:
+        """NotImplementedError subclasses RuntimeError, so callers catching the
+        broader type keep working."""
+        with pytest.raises(RuntimeError):
+            fastslide.FastSlide.from_uri("gs://bucket/slide.svs")
+
+    def test_invalid_argument_status_raises_value_error(self) -> None:
+        """A kInvalidArgument status reaches Python as ValueError."""
+        with pytest.raises(ValueError, match="Cache capacity must be greater than 0"):
+            fastslide.CacheManager.create(capacity_bytes=0)
+
+    def test_unmapped_status_stays_a_runtime_error(self) -> None:
+        """Codes without a dedicated mapping keep raising plain RuntimeError."""
+        with pytest.raises(RuntimeError, match="Failed to open slide") as excinfo:
+            fastslide.FastSlide.from_file_path("nonexistent_file.svs")
+
+        assert type(excinfo.value) is RuntimeError
 
 
 # Test fixtures and utilities

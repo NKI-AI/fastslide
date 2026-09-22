@@ -59,6 +59,22 @@ struct OmeZarrLevelInfo {
     return array_metadata.dtype.BytesPerElement();
   }
 
+  /// @brief Number of chunks along Y, X and C for this level.
+  [[nodiscard]] uint64_t ChunkCountY() const {
+    return chunk_y == 0 ? 0 : (y_size + chunk_y - 1) / chunk_y;
+  }
+
+  [[nodiscard]] uint64_t ChunkCountX() const {
+    return chunk_x == 0 ? 0 : (x_size + chunk_x - 1) / chunk_x;
+  }
+
+  [[nodiscard]] uint64_t ChunkCountC() const {
+    if (c_axis == static_cast<size_t>(-1) || chunk_c == 0) {
+      return 1;
+    }
+    return (c_size + chunk_c - 1) / chunk_c;
+  }
+
   /// @brief Bytes for one (channel, y, x) plane within a chunk.
   [[nodiscard]] uint64_t ChunkSliceBytes() const {
     return chunk_y * chunk_x * BytesPerSample();
@@ -69,6 +85,38 @@ struct OmeZarrLevelInfo {
     return ChunkSliceBytes() * (chunk_c == 0 ? 1 : chunk_c);
   }
 };
+
+/// @brief On-disk chunk path relative to `level.array_dir`.
+///
+/// Zarr V3 default chunk-key encoding: a "c" prefix followed by one index per
+/// array axis, joined by the array's `chunk_key_separator`. Axes that are
+/// neither Y, X nor C index as 0.
+///
+/// @param level Level whose array metadata supplies the rank and separator.
+/// @param chunk_y Chunk index along the Y axis.
+/// @param chunk_x Chunk index along the X axis.
+/// @param chunk_c Chunk index along the channel axis; ignored when absent.
+/// @return Relative path, e.g. "c/0/3/7".
+[[nodiscard]] inline std::string BuildChunkRelativePath(
+    const OmeZarrLevelInfo& level, uint64_t chunk_y, uint64_t chunk_x,
+    uint64_t chunk_c) {
+  const char sep = level.array_metadata.chunk_key_separator;
+  std::string path = "c";
+  const auto rank = level.array_metadata.shape.size();
+  for (size_t i = 0; i < rank; ++i) {
+    uint64_t idx = 0;
+    if (i == level.y_axis) {
+      idx = chunk_y;
+    } else if (i == level.x_axis) {
+      idx = chunk_x;
+    } else if (i == level.c_axis) {
+      idx = chunk_c;
+    }
+    path.push_back(sep);
+    path += std::to_string(idx);
+  }
+  return path;
+}
 
 }  // namespace fastslide
 

@@ -38,6 +38,7 @@
 #include "fastslide/image.h"
 #include "fastslide/python/cache.h"
 #include "fastslide/python/reader.h"
+#include "fastslide/python/status_error.h"
 #include "fastslide/runtime/global_cache_manager.h"
 #include "fastslide/runtime/reader_registry.h"
 #include "fastslide/slide_reader.h"
@@ -51,17 +52,9 @@ using fastslide::python::AssociatedImages;
 using fastslide::python::FastSlide;
 using fastslide::python::SlideImages;
 using fastslide::python::SlideImageView;
+using fastslide::python::ThrowPyErrorFromStatus;
 
 namespace {
-
-/// @brief Convert aifocore::Status to Python exception
-void ThrowPyErrorFromStatus(const aifocore::Status& status) {
-  if (status.code() == aifocore::StatusCode::kInvalidArgument) {
-    throw nb::value_error(status.ToString().c_str());
-  }
-  // Raise generic runtime error for all other cases
-  throw std::runtime_error(status.ToString());
-}
 
 /// @brief Resolve a Python cache argument into an ITileCache.
 ///
@@ -129,6 +122,8 @@ nb::object MakeNumpyView(const fastslide::Image& image,
 NB_MODULE(_fastslide, m) {
   m.doc() =
       "FastSlide: High-performance, thread-safe digital pathology slide reader";
+
+  fastslide::python::RegisterPythonExceptionTranslators();
 
   using fastslide::python::CacheInspectionStats;
   using fastslide::python::CacheManager;

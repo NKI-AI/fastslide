@@ -38,6 +38,16 @@ aspect_py_test(
 )
 
 aspect_py_test(
+    name = "quickhash_test",
+    srcs = [
+        "_pytest_main.py",
+        "quickhash_test.py",
+    ],
+    main = "_pytest_main.py",
+    deps = PYTEST_DEPS,
+)
+
+aspect_py_test(
     name = "image_test",
     srcs = [
         "_pytest_main.py",
