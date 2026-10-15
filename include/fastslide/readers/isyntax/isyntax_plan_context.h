@@ -33,6 +33,10 @@ struct IsyntaxPlanContext {
   /// Start of this level's tile grid in the padded level 0, in level 0 pixels
   /// (libisyntax's `origin_offset_in_pixels`; 0 for level 0).
   int32_t origin_offset_in_pixels = 0;
+  /// First valid Philips SDK pixel of this level, in level pixels: pixel 0 of
+  /// the level as exposed by the reader. See
+  /// IsyntaxPlanBuilder::ComputeValidRange.
+  int64_t valid_range_start = 0;
   /// Size of this level's tile grid, in tiles.
   int64_t grid_width_in_tiles = 0;
   int64_t grid_height_in_tiles = 0;
