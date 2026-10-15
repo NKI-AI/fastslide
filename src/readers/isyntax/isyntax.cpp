@@ -89,7 +89,8 @@ namespace {
 
 /// Valid data envelopes of the WSI image: the polygons of the header
 /// (iSyntax v2), or else the groups of level 0 tiles present (v1).
-IsyntaxEnvelopes ReadEnvelopes(const isyntax_t& isx, const isyntax_image_t& wsi) {
+IsyntaxEnvelopes ReadEnvelopes(const isyntax_t& isx,
+                               const isyntax_image_t& wsi) {
   if (isx.valid_data_envelope_count > 0) {
     std::vector<IsyntaxEnvelopes::Polygon> polygons;
     for (int32_t e = 0; e < isx.valid_data_envelope_count; ++e) {
@@ -107,8 +108,8 @@ IsyntaxEnvelopes ReadEnvelopes(const isyntax_t& isx, const isyntax_image_t& wsi)
     return IsyntaxEnvelopes::FromHeader({}, 0);
   }
   const isyntax_level_t& level0 = wsi.levels[0];
-  std::vector<uint8_t> present(
-      static_cast<size_t>(level0.width_in_tiles) * level0.height_in_tiles);
+  std::vector<uint8_t> present(static_cast<size_t>(level0.width_in_tiles) *
+                               level0.height_in_tiles);
   for (size_t i = 0; i < present.size(); ++i) {
     present[i] = level0.tiles[i].exists ? 1 : 0;
   }
@@ -141,9 +142,9 @@ void IsyntaxReader::PopulateSlideProperties() {
       // reports them; the whole image when there is none.
       envelopes_ = ReadEnvelopes(*isx, *wsi);
       const SlideBounds bounds = envelopes_.Bounds(wsi->width, wsi->height);
-      properties_.bounds = bounds.IsValid()
-                               ? bounds
-                               : SlideBounds(0, 0, level0->width, level0->height);
+      properties_.bounds =
+          bounds.IsValid() ? bounds
+                           : SlideBounds(0, 0, level0->width, level0->height);
     }
   }
 
@@ -197,13 +198,13 @@ aifocore::Result<LevelInfo> IsyntaxReader::GetLevelInfo(int level) const {
   // The level is exposed as the range the Philips SDK reports as valid for
   // it, see IsyntaxPlanBuilder::ComputeValidRange.
   const isyntax_level_t* level0 = &wsi->levels[0];
-  const auto range = IsyntaxPlanBuilder::ComputeValidRange(
-      level, level0->width, level0->height);
+  const auto range = IsyntaxPlanBuilder::ComputeValidRange(level, level0->width,
+                                                           level0->height);
   LevelInfo info;
-  info.dimensions[0] =
-      static_cast<uint32_t>(std::max<int64_t>(0, range.end_x - range.start + 1));
-  info.dimensions[1] =
-      static_cast<uint32_t>(std::max<int64_t>(0, range.end_y - range.start + 1));
+  info.dimensions[0] = static_cast<uint32_t>(
+      std::max<int64_t>(0, range.end_x - range.start + 1));
+  info.dimensions[1] = static_cast<uint32_t>(
+      std::max<int64_t>(0, range.end_y - range.start + 1));
 
   // Downsample calculation
   // scale 0 -> 1.0
