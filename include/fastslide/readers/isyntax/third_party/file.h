@@ -115,10 +115,11 @@ class IsyntaxFile {
   };
 
   explicit IsyntaxFile(std::unique_ptr<isyntax_t, IsyntaxDeleter> isyntax,
-                       std::unique_ptr<IsyntaxCache> cache);
+                       std::shared_ptr<IsyntaxCache> cache);
 
   std::unique_ptr<isyntax_t, IsyntaxDeleter> isyntax_;
-  std::unique_ptr<IsyntaxCache> cache_;
+  // Shared with the other open files (IsyntaxCache::Shared).
+  std::shared_ptr<IsyntaxCache> cache_;
 };
 
 }  // namespace isyntax

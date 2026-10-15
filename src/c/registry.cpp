@@ -13,6 +13,7 @@
 #include <string>
 #include <utility>
 
+#include "fastslide/readers/isyntax/third_party/cache.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/global_cache_manager.h"
 #include "fastslide/runtime/plugin_loader.h"
@@ -222,6 +223,16 @@ int fastslide_global_cache_set_capacity_bytes(size_t capacity_bytes) {
     fastslide_set_last_error(std::string(status.message()).c_str());
     return 0;
   }
+  return 1;
+}
+
+int fastslide_isyntax_cache_set_capacity_bytes(size_t capacity_bytes) {
+  fastslide_clear_last_error();
+  if (capacity_bytes == 0) {
+    fastslide_set_last_error("capacity_bytes must be > 0");
+    return 0;
+  }
+  isyntax::IsyntaxCache::SetSharedCapacityBytes(capacity_bytes);
   return 1;
 }
 

@@ -61,7 +61,7 @@ pub use metadata::{
 pub use reader::{CacheStats, ColorSpace, OpenOptions, RenderingIntent, SlideReader};
 pub use registry::{
     c_api_version, clear_global_cache, global_cache_stats, is_supported, set_global_cache_capacity,
-    supported_extensions, version,
+    set_isyntax_cache_capacity, supported_extensions, version,
 };
 pub use slide_image::SlideImage;
 
