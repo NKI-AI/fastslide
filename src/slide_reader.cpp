@@ -147,6 +147,13 @@ StackInfo SlideReader::GetStackInfo() const {
   return {};
 }
 
+aifocore::Result<std::vector<SlideBounds>> SlideReader::GetDataRegions(
+    int level) const {
+  AIFOCORE_ASSIGN_OR_RETURN(const auto level_info, GetLevelInfo(level));
+  return std::vector<SlideBounds>{
+      SlideBounds(0, 0, level_info.dimensions[0], level_info.dimensions[1])};
+}
+
 int SlideReader::GetBestLevelForDownsample(double downsample) const {
   if (downsample <= 1.0) {
     return 0;
