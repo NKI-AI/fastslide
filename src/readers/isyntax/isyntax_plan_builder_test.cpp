@@ -16,6 +16,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 #include "fastslide/core/tile_request.h"
 #include "fastslide/readers/isyntax/isyntax_plan_context.h"
@@ -60,6 +61,69 @@ TEST(IsyntaxPlanBuilderTest, GridOffsetMatchesPhilipsSdk) {
               kExpected[level])
         << "level " << level;
   }
+}
+
+// `DimensionRanges` of the Philips SDK 5.1 for every level, in level 0
+// pixels: start (both axes), end x, end y.
+struct SdkRange {
+  int64_t start;
+  int64_t end_x;
+  int64_t end_y;
+};
+
+void ExpectSdkRanges(int64_t width, int64_t height,
+                     const std::vector<SdkRange>& sdk) {
+  for (int32_t level = 0; level < static_cast<int32_t>(sdk.size()); ++level) {
+    const auto range =
+        IsyntaxPlanBuilder::ComputeValidRange(level, width, height);
+    EXPECT_EQ(range.start, sdk[level].start >> level) << "level " << level;
+    EXPECT_EQ(range.end_x, sdk[level].end_x >> level) << "level " << level;
+    EXPECT_EQ(range.end_y, sdk[level].end_y >> level) << "level " << level;
+  }
+}
+
+TEST(IsyntaxPlanBuilderTest, ValidRangeMatchesPhilipsSdkOnIsyntaxV1) {
+  // 158726 x 91142, 10 levels.
+  ExpectSdkRanges(158726, 91142,
+                  {{0, 158725, 91141},
+                   {2, 158722, 91138},
+                   {8, 158716, 91132},
+                   {16, 158704, 91120},
+                   {32, 158688, 91104},
+                   {64, 158656, 91072},
+                   {128, 158592, 91008},
+                   {256, 158464, 90880},
+                   {512, 158208, 90624},
+                   {1024, 157696, 90112}});
+}
+
+TEST(IsyntaxPlanBuilderTest, ValidRangeMatchesPhilipsSdkOnNineLevels) {
+  // 37382 x 73222, 9 levels.
+  ExpectSdkRanges(37382, 73222,
+                  {{0, 37381, 73221},
+                   {2, 37378, 73218},
+                   {8, 37372, 73212},
+                   {16, 37360, 73200},
+                   {32, 37344, 73184},
+                   {64, 37312, 73152},
+                   {128, 37248, 73088},
+                   {256, 37120, 72960},
+                   {512, 36864, 72704}});
+}
+
+TEST(IsyntaxPlanBuilderTest, ValidRangeMatchesPhilipsSdkOnOddI2syntax) {
+  // 171998 x 71111 (odd height), iSyntax v2, 10 levels.
+  ExpectSdkRanges(171998, 71111,
+                  {{0, 171997, 71110},
+                   {2, 171994, 71108},
+                   {8, 171988, 71104},
+                   {16, 171976, 71096},
+                   {32, 171952, 71072},
+                   {64, 171904, 71040},
+                   {128, 171840, 70976},
+                   {256, 171648, 70784},
+                   {512, 171264, 70400},
+                   {1024, 170496, 69632}});
 }
 
 TEST(IsyntaxPlanBuilderTest, TilesArePlacedOnWholePixels) {

@@ -155,9 +155,16 @@ aifocore::Result<LevelInfo> IsyntaxReader::GetLevelInfo(int level) const {
                                 "Failed to get level");
   }
 
+  // The level is exposed as the range the Philips SDK reports as valid for
+  // it, see IsyntaxPlanBuilder::ComputeValidRange.
+  const isyntax_level_t* level0 = &wsi->levels[0];
+  const auto range = IsyntaxPlanBuilder::ComputeValidRange(
+      level, level0->width, level0->height);
   LevelInfo info;
-  info.dimensions[0] = lvl->width;
-  info.dimensions[1] = lvl->height;
+  info.dimensions[0] =
+      static_cast<uint32_t>(std::max<int64_t>(0, range.end_x - range.start + 1));
+  info.dimensions[1] =
+      static_cast<uint32_t>(std::max<int64_t>(0, range.end_y - range.start + 1));
 
   // Downsample calculation
   // scale 0 -> 1.0
@@ -352,12 +359,17 @@ aifocore::Result<core::TilePlan> IsyntaxReader::PrepareRequest(
   const isyntax_t* isx = isyntax_file_->handle();
   const isyntax_image_t* wsi = isx->images + isx->wsi_image_index;
   const isyntax_level_t* level = wsi->levels + request.level;
+  // Pixel 0 of the level is the first pixel of its valid range.
+  const auto range = IsyntaxPlanBuilder::ComputeValidRange(
+      request.level, wsi->levels[0].width, wsi->levels[0].height);
   const IsyntaxPlanContext context{
       .tile_size = GetTileSize(),
       .level_info = level_info,
-      .grid_offset = IsyntaxPlanBuilder::ComputeGridOffset(
-          request.level, wsi->level0_padding,
-          request.level == 0 ? 0 : level->origin_offset_in_pixels),
+      .grid_offset =
+          IsyntaxPlanBuilder::ComputeGridOffset(
+              request.level, wsi->level0_padding,
+              request.level == 0 ? 0 : level->origin_offset_in_pixels) +
+          range.start,
       .grid_width_in_tiles = level->width_in_tiles,
       .grid_height_in_tiles = level->height_in_tiles,
   };

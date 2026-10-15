@@ -30,6 +30,17 @@ int64_t IsyntaxPlanBuilder::ComputeGridOffset(int32_t level,
          level;
 }
 
+IsyntaxPlanBuilder::ValidRange IsyntaxPlanBuilder::ComputeValidRange(
+    int32_t level, int64_t width, int64_t height) {
+  ValidRange range{.start = 0, .end_x = width - 1, .end_y = height - 1};
+  for (int32_t l = 0; l < level; ++l) {
+    range.start = (range.start + 1) / 2 + 1;
+    range.end_x = range.end_x / 2 - 1;
+    range.end_y = range.end_y / 2 - 1;
+  }
+  return range;
+}
+
 aifocore::Result<core::TilePlan> IsyntaxPlanBuilder::BuildPlan(
     const core::TileRequest& request, const IsyntaxPlanContext& context) {
   core::TilePlan plan;

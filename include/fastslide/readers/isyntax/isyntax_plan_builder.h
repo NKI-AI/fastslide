@@ -51,6 +51,30 @@ class IsyntaxPlanBuilder {
   /// @return Offset in pixels of @p level.
   static int64_t ComputeGridOffset(int32_t level, int32_t level0_padding,
                                    int32_t origin_offset_in_pixels);
+
+  /// @brief Valid pixels of a level, in Philips SDK pixels of that level.
+  struct ValidRange {
+    /// First valid pixel, on both axes.
+    int64_t start = 0;
+    /// Last valid pixel (included).
+    int64_t end_x = 0;
+    int64_t end_y = 0;
+  };
+
+  /// @brief Range of @p level the Philips SDK reports as valid
+  /// (`DimensionRanges`).
+  ///
+  /// Level 0 is valid whole. Each wavelet level halves the range of the level
+  /// above and loses one more pixel on each side: `start = ceil(start / 2) +
+  /// 1`, `end = floor(end / 2) - 1`. The reader exposes every level as this
+  /// range: its pixel 0 is the first valid SDK pixel and its dimensions are
+  /// the size of the range.
+  ///
+  /// @param level Pyramid level (0 = full resolution).
+  /// @param width Width of level 0, in pixels.
+  /// @param height Height of level 0, in pixels.
+  static ValidRange ComputeValidRange(int32_t level, int64_t width,
+                                      int64_t height);
 };
 
 }  // namespace fastslide
