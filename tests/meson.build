@@ -29,6 +29,7 @@ if gtest_dep.found()
     'cache_interface_test' : '../src/runtime/cache_interface_test.cpp',
     'hash_test' : '../src/utilities/hash_test.cpp',
     'tiff_quickhash_test' : '../src/readers/tiff_quickhash_test.cpp',
+    'tiff_tile_utilities_test' : '../src/utilities/tiff/tile_utilities_test.cpp',
     'binary_utils_test' : '../src/runtime/io/binary_utils_test.cpp',
     'runtime_filesystem_utils_test' : '../src/runtime/io/filesystem_utils_test.cpp',
     'path_utils_test' : '../src/runtime/io/path_utils_test.cpp',
