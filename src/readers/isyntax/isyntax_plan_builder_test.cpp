@@ -153,6 +153,32 @@ TEST(IsyntaxPlanBuilderTest, ValidRangeMatchesPhilipsSdkOnOddI2syntax) {
                    {1024, 170496, 69632}});
 }
 
+// Envelope boxes of three slides, in padded grid pixels (level0_padding
+// 1533), against the bounds of the Philips SDK (union of its envelopes).
+TEST(IsyntaxPlanBuilderTest, GridBoxToBoundsMatchesPhilipsSdk) {
+  // iSyntax v1, from the level 0 tiles present: bottom rows are empty.
+  auto bounds = IsyntaxPlanBuilder::GridBoxToBounds(
+      {.x0 = 1280, .y0 = 1280, .x1 = 160512, .y1 = 92160}, 1533, 158726, 91142);
+  EXPECT_EQ(bounds.x, 0);
+  EXPECT_EQ(bounds.y, 0);
+  EXPECT_EQ(bounds.width, 158726);
+  EXPECT_EQ(bounds.height, 90627);
+
+  // iSyntax v2, from the envelope polygons of the header.
+  bounds = IsyntaxPlanBuilder::GridBoxToBounds(
+      {.x0 = 1535, .y0 = 1535, .x1 = 173531, .y1 = 72644}, 1533, 171998, 71111);
+  EXPECT_EQ(bounds.x, 2);
+  EXPECT_EQ(bounds.y, 2);
+  EXPECT_EQ(bounds.width, 171996);
+  EXPECT_EQ(bounds.height, 71109);
+}
+
+TEST(IsyntaxPlanBuilderTest, GridBoxOutsideTheImageHasNoBounds) {
+  const auto bounds = IsyntaxPlanBuilder::GridBoxToBounds(
+      {.x0 = 0, .y0 = 0, .x1 = 1000, .y1 = 1000}, 1533, 5000, 5000);
+  EXPECT_FALSE(bounds.IsValid());
+}
+
 TEST(IsyntaxPlanBuilderTest, TilesArePlacedOnWholePixels) {
   // Without the correction, level 3 has the SDK offset 190.
   const auto context = MakeContext(/*level=*/3, kLevel0Padding, 16,
