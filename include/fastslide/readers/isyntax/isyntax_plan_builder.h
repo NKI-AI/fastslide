@@ -18,7 +18,6 @@
 #include <cstdint>
 
 #include "aifocore/status/result.h"
-#include "fastslide/core/slide_descriptor.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
 #include "fastslide/readers/isyntax/isyntax_plan_context.h"
@@ -76,27 +75,6 @@ class IsyntaxPlanBuilder {
   /// @param height Height of level 0, in pixels.
   static ValidRange ComputeValidRange(int32_t level, int64_t width,
                                       int64_t height);
-
-  /// @brief Box in pixels of the padded level 0 tile grid, end excluded.
-  struct GridBox {
-    int64_t x0 = 0;
-    int64_t y0 = 0;
-    int64_t x1 = 0;
-    int64_t y1 = 0;
-  };
-
-  /// @brief Slide bounds (level 0 API pixels) of @p box, clipped to the image.
-  ///
-  /// The Philips SDK bounds the valid data with envelopes, given in pixels of
-  /// the padded level 0 grid; the API origin is `level0_padding` pixels into
-  /// that grid. Returns invalid (empty) bounds when the box misses the image.
-  ///
-  /// @param box Union of the envelopes, in padded grid pixels.
-  /// @param level0_padding Padding of level 0, in level 0 pixels.
-  /// @param width Width of level 0, in pixels.
-  /// @param height Height of level 0, in pixels.
-  static SlideBounds GridBoxToBounds(const GridBox& box, int32_t level0_padding,
-                                     int64_t width, int64_t height);
 };
 
 }  // namespace fastslide

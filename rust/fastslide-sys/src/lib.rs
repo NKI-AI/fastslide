@@ -334,6 +334,12 @@ unsafe extern "C" {
         reader: *const FastSlideSlideReader,
         bounds: *mut FastSlideBounds,
     ) -> c_int;
+    pub fn fastslide_slide_reader_get_data_regions(
+        reader: *const FastSlideSlideReader,
+        level: c_int,
+        regions: *mut FastSlideBounds,
+        capacity: usize,
+    ) -> i64;
     pub fn fastslide_slide_reader_get_format_name(
         reader: *const FastSlideSlideReader,
     ) -> *const c_char;

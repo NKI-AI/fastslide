@@ -15,7 +15,6 @@
 #include "fastslide/readers/isyntax/isyntax.h"
 
 #include <algorithm>
-#include <climits>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -88,53 +87,34 @@ aifocore::Status IsyntaxReader::Initialize() {
 
 namespace {
 
-/// Bounds of the valid data, as the Philips SDK reports them: the box around
-/// the valid data envelopes. iSyntax v2 headers list the envelopes as
-/// polygons; for v1 the SDK builds them from the level 0 tiles present in the
-/// file. Falls back to the whole image when there is neither.
-SlideBounds ComputeDataBounds(const isyntax_t& isx,
-                              const isyntax_image_t& wsi) {
-  const SlideBounds whole(0, 0, wsi.width, wsi.height);
-  bool found = false;
-  IsyntaxPlanBuilder::GridBox box{
-      .x0 = INT64_MAX, .y0 = INT64_MAX, .x1 = INT64_MIN, .y1 = INT64_MIN};
-  const auto extend = [&](int64_t x0, int64_t y0, int64_t x1, int64_t y1) {
-    box.x0 = std::min(box.x0, x0);
-    box.y0 = std::min(box.y0, y0);
-    box.x1 = std::max(box.x1, x1);
-    box.y1 = std::max(box.y1, y1);
-    found = true;
-  };
-
+/// Valid data envelopes of the WSI image: the polygons of the header
+/// (iSyntax v2), or else the groups of level 0 tiles present (v1).
+IsyntaxEnvelopes ReadEnvelopes(const isyntax_t& isx, const isyntax_image_t& wsi) {
   if (isx.valid_data_envelope_count > 0) {
-    // Vertices are the corners of the envelope, its far corner excluded.
+    std::vector<IsyntaxEnvelopes::Polygon> polygons;
     for (int32_t e = 0; e < isx.valid_data_envelope_count; ++e) {
       const isyntax_valid_data_envelope_t& envelope =
           isx.valid_data_envelopes[e];
+      IsyntaxEnvelopes::Polygon& polygon = polygons.emplace_back();
       for (int32_t v = 0; v < envelope.vertex_count; ++v) {
-        const v2i vertex = envelope.vertices[v];
-        extend(vertex.x, vertex.y, vertex.x, vertex.y);
+        polygon.push_back({envelope.vertices[v].x, envelope.vertices[v].y});
       }
     }
-  } else if (wsi.level_count > 0 && wsi.levels[0].tiles != nullptr) {
-    const isyntax_level_t& level0 = wsi.levels[0];
-    const int64_t tile_w = isx.tile_width;
-    const int64_t tile_h = isx.tile_height;
-    for (int64_t ty = 0; ty < level0.height_in_tiles; ++ty) {
-      for (int64_t tx = 0; tx < level0.width_in_tiles; ++tx) {
-        if (level0.tiles[ty * level0.width_in_tiles + tx].exists) {
-          extend(tx * tile_w, ty * tile_h, (tx + 1) * tile_w,
-                 (ty + 1) * tile_h);
-        }
-      }
-    }
+    return IsyntaxEnvelopes::FromHeader(std::move(polygons),
+                                        wsi.level0_padding);
   }
-  if (!found) {
-    return whole;
+  if (wsi.level_count <= 0 || wsi.levels[0].tiles == nullptr) {
+    return IsyntaxEnvelopes::FromHeader({}, 0);
   }
-  const SlideBounds bounds = IsyntaxPlanBuilder::GridBoxToBounds(
-      box, wsi.level0_padding, wsi.width, wsi.height);
-  return bounds.IsValid() ? bounds : whole;
+  const isyntax_level_t& level0 = wsi.levels[0];
+  std::vector<uint8_t> present(
+      static_cast<size_t>(level0.width_in_tiles) * level0.height_in_tiles);
+  for (size_t i = 0; i < present.size(); ++i) {
+    present[i] = level0.tiles[i].exists ? 1 : 0;
+  }
+  return IsyntaxEnvelopes::FromTiles(present, level0.width_in_tiles,
+                                     isx.tile_width, isx.tile_height,
+                                     wsi.level0_padding, wsi.width, wsi.height);
 }
 
 }  // namespace
@@ -157,7 +137,13 @@ void IsyntaxReader::PopulateSlideProperties() {
       properties_.mpp = {static_cast<double>(level0->um_per_pixel_x),
                          static_cast<double>(level0->um_per_pixel_y)};
 
-      properties_.bounds = ComputeDataBounds(*isx, *wsi);
+      // Bounds: the box around the valid data envelopes, as the Philips SDK
+      // reports them; the whole image when there is none.
+      envelopes_ = ReadEnvelopes(*isx, *wsi);
+      const SlideBounds bounds = envelopes_.Bounds(wsi->width, wsi->height);
+      properties_.bounds = bounds.IsValid()
+                               ? bounds
+                               : SlideBounds(0, 0, level0->width, level0->height);
     }
   }
 
@@ -226,6 +212,28 @@ aifocore::Result<LevelInfo> IsyntaxReader::GetLevelInfo(int level) const {
   info.downsample_factor = std::pow(2.0, scale);
 
   return info;
+}
+
+aifocore::Result<std::vector<SlideBounds>> IsyntaxReader::GetDataRegions(
+    int level) const {
+  if (envelopes_.empty()) {
+    return SlideReader::GetDataRegions(level);
+  }
+  if (auto level_info = GetLevelInfo(level); !level_info.ok()) {
+    return level_info.status();
+  }
+  // SDK pixels of the level, moved to the reader's: its pixel 0 is the first
+  // pixel of the valid range.
+  const isyntax_t* isx = isyntax_file_->handle();
+  const isyntax_image_t* wsi = isx->images + isx->wsi_image_index;
+  const auto range = IsyntaxPlanBuilder::ComputeValidRange(
+      level, wsi->levels[0].width, wsi->levels[0].height);
+  std::vector<SlideBounds> regions = envelopes_.Regions(level);
+  for (SlideBounds& region : regions) {
+    region.x -= range.start;
+    region.y -= range.start;
+  }
+  return regions;
 }
 
 const SlideProperties& IsyntaxReader::GetProperties() const {

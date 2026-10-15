@@ -41,19 +41,6 @@ IsyntaxPlanBuilder::ValidRange IsyntaxPlanBuilder::ComputeValidRange(
   return range;
 }
 
-SlideBounds IsyntaxPlanBuilder::GridBoxToBounds(const GridBox& box,
-                                                int32_t level0_padding,
-                                                int64_t width, int64_t height) {
-  const int64_t x0 = std::max<int64_t>(box.x0 - level0_padding, 0);
-  const int64_t y0 = std::max<int64_t>(box.y0 - level0_padding, 0);
-  const int64_t x1 = std::min<int64_t>(box.x1 - level0_padding, width);
-  const int64_t y1 = std::min<int64_t>(box.y1 - level0_padding, height);
-  if (x1 <= x0 || y1 <= y0) {
-    return {};
-  }
-  return {x0, y0, x1 - x0, y1 - y0};
-}
-
 aifocore::Result<core::TilePlan> IsyntaxPlanBuilder::BuildPlan(
     const core::TileRequest& request, const IsyntaxPlanContext& context) {
   core::TilePlan plan;
