@@ -502,6 +502,34 @@ aifocore::Status ReadPinnedTiles(isyntax_t* isyntax, isyntax_cache_t* cache,
 
 namespace isyntax {
 
+void TrimCache(isyntax_cache_t* cache) {
+  // Tiles other reads use are not in the list. Blocks are freed even without
+  // has_ll / has_h: a failed transform leaves them unreported.
+  const auto used_bytes = [cache] {
+    return block_allocator_used_bytes(cache->ll_coeff_block_allocator) +
+           block_allocator_used_bytes(cache->h_coeff_block_allocator);
+  };
+  while (cache->cache_list.tail != nullptr &&
+         used_bytes() > cache->capacity_bytes) {
+    isyntax_tile_t* victim = cache->cache_list.tail;
+    isyntax::tilelist::Remove(&cache->cache_list, victim);
+    for (int i = 0; i < 3; ++i) {
+      if (victim->color_channels[i].coeff_ll != nullptr) {
+        block_free(cache->ll_coeff_block_allocator,
+                   victim->color_channels[i].coeff_ll);
+        victim->color_channels[i].coeff_ll = nullptr;
+      }
+      if (victim->color_channels[i].coeff_h != nullptr) {
+        block_free(cache->h_coeff_block_allocator,
+                   victim->color_channels[i].coeff_h);
+        victim->color_channels[i].coeff_h = nullptr;
+      }
+    }
+    victim->has_ll = false;
+    victim->has_h = false;
+  }
+}
+
 aifocore::Status TileRead(isyntax_t* isyntax, isyntax_cache_t* cache, int scale,
                           int tile_x, int tile_y, uint32_t* pixels_buffer,
                           enum isyntax_pixel_format_t pixel_format) {
@@ -582,26 +610,7 @@ aifocore::Status TileRead(isyntax_t* isyntax, isyntax_cache_t* cache, int scale,
   UnpinTiles(cache, coeff_list);
   UnpinTiles(cache, idwt_list);
 
-  // Cache trim. Tiles other reads use are not in the list. Blocks are freed
-  // even without has_ll / has_h: a failed transform leaves them unreported.
-  while (cache->cache_list.count > cache->target_cache_size) {
-    isyntax_tile_t* victim = cache->cache_list.tail;
-    isyntax::tilelist::Remove(&cache->cache_list, victim);
-    for (int i = 0; i < 3; ++i) {
-      if (victim->color_channels[i].coeff_ll != nullptr) {
-        block_free(cache->ll_coeff_block_allocator,
-                   victim->color_channels[i].coeff_ll);
-        victim->color_channels[i].coeff_ll = nullptr;
-      }
-      if (victim->color_channels[i].coeff_h != nullptr) {
-        block_free(cache->h_coeff_block_allocator,
-                   victim->color_channels[i].coeff_h);
-        victim->color_channels[i].coeff_h = nullptr;
-      }
-    }
-    victim->has_ll = false;
-    victim->has_h = false;
-  }
+  TrimCache(cache);
 
   return st;
 }

@@ -22,8 +22,11 @@
 
 #include "gtest/gtest.h"
 
+#include "fastslide/readers/isyntax/third_party/cache.h"
 #include "fastslide/readers/isyntax/third_party/file.h"
 #include "fastslide/readers/isyntax/third_party/isyntax.h"
+#include "fastslide/readers/isyntax/third_party/reader.h"
+#include "fastslide/readers/isyntax/third_party/utils/block_allocator.h"
 
 namespace {
 
@@ -51,9 +54,14 @@ uint64_t ReadTileHash(const isyntax::IsyntaxFile& file, const TileRef& tile) {
   return HashPixels(pixels);
 }
 
+size_t UsedBytes(const isyntax::IsyntaxFile& file) {
+  return block_allocator_used_bytes(file.cache()->ll_coeff_block_allocator) +
+         block_allocator_used_bytes(file.cache()->h_coeff_block_allocator);
+}
+
 // Tiles read by many threads sharing one file have the pixels of tiles read by
-// a single thread. The file cache holds fewer tiles than the threads need, so
-// that they evict the tiles of each other while reading.
+// a single thread. The cache holds fewer tiles than the threads need, so that
+// they evict the tiles of each other while reading.
 TEST(IsyntaxConcurrentReadTest, ThreadsSharingAFileReadTheSamePixels) {
   const char* path = std::getenv("FASTSLIDE_ISYNTAX_TEST_SLIDE");
   if (path == nullptr) {
@@ -61,6 +69,8 @@ TEST(IsyntaxConcurrentReadTest, ThreadsSharingAFileReadTheSamePixels) {
   }
   constexpr int kThreads = 8;
   constexpr int32_t kWindow = 8;  // Tiles read per level, around the center.
+  const size_t previous_capacity = isyntax::IsyntaxCache::SharedCapacityBytes();
+  isyntax::IsyntaxCache::SetSharedCapacityBytes(size_t{32} << 20);
 
   auto reference_or = isyntax::IsyntaxFile::Open(path);
   ASSERT_TRUE(reference_or.ok());
@@ -104,6 +114,32 @@ TEST(IsyntaxConcurrentReadTest, ThreadsSharingAFileReadTheSamePixels) {
     thread.join();
   }
   EXPECT_EQ(mismatches, 0) << "of " << kThreads * tiles.size() << " reads";
+  isyntax::IsyntaxCache::SetSharedCapacityBytes(previous_capacity);
+}
+
+// Files share the cache; closing one gives its coefficients back.
+TEST(IsyntaxConcurrentReadTest, ClosingAFileFreesItsCoefficients) {
+  const char* path = std::getenv("FASTSLIDE_ISYNTAX_TEST_SLIDE");
+  if (path == nullptr) {
+    GTEST_SKIP() << "FASTSLIDE_ISYNTAX_TEST_SLIDE is not set";
+  }
+  auto kept_or = isyntax::IsyntaxFile::Open(path);
+  ASSERT_TRUE(kept_or.ok());
+  auto closed_or = isyntax::IsyntaxFile::Open(path);
+  ASSERT_TRUE(closed_or.ok());
+  ASSERT_EQ((*kept_or)->cache(), (*closed_or)->cache());
+  const auto& kept = **kept_or;
+  const isyntax_level_t* top = kept.level(kept.level_count() - 1);
+  const TileRef tile{kept.level_count() - 1, top->width_in_tiles / 2,
+                     top->height_in_tiles / 2};
+  ReadTileHash(kept, tile);
+  const size_t kept_bytes = UsedBytes(kept);
+
+  ReadTileHash(**closed_or, tile);
+  EXPECT_GT(UsedBytes(kept), kept_bytes);
+  closed_or->reset();
+
+  EXPECT_EQ(UsedBytes(kept), kept_bytes);
 }
 
 }  // namespace

@@ -72,10 +72,15 @@ void IsyntaxFile::IsyntaxDeleter::operator()(isyntax_t* p) const {
 }
 
 IsyntaxFile::IsyntaxFile(std::unique_ptr<isyntax_t, IsyntaxDeleter> isyntax,
-                         std::unique_ptr<IsyntaxCache> cache)
+                         std::shared_ptr<IsyntaxCache> cache)
     : isyntax_(std::move(isyntax)), cache_(std::move(cache)) {}
 
-IsyntaxFile::~IsyntaxFile() = default;
+IsyntaxFile::~IsyntaxFile() {
+  // The tiles of the file go before it does: the cache outlives it.
+  if (cache_ != nullptr) {
+    cache_->Release(isyntax_.get());
+  }
+}
 
 void IsyntaxFile::EnsureThreadInit() {
   // Mirror the legacy `libisyntax_ensure_thread_init()` behavior without
@@ -109,11 +114,9 @@ aifocore::Result<std::unique_ptr<IsyntaxFile>> IsyntaxFile::Open(
     return st;
   }
 
-  // Create a coefficient cache. This is required by isyntax_reader.c tile path.
-  // Keep size modest; fastslide has an outer RGB cache.
-  constexpr int32_t kDefaultCacheTiles = 500;
-  auto cache_or = IsyntaxCache::CreateAndInject(
-      "IsyntaxFileCache", kDefaultCacheTiles, handle.get());
+  // Coefficient cache, required by the tile path. Open files share it, within
+  // one memory budget (IsyntaxCache::SetSharedCapacityBytes).
+  auto cache_or = IsyntaxCache::Shared(handle.get());
   if (!cache_or.ok()) {
     return cache_or.status();
   }

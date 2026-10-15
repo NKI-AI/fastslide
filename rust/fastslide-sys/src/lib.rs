@@ -278,6 +278,7 @@ unsafe extern "C" {
         cache_capacity_bytes: usize,
     ) -> *mut FastSlideSlideReader;
     pub fn fastslide_global_cache_set_capacity_bytes(capacity_bytes: usize) -> c_int;
+    pub fn fastslide_isyntax_cache_set_capacity_bytes(capacity_bytes: usize) -> c_int;
     pub fn fastslide_global_cache_get_stats(out_stats: *mut FastSlideCacheStats) -> c_int;
     pub fn fastslide_global_cache_clear();
     pub fn fastslide_registry_get_supported_extensions(
