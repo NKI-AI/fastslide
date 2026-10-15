@@ -33,6 +33,7 @@
 #include "fastslide/readers/isyntax/third_party/isyntax_types.h"
 
 #ifdef __cplusplus
+#include <condition_variable>
 #include <mutex>
 #include "aifocore/status/result.h"
 
@@ -46,6 +47,8 @@ struct isyntax_tile_list_t {
 struct isyntax_cache_t {
   isyntax_tile_list_t cache_list{};
   std::mutex mutex{};
+  // Notified when a read finishes decoding or transforming tiles.
+  std::condition_variable tile_ready{};
   // TODO(avirodov): int refcount;
   int target_cache_size = 0;
   block_allocator_t* ll_coeff_block_allocator = nullptr;

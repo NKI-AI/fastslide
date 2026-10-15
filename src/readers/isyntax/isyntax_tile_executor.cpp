@@ -156,15 +156,12 @@ aifocore::Result<DecodedTileData> IsyntaxTileExecutor::ReadTileFromDisk(
   const size_t rgb_size = tile_w * tile_h * 3;
   uint8_t* rgb_buffer = buffers.GetCropBuffer(rgb_size);
 
-  // Lock mutex for libisyntax call (thread-safety for shared isyntax/cache)
-  {
-    std::lock_guard<std::mutex> lock(context.GetMutex());
-
-    AIFOCORE_RETURN_IF_ERROR(context.GetIsyntaxFile().ReadTile(
-        op.level, op.tile_coord.x, op.tile_coord.y,
-        std::span<uint32_t>(rgba_buffer, tile_w * tile_h),
-        isyntax::PixelFormat::kRgba));
-  }
+  // Reads of the same file run in parallel: the iSyntax decoder locks its
+  // cache only while it bookkeeps.
+  AIFOCORE_RETURN_IF_ERROR(context.GetIsyntaxFile().ReadTile(
+      op.level, op.tile_coord.x, op.tile_coord.y,
+      std::span<uint32_t>(rgba_buffer, tile_w * tile_h),
+      isyntax::PixelFormat::kRgba));
 
   // Convert RGBA to RGB in pooled buffer
   CopyRgbaToRgb(rgba_buffer, rgb_buffer, tile_w, tile_h);

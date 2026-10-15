@@ -440,7 +440,7 @@ aifocore::Result<core::TilePlan> IsyntaxReader::PrepareRequest(
 
 aifocore::Status IsyntaxReader::ExecutePlan(const core::TilePlan& plan,
                                             runtime::Canvas& writer) const {
-  const IsyntaxExecContext context(GetFilename(), GetIsyntaxFile(), GetMutex(),
+  const IsyntaxExecContext context(GetFilename(), GetIsyntaxFile(),
                                    GetTileSize(), GetCache());
   return IsyntaxTileExecutor::ExecutePlan(plan, context, writer);
 }

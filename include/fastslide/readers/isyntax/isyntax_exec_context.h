@@ -16,7 +16,6 @@
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_ISYNTAX_ISYNTAX_EXEC_CONTEXT_H_
 
 #include <memory>
-#include <mutex>
 #include <string_view>
 #include <utility>
 
@@ -34,11 +33,10 @@ class IsyntaxExecContext {
  public:
   IsyntaxExecContext(std::string_view filename,
                      const isyntax::IsyntaxFile& isyntax_file,
-                     std::mutex& mutex, ImageDimensions tile_size,
+                     ImageDimensions tile_size,
                      std::shared_ptr<runtime::ITileCache> cache)
       : filename_(filename),
         isyntax_file_(isyntax_file),
-        mutex_(mutex),
         tile_size_(tile_size),
         cache_(std::move(cache)) {}
 
@@ -47,8 +45,6 @@ class IsyntaxExecContext {
   [[nodiscard]] const isyntax::IsyntaxFile& GetIsyntaxFile() const {
     return isyntax_file_;
   }
-
-  [[nodiscard]] std::mutex& GetMutex() const { return mutex_; }
 
   [[nodiscard]] ImageDimensions GetTileSize() const { return tile_size_; }
 
@@ -61,7 +57,6 @@ class IsyntaxExecContext {
  private:
   std::string_view filename_;
   const isyntax::IsyntaxFile& isyntax_file_;
-  std::mutex& mutex_;
   ImageDimensions tile_size_;
   std::shared_ptr<runtime::ITileCache> cache_;
 };

@@ -25,6 +25,7 @@ if gtest_dep.found()
     'isyntax_jpeg_cpp_test' : 'isyntax_jpeg_cpp_test.cpp',
     'isyntax_cache_cpp_test' : 'isyntax_cache_cpp_test.cpp',
     'isyntax_open_cpp_test' : 'isyntax_open_cpp_test.cpp',
+    'isyntax_concurrent_read_cpp_test' : 'isyntax_concurrent_read_cpp_test.cpp',
     'tile_writer_test' : '../src/runtime/tile_writer_test.cpp',
     'tile_writer_uint16_test' : '../src/runtime/tile_writer_uint16_test.cpp',
     'reader_registry_test' : '../src/runtime/reader_registry_test.cpp',

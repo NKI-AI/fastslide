@@ -104,8 +104,6 @@ class IsyntaxReader : public SlideReader, public ReaderFactory<IsyntaxReader> {
   // Internal accessors
   const isyntax::IsyntaxFile& GetIsyntaxFile() const { return *isyntax_file_; }
 
-  std::mutex& GetMutex() const { return mutex_; }
-
   std::string_view GetFilename() const { return filename_; }
 
  private:
@@ -129,7 +127,7 @@ class IsyntaxReader : public SlideReader, public ReaderFactory<IsyntaxReader> {
   // Cache channel metadata
   std::vector<ChannelMetadata> channels_;
 
-  // Mutex for thread safety if needed (libisyntax usage)
+  // Serialises ICC profile reads.
   mutable std::mutex mutex_;
 };
 

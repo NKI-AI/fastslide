@@ -1821,6 +1821,17 @@ cc_test(
 )
 
 cc_test(
+    name = "isyntax_concurrent_read_cpp_test",
+    size = "small",
+    srcs = ["tests/isyntax_concurrent_read_cpp_test.cpp"],
+    deps = [
+        ":libisyntax",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "region_conversion_test",
     size = "small",
     srcs = ["src/core/region_conversion_test.cpp"],
