@@ -143,9 +143,11 @@ std::vector<SlideBounds> Strips(const Polygon& polygon) {
       }
       SlideBounds strip(x0, run_start, x1 - x0, run_end - run_start);
       // Extend the previous strip when it spans the same rows right before.
-      auto previous = std::find_if(strips.rbegin(), strips.rend(), [&](const auto& s) {
-        return s.x + s.width == x0 && s.y == strip.y && s.height == strip.height;
-      });
+      auto previous =
+          std::find_if(strips.rbegin(), strips.rend(), [&](const auto& s) {
+            return s.x + s.width == x0 && s.y == strip.y &&
+                   s.height == strip.height;
+          });
       if (previous != strips.rend()) {
         previous->width += strip.width;
       } else {
