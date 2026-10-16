@@ -60,8 +60,9 @@ pub use metadata::{
 };
 pub use reader::{CacheStats, ColorSpace, OpenOptions, RenderingIntent, SlideReader};
 pub use registry::{
-    c_api_version, clear_global_cache, global_cache_stats, is_supported, set_global_cache_capacity,
-    supported_extensions, version,
+    c_api_version, clear_global_cache, global_cache_stats, is_supported, read_parallelism,
+    set_global_cache_capacity, set_read_parallelism, set_thread_pool_size, supported_extensions,
+    version, ReadParallelism,
 };
 pub use slide_image::SlideImage;
 
@@ -69,6 +70,14 @@ pub use slide_image::SlideImage;
 mod tests {
     use super::*;
     use fastslide_sys as sys;
+
+    #[test]
+    fn read_parallelism_round_trips() {
+        set_read_parallelism(ReadParallelism::CallingThread);
+        assert_eq!(read_parallelism(), ReadParallelism::CallingThread);
+        set_read_parallelism(ReadParallelism::ThreadPool);
+        assert_eq!(read_parallelism(), ReadParallelism::ThreadPool);
+    }
 
     #[test]
     fn image_format_round_trips() {

@@ -34,8 +34,8 @@
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
-#include "aifocore/utilities/thread_pool_singleton.h"
 #include "fastslide/readers/czi/czi_parse.h"
+#include "fastslide/readers/read_parallelism.h"
 #include "fastslide/runtime/decoders/jpeg_decoder.h"
 #include "fastslide/runtime/decoders/jpeg_xr_decoder.h"
 #include "fastslide/runtime/io/ascii_utils.h"
@@ -224,11 +224,10 @@ aifocore::Status CziTileExecutor::ExecutePlan(const core::TilePlan& plan,
     return writer.FillBackground(bg.r, bg.g, bg.b);
   }
 
-  auto& pool = aifocore::ThreadPoolManager::GetInstance();
   std::mutex writer_mutex;
   std::atomic<int> error_count{0};
 
-  auto futures = pool.submit_sequence(0, plan.operations.size(), [&](size_t i) {
+  readers::ForEachTileOp(plan.operations.size(), [&](size_t i) {
     const auto& op = plan.operations[i];
     auto st = ExecuteTileOperation(op, context, writer, writer_mutex);
     if (!st.ok()) {
@@ -238,8 +237,6 @@ aifocore::Status CziTileExecutor::ExecutePlan(const core::TilePlan& plan,
       }
     }
   });
-
-  futures.wait();
   return aifocore::Status::OkStatus();
 }
 

@@ -25,7 +25,7 @@
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
-#include "aifocore/utilities/thread_pool_singleton.h"
+#include "fastslide/readers/read_parallelism.h"
 #include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/readers/simpletiff_tile_executor_utils.h"
 #include "simpletiff/index.h"
@@ -114,7 +114,6 @@ aifocore::Status BifTileExecutor::ExecutePlan(const core::TilePlan& plan,
 
   std::vector<OwnedTile> decoded(rep_op.size());
 
-  auto& pool = aifocore::ThreadPoolManager::GetInstance();
   std::mutex error_mutex;
   std::optional<aifocore::Status> first_error;
   std::atomic<bool> has_error{false};
@@ -126,7 +125,7 @@ aifocore::Status BifTileExecutor::ExecutePlan(const core::TilePlan& plan,
     }
   };
 
-  auto futures = pool.submit_sequence(size_t{0}, rep_op.size(), [&](size_t gi) {
+  readers::ForEachTileOp(rep_op.size(), [&](size_t gi) {
     if (has_error.load(std::memory_order_relaxed)) {
       return;
     }
@@ -157,7 +156,6 @@ aifocore::Status BifTileExecutor::ExecutePlan(const core::TilePlan& plan,
     dst.data.assign(src.data.begin(), src.data.end());
     dst.paintable = !dst.data.empty();
   });
-  futures.wait();
   if (first_error.has_value()) {
     return *first_error;
   }

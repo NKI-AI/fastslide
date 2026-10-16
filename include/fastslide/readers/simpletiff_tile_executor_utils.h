@@ -21,8 +21,8 @@
 #include <optional>
 
 #include "aifocore/status/result.h"
-#include "aifocore/utilities/thread_pool_singleton.h"
 #include "fastslide/core/tile_plan.h"
+#include "fastslide/readers/read_parallelism.h"
 #include "fastslide/runtime/tile_writer.h"
 
 namespace fastslide {
@@ -71,35 +71,31 @@ aifocore::Status ExecuteOpsWithThreadPool(const core::TilePlan& plan,
     return writer.FillBackground(background.r, background.g, background.b);
   }
 
-  auto& pool = aifocore::ThreadPoolManager::GetInstance();
   std::mutex writer_mutex;
   std::mutex error_mutex;
   std::optional<aifocore::Status> first_error;
   std::atomic<bool> has_error{false};
   std::atomic<int> error_count{0};
 
-  auto futures =
-      pool.submit_sequence(0, plan.operations.size(), [&](size_t index) {
-        if (policy == ErrorPolicy::kStopOnFirstError &&
-            has_error.load(std::memory_order_relaxed)) {
-          return;
+  readers::ForEachTileOp(plan.operations.size(), [&](size_t index) {
+    if (policy == ErrorPolicy::kStopOnFirstError &&
+        has_error.load(std::memory_order_relaxed)) {
+      return;
+    }
+    const auto& operation = plan.operations[index];
+    aifocore::Status status = execute_one(operation, writer, writer_mutex);
+    if (!status.ok()) {
+      error_count.fetch_add(1, std::memory_order_relaxed);
+      on_error(operation, status);
+      if (policy == ErrorPolicy::kStopOnFirstError) {
+        has_error.store(true, std::memory_order_relaxed);
+        std::lock_guard<std::mutex> lock(error_mutex);
+        if (!first_error.has_value()) {
+          first_error = status;
         }
-        const auto& operation = plan.operations[index];
-        aifocore::Status status = execute_one(operation, writer, writer_mutex);
-        if (!status.ok()) {
-          error_count.fetch_add(1, std::memory_order_relaxed);
-          on_error(operation, status);
-          if (policy == ErrorPolicy::kStopOnFirstError) {
-            has_error.store(true, std::memory_order_relaxed);
-            std::lock_guard<std::mutex> lock(error_mutex);
-            if (!first_error.has_value()) {
-              first_error = status;
-            }
-          }
-        }
-      });
-
-  futures.wait();
+      }
+    }
+  });
   if (policy == ErrorPolicy::kStopOnFirstError && first_error.has_value()) {
     return *first_error;
   }

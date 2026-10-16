@@ -110,3 +110,45 @@ pub fn global_cache_stats() -> Option<CacheStats> {
 pub fn clear_global_cache() {
     unsafe { sys::fastslide_global_cache_clear() };
 }
+
+/// Where the tile operations of each read run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadParallelism {
+    /// Spread over the shared thread pool; the calling thread waits (default).
+    /// Lowest latency for one read at a time.
+    ThreadPool,
+    /// Run on the calling thread. Best throughput when the caller already runs
+    /// many reads concurrently: no pool hand-off, and the pool size no longer
+    /// caps how many reads progress at once.
+    CallingThread,
+}
+
+/// Set where the tile operations of each read run (process-wide).
+///
+/// Also settable at startup with the `FASTSLIDE_READ_PARALLELISM` environment
+/// variable (`thread_pool` or `calling_thread`).
+pub fn set_read_parallelism(mode: ReadParallelism) {
+    let mode = match mode {
+        ReadParallelism::ThreadPool => sys::FastSlideReadParallelism::ThreadPool,
+        ReadParallelism::CallingThread => sys::FastSlideReadParallelism::CallingThread,
+    };
+    // Cannot fail: every `FastSlideReadParallelism` value is a known mode.
+    unsafe { sys::fastslide_set_read_parallelism(mode) };
+}
+
+/// Current read parallelism mode.
+#[must_use]
+pub fn read_parallelism() -> ReadParallelism {
+    match unsafe { sys::fastslide_get_read_parallelism() } {
+        sys::FastSlideReadParallelism::ThreadPool => ReadParallelism::ThreadPool,
+        sys::FastSlideReadParallelism::CallingThread => ReadParallelism::CallingThread,
+    }
+}
+
+/// Resize the shared thread pool used in [`ReadParallelism::ThreadPool`] mode.
+///
+/// Defaults to `NUM_THREADS` or the number of hardware threads, which in a
+/// container is the host's, not the CPU quota. `0` means hardware concurrency.
+pub fn set_thread_pool_size(num_threads: usize) {
+    unsafe { sys::fastslide_set_thread_pool_size(num_threads) };
+}
