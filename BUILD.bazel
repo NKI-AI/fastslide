@@ -545,6 +545,7 @@ cc_library(
     ],
     hdrs = [
         "include/fastslide/readers/cached_tile_executor.h",
+        "include/fastslide/readers/inflight_decodes.h",
         "include/fastslide/readers/reader_factory.h",
         "include/fastslide/readers/simpletiff_decode_utils.h",
         "include/fastslide/readers/simpletiff_tile_executor_utils.h",
@@ -2007,6 +2008,18 @@ cc_test(
         "@googletest//:gtest",
         "@googletest//:gtest_main",
         "@openjp2",
+    ],
+)
+
+cc_test(
+    name = "inflight_decodes_test",
+    size = "small",
+    srcs = ["src/readers/inflight_decodes_test.cpp"],
+    deps = [
+        ":readers",
+        ":runtime_lru_tile_cache",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
     ],
 )
 
