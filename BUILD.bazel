@@ -547,6 +547,7 @@ cc_library(
     hdrs = [
         "include/fastslide/readers/cached_tile_executor.h",
         "include/fastslide/readers/inflight_decodes.h",
+        "include/fastslide/readers/read_parallelism.h",
         "include/fastslide/readers/reader_factory.h",
         "include/fastslide/readers/simpletiff_decode_utils.h",
         "include/fastslide/readers/simpletiff_tile_executor_utils.h",
@@ -569,6 +570,7 @@ cc_library(
         ":tiff_utilities",
         "@aifocore-cpp//:concepts",
         "@aifocore-cpp//:result",
+        "@aifocore-cpp//:thread_pool_singleton",
         "@aifocore-cpp//:utilities-core",
     ],
 )
@@ -1614,8 +1616,10 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":fastslide_lib",
+        ":readers",
         ":runtime_global_cache_manager",
         ":runtime_png_decoder",
+        "@aifocore-cpp//:thread_pool_singleton",
     ],
 )
 
@@ -2059,6 +2063,17 @@ cc_test(
     deps = [
         ":readers",
         ":runtime_lru_tile_cache",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "read_parallelism_test",
+    size = "small",
+    srcs = ["src/readers/read_parallelism_test.cpp"],
+    deps = [
+        ":readers",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],
