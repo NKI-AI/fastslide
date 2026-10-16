@@ -1953,6 +1953,18 @@ cc_test(
 )
 
 cc_test(
+    name = "cached_tile_executor_test",
+    size = "small",
+    srcs = ["src/readers/cached_tile_executor_test.cpp"],
+    deps = [
+        ":readers",
+        ":runtime_lru_tile_cache",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "lru_tile_cache_test",
     size = "small",
     srcs = ["src/runtime/lru_tile_cache_test.cpp"],
