@@ -51,22 +51,35 @@ aifocore::Status PhilipsTiffTileExecutor::ExecutePlan(
         const uint32_t tile_channels =
             static_cast<uint32_t>(page_header.samples_per_pixel);
 
-        static thread_local simpletiff::DecodeContext decode_ctx;
-        auto& buffers = GetBuffers();
-
-        auto& decoded_buffer = buffers.tile_buffer;
-        const uint32_t tile_index =
-            static_cast<uint32_t>(operation.byte_offset);
-
-        AIFOCORE_ASSIGN_OR_RETURN(
-            auto decoded, readers::simpletiff_decode::ReadTileOrStrip(
-                              tiff_index, operation.source_id, tile_index,
-                              decode_ctx, decoded_buffer));
+        AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
+                                  ReadWithCacheDecoded(operation, context));
 
         return readers::simpletiff_exec::PaintTileMaybeLocked(
             writer_ref, operation, decoded.data, decoded.width, decoded.height,
             tile_channels, writer_mutex);
       });
+}
+
+runtime::TileKey PhilipsTiffTileExecutor::MakeCacheKey(
+    const core::TileReadOp& operation, const PhilipsTiffExecContext& context) {
+  // The page identifies the level (or plane) and byte_offset is the linear
+  // tile index (tiled pages) or strip index (striped pages).
+  return runtime::TileKey(context.GetFilename(),
+                          static_cast<uint16_t>(operation.source_id),
+                          static_cast<uint32_t>(operation.byte_offset), 0);
+}
+
+aifocore::Result<DecodedTileData> PhilipsTiffTileExecutor::ReadTileFromDisk(
+    const core::TileReadOp& operation, const PhilipsTiffExecContext& context) {
+  static thread_local simpletiff::DecodeContext decode_ctx;
+  auto& decoded_buffer = GetBuffers().tile_buffer;
+  AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
+                            readers::simpletiff_decode::ReadTileOrStrip(
+                                context.tiff_index, operation.source_id,
+                                static_cast<uint32_t>(operation.byte_offset),
+                                decode_ctx, decoded_buffer));
+  return DecodedTileData{decoded.data, decoded.width, decoded.height,
+                         decoded.channels};
 }
 
 }  // namespace fastslide
