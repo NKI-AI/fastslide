@@ -265,6 +265,12 @@ typedef struct isyntax_tile_t {
   bool cache_marked;
   struct isyntax_tile_t* cache_next;
   struct isyntax_tile_t* cache_prev;
+  // Guarded by the cache mutex. Reads using the tile pin it: a pinned tile is
+  // out of the cache list, so it is never evicted.
+  int32_t cache_pin_count;
+  bool is_coeff_loading;  // A read is decoding its codeblocks.
+  bool is_idwt_running;   // A read is computing the LL coefficients of its
+                          // children.
 
   // Note(avirodov): this is needed for isyntax_reader. It is very convenient to
   // be able to compute neighbors from the tile itself, although at the cost of

@@ -35,6 +35,8 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <span>
+#include <vector>
 
 #include "aifocore/platform/portability.h"
 #include "aifocore/utilities/fmt.h"
@@ -64,11 +66,6 @@ inline void FillWhiteTile(isyntax_t* isyntax, uint32_t* pixels_buffer) {
   std::memset(pixels_buffer, 0xFF, pixel_count * sizeof(uint32_t));
 }
 
-#define ITERATE_TILE_LIST(_iter, _list) \
-  isyntax_tile_t* _iter = (_list).head; \
-  _iter;                                \
-  _iter = _iter->cache_next
-
 static void TileListInsertFirst(isyntax_tile_list_t* list,
                                 isyntax_tile_t* tile) {
   ASSERT(list != nullptr);
@@ -85,51 +82,34 @@ static void TileListInsertFirst(isyntax_tile_list_t* list,
   list->count++;
 }
 
-static void TileListInsertListFirst(isyntax_tile_list_t* target_list,
-                                    isyntax_tile_list_t* source_list) {
-  ASSERT(target_list != nullptr);
-  ASSERT(source_list != nullptr);
-  if (source_list->head == NULL && source_list->tail == NULL) {
-    return;
-  }
+// Codeblocks a read decodes for one tile, out of the cache lock.
+struct CoeffLoad {
+  isyntax_tile_t* tile = nullptr;
+  bool ll = false;
+  bool h = false;
+  icoeff_t* coeff_ll[3] = {};
+  icoeff_t* coeff_h[3] = {};
+};
 
-  source_list->tail->cache_next = target_list->head;
-  if (target_list->head) {
-    target_list->head->cache_prev = source_list->tail;
-  }
-
-  target_list->head = source_list->head;
-  if (target_list->tail == NULL) {
-    target_list->tail = source_list->tail;
-  }
-  target_list->count += source_list->count;
-  source_list->head = NULL;
-  source_list->tail = NULL;
-  source_list->count = 0;
+bool TileNeedsLlCodeblocks(const isyntax_image_t* wsi,
+                           const isyntax_tile_t* tile) {
+  // Only top-level tiles read their LL coefficients from the file. For other
+  // levels, LL comes from parent IDWT.
+  return tile->exists && tile->tile_scale == wsi->max_scale && !tile->has_ll;
 }
 
-aifocore::Status OpenslideLoadTileCoefficientsLlOrH(isyntax_cache_t* cache,
-                                                    isyntax_t* isyntax,
-                                                    isyntax_tile_t* tile,
-                                                    int codeblock_index,
-                                                    bool is_ll) {
-  if (!cache || !isyntax || !tile) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kInvalidArgument,
-        aifocore::fmt::format(
-            "OpenslideLoadTileCoefficientsLlOrH: null argument "
-            "(cache={} isyntax={} tile={})",
-            static_cast<const void*>(cache), static_cast<const void*>(isyntax),
-            static_cast<const void*>(tile)));
-  }
+bool TileNeedsHCodeblocks(const isyntax_tile_t* tile) {
+  return tile->exists && !tile->has_h;
+}
 
-  // Ensure thread-local memory is initialized (goroutines may hop threads).
-  if (!local_thread_memory) {
-    init_thread_memory(0, &global_system_info);
-  }
-
+aifocore::Status DecodeCodeblocks(isyntax_cache_t* cache, isyntax_t* isyntax,
+                                  const isyntax_tile_t* tile,
+                                  int codeblock_index, bool is_ll,
+                                  icoeff_t* out_coeff[3]) {
   isyntax_image_t* wsi = &isyntax->images[isyntax->wsi_image_index];
   isyntax_data_chunk_t* chunk = &wsi->data_chunks[tile->data_chunk_index];
+  block_allocator_t* allocator =
+      is_ll ? cache->ll_coeff_block_allocator : cache->h_coeff_block_allocator;
 
   for (int color = 0; color < 3; ++color) {
     isyntax_codeblock_t* codeblock =
@@ -139,29 +119,11 @@ aifocore::Status OpenslideLoadTileCoefficientsLlOrH(isyntax_cache_t* cache,
     ASSERT(codeblock->color_component == (uint32_t)color);
     ASSERT(codeblock->scale == (uint32_t)tile->tile_scale);
 
-    if (is_ll) {
-      if (!cache->ll_coeff_block_allocator) {
-        return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
-                                    "LL coeff block allocator is null");
-      }
-      auto coeff_or =
-          isyntax::alloc::BlockAlloc(cache->ll_coeff_block_allocator);
-      if (!coeff_or.ok()) {
-        return coeff_or.status();
-      }
-      tile->color_channels[color].coeff_ll = static_cast<icoeff_t*>(*coeff_or);
-    } else {
-      if (!cache->h_coeff_block_allocator) {
-        return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
-                                    "H coeff block allocator is null");
-      }
-      auto coeff_or =
-          isyntax::alloc::BlockAlloc(cache->h_coeff_block_allocator);
-      if (!coeff_or.ok()) {
-        return coeff_or.status();
-      }
-      tile->color_channels[color].coeff_h = static_cast<icoeff_t*>(*coeff_or);
+    auto coeff_or = isyntax::alloc::BlockAlloc(allocator);
+    if (!coeff_or.ok()) {
+      return coeff_or.status();
     }
+    out_coeff[color] = static_cast<icoeff_t*>(*coeff_or);
 
     // Add 7 safety bytes so the decompressor's 64-bit bitstream reads won't
     // read past the allocation.
@@ -195,51 +157,33 @@ aifocore::Status OpenslideLoadTileCoefficientsLlOrH(isyntax_cache_t* cache,
         static_cast<size_t>((codeblock->coefficient == 1) ? 3 : 1) *
         static_cast<size_t>(isyntax->block_width) *
         static_cast<size_t>(isyntax->block_height);
-    int16_t* out_ptr =
-        reinterpret_cast<int16_t*>(is_ll ? tile->color_channels[color].coeff_ll
-                                         : tile->color_channels[color].coeff_h);
 
     const aifocore::Status st = isyntax::HulskenDecompress(
         std::span<uint8_t>(reinterpret_cast<uint8_t*>(codeblock_data.get()),
                            static_cast<size_t>(codeblock->block_size)),
         isyntax->block_width, isyntax->block_height, codeblock->coefficient,
         wsi->compressor_version,
-        std::span<int16_t>(out_ptr, expected_coeff_count));
+        std::span<int16_t>(reinterpret_cast<int16_t*>(out_coeff[color]),
+                           expected_coeff_count));
     AIFOCORE_RETURN_IF_ERROR(st);
-  }
-
-  if (is_ll) {
-    tile->has_ll = true;
-  } else {
-    tile->has_h = true;
   }
 
   return aifocore::Status::OkStatus();
 }
 
-aifocore::Status OpenslideLoadTileCoefficients(isyntax_cache_t* cache,
-                                               isyntax_t* isyntax,
-                                               isyntax_tile_t* tile) {
-  if (cache == nullptr || isyntax == nullptr || tile == nullptr) {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                "OpenslideLoadTileCoefficients: null argument");
-  }
+aifocore::Status DecodeTileCoefficients(isyntax_cache_t* cache,
+                                        isyntax_t* isyntax, CoeffLoad& load) {
   isyntax_image_t* wsi = &isyntax->images[isyntax->wsi_image_index];
-  if (!tile->exists) {
-    return aifocore::Status::OkStatus();
+  const isyntax_tile_t* tile = load.tile;
+
+  if (load.ll) {
+    AIFOCORE_RETURN_IF_ERROR(
+        DecodeCodeblocks(cache, isyntax, tile,
+                         /*codeblock_index=*/tile->codeblock_index,
+                         /*is_ll=*/true, load.coeff_ll));
   }
 
-  // Load LL codeblocks only for top-level tiles. For other levels, LL comes
-  // from parent IDWT.
-  if (!tile->has_ll && tile->tile_scale == wsi->max_scale) {
-    AIFOCORE_RETURN_IF_ERROR(OpenslideLoadTileCoefficientsLlOrH(
-        cache, isyntax, tile,
-        /*codeblock_index=*/tile->codeblock_index,
-        /*is_ll=*/true));
-  }
-
-  if (!tile->has_h) {
-    ASSERT(tile->exists);
+  if (load.h) {
     isyntax_data_chunk_t* chunk = wsi->data_chunks + tile->data_chunk_index;
 
     const int32_t scale_in_chunk = chunk->scale - tile->tile_scale;
@@ -258,14 +202,79 @@ aifocore::Status OpenslideLoadTileCoefficients(isyntax_cache_t* cache,
                                   "Invalid scale_in_chunk");
     }
 
-    AIFOCORE_RETURN_IF_ERROR(OpenslideLoadTileCoefficientsLlOrH(
-        cache, isyntax, tile,
-        /*codeblock_index=*/tile->codeblock_chunk_index +
-            codeblock_index_in_chunk,
-        /*is_ll=*/false));
+    AIFOCORE_RETURN_IF_ERROR(
+        DecodeCodeblocks(cache, isyntax, tile,
+                         /*codeblock_index=*/tile->codeblock_chunk_index +
+                             codeblock_index_in_chunk,
+                         /*is_ll=*/false, load.coeff_h));
   }
 
   return aifocore::Status::OkStatus();
+}
+
+/// Decodes the codeblocks the tiles miss. Called with `lock` held, which it
+/// releases while decoding. Reads claim one tile at a time, so that reads
+/// needing the same tiles decode them in parallel; tiles another read is
+/// decoding are waited for.
+aifocore::Status LoadTileCoefficients(isyntax_cache_t* cache,
+                                      isyntax_t* isyntax,
+                                      std::span<isyntax_tile_t* const> tiles,
+                                      std::unique_lock<std::mutex>& lock) {
+  isyntax_image_t* wsi = &isyntax->images[isyntax->wsi_image_index];
+  for (;;) {
+    CoeffLoad load;
+    bool is_waiting = false;
+    for (isyntax_tile_t* tile : tiles) {
+      const bool ll = TileNeedsLlCodeblocks(wsi, tile);
+      const bool h = TileNeedsHCodeblocks(tile);
+      if (!ll && !h) {
+        continue;
+      }
+      if (tile->is_coeff_loading) {
+        is_waiting = true;
+        continue;
+      }
+      tile->is_coeff_loading = true;
+      load = CoeffLoad{.tile = tile, .ll = ll, .h = h};
+      break;
+    }
+
+    if (load.tile != nullptr) {
+      lock.unlock();
+      const aifocore::Status st = DecodeTileCoefficients(cache, isyntax, load);
+      lock.lock();
+      for (int color = 0; color < 3; ++color) {
+        if (!st.ok()) {
+          if (load.coeff_ll[color] != nullptr) {
+            block_free(cache->ll_coeff_block_allocator, load.coeff_ll[color]);
+          }
+          if (load.coeff_h[color] != nullptr) {
+            block_free(cache->h_coeff_block_allocator, load.coeff_h[color]);
+          }
+          continue;
+        }
+        if (load.ll) {
+          load.tile->color_channels[color].coeff_ll = load.coeff_ll[color];
+        }
+        if (load.h) {
+          load.tile->color_channels[color].coeff_h = load.coeff_h[color];
+        }
+      }
+      if (st.ok() && load.ll) {
+        load.tile->has_ll = true;
+      }
+      if (st.ok() && load.h) {
+        load.tile->has_h = true;
+      }
+      load.tile->is_coeff_loading = false;
+      cache->tile_ready.notify_all();
+      AIFOCORE_RETURN_IF_ERROR(st);
+    } else if (is_waiting) {
+      cache->tile_ready.wait(lock);
+    } else {
+      return aifocore::Status::OkStatus();
+    }
+  }
 }
 
 typedef union isyntax_tile_children_t {
@@ -294,55 +303,62 @@ static isyntax_tile_children_t OpenslideComputeChildren(isyntax_t* isyntax,
   return result;
 }
 
+bool ChildrenHaveLl(isyntax_t* isyntax, isyntax_tile_t* tile) {
+  if (tile->tile_scale == 0) {
+    return true;
+  }
+  const isyntax_tile_children_t children =
+      OpenslideComputeChildren(isyntax, tile);
+  return children.child_top_left->has_ll && children.child_top_right->has_ll &&
+         children.child_bottom_left->has_ll &&
+         children.child_bottom_right->has_ll;
+}
+
+/// Inverse wavelet transform of a tile: writes the LL coefficients its
+/// children miss, and its pixels if asked. Called with `lock` held, which it
+/// releases while transforming. Only one read at a time writes the LL
+/// coefficients of the children of a tile; the others wait for it.
 aifocore::Status OpenslideIdwt(isyntax_cache_t* cache, isyntax_t* isyntax,
                                isyntax_tile_t* tile, uint32_t* pixels_buffer,
-                               enum isyntax_pixel_format_t pixel_format) {
-  if (cache == nullptr || isyntax == nullptr || tile == nullptr) {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
-                                "OpenslideIdwt: null argument");
-  }
-  if (tile->tile_scale == 0) {
-    ASSERT(pixels_buffer != NULL);
-    const aifocore::Status st = isyntax::tile::LoadTile(
-        isyntax, &isyntax->images[isyntax->wsi_image_index], tile->tile_scale,
-        tile->tile_x, tile->tile_y, cache->ll_coeff_block_allocator,
-        pixels_buffer, pixel_format);
-    AIFOCORE_RETURN_IF_ERROR(st);
-    return aifocore::Status::OkStatus();
-  }
-
-  if (pixels_buffer != NULL) {
-    const aifocore::Status st = isyntax::tile::LoadTile(
-        isyntax, &isyntax->images[isyntax->wsi_image_index], tile->tile_scale,
-        tile->tile_x, tile->tile_y, cache->ll_coeff_block_allocator,
-        pixels_buffer, pixel_format);
-    AIFOCORE_RETURN_IF_ERROR(st);
-    return aifocore::Status::OkStatus();
-  }
+                               enum isyntax_pixel_format_t pixel_format,
+                               std::unique_lock<std::mutex>& lock) {
+  cache->tile_ready.wait(lock, [tile] { return !tile->is_idwt_running; });
 
   // If all children have ll coefficients and we don't need rgb pixels, we can
   // skip IDWT.
-  ASSERT(pixels_buffer == NULL && tile->tile_scale > 0);
-  isyntax_tile_children_t children = OpenslideComputeChildren(isyntax, tile);
-  if (children.child_top_left->has_ll && children.child_top_right->has_ll &&
-      children.child_bottom_left->has_ll &&
-      children.child_bottom_right->has_ll) {
+  const bool writes_children = !ChildrenHaveLl(isyntax, tile);
+  if (!writes_children && pixels_buffer == nullptr) {
     return aifocore::Status::OkStatus();
   }
 
+  tile->is_idwt_running = writes_children;
+  lock.unlock();
   const aifocore::Status st = isyntax::tile::LoadTile(
       isyntax, &isyntax->images[isyntax->wsi_image_index], tile->tile_scale,
       tile->tile_x, tile->tile_y, cache->ll_coeff_block_allocator,
-      /*out_buffer_or_null=*/NULL,
-      /*pixel_format=*/(isyntax_pixel_format_t)0);
-  AIFOCORE_RETURN_IF_ERROR(st);
-  return aifocore::Status::OkStatus();
+      pixels_buffer, pixel_format);
+  lock.lock();
+  if (writes_children) {
+    if (st.ok()) {
+      const isyntax_tile_children_t children =
+          OpenslideComputeChildren(isyntax, tile);
+      for (isyntax_tile_t* child : children.as_array) {
+        child->has_ll = true;
+      }
+    }
+    tile->is_idwt_running = false;
+    cache->tile_ready.notify_all();
+  }
+  return st;
 }
+
+/// Tiles a read needs. Only the read that collected them uses it, unlike the
+/// lists linked through the tiles.
+using TileArray = std::vector<isyntax_tile_t*>;
 
 static void MakeTileListsAddParentToList(isyntax_t* isyntax,
                                          isyntax_tile_t* tile,
-                                         isyntax_tile_list_t* idwt_list,
-                                         isyntax_tile_list_t* cache_list) {
+                                         TileArray* idwt_list) {
   isyntax_image_t* wsi = &isyntax->images[isyntax->wsi_image_index];
   const int parent_tile_scale = tile->tile_scale + 1;
   if (parent_tile_scale > wsi->max_scale) {
@@ -356,37 +372,35 @@ static void MakeTileListsAddParentToList(isyntax_t* isyntax,
       &parent_level->tiles[parent_level->width_in_tiles * parent_tile_y +
                            parent_tile_x];
   if (parent_tile->exists && !parent_tile->cache_marked) {
-    isyntax::tilelist::Remove(cache_list, parent_tile);
     parent_tile->cache_marked = true;
-    TileListInsertFirst(idwt_list, parent_tile);
+    idwt_list->push_back(parent_tile);
   }
 }
 
 static void MakeTileListsAddChildrenToList(isyntax_t* isyntax,
                                            isyntax_tile_t* tile,
-                                           isyntax_tile_list_t* children_list,
-                                           isyntax_tile_list_t* cache_list) {
+                                           TileArray* children_list) {
   if (tile->tile_scale > 0) {
     isyntax_tile_children_t children = OpenslideComputeChildren(isyntax, tile);
-    for (int i = 0; i < 4; ++i) {
-      if (!children.as_array[i]->cache_marked) {
-        isyntax::tilelist::Remove(cache_list, children.as_array[i]);
-        TileListInsertFirst(children_list, children.as_array[i]);
+    for (isyntax_tile_t* child : children.as_array) {
+      if (!child->cache_marked) {
+        child->cache_marked = true;
+        children_list->push_back(child);
       }
     }
   }
 }
 
+/// Lists are ordered children first: parents are at the end.
 static void MakeTileListsByScale(isyntax_t* isyntax, int start_scale,
-                                 isyntax_tile_list_t* idwt_list,
-                                 isyntax_tile_list_t* coeff_list,
-                                 isyntax_tile_list_t* children_list,
-                                 isyntax_tile_list_t* cache_list) {
+                                 TileArray* idwt_list, TileArray* coeff_list,
+                                 TileArray* children_list) {
   isyntax_image_t* wsi = &isyntax->images[isyntax->wsi_image_index];
   for (int scale = start_scale; scale <= wsi->max_scale; ++scale) {
     // Mark all neighbors of IDWT tiles at this level as requiring coefficients.
     isyntax_level_t* level = &wsi->levels[scale];
-    for (ITERATE_TILE_LIST(tile, (*idwt_list))) {
+    for (size_t i = 0; i < idwt_list->size(); ++i) {
+      isyntax_tile_t* tile = (*idwt_list)[i];
       if (tile->tile_scale != scale) {
         continue;
       }
@@ -407,41 +421,123 @@ static void MakeTileListsByScale(isyntax_t* isyntax, int start_scale,
             continue;
           }
 
-          isyntax::tilelist::Remove(cache_list, neighbor_tile);
           neighbor_tile->cache_marked = true;
-          TileListInsertFirst(coeff_list, neighbor_tile);
+          coeff_list->push_back(neighbor_tile);
         }
       }
     }
 
     // Mark all parents of tiles at this level as requiring IDWT so all tiles at
     // this level get their LL coefficients.
-    for (ITERATE_TILE_LIST(tile, (*idwt_list))) {
-      if (tile->tile_scale == scale) {
-        MakeTileListsAddParentToList(isyntax, tile, idwt_list, cache_list);
+    for (size_t i = 0; i < idwt_list->size(); ++i) {
+      if ((*idwt_list)[i]->tile_scale == scale) {
+        MakeTileListsAddParentToList(isyntax, (*idwt_list)[i], idwt_list);
       }
     }
-    for (ITERATE_TILE_LIST(tile, (*coeff_list))) {
+    for (isyntax_tile_t* tile : *coeff_list) {
       if (tile->tile_scale == scale) {
-        MakeTileListsAddParentToList(isyntax, tile, idwt_list, cache_list);
+        MakeTileListsAddParentToList(isyntax, tile, idwt_list);
       }
     }
   }
 
   // Add all children of IDWT tiles that were not yet handled. Children will
   // have their LL coefficients written and should be cache-bumped.
-  for (ITERATE_TILE_LIST(tile, (*idwt_list))) {
-    MakeTileListsAddChildrenToList(isyntax, tile, children_list, cache_list);
+  for (isyntax_tile_t* tile : *idwt_list) {
+    MakeTileListsAddChildrenToList(isyntax, tile, children_list);
   }
+}
+
+/// Takes the tiles out of the cache list while a read uses them, so that other
+/// reads cannot evict them.
+void PinTiles(isyntax_cache_t* cache, const TileArray& tiles) {
+  for (isyntax_tile_t* tile : tiles) {
+    tile->cache_marked = false;
+    if (tile->cache_pin_count++ == 0) {
+      isyntax::tilelist::Remove(&cache->cache_list, tile);
+    }
+  }
+}
+
+/// Puts the tiles no read uses anymore back first in the cache list, the last
+/// ones of the array (parents) at the head.
+void UnpinTiles(isyntax_cache_t* cache, const TileArray& tiles) {
+  for (isyntax_tile_t* tile : tiles) {
+    if (--tile->cache_pin_count == 0) {
+      TileListInsertFirst(&cache->cache_list, tile);
+    }
+  }
+}
+
+/// Decodes and transforms the tiles a read pinned, and the pixels of `tile`.
+aifocore::Status ReadPinnedTiles(isyntax_t* isyntax, isyntax_cache_t* cache,
+                                 isyntax_tile_t* tile, uint32_t* pixels_buffer,
+                                 enum isyntax_pixel_format_t pixel_format,
+                                 const TileArray& idwt_list,
+                                 const TileArray& coeff_list,
+                                 std::unique_lock<std::mutex>& lock) {
+  // IO+decode: load coefficients where missing (H, and LL for top tiles).
+  TileArray coeff_tiles(coeff_list);
+  coeff_tiles.insert(coeff_tiles.end(), idwt_list.begin(), idwt_list.end());
+  AIFOCORE_RETURN_IF_ERROR(
+      LoadTileCoefficients(cache, isyntax, coeff_tiles, lock));
+
+  // IDWT as needed, top to bottom: parents give their children the LL
+  // coefficients the neighbors at the next scale need. The requested tile,
+  // first in the list, comes last and produces the pixels.
+  isyntax_image_t* wsi = &isyntax->images[isyntax->wsi_image_index];
+  for (int scale = wsi->max_scale; scale > tile->tile_scale; --scale) {
+    for (size_t i = 1; i < idwt_list.size(); ++i) {
+      if (idwt_list[i]->tile_scale == scale) {
+        AIFOCORE_RETURN_IF_ERROR(OpenslideIdwt(
+            cache, isyntax, idwt_list[i], /*pixels_buffer=*/nullptr,
+            /*pixel_format=*/(isyntax_pixel_format_t)0, lock));
+      }
+    }
+  }
+  return OpenslideIdwt(cache, isyntax, tile, pixels_buffer, pixel_format, lock);
 }
 
 }  // namespace
 
 namespace isyntax {
 
+void TrimCache(isyntax_cache_t* cache) {
+  // Tiles other reads use are not in the list. Blocks are freed even without
+  // has_ll / has_h: a failed transform leaves them unreported.
+  const auto used_bytes = [cache] {
+    return block_allocator_used_bytes(cache->ll_coeff_block_allocator) +
+           block_allocator_used_bytes(cache->h_coeff_block_allocator);
+  };
+  while (cache->cache_list.tail != nullptr &&
+         used_bytes() > cache->capacity_bytes) {
+    isyntax_tile_t* victim = cache->cache_list.tail;
+    isyntax::tilelist::Remove(&cache->cache_list, victim);
+    for (int i = 0; i < 3; ++i) {
+      if (victim->color_channels[i].coeff_ll != nullptr) {
+        block_free(cache->ll_coeff_block_allocator,
+                   victim->color_channels[i].coeff_ll);
+        victim->color_channels[i].coeff_ll = nullptr;
+      }
+      if (victim->color_channels[i].coeff_h != nullptr) {
+        block_free(cache->h_coeff_block_allocator,
+                   victim->color_channels[i].coeff_h);
+        victim->color_channels[i].coeff_h = nullptr;
+      }
+    }
+    victim->has_ll = false;
+    victim->has_h = false;
+  }
+}
+
 aifocore::Status TileRead(isyntax_t* isyntax, isyntax_cache_t* cache, int scale,
                           int tile_x, int tile_y, uint32_t* pixels_buffer,
                           enum isyntax_pixel_format_t pixel_format) {
+  // The cache lock guards the tiles' cache fields and the lists, and is
+  // released while decoding and transforming: reads run in parallel. A read
+  // pins the tiles it needs so that they are not evicted, and claims the work
+  // it does on a tile (is_coeff_loading, is_idwt_running) so that other reads
+  // needing it wait instead of redoing it.
   if (isyntax == nullptr) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
                             "TileRead: null isyntax");
@@ -460,7 +556,10 @@ aifocore::Status TileRead(isyntax_t* isyntax, isyntax_cache_t* cache, int scale,
                             "TileRead: cache allocators not initialized");
   }
 
-  std::lock_guard<std::mutex> lock(cache->mutex);
+  // Decoding uses memory local to the thread.
+  if (!local_thread_memory) {
+    init_thread_memory(0, &global_system_info);
+  }
 
   isyntax_image_t* wsi = &isyntax->images[isyntax->wsi_image_index];
   if (scale < 0 || scale >= wsi->level_count) {
@@ -481,77 +580,39 @@ aifocore::Status TileRead(isyntax_t* isyntax, isyntax_cache_t* cache, int scale,
     return aifocore::Status::OkStatus();
   }
 
-  isyntax_tile_list_t idwt_list;
-  isyntax_tile_list_t coeff_list;
-  isyntax_tile_list_t children_list;
-  isyntax::tilelist::Init(&idwt_list, "idwt_list");
-  isyntax::tilelist::Init(&coeff_list, "coeff_list");
-  isyntax::tilelist::Init(&children_list, "children_list");
+  // Need 3 lists:
+  // 1. idwt list - those tiles will have to perform an idwt for their children
+  //    to get ll coeffs. Primary cache bump.
+  // 2. coeff list - those tiles are neighbors and will need to have
+  //    coefficients loaded. Secondary cache bump.
+  // 3. children list - those tiles will have their ll coeffs loaded as a side
+  //    effect. Tertiary cache bump.
+  // Those lists are disjoint.
+  TileArray idwt_list;
+  TileArray coeff_list;
+  TileArray children_list;
 
-  // Seed IDWT list with requested tile.
-  isyntax::tilelist::Remove(&cache->cache_list, tile);
+  std::unique_lock<std::mutex> lock(cache->mutex);
+
   tile->cache_marked = true;
-  TileListInsertFirst(&idwt_list, tile);
+  idwt_list.push_back(tile);
+  MakeTileListsByScale(isyntax, scale, &idwt_list, &coeff_list, &children_list);
+  PinTiles(cache, idwt_list);
+  PinTiles(cache, coeff_list);
+  PinTiles(cache, children_list);
 
-  MakeTileListsByScale(isyntax, scale, &idwt_list, &coeff_list, &children_list,
-                       &cache->cache_list);
-
-  // Unmark visit status (lists keep ownership of ordering only).
-  for (ITERATE_TILE_LIST(t, idwt_list)) {
-    t->cache_marked = false;
-  }
-  for (ITERATE_TILE_LIST(t, coeff_list)) {
-    t->cache_marked = false;
-  }
-  for (ITERATE_TILE_LIST(t, children_list)) {
-    t->cache_marked = false;
-  }
-
-  // IO+decode: load coefficients where missing, then IDWT as needed
-  // (top->down).
-  for (ITERATE_TILE_LIST(t, coeff_list)) {
-    AIFOCORE_RETURN_IF_ERROR(OpenslideLoadTileCoefficients(cache, isyntax, t));
-  }
-  for (ITERATE_TILE_LIST(t, idwt_list)) {
-    AIFOCORE_RETURN_IF_ERROR(OpenslideLoadTileCoefficients(cache, isyntax, t));
-  }
-  for (ITERATE_TILE_LIST(t, idwt_list)) {
-    if (t == idwt_list.tail) {
-      AIFOCORE_RETURN_IF_ERROR(
-          OpenslideIdwt(cache, isyntax, t, pixels_buffer, pixel_format));
-    } else {
-      AIFOCORE_RETURN_IF_ERROR(
-          OpenslideIdwt(cache, isyntax, t, /*pixels_buffer=*/NULL,
-                        /*pixel_format=*/(isyntax_pixel_format_t)0));
-    }
-  }
+  const aifocore::Status st =
+      ReadPinnedTiles(isyntax, cache, tile, pixels_buffer, pixel_format,
+                      idwt_list, coeff_list, lock);
 
   // Cache bump.
-  TileListInsertListFirst(&cache->cache_list, &children_list);
-  TileListInsertListFirst(&cache->cache_list, &coeff_list);
-  TileListInsertListFirst(&cache->cache_list, &idwt_list);
+  UnpinTiles(cache, children_list);
+  UnpinTiles(cache, coeff_list);
+  UnpinTiles(cache, idwt_list);
 
-  // Cache trim.
-  while (cache->cache_list.count > cache->target_cache_size) {
-    isyntax_tile_t* victim = cache->cache_list.tail;
-    isyntax::tilelist::Remove(&cache->cache_list, victim);
-    for (int i = 0; i < 3; ++i) {
-      if (victim->has_ll) {
-        block_free(cache->ll_coeff_block_allocator,
-                   victim->color_channels[i].coeff_ll);
-        victim->color_channels[i].coeff_ll = NULL;
-      }
-      if (victim->has_h) {
-        block_free(cache->h_coeff_block_allocator,
-                   victim->color_channels[i].coeff_h);
-        victim->color_channels[i].coeff_h = NULL;
-      }
-    }
-    victim->has_ll = false;
-    victim->has_h = false;
-  }
+  TrimCache(cache);
 
-  return aifocore::Status::OkStatus();
+  return st;
 }
 
 }  // namespace isyntax

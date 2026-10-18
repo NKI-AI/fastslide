@@ -238,6 +238,27 @@ Use Cases for Per-Reader Cache
 - **Testing**: Controlled cache environments
 - **Memory budgets**: Different capacity per reader
 
+iSyntax Coefficient Cache
+-------------------------
+
+Decoding an iSyntax tile needs the wavelet coefficients of its neighbours and
+of its parents up to the top level. A second cache, below the tile cache,
+keeps the decoded coefficients of recently read tiles so that neighbouring
+reads do not decode them again. Every open iSyntax slide shares it, within one
+memory budget (1 GiB by default); it evicts the least recently used tiles of
+any slide:
+
+.. code-block:: c
+
+   fastslide_isyntax_cache_set_capacity_bytes((size_t)4 << 30);
+
+.. code-block:: rust
+
+   fastslide::set_isyntax_cache_capacity(4 << 30)?;
+
+A budget too small for the reads in flight makes them evict the coefficients
+of each other, and decode them again.
+
 Disabling Cache
 ---------------
 
@@ -864,6 +885,7 @@ Declared in ``fastslide/c/slide_reader.h`` and ``fastslide/c/registry.h``:
    int  fastslide_global_cache_set_capacity_bytes(size_t capacity_bytes);
    int  fastslide_global_cache_get_stats(FastSlideCacheStats* out_stats);
    void fastslide_global_cache_clear(void);
+   int  fastslide_isyntax_cache_set_capacity_bytes(size_t capacity_bytes);
 
 Python Classes
 --------------

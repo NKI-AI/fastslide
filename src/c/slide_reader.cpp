@@ -263,6 +263,32 @@ int fastslide_slide_reader_get_bounds(const FastSlideSlideReader* reader,
   return 1;
 }
 
+int64_t fastslide_slide_reader_get_data_regions(
+    const FastSlideSlideReader* reader, int level, FastSlideBounds* regions,
+    size_t capacity) {
+  FASTSLIDE_REQUIRE_READER(reader, -1);
+
+  if (!regions && capacity > 0) {
+    SetLastError("regions cannot be null when capacity > 0");
+    return -1;
+  }
+
+  auto result = reader->reader->GetDataRegions(level);
+  if (!result.ok()) {
+    SetLastError(std::string(result.status().message()).c_str());
+    return -1;
+  }
+
+  const auto& cpp_regions = *result;
+  for (size_t i = 0; i < cpp_regions.size() && i < capacity; ++i) {
+    regions[i].x = cpp_regions[i].x;
+    regions[i].y = cpp_regions[i].y;
+    regions[i].width = cpp_regions[i].width;
+    regions[i].height = cpp_regions[i].height;
+  }
+  return static_cast<int64_t>(cpp_regions.size());
+}
+
 const char* fastslide_slide_reader_get_format_name(
     const FastSlideSlideReader* reader) {
   FASTSLIDE_REQUIRE_READER(reader, nullptr);
