@@ -37,6 +37,7 @@ if gtest_dep.found()
     'bmp_decoder_test' : '../src/runtime/decoders/bmp_decoder_test.cpp',
     'mrxs_index_reader_test' : '../src/readers/mrxs/mrxs_index_reader_test.cpp',
     'mrxs_open_errors_test' : '../src/readers/mrxs/mrxs_open_errors_test.cpp',
+    'mrxs_determinism_test' : '../src/readers/mrxs/mrxs_determinism_test.cpp',
     'czi_spatial_index_test' : '../src/readers/czi/czi_spatial_index_test.cpp',
     'czi_parse_test' : '../src/readers/czi/czi_parse_test.cpp',
     'czi_scene_plane_test' : '../src/readers/czi/czi_scene_plane_test.cpp',

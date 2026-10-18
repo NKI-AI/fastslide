@@ -16,6 +16,7 @@
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_MRXS_MRXS_TILE_EXECUTOR_H_
 
 #include <mutex>
+#include <span>
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/image.h"
@@ -41,17 +42,18 @@ class MrxsTileExecutor : public CachedTileExecutor<MrxsTileExecutor> {
   friend class CachedTileExecutor<MrxsTileExecutor>;
 
  private:
-  /// @brief Execute a single tile operation
-  /// @param op The tile operation to execute
+  /// @brief Paint one tile operation from its already-decoded image
+  /// @param op The tile operation to paint
+  /// @param tile_data Decoded RGB image the operation reads from
   /// @param context MRXS execution context
   /// @param zoom_level Zoom level metadata
   /// @param writer Tile writer
   /// @param accumulator_mutex Mutex for thread-safe accumulation
   /// @return Status indicating success or failure
-  static aifocore::Status ExecuteTileOperation(
-      const core::TileReadOp& op, const MrxsExecContext& context,
-      const mrxs::SlideZoomLevel& zoom_level, runtime::Canvas& writer,
-      std::mutex& accumulator_mutex);
+  static aifocore::Status PaintTileOperation(
+      const core::TileReadOp& op, std::span<const uint8_t> tile_data,
+      const MrxsExecContext& context, const mrxs::SlideZoomLevel& zoom_level,
+      runtime::Canvas& writer, std::mutex& accumulator_mutex);
 
   /// @brief Create cache key for a tile
   static TileKey MakeCacheKey(const core::TileReadOp& op,
