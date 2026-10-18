@@ -349,9 +349,17 @@ ImageDimensions IsyntaxReader::GetTileSize() const {
 aifocore::Result<core::TilePlan> IsyntaxReader::PrepareRequest(
     const core::TileRequest& request) const {
   AIFOCORE_ASSIGN_OR_RETURN(const auto level_info, GetLevelInfo(request.level));
+  const isyntax_t* isx = isyntax_file_->handle();
+  const isyntax_image_t* wsi = isx->images + isx->wsi_image_index;
+  const isyntax_level_t* level = wsi->levels + request.level;
   const IsyntaxPlanContext context{
       .tile_size = GetTileSize(),
       .level_info = level_info,
+      .grid_offset = IsyntaxPlanBuilder::ComputeGridOffset(
+          request.level, wsi->level0_padding,
+          request.level == 0 ? 0 : level->origin_offset_in_pixels),
+      .grid_width_in_tiles = level->width_in_tiles,
+      .grid_height_in_tiles = level->height_in_tiles,
   };
   return IsyntaxPlanBuilder::BuildPlan(request, context);
 }

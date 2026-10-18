@@ -15,6 +15,8 @@
 #ifndef AIFO_FASTSLIDE_SRC_READERS_ISYNTAX_ISYNTAX_PLAN_BUILDER_H_
 #define AIFO_FASTSLIDE_SRC_READERS_ISYNTAX_ISYNTAX_PLAN_BUILDER_H_
 
+#include <cstdint>
+
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
@@ -32,17 +34,23 @@ class IsyntaxPlanBuilder {
   static aifocore::Result<core::TilePlan> BuildPlan(
       const core::TileRequest& request, const IsyntaxPlanContext& context);
 
-  /// @brief Wavelet-origin sub-pixel shift in level pixels.
+  /// @brief Offset from the API origin to the tile grid, in level pixels.
   ///
-  /// The iSyntax wavelet decomposition introduces padding that shifts lower
-  /// resolution levels relative to level 0. Returns the fractional correction
-  /// (in the coordinate space of @p level) needed to align the tile grid with
-  /// the API coordinate origin.
+  /// The iSyntax wavelet pyramid is padded by `level0_padding` pixels on each
+  /// side of level 0, and each decoded level's tile grid starts
+  /// `origin_offset_in_pixels` (level 0 pixels) into that padding. The API
+  /// origin is the top-left of the unpadded image, which is the convention of
+  /// the Philips SDK. The offset is an integer number of level pixels: pixel
+  /// `x` of a level is grid pixel `x + offset`, so tiles are copied without
+  /// resampling.
   ///
-  /// @param level Pyramid level (0 = full resolution, no shift).
-  /// @param downsample Downsample factor for the level (2^scale).
-  /// @return Shift in level pixels (0.0 for level 0).
-  static double ComputeOriginShift(int32_t level, double downsample);
+  /// @param level Pyramid level (0 = full resolution).
+  /// @param level0_padding Padding of level 0, in level 0 pixels.
+  /// @param origin_offset_in_pixels Start of this level's tile grid, in level
+  ///        0 pixels (0 for level 0).
+  /// @return Offset in pixels of @p level.
+  static int64_t ComputeGridOffset(int32_t level, int32_t level0_padding,
+                                   int32_t origin_offset_in_pixels);
 };
 
 }  // namespace fastslide
