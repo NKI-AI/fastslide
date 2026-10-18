@@ -13,6 +13,8 @@
 #include <string>
 #include <utility>
 
+#include "aifocore/utilities/thread_pool_singleton.h"
+#include "fastslide/readers/read_parallelism.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/global_cache_manager.h"
 #include "fastslide/runtime/plugin_loader.h"
@@ -237,6 +239,37 @@ int fastslide_global_cache_get_stats(FastSlideCacheStats* out_stats) {
 
 void fastslide_global_cache_clear(void) {
   fastslide::runtime::GlobalCacheManager::Instance().Clear();
+}
+
+// Read parallelism
+
+int fastslide_set_read_parallelism(FastSlideReadParallelism mode) {
+  fastslide_clear_last_error();
+  switch (mode) {
+    case FASTSLIDE_READ_PARALLELISM_THREAD_POOL:
+      fastslide::readers::SetReadParallelism(
+          fastslide::readers::ReadParallelism::kThreadPool);
+      return 1;
+    case FASTSLIDE_READ_PARALLELISM_CALLING_THREAD:
+      fastslide::readers::SetReadParallelism(
+          fastslide::readers::ReadParallelism::kCallingThread);
+      return 1;
+  }
+  fastslide_set_last_error("Unknown read parallelism mode");
+  return 0;
+}
+
+FastSlideReadParallelism fastslide_get_read_parallelism(void) {
+  return fastslide::readers::GetReadParallelism() ==
+                 fastslide::readers::ReadParallelism::kCallingThread
+             ? FASTSLIDE_READ_PARALLELISM_CALLING_THREAD
+             : FASTSLIDE_READ_PARALLELISM_THREAD_POOL;
+}
+
+int fastslide_set_thread_pool_size(size_t num_threads) {
+  fastslide_clear_last_error();
+  aifocore::ThreadPoolManager::SetThreadCount(num_threads);
+  return 1;
 }
 
 // Utility functions

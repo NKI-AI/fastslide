@@ -29,9 +29,9 @@ extern "C" {
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
-#include "aifocore/utilities/thread_pool_singleton.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/readers/dicom/dicom_decode.h"
+#include "fastslide/readers/read_parallelism.h"
 #include "fastslide/runtime/tile_writer.h"
 
 namespace fastslide {
@@ -101,11 +101,10 @@ aifocore::Status DicomTileExecutor::ExecutePlan(const core::TilePlan& plan,
     return writer.FillBackground(bg.r, bg.g, bg.b);
   }
 
-  auto& pool = aifocore::ThreadPoolManager::GetInstance();
   std::mutex writer_mutex;
   std::atomic<int> error_count{0};
 
-  auto futures = pool.submit_sequence(0, plan.operations.size(), [&](size_t i) {
+  readers::ForEachTileOp(plan.operations.size(), [&](size_t i) {
     const auto& op = plan.operations[i];
     auto st = ExecuteTileOperation(op, context, writer, writer_mutex);
     if (!st.ok()) {
@@ -115,8 +114,6 @@ aifocore::Status DicomTileExecutor::ExecutePlan(const core::TilePlan& plan,
       }
     }
   });
-
-  futures.wait();
   return aifocore::Status::OkStatus();
 }
 
