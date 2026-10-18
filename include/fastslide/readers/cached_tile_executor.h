@@ -23,6 +23,7 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
+#include "fastslide/readers/inflight_decodes.h"
 #include "fastslide/readers/tiff_based_tile_executor.h"
 #include "fastslide/runtime/cache_interface.h"
 
@@ -88,46 +89,23 @@ class CachedTileExecutor : public TiffBasedTileExecutor<Derived> {
   template <typename Reader, typename... Args>
   static aifocore::Result<std::span<const uint8_t>> ReadWithCache(
       const core::TileReadOp& op, const Reader& reader, Args&&... args) {
-
     // Thread-local storage to keep cached tile alive while span is in use
     static thread_local std::shared_ptr<CachedTileData> kept_alive_tile;
 
     // Reset kept alive tile to release reference to previous tile
     kept_alive_tile.reset();
 
-    const bool bypass_cache = IsCacheBypassEnabled();
-
-    // Check cache if enabled (and not bypassed)
-    if (!bypass_cache && reader.IsCacheEnabled()) {
-      auto cache = reader.GetCache();
-      // Delegate key creation to derived class
-      TileKey key =
-          Derived::MakeCacheKey(op, reader, std::forward<Args>(args)...);
-
-      if (auto tile = cache->Get(key)) {
-        kept_alive_tile = tile;
-        return std::span<const uint8_t>(tile->data);
-      }
+    if (!IsCacheBypassEnabled() && reader.IsCacheEnabled()) {
+      AIFOCORE_ASSIGN_OR_RETURN(
+          kept_alive_tile,
+          ReadThroughCache(op, reader, std::forward<Args>(args)...));
+      return std::span<const uint8_t>(kept_alive_tile->data);
     }
 
-    // Cache miss: Read from disk via derived class
-    // This should use TiffBasedTileExecutor's thread-local buffers
+    // No cache: decode into TiffBasedTileExecutor's thread-local buffers.
     AIFOCORE_ASSIGN_OR_RETURN(
         auto decoded_data,
         Derived::ReadTileFromDisk(op, reader, std::forward<Args>(args)...));
-
-    // Store in cache if enabled (and not bypassed)
-    if (!bypass_cache && reader.IsCacheEnabled()) {
-      auto cache = reader.GetCache();
-      TileKey key =
-          Derived::MakeCacheKey(op, reader, std::forward<Args>(args)...);
-
-      // Create cached tile data
-      auto cached_tile = Derived::MakeCachedTileData(decoded_data);
-
-      cache->Put(key, cached_tile);
-    }
-
     return decoded_data.data;
   }
 
@@ -142,37 +120,67 @@ class CachedTileExecutor : public TiffBasedTileExecutor<Derived> {
     static thread_local std::shared_ptr<CachedTileData> kept_alive_tile;
     kept_alive_tile.reset();
 
-    const bool bypass_cache = IsCacheBypassEnabled();
-
-    if (!bypass_cache && reader.IsCacheEnabled()) {
-      auto cache = reader.GetCache();
-      TileKey key =
-          Derived::MakeCacheKey(op, reader, std::forward<Args>(args)...);
-
-      if (auto tile = cache->Get(key)) {
-        kept_alive_tile = tile;
-        return DecodedTileData{
-            .data = std::span<const uint8_t>(tile->data),
-            .width = tile->size[0],
-            .height = tile->size[1],
-            .channels = tile->channels,
-        };
-      }
+    if (!IsCacheBypassEnabled() && reader.IsCacheEnabled()) {
+      AIFOCORE_ASSIGN_OR_RETURN(
+          kept_alive_tile,
+          ReadThroughCache(op, reader, std::forward<Args>(args)...));
+      return DecodedTileData{
+          .data = std::span<const uint8_t>(kept_alive_tile->data),
+          .width = kept_alive_tile->size[0],
+          .height = kept_alive_tile->size[1],
+          .channels = kept_alive_tile->channels,
+      };
     }
 
+    return Derived::ReadTileFromDisk(op, reader, std::forward<Args>(args)...);
+  }
+
+  /// @brief Get a tile from the cache, or decode it once and cache it.
+  ///
+  /// Concurrent misses on the same tile decode it once: the first thread
+  /// decodes (see `readers::InflightDecodes`), the others wait for its tile
+  /// instead of decoding it again. The cache must be enabled.
+  template <typename Reader, typename... Args>
+  static aifocore::Result<std::shared_ptr<CachedTileData>> ReadThroughCache(
+      const core::TileReadOp& op, const Reader& reader, Args&&... args) {
+    auto cache = reader.GetCache();
+    const TileKey key = Derived::MakeCacheKey(op, reader, args...);
+    if (auto tile = cache->Get(key)) {
+      return tile;
+    }
+
+    auto claim = readers::InflightDecodes::Instance().Join(key);
+    if (!claim.leader) {
+      if (auto tile = claim.waiters->Wait()) {
+        return tile;
+      }
+      // The leader's decode failed: decode here, to report our own error.
+      return DecodeAndCache(op, reader, *cache, key,
+                            std::forward<Args>(args)...);
+    }
+
+    // A decode that finished between our miss and `Join` may be cached
+    // already; decoding it again then is harmless (same pixels), and
+    // re-checking the cache on every miss would cost more than it saves.
+    readers::InflightDecodes::Leader leader(key);
+    AIFOCORE_ASSIGN_OR_RETURN(
+        auto tile,
+        DecodeAndCache(op, reader, *cache, key, std::forward<Args>(args)...));
+    // Cached before the waiters wake, so later misses hit the cache.
+    leader.Finish(tile);
+    return tile;
+  }
+
+  template <typename Reader, typename... Args>
+  static aifocore::Result<std::shared_ptr<CachedTileData>> DecodeAndCache(
+      const core::TileReadOp& op, const Reader& reader,
+      runtime::ITileCache& cache, const TileKey& key, Args&&... args) {
     AIFOCORE_ASSIGN_OR_RETURN(
         auto decoded_data,
         Derived::ReadTileFromDisk(op, reader, std::forward<Args>(args)...));
-
-    if (!bypass_cache && reader.IsCacheEnabled()) {
-      auto cache = reader.GetCache();
-      TileKey key =
-          Derived::MakeCacheKey(op, reader, std::forward<Args>(args)...);
-      auto cached_tile = Derived::MakeCachedTileData(decoded_data);
-      cache->Put(key, cached_tile);
-    }
-
-    return decoded_data;
+    auto cached_tile = Derived::MakeCachedTileData(decoded_data);
+    cache.Put(key, cached_tile);
+    return cached_tile;
   }
 
   /// @brief Helper to create CachedTileData from DecodedTileData
