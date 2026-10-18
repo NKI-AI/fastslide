@@ -126,6 +126,9 @@ class CachedTileExecutor : public TiffBasedTileExecutor<Derived> {
       auto cached_tile = Derived::MakeCachedTileData(decoded_data);
 
       cache->Put(key, cached_tile);
+      // The entry may own the bytes `decoded_data` points to (see
+      // MakeCachedTileData), and the cache may drop it at once.
+      kept_alive_tile = std::move(cached_tile);
     }
 
     return decoded_data.data;
@@ -170,17 +173,41 @@ class CachedTileExecutor : public TiffBasedTileExecutor<Derived> {
           Derived::MakeCacheKey(op, reader, std::forward<Args>(args)...);
       auto cached_tile = Derived::MakeCachedTileData(decoded_data);
       cache->Put(key, cached_tile);
+      kept_alive_tile = std::move(cached_tile);
     }
 
     return decoded_data;
   }
 
   /// @brief Helper to create CachedTileData from DecodedTileData
+  ///
+  /// When the tile was decoded into one of this thread's reusable buffers
+  /// (the usual case), that buffer is moved into the entry instead of copying
+  /// the pixels: the heap block does not move, so `decoded.data` stays valid
+  /// while the entry is alive, and the thread allocates a new buffer on its
+  /// next decode. Other sources, or buffers much larger than the tile, are
+  /// copied.
   static std::shared_ptr<CachedTileData> MakeCachedTileData(
       const DecodedTileData& decoded) {
     auto cached_tile = std::make_shared<CachedTileData>();
-    // Copy data to vector for cache ownership
-    cached_tile->data.assign(decoded.data.begin(), decoded.data.end());
+    auto& buffers = TiffBasedTileExecutor<Derived>::GetBuffers();
+    std::vector<uint8_t>* owner = nullptr;
+    for (auto* buffer : {&buffers.tile_buffer, &buffers.crop_buffer}) {
+      if (!decoded.data.empty() && buffer->data() == decoded.data.data() &&
+          buffer->size() >= decoded.data.size()) {
+        owner = buffer;
+      }
+    }
+    // A buffer grown by a larger tile earlier would hold memory the cache
+    // does not account for.
+    if (owner != nullptr &&
+        owner->capacity() <= decoded.data.size() + decoded.data.size() / 4) {
+      owner->resize(decoded.data.size());
+      cached_tile->data = std::move(*owner);
+      owner->clear();
+    } else {
+      cached_tile->data.assign(decoded.data.begin(), decoded.data.end());
+    }
     cached_tile->size = {decoded.width, decoded.height};
     cached_tile->channels = decoded.channels;
     return cached_tile;

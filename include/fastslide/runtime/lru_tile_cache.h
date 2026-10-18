@@ -102,7 +102,8 @@ class LRUTileCache : public ITileCache {
   };
 
   /// @brief Evict least recently used tile
-  void EvictLru();
+  /// @return The evicted tile, so the caller can free it after unlocking
+  std::shared_ptr<CachedTileData> EvictLru();
 
   size_t capacity_bytes_;
   size_t current_size_bytes_;

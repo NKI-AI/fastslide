@@ -19,6 +19,8 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "aifocore/status/result.h"
 
@@ -67,6 +69,10 @@ void LRUTileCache::Put(const TileKey& key,
     return;  // Don't cache null tiles
   }
 
+  // Tiles leaving the cache are released after the lock: freeing a tile can
+  // return a large block to the system, which other threads should not wait
+  // for. Declared before the lock so it is destroyed after it.
+  std::vector<std::shared_ptr<CachedTileData>> released;
   std::lock_guard<std::mutex> lock(mutex_);
 
   // Check if already exists
@@ -76,7 +82,7 @@ void LRUTileCache::Put(const TileKey& key,
     size_t old_size = iter->second.tile->GetMemoryUsage();
     size_t new_size = tile->GetMemoryUsage();
 
-    iter->second.tile = tile;
+    released.push_back(std::exchange(iter->second.tile, tile));
     current_size_bytes_ = current_size_bytes_ - old_size + new_size;
 
     // Move to front of LRU list
@@ -86,7 +92,7 @@ void LRUTileCache::Put(const TileKey& key,
 
     // Evict if needed after update
     while (current_size_bytes_ > capacity_bytes_ && !lru_list_.empty()) {
-      EvictLru();
+      released.push_back(EvictLru());
     }
     return;
   }
@@ -101,7 +107,7 @@ void LRUTileCache::Put(const TileKey& key,
   // Evict if needed before adding
   while (current_size_bytes_ + tile_size > capacity_bytes_ &&
          !lru_list_.empty()) {
-    EvictLru();
+    released.push_back(EvictLru());
   }
 
   // Add new entry
@@ -120,18 +126,20 @@ void LRUTileCache::Clear() {
   misses_ = 0;
 }
 
-void LRUTileCache::EvictLru() {
+std::shared_ptr<CachedTileData> LRUTileCache::EvictLru() {
   if (lru_list_.empty()) {
-    return;
+    return nullptr;
   }
 
-  TileKey oldest_key = lru_list_.back();
-  auto it = cache_.find(oldest_key);
+  std::shared_ptr<CachedTileData> evicted;
+  auto it = cache_.find(lru_list_.back());
   if (it != cache_.end()) {
     current_size_bytes_ -= it->second.tile->GetMemoryUsage();
+    evicted = std::move(it->second.tile);
     cache_.erase(it);
   }
   lru_list_.pop_back();
+  return evicted;
 }
 
 size_t LRUTileCache::GetSize() const {
