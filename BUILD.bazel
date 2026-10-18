@@ -2000,6 +2000,20 @@ cc_test(
 )
 
 cc_test(
+    name = "tiff_tile_utilities_test",
+    size = "small",
+    srcs = ["src/utilities/tiff/tile_utilities_test.cpp"],
+    deps = [
+        ":tiff_utilities",
+        "@aifocore-cpp//:portability",
+        "@aifocore-cpp//:result",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+cc_test(
     name = "binary_utils_test",
     size = "small",
     srcs = ["src/runtime/io/binary_utils_test.cpp"],
