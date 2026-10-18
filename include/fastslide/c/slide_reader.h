@@ -191,6 +191,22 @@ FASTSLIDE_API void fastslide_slide_reader_free_properties(
 FASTSLIDE_API int fastslide_slide_reader_get_bounds(
     const FastSlideSlideReader* reader, FastSlideBounds* bounds);
 
+/// @brief Get the regions of a level that hold image data
+///
+/// In pixels of the level. Readers of formats that bound their data (the valid
+/// data envelopes of iSyntax) return those regions; otherwise the whole level.
+/// Call with `capacity` 0 to get the count, then again with a buffer.
+/// @param reader Slide reader handle
+/// @param level Pyramid level
+/// @param regions Output array of at least `capacity` regions (may be NULL
+///        when `capacity` is 0)
+/// @param capacity Number of regions `regions` can hold
+/// @return Number of regions of the level (may exceed `capacity`, in which
+///         case only the first `capacity` are written), or -1 on failure
+FASTSLIDE_API int64_t fastslide_slide_reader_get_data_regions(
+    const FastSlideSlideReader* reader, int level, FastSlideBounds* regions,
+    size_t capacity);
+
 /// @brief Get format name
 /// @param reader Slide reader handle
 /// @return Format name string or NULL on failure
