@@ -177,13 +177,11 @@ aifocore::Result<J2kCanvas> ResolveJ2kCanvas(const opj_image_t& image,
 
 }  // namespace
 
-aifocore::Result<DecodedRgb> DecodeJ2kToRgb(std::span<const uint8_t> j2k_bytes,
-                                            const J2kDecodeOptions& options) {
-  AIFOCORE_ASSIGN_OR_RETURN(auto image, OpenAndDecodeJ2k(j2k_bytes));
-  AIFOCORE_ASSIGN_OR_RETURN(auto canvas, ResolveJ2kCanvas(*image));
-  const uint32_t w = canvas.width;
-  const uint32_t h = canvas.height;
+namespace detail {
 
+aifocore::Result<DecodedRgb> ConvertJ2kToRgb8(const opj_image_t& image,
+                                              uint32_t w, uint32_t h,
+                                              J2kColorspace colorspace) {
   DecodedRgb result;
   result.width = w;
   result.height = h;
@@ -196,7 +194,7 @@ aifocore::Result<DecodedRgb> DecodeJ2kToRgb(std::span<const uint8_t> j2k_bytes,
   std::array<uint32_t, 3> sub_x{};
   std::array<uint32_t, 3> sub_y{};
   for (int c = 0; c < 3; ++c) {
-    const auto& comp = image->comps[c];
+    const auto& comp = image.comps[c];
     if (comp.w == 0 || comp.h == 0) {
       return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
                                   "JPEG 2000 component has zero extent");
@@ -213,66 +211,114 @@ aifocore::Result<DecodedRgb> DecodeJ2kToRgb(std::span<const uint8_t> j2k_bytes,
     sub_y[c] = h / comp.h;
   }
 
-  auto normalize = [](OPJ_INT32 val, const opj_image_comp_t& comp) -> int32_t {
+  // Normalisation of a component sample to 8 bits: re-centre signed samples,
+  // then shift right (prec > 8) or left (prec < 8), and clamp. The parameters
+  // are resolved once here rather than per pixel.
+  struct Normalization {
+    int32_t offset = 0;
+    int32_t right_shift = 0;
+    int32_t left_shift = 0;
+  };
+
+  std::array<Normalization, 3> norm{};
+  for (int c = 0; c < 3; ++c) {
+    const auto& comp = image.comps[c];
+    const auto prec = static_cast<int32_t>(comp.prec);
     if (comp.sgnd) {
-      val += (1 << (comp.prec - 1));
+      norm[c].offset = 1 << (prec - 1);
     }
-    if (comp.prec > 8) {
-      val >>= (comp.prec - 8);
-    } else if (comp.prec < 8) {
-      val <<= (8 - comp.prec);
+    if (prec > 8) {
+      norm[c].right_shift = prec - 8;
+    } else if (prec < 8) {
+      norm[c].left_shift = 8 - prec;
     }
+  }
+  const auto normalize = [](OPJ_INT32 val, const Normalization& n) -> int32_t {
+    val += n.offset;
+    val >>= n.right_shift;
+    val <<= n.left_shift;
     return std::clamp(val, OPJ_INT32{0}, OPJ_INT32{255});
   };
 
-  const OPJ_INT32* c0 = image->comps[0].data;
-  const OPJ_INT32* c1 = image->comps[1].data;
-  const OPJ_INT32* c2 = image->comps[2].data;
-  const uint32_t c0_w = image->comps[0].w;
-  const uint32_t c1_w = image->comps[1].w;
-  const uint32_t c2_w = image->comps[2].w;
-
-  if (options.colorspace == J2kColorspace::kYCbCr) {
-    // ITU-R BT.601 inverse, matching OpenSlide's tables. Chroma is treated as
-    // unsigned 8-bit centred on 128 after `normalize()`.
-    for (uint32_t y = 0; y < h; ++y) {
-      const OPJ_INT32* y_row = c0 + static_cast<size_t>(y / sub_y[0]) * c0_w;
-      const OPJ_INT32* cb_row = c1 + static_cast<size_t>(y / sub_y[1]) * c1_w;
-      const OPJ_INT32* cr_row = c2 + static_cast<size_t>(y / sub_y[2]) * c2_w;
-      uint8_t* dst = result.rgb.data() + static_cast<size_t>(y) * w * 3;
+  // Component column for each output column. A per-pixel `x / sub_x` kept the
+  // loop from vectorising; full-resolution components (the common case) read
+  // `x` directly, sub-sampled ones go through a table built once per tile.
+  const bool full_resolution = sub_x == std::array<uint32_t, 3>{1, 1, 1} &&
+                               sub_y == std::array<uint32_t, 3>{1, 1, 1};
+  std::array<std::vector<uint32_t>, 3> columns;
+  if (!full_resolution) {
+    for (int c = 0; c < 3; ++c) {
+      columns[c].resize(w);
       for (uint32_t x = 0; x < w; ++x) {
-        const int32_t Y = normalize(y_row[x / sub_x[0]], image->comps[0]);
-        const int32_t Cb =
-            normalize(cb_row[x / sub_x[1]], image->comps[1]) - 128;
-        const int32_t Cr =
-            normalize(cr_row[x / sub_x[2]], image->comps[2]) - 128;
-        // Fixed-point BT.601: coefficients << 16, +0.5 rounding.
-        const int32_t r = Y + ((91881 * Cr + 32768) >> 16);
-        const int32_t g = Y - ((22554 * Cb + 46802 * Cr + 32768) >> 16);
-        const int32_t b = Y + ((116130 * Cb + 32768) >> 16);
-        dst[x * 3 + 0] = static_cast<uint8_t>(std::clamp(r, 0, 255));
-        dst[x * 3 + 1] = static_cast<uint8_t>(std::clamp(g, 0, 255));
-        dst[x * 3 + 2] = static_cast<uint8_t>(std::clamp(b, 0, 255));
-      }
-    }
-  } else {
-    for (uint32_t y = 0; y < h; ++y) {
-      const OPJ_INT32* r_row = c0 + static_cast<size_t>(y / sub_y[0]) * c0_w;
-      const OPJ_INT32* g_row = c1 + static_cast<size_t>(y / sub_y[1]) * c1_w;
-      const OPJ_INT32* b_row = c2 + static_cast<size_t>(y / sub_y[2]) * c2_w;
-      uint8_t* dst = result.rgb.data() + static_cast<size_t>(y) * w * 3;
-      for (uint32_t x = 0; x < w; ++x) {
-        dst[x * 3 + 0] = static_cast<uint8_t>(
-            normalize(r_row[x / sub_x[0]], image->comps[0]));
-        dst[x * 3 + 1] = static_cast<uint8_t>(
-            normalize(g_row[x / sub_x[1]], image->comps[1]));
-        dst[x * 3 + 2] = static_cast<uint8_t>(
-            normalize(b_row[x / sub_x[2]], image->comps[2]));
+        columns[c][x] = x / sub_x[c];
       }
     }
   }
 
+  const OPJ_INT32* c0 = image.comps[0].data;
+  const OPJ_INT32* c1 = image.comps[1].data;
+  const OPJ_INT32* c2 = image.comps[2].data;
+  const uint32_t c0_w = image.comps[0].w;
+  const uint32_t c1_w = image.comps[1].w;
+  const uint32_t c2_w = image.comps[2].w;
+
+  // `column(c, x)` maps output column x to the column of component c.
+  const auto convert = [&](auto column) {
+    if (colorspace == J2kColorspace::kYCbCr) {
+      // ITU-R BT.601 inverse, matching OpenSlide's tables. Chroma is treated
+      // as unsigned 8-bit centred on 128 after `normalize()`.
+      for (uint32_t y = 0; y < h; ++y) {
+        const OPJ_INT32* y_row = c0 + static_cast<size_t>(y / sub_y[0]) * c0_w;
+        const OPJ_INT32* cb_row = c1 + static_cast<size_t>(y / sub_y[1]) * c1_w;
+        const OPJ_INT32* cr_row = c2 + static_cast<size_t>(y / sub_y[2]) * c2_w;
+        uint8_t* dst = result.rgb.data() + static_cast<size_t>(y) * w * 3;
+        for (uint32_t x = 0; x < w; ++x) {
+          const int32_t Y = normalize(y_row[column(0, x)], norm[0]);
+          const int32_t Cb = normalize(cb_row[column(1, x)], norm[1]) - 128;
+          const int32_t Cr = normalize(cr_row[column(2, x)], norm[2]) - 128;
+          // Fixed-point BT.601: coefficients << 16, +0.5 rounding.
+          const int32_t r = Y + ((91881 * Cr + 32768) >> 16);
+          const int32_t g = Y - ((22554 * Cb + 46802 * Cr + 32768) >> 16);
+          const int32_t b = Y + ((116130 * Cb + 32768) >> 16);
+          dst[x * 3 + 0] = static_cast<uint8_t>(std::clamp(r, 0, 255));
+          dst[x * 3 + 1] = static_cast<uint8_t>(std::clamp(g, 0, 255));
+          dst[x * 3 + 2] = static_cast<uint8_t>(std::clamp(b, 0, 255));
+        }
+      }
+    } else {
+      for (uint32_t y = 0; y < h; ++y) {
+        const OPJ_INT32* r_row = c0 + static_cast<size_t>(y / sub_y[0]) * c0_w;
+        const OPJ_INT32* g_row = c1 + static_cast<size_t>(y / sub_y[1]) * c1_w;
+        const OPJ_INT32* b_row = c2 + static_cast<size_t>(y / sub_y[2]) * c2_w;
+        uint8_t* dst = result.rgb.data() + static_cast<size_t>(y) * w * 3;
+        for (uint32_t x = 0; x < w; ++x) {
+          dst[x * 3 + 0] =
+              static_cast<uint8_t>(normalize(r_row[column(0, x)], norm[0]));
+          dst[x * 3 + 1] =
+              static_cast<uint8_t>(normalize(g_row[column(1, x)], norm[1]));
+          dst[x * 3 + 2] =
+              static_cast<uint8_t>(normalize(b_row[column(2, x)], norm[2]));
+        }
+      }
+    }
+  };
+  if (full_resolution) {
+    convert([](int, uint32_t x) { return x; });
+  } else {
+    convert([&](int c, uint32_t x) { return columns[c][x]; });
+  }
+
   return result;
+}
+
+}  // namespace detail
+
+aifocore::Result<DecodedRgb> DecodeJ2kToRgb(std::span<const uint8_t> j2k_bytes,
+                                            const J2kDecodeOptions& options) {
+  AIFOCORE_ASSIGN_OR_RETURN(auto image, OpenAndDecodeJ2k(j2k_bytes));
+  AIFOCORE_ASSIGN_OR_RETURN(auto canvas, ResolveJ2kCanvas(*image));
+  return detail::ConvertJ2kToRgb8(*image, canvas.width, canvas.height,
+                                  options.colorspace);
 }
 
 aifocore::Result<DecodedRgb16> DecodeJ2k16(std::span<const uint8_t> j2k_bytes,
