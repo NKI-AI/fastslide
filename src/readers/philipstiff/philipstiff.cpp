@@ -305,6 +305,8 @@ aifocore::Status PhilipsTiffReader::ExecutePlan(const core::TilePlan& plan,
   const PhilipsTiffExecContext context{
       .tiff_index = GetTiffIndex(),
       .level_count = GetLevelCount(),
+      .filename = GetFilename(),
+      .cache = GetCache(),
   };
   return PhilipsTiffTileExecutor::ExecutePlan(plan, context, writer);
 }

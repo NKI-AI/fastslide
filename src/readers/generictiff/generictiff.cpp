@@ -217,6 +217,8 @@ aifocore::Status GenericTiffReader::ExecutePlan(const core::TilePlan& plan,
   const GenericTiffExecContext context{
       .tiff_index = GetTiffIndex(),
       .level_count = GetLevelCount(),
+      .filename = GetFilename(),
+      .cache = GetCache(),
   };
   return GenericTiffTileExecutor::ExecutePlan(plan, context, writer);
 }
