@@ -139,6 +139,12 @@ class Canvas {
   /// @brief Check if canvas uses blended composition.
   [[nodiscard]] bool IsBlendingEnabled() const;
 
+  /// @brief Check if a pixel keeps the first tile painted onto it.
+  ///
+  /// The RGB8 and RGB16 paths track coverage and skip pixels a tile already
+  /// painted; the other paths overwrite them, so the last tile painted wins.
+  [[nodiscard]] bool KeepsFirstWrite() const;
+
  private:
   void InitOutputImage();
   Config AnalyzePlan(const core::TilePlan& plan);

@@ -377,6 +377,52 @@ TEST(CanvasTest, OverlappingTiles) {
   ASSERT_TRUE(result.ok()) << result.status().ToString();
 }
 
+// Overlapping tiles keep the first one painted exactly when the canvas says
+// so; the MRXS executor picks its paint order from this.
+TEST(CanvasTest, KeepsFirstWriteMatchesHowOverlapsResolve) {
+  struct Layout {
+    uint32_t channels;
+    DataType data_type;
+    PlanarConfig planar_config;
+    bool keeps_first_write;
+  };
+
+  for (const Layout& layout : {
+           Layout{3, DataType::kUInt8, PlanarConfig::kContiguous, true},
+           Layout{3, DataType::kUInt16, PlanarConfig::kContiguous, true},
+           Layout{4, DataType::kUInt8, PlanarConfig::kSeparate, false},
+           Layout{1, DataType::kUInt8, PlanarConfig::kContiguous, false},
+       }) {
+    Canvas::Config config;
+    config.dimensions = {4, 4};
+    config.channels = layout.channels;
+    config.data_type = layout.data_type;
+    config.planar_config = layout.planar_config;
+    Canvas canvas(config);
+    EXPECT_EQ(canvas.KeepsFirstWrite(), layout.keeps_first_write);
+
+    // Paint two tiles over the whole canvas; the planar path takes one plane.
+    const uint32_t tile_channels =
+        layout.planar_config == PlanarConfig::kSeparate ? 1 : layout.channels;
+    const size_t tile_bytes =
+        4 * 4 * tile_channels * GetDataTypeSize(layout.data_type);
+    core::TileReadOp op;
+    op.level = 0;
+    op.tile_coord = {0, 0};
+    op.transform.source = {0, 0, 4, 4};
+    op.transform.dest = {0, 0, 4, 4};
+    for (const uint8_t value : {uint8_t{10}, uint8_t{20}}) {
+      const std::vector<uint8_t> tile(tile_bytes, value);
+      ASSERT_TRUE(canvas.PaintTile(op, tile, 4, 4, tile_channels).ok());
+    }
+
+    auto result = canvas.GetOutput();
+    ASSERT_TRUE(result.ok()) << result.status().ToString();
+    EXPECT_EQ(result->GetData()[0], layout.keeps_first_write ? 10 : 20)
+        << layout.channels << " channels";
+  }
+}
+
 // ============================================================================
 // Error Handling Tests
 // ============================================================================

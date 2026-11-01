@@ -1839,7 +1839,11 @@ cc_test(
     size = "small",
     srcs = ["src/readers/mrxs/mrxs_determinism_test.cpp"],
     deps = [
+        ":core_tile_plan",
+        ":core_tile_request",
         ":formats_mrxs",
+        ":runtime_tile_writer",
+        "@aifocore-cpp//:result",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],

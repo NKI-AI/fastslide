@@ -14,6 +14,7 @@
 
 #include "fastslide/readers/mrxs/mrxs_tile_executor.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <iomanip>
@@ -71,12 +72,12 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
 
   const auto& zoom_level = slide_info.zoom_levels[level];
 
-  // Camera tiles overlap, and the canvas resolves overlaps first-writer-wins
-  // (coverage map). Painting from parallel tasks let whichever decode finished
-  // first win, so the same read returned different pixels from call to call.
-  // Phase 1 decodes each stored image of the read once, in parallel; phase 2
-  // paints the operations serially in plan order, so the result depends only
-  // on the request.
+  // Camera tiles overlap, and which tile shows in an overlap depends on the
+  // order they are painted in. Painting from parallel tasks let whichever
+  // decode finished first decide, so the same read returned different pixels
+  // from call to call. Phase 1 decodes each stored image of the read once, in
+  // parallel; phase 2 paints the operations serially in a fixed order, so the
+  // result depends only on the request.
 
   // One decode per stored image (data file + offset); at higher zoom levels
   // several operations crop the same image.
@@ -119,10 +120,33 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
   });
   futures.wait();
 
-  // Phase 2: paint serially, in plan order.
+  // Phase 2: paint serially, in OpenSlide's order. OpenSlide draws the tile
+  // grid from the bottom row up, each row right to left, with
+  // CAIRO_OPERATOR_SATURATE, which leaves opaque pixels alone: the first tile
+  // drawn keeps an overlap, so the bottom-right tile shows. Order by grid
+  // position (`tile_coord`) as OpenSlide does, not by camera position. The RGB
+  // canvases also keep the first write (coverage map); the others keep the
+  // last, so paint those in reverse.
+  std::vector<uint32_t> paint_order(plan.operations.size());
+  for (uint32_t i = 0; i < paint_order.size(); ++i) {
+    paint_order[i] = i;
+  }
+  std::stable_sort(paint_order.begin(), paint_order.end(),
+                   [&plan](uint32_t a, uint32_t b) {
+                     const auto& ta = plan.operations[a].tile_coord;
+                     const auto& tb = plan.operations[b].tile_coord;
+                     if (ta.y != tb.y) {
+                       return ta.y > tb.y;
+                     }
+                     return ta.x > tb.x;
+                   });
+  if (!writer.KeepsFirstWrite()) {
+    std::reverse(paint_order.begin(), paint_order.end());
+  }
+
   std::mutex accumulator_mutex;
   int error_count = 0;
-  for (uint32_t i = 0; i < plan.operations.size(); ++i) {
+  for (const uint32_t i : paint_order) {
     const DecodedImage& image = decoded[op_group[i]];
     if (!image.decoded) {
       continue;

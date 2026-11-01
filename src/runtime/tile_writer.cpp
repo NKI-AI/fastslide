@@ -70,4 +70,8 @@ bool Canvas::IsBlendingEnabled() const {
   return config_.enable_blending;
 }
 
+bool Canvas::KeepsFirstWrite() const {
+  return use_rgb8_blending_ || use_rgb16_copy_blending_;
+}
+
 }  // namespace fastslide::runtime
