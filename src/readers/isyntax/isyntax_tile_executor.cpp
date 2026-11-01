@@ -24,9 +24,9 @@
 #include <string>
 #include <vector>
 
-#include "aifocore/utilities/thread_pool_singleton.h"
 #include "fastslide/readers/cached_tile_executor.h"
 #include "fastslide/readers/isyntax/third_party/file.h"
+#include "fastslide/readers/read_parallelism.h"
 #include "fastslide/runtime/cache_interface.h"
 
 namespace fastslide {
@@ -64,12 +64,11 @@ aifocore::Status IsyntaxTileExecutor::ExecutePlan(
   }
 
   // Execute all tiles in parallel using the thread pool
-  auto& pool = aifocore::ThreadPoolManager::GetInstance();
   std::mutex accumulator_mutex;
   std::atomic<int> error_count{0};
 
   // Submit sequence of tile operations
-  auto futures = pool.submit_sequence(0, plan.operations.size(), [&](size_t i) {
+  readers::ForEachTileOp(plan.operations.size(), [&](size_t i) {
     const auto& op = plan.operations[i];
     auto status = ExecuteTileOperation(op, context, writer, accumulator_mutex);
 
@@ -81,9 +80,6 @@ aifocore::Status IsyntaxTileExecutor::ExecutePlan(
       }
     }
   });
-
-  // Wait for all tiles to complete
-  futures.wait();
 
   if (error_count > 0) {
     std::cerr << "IsyntaxTileExecutor: " << error_count

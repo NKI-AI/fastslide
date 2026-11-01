@@ -26,6 +26,7 @@ if gtest_dep.found()
     'tile_writer_uint16_test' : '../src/runtime/tile_writer_uint16_test.cpp',
     'reader_registry_test' : '../src/runtime/reader_registry_test.cpp',
     'lru_tile_cache_test' : '../src/runtime/lru_tile_cache_test.cpp',
+    'read_parallelism_test' : '../src/readers/read_parallelism_test.cpp',
     'cache_interface_test' : '../src/runtime/cache_interface_test.cpp',
     'hash_test' : '../src/utilities/hash_test.cpp',
     'tiff_quickhash_test' : '../src/readers/tiff_quickhash_test.cpp',

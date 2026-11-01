@@ -106,6 +106,13 @@ pub enum FastSlideColorSpace {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FastSlideReadParallelism {
+    ThreadPool = 0,
+    CallingThread = 1,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FastSlideRenderingIntent {
     Perceptual = 0,
     RelativeColorimetric = 1,
@@ -280,6 +287,9 @@ unsafe extern "C" {
     pub fn fastslide_global_cache_set_capacity_bytes(capacity_bytes: usize) -> c_int;
     pub fn fastslide_global_cache_get_stats(out_stats: *mut FastSlideCacheStats) -> c_int;
     pub fn fastslide_global_cache_clear();
+    pub fn fastslide_set_read_parallelism(mode: FastSlideReadParallelism) -> c_int;
+    pub fn fastslide_get_read_parallelism() -> FastSlideReadParallelism;
+    pub fn fastslide_set_thread_pool_size(num_threads: usize) -> c_int;
     pub fn fastslide_registry_get_supported_extensions(
         registry: *mut FastSlideRegistry,
         extensions: *mut *mut *mut c_char,

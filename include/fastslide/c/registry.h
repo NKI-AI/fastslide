@@ -107,6 +107,37 @@ FASTSLIDE_API int fastslide_global_cache_get_stats(
 /// @brief Clear all tiles from the process-wide global tile cache.
 FASTSLIDE_API void fastslide_global_cache_clear(void);
 
+// Read parallelism
+
+/// @brief Where the tile operations of each read run.
+typedef enum {
+  /// Spread over the shared thread pool; the calling thread waits (default).
+  /// Lowest latency for one read at a time.
+  FASTSLIDE_READ_PARALLELISM_THREAD_POOL = 0,
+  /// Run on the calling thread. Best throughput when the caller already runs
+  /// many reads concurrently: no pool hand-off, and the pool size no longer
+  /// caps how many reads progress at once.
+  FASTSLIDE_READ_PARALLELISM_CALLING_THREAD = 1,
+} FastSlideReadParallelism;
+
+/// @brief Set where the tile operations of each read run (process-wide).
+///
+/// Also settable at startup with the `FASTSLIDE_READ_PARALLELISM` environment
+/// variable (`thread_pool` or `calling_thread`).
+/// @return 1 on success, 0 on an unknown mode.
+FASTSLIDE_API int fastslide_set_read_parallelism(FastSlideReadParallelism mode);
+
+/// @brief Current read parallelism mode.
+FASTSLIDE_API FastSlideReadParallelism fastslide_get_read_parallelism(void);
+
+/// @brief Resize the shared thread pool used in thread-pool mode.
+///
+/// Defaults to `NUM_THREADS` or the number of hardware threads, which in a
+/// container is the host's, not the CPU quota. Waits for queued tasks first.
+/// @param num_threads Thread count (0 = hardware concurrency)
+/// @return 1 on success.
+FASTSLIDE_API int fastslide_set_thread_pool_size(size_t num_threads);
+
 // Utility functions
 
 /// @brief Get supported file extensions

@@ -29,11 +29,11 @@
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
-#include "aifocore/utilities/thread_pool_singleton.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/image.h"
 #include "fastslide/readers/mrxs/mrxs_decoder.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
+#include "fastslide/readers/read_parallelism.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/tile_writer.h"
 
@@ -72,11 +72,10 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
   const auto& zoom_level = slide_info.zoom_levels[level];
 
   // Get global thread pool for parallel tile processing
-  auto& pool = aifocore::ThreadPoolManager::GetInstance();
   std::mutex accumulator_mutex;
   std::atomic<int> error_count{0};
 
-  auto futures = pool.submit_sequence(0, plan.operations.size(), [&](size_t i) {
+  readers::ForEachTileOp(plan.operations.size(), [&](size_t i) {
     const auto& op = plan.operations[i];
     auto status = ExecuteTileOperation(op, context, zoom_level, writer,
                                        accumulator_mutex);
@@ -86,9 +85,6 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
                 << ") failed: " << status.ToString();
     }
   });
-
-  // Wait for all tiles to complete
-  futures.wait();
 
   if (error_count > 0) {
     std::cerr << error_count << " tile(s) failed during parallel execution"
