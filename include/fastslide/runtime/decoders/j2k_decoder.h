@@ -21,6 +21,9 @@
 #include "aifocore/status/result.h"
 #include "fastslide/runtime/decoders/decoded_image.h"
 
+// From <openjpeg.h>; declared here so this header does not include it.
+typedef struct opj_image opj_image_t;  // NOLINT(modernize-use-using)
+
 namespace fastslide::runtime::decoders {
 
 /// @brief Source colour space of a JPEG 2000 codestream.
@@ -44,6 +47,16 @@ struct J2kDecodeOptions {
 /// the conversion uses the JPEG/ITU-R BT.601 coefficients
 [[nodiscard]] aifocore::Result<DecodedRgb> DecodeJ2kToRgb(
     std::span<const uint8_t> j2k_bytes, const J2kDecodeOptions& options = {});
+
+namespace detail {
+
+/// @brief Convert the three components of a decoded OpenJPEG image to packed
+/// RGB8 at `w`x`h` (the output grid; components may be sub-sampled by integer
+/// factors). Exposed for testing; `DecodeJ2kToRgb` is the public entry point.
+[[nodiscard]] aifocore::Result<DecodedRgb> ConvertJ2kToRgb8(
+    const opj_image_t& image, uint32_t w, uint32_t h, J2kColorspace colorspace);
+
+}  // namespace detail
 
 /// @brief Decode a JPEG 2000 codestream (J2K or JP2) at native 16-bit
 /// precision into interleaved samples.

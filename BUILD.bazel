@@ -1953,6 +1953,18 @@ cc_test(
 )
 
 cc_test(
+    name = "j2k_decoder_test",
+    size = "small",
+    srcs = ["src/runtime/decoders/j2k_decoder_test.cpp"],
+    deps = [
+        ":runtime_j2k_decoder",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@openjp2",
+    ],
+)
+
+cc_test(
     name = "lru_tile_cache_test",
     size = "small",
     srcs = ["src/runtime/lru_tile_cache_test.cpp"],
