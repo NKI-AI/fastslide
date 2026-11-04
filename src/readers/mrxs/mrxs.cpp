@@ -100,7 +100,9 @@ constexpr std::string_view kSlidedatIni = "Slidedat.ini";
 /// extension)
 /// @param slide_info Parsed slide information from Slidedat.ini
 MrxsReader::MrxsReader(fs::path dirname, mrxs::SlideDataInfo slide_info)
-    : dirname_(std::move(dirname)), slide_info_(slide_info) {
+    : dirname_(std::move(dirname)),
+      slide_info_(slide_info),
+      data_files_(dirname_, slide_info_.datafile_paths) {
   level_params_ = CalculateLevelParams();
   spatial_indices_.resize(slide_info_.zoom_levels.size());
 }
@@ -842,7 +844,7 @@ aifocore::Result<core::TilePlan> MrxsReader::PrepareRequest(
 /// @note Continues processing after individual tile failures (logs warnings)
 aifocore::Status MrxsReader::ExecutePlan(const core::TilePlan& plan,
                                          runtime::Canvas& writer) const {
-  return mrxs::MrxsPipeline::ExecutePlan(plan, dirname_, slide_info_,
+  return mrxs::MrxsPipeline::ExecutePlan(plan, data_files_, slide_info_,
                                          GetCache(), writer);
 }
 

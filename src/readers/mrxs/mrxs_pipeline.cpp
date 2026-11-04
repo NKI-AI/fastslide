@@ -42,10 +42,10 @@ aifocore::Result<core::TilePlan> MrxsPipeline::BuildPlan(
 }
 
 aifocore::Status MrxsPipeline::ExecutePlan(
-    const core::TilePlan& plan, const fs::path& dirname,
+    const core::TilePlan& plan, const MrxsDataFiles& data_files,
     const SlideDataInfo& slide_info, std::shared_ptr<runtime::ITileCache> cache,
     runtime::Canvas& writer) {
-  const MrxsExecContext context(dirname, slide_info, std::move(cache));
+  const MrxsExecContext context(data_files, slide_info, std::move(cache));
   return MrxsTileExecutor::ExecutePlan(plan, context, writer);
 }
 

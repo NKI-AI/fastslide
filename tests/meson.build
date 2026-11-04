@@ -33,6 +33,7 @@ if gtest_dep.found()
     'tiff_quickhash_test' : '../src/readers/tiff_quickhash_test.cpp',
     'tiff_tile_utilities_test' : '../src/utilities/tiff/tile_utilities_test.cpp',
     'binary_utils_test' : '../src/runtime/io/binary_utils_test.cpp',
+    'file_reader_test' : '../src/runtime/io/file_reader_test.cpp',
     'runtime_filesystem_utils_test' : '../src/runtime/io/filesystem_utils_test.cpp',
     'path_utils_test' : '../src/runtime/io/path_utils_test.cpp',
     'png_decoder_test' : '../src/runtime/decoders/png_decoder_test.cpp',

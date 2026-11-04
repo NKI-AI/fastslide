@@ -93,6 +93,18 @@ class FileReader {
   /// @return Vector of bytes or error
   aifocore::Result<std::vector<uint8_t>> ReadBytes(size_t size) const;
 
+  /// @brief Read @p size bytes at @p offset without touching the stream
+  /// position
+  ///
+  /// Safe to call concurrently from several threads on the same reader, as long
+  /// as it is not mixed with Seek/Read/Tell. Uses pread on POSIX and an
+  /// offset-carrying ReadFile on Windows.
+  /// @param offset Byte offset from the start of the file
+  /// @param size Number of bytes to read
+  /// @return Vector of bytes or error (including a short read)
+  aifocore::Result<std::vector<uint8_t>> ReadAt(int64_t offset,
+                                                size_t size) const;
+
   /// @brief Get current file position
   /// @return Current position or error
   aifocore::Result<int64_t> Tell() const;

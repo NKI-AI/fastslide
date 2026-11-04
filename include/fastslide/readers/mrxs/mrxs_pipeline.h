@@ -21,6 +21,7 @@
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/core/tile_request.h"
+#include "fastslide/readers/mrxs/mrxs_data_reader.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/tile_writer.h"
@@ -68,12 +69,12 @@ class MrxsPipeline {
   /// context constructed internally.
   ///
   /// @param plan Tile plan to execute (from @ref BuildPlan).
-  /// @param dirname MRXS directory used to resolve data files.
+  /// @param data_files The slide's open data files.
   /// @param slide_info Parsed slide metadata.
   /// @param cache Optional shared tile cache (may be null).
   /// @param writer Output canvas to paint into.
   [[nodiscard]] static aifocore::Status ExecutePlan(
-      const core::TilePlan& plan, const fs::path& dirname,
+      const core::TilePlan& plan, const MrxsDataFiles& data_files,
       const SlideDataInfo& slide_info,
       std::shared_ptr<runtime::ITileCache> cache, runtime::Canvas& writer);
 };

@@ -80,47 +80,45 @@ aifocore::Status TileDataValidator::ValidateFileNumber(int32_t file_number,
   return aifocore::Status::OkStatus();
 }
 
-aifocore::Result<std::vector<uint8_t>> MrxsDataReader::ReadTileData(
-    const fs::path& dirname, const MiraxTileRecord& tile,
-    const std::vector<std::string>& datafile_paths) {
-  // Validate file number
-  AIFOCORE_RETURN_IF_ERROR(TileDataValidator::ValidateFileNumber(
-      tile.data_file_number, datafile_paths.size()));
+aifocore::Result<const MrxsDataFiles::OpenFile*> MrxsDataFiles::Get(
+    size_t file_number) const {
+  // Opening under the lock also keeps two threads from opening the same file.
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (files_[file_number]) {
+    return files_[file_number].get();
+  }
+  FileReader reader;
+  AIFOCORE_ASSIGN_OR_RETURN(
+      reader, FileReader::Open(dirname_ / datafile_paths_[file_number], "rb"));
+  int64_t size;
+  AIFOCORE_ASSIGN_OR_RETURN(size, reader.GetSize());
+  files_[file_number] =
+      std::make_unique<OpenFile>(OpenFile{std::move(reader), size});
+  return files_[file_number].get();
+}
 
-  // Validate tile parameters
+aifocore::Result<std::vector<uint8_t>> MrxsDataFiles::ReadTile(
+    const MiraxTileRecord& tile) const {
+  AIFOCORE_RETURN_IF_ERROR(TileDataValidator::ValidateFileNumber(
+      tile.data_file_number, datafile_paths_.size()));
   AIFOCORE_RETURN_IF_ERROR(TileDataValidator::ValidateTileParams(tile));
 
-  // Construct full path to data file
-  fs::path data_path = dirname / datafile_paths[tile.data_file_number];
-
-  // Open file
-  FileReader file;
-  AIFOCORE_ASSIGN_OR_RETURN(file, FileReader::Open(data_path, "rb"));
-
-  // Get file size to validate read bounds
-  int64_t file_size;
-  AIFOCORE_ASSIGN_OR_RETURN(file_size, file.GetSize());
+  const OpenFile* file;
+  AIFOCORE_ASSIGN_OR_RETURN(file, Get(tile.data_file_number));
 
   // Validate that tile data fits within file bounds
   const int64_t end_offset =
       static_cast<int64_t>(tile.offset) + static_cast<int64_t>(tile.length);
-  if (end_offset > file_size) {
+  if (end_offset > file->size) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format(
             "Tile data extends beyond file size: offset={}, "
             "length={}, end={}, file_size={} for tile at ({}, {})",
-            tile.offset, tile.length, end_offset, file_size, tile.x, tile.y));
+            tile.offset, tile.length, end_offset, file->size, tile.x, tile.y));
   }
 
-  // Seek to tile
-  AIFOCORE_RETURN_IF_ERROR(file.Seek(tile.offset));
-
-  // Read tile data
-  std::vector<uint8_t> data;
-  AIFOCORE_ASSIGN_OR_RETURN(data, file.ReadBytes(tile.length));
-
-  return data;
+  return file->reader.ReadAt(tile.offset, tile.length);
 }
 
 aifocore::Result<std::vector<uint8_t>> MrxsDataReader::ReadData(
