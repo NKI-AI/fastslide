@@ -27,6 +27,7 @@
 #include "aifocore/status/result.h"
 #include "fastslide/associated_data.h"
 #include "fastslide/image.h"
+#include "fastslide/readers/mrxs/mrxs_data_reader.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
 #include "fastslide/readers/reader_factory.h"
 #include "fastslide/runtime/cache_interface.h"
@@ -255,6 +256,7 @@ class MrxsReader : public SlideReader, public ReaderFactory<MrxsReader> {
 
   fs::path dirname_;                ///< MRXS directory path
   mrxs::SlideDataInfo slide_info_;  ///< Slide information
+  mrxs::MrxsDataFiles data_files_;  ///< Open Data files, closed with the slide
   SlideProperties properties_;      ///< Standard slide properties
   std::vector<mrxs::PyramidLevelParameters>
       level_params_;  ///< Cached level parameters

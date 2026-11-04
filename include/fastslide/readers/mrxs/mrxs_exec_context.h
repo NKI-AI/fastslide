@@ -31,10 +31,10 @@ namespace fastslide {
 /// @brief Read-only view of MRXS reader state needed by the tile executor.
 class MrxsExecContext {
  public:
-  MrxsExecContext(std::filesystem::path dirname,
+  MrxsExecContext(const mrxs::MrxsDataFiles& data_files,
                   const mrxs::SlideDataInfo& slide_info,
                   std::shared_ptr<runtime::ITileCache> cache)
-      : dirname_(std::move(dirname)),
+      : data_files_(data_files),
         slide_info_(slide_info),
         cache_(std::move(cache)) {}
 
@@ -50,12 +50,11 @@ class MrxsExecContext {
 
   [[nodiscard]] aifocore::Result<std::vector<uint8_t>> ReadTileData(
       const mrxs::MiraxTileRecord& tile) const {
-    return mrxs::MrxsDataReader::ReadTileData(dirname_, tile,
-                                              slide_info_.datafile_paths);
+    return data_files_.ReadTile(tile);
   }
 
  private:
-  std::filesystem::path dirname_;
+  const mrxs::MrxsDataFiles& data_files_;
   const mrxs::SlideDataInfo& slide_info_;
   std::shared_ptr<runtime::ITileCache> cache_;
 };
