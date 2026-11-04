@@ -240,5 +240,117 @@ aifocore::Result<StitchResult> StitchLevel0(const EncodeInfo& encode,
   return result;
 }
 
+uint32_t RoundUpToMultipleOf16(double extent) {
+  return static_cast<uint32_t>(std::ceil(std::ceil(extent) / 16.0) * 16.0);
+}
+
+aifocore::Result<StitchResult> StitchLevel0Dp200(const EncodeInfo& encode,
+                                                 uint32_t tile_w,
+                                                 uint32_t tile_h) {
+  if (tile_w == 0 || tile_h == 0) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "BIF stitch: zero tile size");
+  }
+  const double tw = static_cast<double>(tile_w);
+  const double th = static_cast<double>(tile_h);
+
+  struct Area {
+    const AoiInfo* aoi;
+    double x;
+    double y;
+    std::vector<double> off_x;  // per tile (row-major), from its joint
+    std::vector<double> off_y;
+  };
+
+  std::vector<Area> areas;
+  for (const auto& aoi : encode.aois) {
+    const int cols = aoi.num_cols;
+    const int rows = aoi.num_rows;
+    if (cols <= 0 || rows <= 0) {
+      continue;
+    }
+    Area area{&aoi, aoi.pos_x, aoi.pos_y,
+              std::vector<double>(static_cast<size_t>(cols) * rows, 0.0),
+              std::vector<double>(static_cast<size_t>(cols) * rows, 0.0)};
+    for (const auto& joint : aoi.joints) {
+      if (joint.tile1 < 1 || joint.tile2 < 1 || joint.tile1 > cols * rows ||
+          joint.tile2 > cols * rows) {
+        continue;
+      }
+      const Cell a = SerpentineCell(joint.tile1, cols, rows);
+      const Cell b = SerpentineCell(joint.tile2, cols, rows);
+      switch (joint.direction) {
+        case JointDirection::kLeft:
+        case JointDirection::kRight:
+          area.off_x[static_cast<size_t>(b.row) * cols + b.col] =
+              -joint.overlap_x;
+          break;
+        case JointDirection::kUp:
+          area.off_y[static_cast<size_t>(a.row) * cols + a.col] =
+              -joint.overlap_y;
+          break;
+        case JointDirection::kDown:
+          return AIFOCORE_MAKE_STATUS(
+              aifocore::StatusCode::kUnimplemented,
+              "BIF stitch: DOWN joints are not supported by the DP 200 layout");
+        case JointDirection::kUnknown:
+          break;
+      }
+    }
+    areas.push_back(std::move(area));
+  }
+  if (areas.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
+                                "BIF stitch: no placed tiles");
+  }
+
+  // Pos-Y is the distance from the bottom of the AOI to a point below all AOIs.
+  double top = 0.0;
+  for (const auto& area : areas) {
+    top = std::max(top, area.y + area.aoi->num_rows * th);
+  }
+  double start_x = std::numeric_limits<double>::infinity();
+  double start_y = std::numeric_limits<double>::infinity();
+  for (auto& area : areas) {
+    area.y = top - area.y - area.aoi->num_rows * th;
+    start_x = std::min(start_x, area.x);
+    start_y = std::min(start_y, area.y);
+  }
+
+  StitchResult result;
+  result.tile_width = tile_w;
+  result.tile_height = tile_h;
+  result.align16 = true;
+  for (const auto& area : areas) {
+    const int cols = area.aoi->num_cols;
+    const int rows = area.aoi->num_rows;
+    const int start_col =
+        static_cast<int>(std::lround(area.aoi->origin_x / tw));
+    const int start_row =
+        static_cast<int>(std::lround(area.aoi->origin_y / th));
+    const double area_x = area.x - (start_col * tw + start_x);
+    const double area_y = area.y - (start_row * th + start_y);
+    std::vector<double> offset_y(cols, area_y);
+    for (int row = 0; row < rows; ++row) {
+      double offset_x = area_x;
+      for (int col = 0; col < cols; ++col) {
+        offset_x += area.off_x[static_cast<size_t>(row) * cols + col];
+        offset_y[col] += area.off_y[static_cast<size_t>(row) * cols + col];
+        Level0Tile tile;
+        tile.gx = static_cast<uint32_t>(start_col + col);
+        tile.gy = static_cast<uint32_t>(start_row + row);
+        tile.x = (start_col + col) * tw + offset_x;
+        tile.y = (start_row + row) * th + offset_y[col];
+        result.extent_x = std::max(result.extent_x, tile.x + tw);
+        result.extent_y = std::max(result.extent_y, tile.y + th);
+        result.tiles.push_back(tile);
+      }
+    }
+  }
+  result.level0_width = RoundUpToMultipleOf16(result.extent_x);
+  result.level0_height = RoundUpToMultipleOf16(result.extent_y);
+  return result;
+}
+
 }  // namespace bif
 }  // namespace fastslide

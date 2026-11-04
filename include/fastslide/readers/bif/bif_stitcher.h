@@ -61,6 +61,12 @@ struct StitchResult {
   uint32_t tile_height = 0;
   uint32_t level0_width = 0;   ///< Stitched bounding-box width.
   uint32_t level0_height = 0;  ///< Stitched bounding-box height.
+  /// DP 200 layout: right/bottom extent of the placed tiles before rounding;
+  /// every level's size is this extent / downsample, rounded up to a multiple
+  /// of 16 px (`RoundUpToMultipleOf16`).
+  bool align16 = false;
+  double extent_x = 0.0;
+  double extent_y = 0.0;
 };
 
 /// @brief Compute the serpentine image-column of a 1-based snapshot index.
@@ -79,6 +85,20 @@ struct StitchResult {
 [[nodiscard]] aifocore::Result<StitchResult> StitchLevel0(
     const EncodeInfo& encode, uint32_t tile_w, uint32_t tile_h,
     uint32_t grid_cols);
+
+/// @brief Round a level extent up to whole pixels, then to a multiple of 16
+/// (the DP 200 level size, see `StitchResult::align16`).
+[[nodiscard]] uint32_t RoundUpToMultipleOf16(double extent);
+
+/// @brief VENTANA DP 200 layout of OpenSlide's ventana driver with the DP 200
+/// changes of openslide/openslide#395 (DP 200 path of `parse_level0_xml` +
+/// `create_bif_grid`), which match Ventana's viewer: every tile keeps
+/// the overlap of its own joint (`-OverlapX` of the LEFT/RIGHT joint where it
+/// is Tile2, `-OverlapY` of the UP joint where it is Tile1), accumulated along
+/// its row (x) and column (y); AOIs are placed by `Pos-X`/`Pos-Y` relative to
+/// the left-/top-most AOI (`Pos-Y` measured upwards from below all AOIs).
+[[nodiscard]] aifocore::Result<StitchResult> StitchLevel0Dp200(
+    const EncodeInfo& encode, uint32_t tile_w, uint32_t tile_h);
 
 }  // namespace bif
 }  // namespace fastslide
