@@ -108,8 +108,16 @@ aifocore::Status BifReader::ProcessMetadata() {
 
   // The level-0 pyramid IFD carries the <EncodeInfo> stitch geometry.
   AIFOCORE_ASSIGN_OR_RETURN(auto encode, bif::ParseEncodeInfo(l0.xmp_packet));
-  AIFOCORE_ASSIGN_OR_RETURN(
-      stitch_, bif::StitchLevel0(encode, tile_w, tile_h, grid_cols));
+  // DP 200 scans use the layout of openslide/openslide#395, which matches
+  // Ventana's viewer; other BIF scanners keep the per-boundary whitepaper
+  // layout.
+  if (scanner_info_.scanner_model == "VENTANA DP 200") {
+    AIFOCORE_ASSIGN_OR_RETURN(stitch_,
+                              bif::StitchLevel0Dp200(encode, tile_w, tile_h));
+  } else {
+    AIFOCORE_ASSIGN_OR_RETURN(
+        stitch_, bif::StitchLevel0(encode, tile_w, tile_h, grid_cols));
+  }
 
   // Build per-level metadata. Downsample is the dyadic ratio of raw widths.
   const uint32_t l0_raw_width = std::max<uint32_t>(l0.width, 1);
@@ -132,6 +140,10 @@ aifocore::Status BifReader::ProcessMetadata() {
         std::max<uint32_t>(1, static_cast<uint32_t>(std::lround(
                                   static_cast<double>(stitch_.level0_height) /
                                   static_cast<double>(ds))))};
+    if (stitch_.align16) {
+      info.size = {bif::RoundUpToMultipleOf16(stitch_.extent_x / ds),
+                   bif::RoundUpToMultipleOf16(stitch_.extent_y / ds)};
+    }
     info.grid_cols = TilesStride(*tiff_index_, page);
     levels_.push_back(info);
   }

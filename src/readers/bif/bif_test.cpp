@@ -318,6 +318,109 @@ TEST(BifStitcherTest, VerticalOverlapReducesRowPitch) {
   EXPECT_EQ(s.level0_height, static_cast<uint32_t>(482 + 512));
 }
 
+TEST(BifStitcherTest, RoundUpToMultipleOf16) {
+  EXPECT_EQ(RoundUpToMultipleOf16(1024.0), 1024u);
+  EXPECT_EQ(RoundUpToMultipleOf16(1014.0), 1024u);
+  EXPECT_EQ(RoundUpToMultipleOf16(1024.1), 1040u);
+  EXPECT_EQ(RoundUpToMultipleOf16(0.5), 16u);
+}
+
+TEST(BifStitcherTest, Dp200KeepsEachJointsOverlapAndAlignsTo16) {
+  // 1 row, 3 columns. Only the joint of the third tile overlaps (by 10), so
+  // the second tile stays at the full pitch and only the third moves left.
+  EncodeInfo encode;
+  AoiInfo aoi;
+  aoi.num_rows = 1;
+  aoi.num_cols = 3;
+  TileJoint abut;
+  abut.direction = JointDirection::kRight;
+  abut.tile1 = 1;
+  abut.tile2 = 2;
+  TileJoint seam;
+  seam.direction = JointDirection::kRight;
+  seam.tile1 = 2;
+  seam.tile2 = 3;
+  seam.overlap_x = 10;
+  aoi.joints = {abut, seam};
+  encode.aois.push_back(aoi);
+
+  auto stitch_or = StitchLevel0Dp200(encode, 512, 512);
+  ASSERT_TRUE(stitch_or.ok());
+  const StitchResult& s = *stitch_or;
+  ASSERT_EQ(s.tiles.size(), 3u);
+  EXPECT_DOUBLE_EQ(s.tiles[0].x, 0.0);
+  EXPECT_DOUBLE_EQ(s.tiles[1].x, 512.0);
+  EXPECT_DOUBLE_EQ(s.tiles[2].x, 1014.0);
+  EXPECT_TRUE(s.align16);
+  EXPECT_DOUBLE_EQ(s.extent_x, 1526.0);
+  EXPECT_EQ(s.level0_width, 1536u);
+  EXPECT_EQ(s.level0_height, 512u);
+}
+
+TEST(BifStitcherTest, Dp200OverlapsAccumulateAlongTheRow) {
+  // Every joint overlaps by 10, so tile c sits at c * (512 - 10).
+  EncodeInfo encode;
+  AoiInfo aoi;
+  aoi.num_rows = 1;
+  aoi.num_cols = 3;
+  for (int t = 1; t < 3; ++t) {
+    TileJoint joint;
+    joint.direction = JointDirection::kRight;
+    joint.tile1 = t;
+    joint.tile2 = t + 1;
+    joint.overlap_x = 10;
+    aoi.joints.push_back(joint);
+  }
+  encode.aois.push_back(aoi);
+
+  auto stitch_or = StitchLevel0Dp200(encode, 512, 512);
+  ASSERT_TRUE(stitch_or.ok());
+  ASSERT_EQ(stitch_or->tiles.size(), 3u);
+  EXPECT_DOUBLE_EQ(stitch_or->tiles[1].x, 502.0);
+  EXPECT_DOUBLE_EQ(stitch_or->tiles[2].x, 1004.0);
+}
+
+TEST(BifStitcherTest, Dp200PlacesAoisByPosWithPosYUpwards) {
+  // Two 1x1 AOIs in the same column; B has the larger Pos-Y, so it is above
+  // A in the image. A is the second tile row (AoiOrigin Y = 512) and sits
+  // 88 px lower than a plain grid would put it.
+  EncodeInfo encode;
+  AoiInfo a;
+  a.num_rows = 1;
+  a.num_cols = 1;
+  a.pos_y = 0;
+  a.origin_y = 512;
+  AoiInfo b;
+  b.num_rows = 1;
+  b.num_cols = 1;
+  b.pos_y = 600;
+  encode.aois = {a, b};
+
+  auto stitch_or = StitchLevel0Dp200(encode, 512, 512);
+  ASSERT_TRUE(stitch_or.ok());
+  const StitchResult& s = *stitch_or;
+  ASSERT_EQ(s.tiles.size(), 2u);
+  EXPECT_EQ(s.tiles[0].gy, 1u);
+  EXPECT_DOUBLE_EQ(s.tiles[0].y, 600.0);
+  EXPECT_EQ(s.tiles[1].gy, 0u);
+  EXPECT_DOUBLE_EQ(s.tiles[1].y, 0.0);
+  EXPECT_EQ(s.level0_height, 1120u);  // 1112 rounded up to 16
+}
+
+TEST(BifStitcherTest, Dp200RejectsDownJoints) {
+  EncodeInfo encode;
+  AoiInfo aoi;
+  aoi.num_rows = 2;
+  aoi.num_cols = 1;
+  TileJoint down;
+  down.direction = JointDirection::kDown;
+  down.tile1 = 1;
+  down.tile2 = 2;
+  aoi.joints.push_back(down);
+  encode.aois.push_back(aoi);
+  EXPECT_FALSE(StitchLevel0Dp200(encode, 512, 512).ok());
+}
+
 }  // namespace
 }  // namespace bif
 
