@@ -1,0 +1,29 @@
+--- a/simd/meson.build
++++ b/simd/meson.build
+@@ -148,7 +148,7 @@
+       dir / 'jsimd.c',
+       simd_src,
+       include_directories: [incdir, 'nasm', dir],
+-      pic: get_option('default_library') != 'static',
++      pic: get_option('default_library') != 'static' or get_option('b_staticpic'),
+     )
+   endif
+ elif host_cpu in ['arm', 'aarch64']
+@@ -352,7 +352,7 @@
+     simd = static_library(
+       'simd',
+       simd_src_arm + files(dir / 'jsimd.c'),
+-      pic: get_option('default_library') != 'static',
++      pic: get_option('default_library') != 'static' or get_option('b_staticpic'),
+       include_directories: [incdir, 'arm', dir],
+       c_args: neon_flags,
+     )
+@@ -377,7 +377,7 @@
+       dir / 'jsimd.c',
+       simd_src_ppc,
+       include_directories: [incdir, dir],
+-      pic: get_option('default_library') != 'static',
++      pic: get_option('default_library') != 'static' or get_option('b_staticpic'),
+       c_args: '-maltivec',
+     )
+   endif
