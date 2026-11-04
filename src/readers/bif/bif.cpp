@@ -272,6 +272,10 @@ Metadata BifReader::GetMetadata() const {
     metadata[std::string(MetadataKeys::kMagnification)] =
         scanner_info_.magnification;
   }
+  // The ScanWhitePoint grey that ReadRegion fills unscanned tiles with.
+  const int white = std::clamp(scanner_info_.scan_white_point, 0, 255);
+  metadata[std::string(MetadataKeys::kBackgroundColor)] =
+      aifocore::fmt::format("{:02X}{:02X}{:02X}", white, white, white);
   if (!scanner_info_.barcode_1d.empty()) {
     metadata[std::string("bif.Barcode1D")] = scanner_info_.barcode_1d;
   }
