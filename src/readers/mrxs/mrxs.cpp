@@ -554,6 +554,10 @@ Metadata MrxsReader::GetMetadata() const {
     const auto& level0 = slide_info_.zoom_levels[0];
     meta[std::string(MetadataKeys::kMppX)] = level0.mpp_x;
     meta[std::string(MetadataKeys::kMppY)] = level0.mpp_y;
+    // Fill of unscanned areas, as openslide.background-color.
+    const auto rgb = mrxs::UnpackRgb24(level0.background_color_rgb);
+    meta[std::string(MetadataKeys::kBackgroundColor)] =
+        aifocore::fmt::format("{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]);
   }
 
   meta[std::string(MetadataKeys::kMagnification)] =
