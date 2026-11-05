@@ -21,18 +21,13 @@
 
 namespace fastslide {
 
-/// Wavelet-origin sub-pixel shift in level pixels.
-///
-/// The iSyntax wavelet decomposition introduces padding that shifts lower
-/// resolution levels relative to level 0.  This returns the fractional
-/// correction (in the coordinate space of `level`) needed to align the
-/// tile grid with the API coordinate origin.
-double IsyntaxPlanBuilder::ComputeOriginShift(int32_t level,
-                                              double downsample) {
-  if (level <= 0) {
-    return 0.0;
-  }
-  return -1.5 + (1.5 / downsample);
+int64_t IsyntaxPlanBuilder::ComputeGridOffset(int32_t level,
+                                              int32_t level0_padding,
+                                              int32_t origin_offset_in_pixels) {
+  // Floor division: the Philips SDK samples level pixels on the integer grid
+  // of the level, so the fractional part of the offset is dropped.
+  return (static_cast<int64_t>(level0_padding) - origin_offset_in_pixels) >>
+         level;
 }
 
 aifocore::Result<core::TilePlan> IsyntaxPlanBuilder::BuildPlan(
@@ -69,24 +64,18 @@ aifocore::Result<core::TilePlan> IsyntaxPlanBuilder::BuildPlan(
                                 "Invalid tile size from reader");
   }
 
-  // Get level dimensions
-  const auto& level_info = context.level_info;
-  int64_t level_w = level_info.dimensions[0];
-  int64_t level_h = level_info.dimensions[1];
-
   // 3. Calculate tile grid coverage
-  // request.region_bounds.x/y are in level pixels (API space).
-  // The wavelet origin shift maps API coordinates to tile-grid coordinates:
-  //   grid_coord = api_coord + shift
+  // request.region_bounds.x/y are in level pixels (API space). The tile grid
+  // is offset from it by a whole number of level pixels:
+  //   grid_coord = api_coord + offset
   double x_min = region.x;
   double y_min = region.y;
   double width = region.width;
   double height = region.height;
 
-  double shift =
-      ComputeOriginShift(request.level, level_info.downsample_factor);
-  double offset_x = shift;
-  double offset_y = shift;
+  const auto offset = static_cast<double>(context.grid_offset);
+  double offset_x = offset;
+  double offset_y = offset;
 
   double grid_x_min = x_min + offset_x;
   double grid_y_min = y_min + offset_y;
@@ -110,16 +99,16 @@ aifocore::Result<core::TilePlan> IsyntaxPlanBuilder::BuildPlan(
   start_tile_x = std::max<int64_t>(0, start_tile_x);
   start_tile_y = std::max<int64_t>(0, start_tile_y);
 
-  int64_t max_tiles_x = (level_w + tile_w - 1) / tile_w;
-  int64_t max_tiles_y = (level_h + tile_h - 1) / tile_h;
+  int64_t max_tiles_x = context.grid_width_in_tiles;
+  int64_t max_tiles_y = context.grid_height_in_tiles;
 
   end_tile_x = std::min<int64_t>(end_tile_x, max_tiles_x - 1);
   end_tile_y = std::min<int64_t>(end_tile_y, max_tiles_y - 1);
 
   // 4. Generate tile operations
-  // Tile positions in API space are fractional when shift != 0:
-  //   tile_api_pos = tile_grid_pos - shift
-  // The Canvas BilinearRgbBlit path handles the sub-pixel placement.
+  // Tile positions in API space are whole pixels:
+  //   tile_api_pos = tile_grid_pos - offset
+  // so the Canvas copies tiles without resampling.
   for (int64_t ty = start_tile_y; ty <= end_tile_y; ++ty) {
     for (int64_t tx = start_tile_x; tx <= end_tile_x; ++tx) {
       core::TileReadOp op;
@@ -130,7 +119,7 @@ aifocore::Result<core::TilePlan> IsyntaxPlanBuilder::BuildPlan(
       op.byte_offset = 0;
       op.byte_size = 0;
 
-      // Tile position in API (level-pixel) space — fractional for level > 0.
+      // Tile position in API (level-pixel) space.
       double tile_x_px = tx * tile_w - offset_x;
       double tile_y_px = ty * tile_h - offset_y;
 
