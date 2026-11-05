@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string_view>
@@ -38,11 +39,34 @@ struct isyntax_cache_t;
 namespace isyntax {
 
 /// RAII wrapper around the internal coefficient-tile cache used during decode.
+///
+/// Files share one cache per block size (`Shared`), so that the coefficients
+/// of every open file fit in one memory budget: the cache evicts the least
+/// recently used tiles of any file.
 class IsyntaxCache {
  public:
+  /// Default capacity of the shared caches: 1 GiB.
+  static constexpr size_t kDefaultSharedCapacityBytes = size_t{1} << 30;
+
+  /// A cache for `isyntax` alone, keeping at most `capacity_bytes` of
+  /// coefficients of tiles no read uses.
   static aifocore::Result<std::unique_ptr<IsyntaxCache>> CreateAndInject(
-      std::string_view debug_name_or_null, int32_t cache_size,
+      std::string_view debug_name_or_null, size_t capacity_bytes,
       isyntax_t* isyntax);
+
+  /// The cache shared by the files with the block size of `isyntax`, injected
+  /// into it. Call `Release` before destroying `isyntax`.
+  static aifocore::Result<std::shared_ptr<IsyntaxCache>> Shared(
+      isyntax_t* isyntax);
+
+  /// Sets the capacity of the shared caches, current and future. Caches over
+  /// it evict tiles on their next read.
+  static void SetSharedCapacityBytes(size_t capacity_bytes);
+  static size_t SharedCapacityBytes();
+
+  /// Frees the coefficients of the tiles of `isyntax` and forgets them. No read
+  /// of `isyntax` may be running.
+  void Release(isyntax_t* isyntax);
 
   IsyntaxCache(const IsyntaxCache&) = delete;
   IsyntaxCache& operator=(const IsyntaxCache&) = delete;

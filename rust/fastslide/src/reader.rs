@@ -463,6 +463,37 @@ impl SlideReader {
         Ok(bounds.into())
     }
 
+    /// Regions of `level` that hold image data, in pixels of the level.
+    ///
+    /// Readers of formats that bound their data (the valid data envelopes of
+    /// iSyntax) return those regions; otherwise the whole level.
+    pub fn data_regions(&self, level: i32) -> Result<Vec<Bounds>> {
+        let count = unsafe {
+            sys::fastslide_slide_reader_get_data_regions(self.ptr(), level, std::ptr::null_mut(), 0)
+        };
+        let count = usize::try_from(count).map_err(|_| Error::last("data_regions"))?;
+        let mut regions = vec![
+            sys::FastSlideBounds {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 0,
+            };
+            count
+        ];
+        let written = unsafe {
+            sys::fastslide_slide_reader_get_data_regions(
+                self.ptr(),
+                level,
+                regions.as_mut_ptr(),
+                regions.len(),
+            )
+        };
+        let written = usize::try_from(written).map_err(|_| Error::last("data_regions"))?;
+        regions.truncate(written.min(count));
+        Ok(regions.into_iter().map(Bounds::from).collect())
+    }
+
     /// Human-readable format name (e.g. `"Aperio"`).
     #[must_use]
     pub fn format_name(&self) -> String {

@@ -278,6 +278,7 @@ unsafe extern "C" {
         cache_capacity_bytes: usize,
     ) -> *mut FastSlideSlideReader;
     pub fn fastslide_global_cache_set_capacity_bytes(capacity_bytes: usize) -> c_int;
+    pub fn fastslide_isyntax_cache_set_capacity_bytes(capacity_bytes: usize) -> c_int;
     pub fn fastslide_global_cache_get_stats(out_stats: *mut FastSlideCacheStats) -> c_int;
     pub fn fastslide_global_cache_clear();
     pub fn fastslide_registry_get_supported_extensions(
@@ -334,6 +335,12 @@ unsafe extern "C" {
         reader: *const FastSlideSlideReader,
         bounds: *mut FastSlideBounds,
     ) -> c_int;
+    pub fn fastslide_slide_reader_get_data_regions(
+        reader: *const FastSlideSlideReader,
+        level: c_int,
+        regions: *mut FastSlideBounds,
+        capacity: usize,
+    ) -> i64;
     pub fn fastslide_slide_reader_get_format_name(
         reader: *const FastSlideSlideReader,
     ) -> *const c_char;

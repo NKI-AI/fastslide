@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "aifocore/status/result.h"
+#include "fastslide/readers/isyntax/isyntax_envelopes.h"
 #include "fastslide/readers/reader_factory.h"
 #include "fastslide/slide_reader.h"
 
@@ -47,6 +48,11 @@ class IsyntaxReader : public SlideReader, public ReaderFactory<IsyntaxReader> {
   // SlideReader interface implementation
   [[nodiscard]] int GetLevelCount() const override;
   [[nodiscard]] aifocore::Result<LevelInfo> GetLevelInfo(
+      int level) const override;
+
+  /// @brief Rectangles of the valid data envelopes at @p level, in pixels of
+  /// the level, as the Philips SDK reports them.
+  [[nodiscard]] aifocore::Result<std::vector<SlideBounds>> GetDataRegions(
       int level) const override;
   [[nodiscard]] const SlideProperties& GetProperties() const override;
   [[nodiscard]] std::vector<ChannelMetadata> GetChannelMetadata()
@@ -98,8 +104,6 @@ class IsyntaxReader : public SlideReader, public ReaderFactory<IsyntaxReader> {
   // Internal accessors
   const isyntax::IsyntaxFile& GetIsyntaxFile() const { return *isyntax_file_; }
 
-  std::mutex& GetMutex() const { return mutex_; }
-
   std::string_view GetFilename() const { return filename_; }
 
  private:
@@ -117,11 +121,13 @@ class IsyntaxReader : public SlideReader, public ReaderFactory<IsyntaxReader> {
   std::string filename_;
   std::unique_ptr<isyntax::IsyntaxFile> isyntax_file_;
   SlideProperties properties_;
+  /// Valid data envelopes of the WSI image.
+  IsyntaxEnvelopes envelopes_ = IsyntaxEnvelopes::FromHeader({}, 0);
 
   // Cache channel metadata
   std::vector<ChannelMetadata> channels_;
 
-  // Mutex for thread safety if needed (libisyntax usage)
+  // Serialises ICC profile reads.
   mutable std::mutex mutex_;
 };
 

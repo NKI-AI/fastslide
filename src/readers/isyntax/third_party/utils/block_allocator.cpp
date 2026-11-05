@@ -240,3 +240,16 @@ void* block_alloc(block_allocator_t* allocator) {
 void block_free(block_allocator_t* allocator, void* ptr_to_free) {
   (void)isyntax::alloc::BlockFree(allocator, ptr_to_free);
 }
+
+size_t block_allocator_used_bytes(block_allocator_t* allocator) {
+  if (allocator == nullptr || !allocator->is_valid) {
+    return 0;
+  }
+  std::lock_guard<std::mutex> lock(allocator->lock);
+  size_t blocks = 0;
+  for (int32_t i = 0; i < allocator->used_chunks; ++i) {
+    blocks += allocator->chunks[i].used_blocks;
+  }
+  blocks -= static_cast<size_t>(allocator->free_list_length);
+  return blocks * allocator->block_size;
+}

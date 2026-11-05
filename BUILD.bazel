@@ -984,11 +984,13 @@ cc_library(
     name = "formats_isyntax",
     srcs = [
         "src/readers/isyntax/isyntax.cpp",
+        "src/readers/isyntax/isyntax_envelopes.cpp",
         "src/readers/isyntax/isyntax_plan_builder.cpp",
         "src/readers/isyntax/isyntax_tile_executor.cpp",
     ],
     hdrs = [
         "include/fastslide/readers/isyntax/isyntax.h",
+        "include/fastslide/readers/isyntax/isyntax_envelopes.h",
         "include/fastslide/readers/isyntax/isyntax_exec_context.h",
         "include/fastslide/readers/isyntax/isyntax_plan_builder.h",
         "include/fastslide/readers/isyntax/isyntax_plan_context.h",
@@ -1751,6 +1753,41 @@ cc_test(
 )
 
 cc_test(
+    name = "isyntax_color_cpp_test",
+    size = "small",
+    srcs = ["tests/isyntax_color_cpp_test.cpp"],
+    deps = [
+        ":libisyntax",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "isyntax_plan_builder_test",
+    size = "small",
+    srcs = ["src/readers/isyntax/isyntax_plan_builder_test.cpp"],
+    deps = [
+        ":core",
+        ":formats_isyntax",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "isyntax_envelopes_test",
+    size = "small",
+    srcs = ["src/readers/isyntax/isyntax_envelopes_test.cpp"],
+    deps = [
+        ":core",
+        ":formats_isyntax",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "isyntax_jpeg_cpp_test",
     size = "small",
     srcs = ["tests/isyntax_jpeg_cpp_test.cpp"],
@@ -1776,6 +1813,17 @@ cc_test(
     name = "isyntax_open_cpp_test",
     size = "small",
     srcs = ["tests/isyntax_open_cpp_test.cpp"],
+    deps = [
+        ":libisyntax",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "isyntax_concurrent_read_cpp_test",
+    size = "small",
+    srcs = ["tests/isyntax_concurrent_read_cpp_test.cpp"],
     deps = [
         ":libisyntax",
         "@googletest//:gtest",
