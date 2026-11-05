@@ -110,6 +110,16 @@ class SlideReader {
   [[nodiscard]] virtual aifocore::Result<ImageDimensions>
   GetAssociatedImageDimensions(std::string_view name) const = 0;
 
+  /// @brief Regions of a level that hold image data, in pixels of the level
+  ///
+  /// Readers of formats that bound their data (the valid data envelopes of
+  /// iSyntax) return those regions. The default is the whole level.
+  ///
+  /// @param level Pyramid level
+  /// @return Regions or error status
+  [[nodiscard]] virtual aifocore::Result<std::vector<SlideBounds>>
+  GetDataRegions(int level) const;
+
   /// @brief Get best level for a given downsample factor
   /// @param downsample Desired downsample factor
   /// @return Best matching level
