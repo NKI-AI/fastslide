@@ -134,6 +134,12 @@ alias(
 # CPython >= 3.12. `fastslide_wheel_cp311` is a conventional version-specific
 # build for 3.11, which predates the stable-ABI floor and so cannot be served by
 # the abi3 wheel.
+#
+# Both wheels declare the same Requires-Python as pyproject.toml. PyPI applies
+# the first uploaded file's Requires-Python to the whole release, so a narrower
+# range on one wheel hides every file from pip on other interpreters. The wheel
+# tags already restrict each wheel to its interpreters.
+PYTHON_REQUIRES = ">=3.11"
 
 versioned_py_wheel(
     name = "fastslide_wheel",
@@ -145,7 +151,7 @@ versioned_py_wheel(
     license = "Apache-2.0",
     platform = WHEEL_PLATFORM,
     py_limited_api = "cp312",
-    python_requires = ">=3.12",
+    python_requires = PYTHON_REQUIRES,
     python_tag = "cp312",
     python_version = "3.12",
     strip_path_prefixes = ["python/"],
@@ -166,7 +172,7 @@ versioned_py_wheel(
     license = "Apache-2.0",
     platform = WHEEL_PLATFORM,
     py_limited_api = "unset",
-    python_requires = ">=3.11,<3.12",
+    python_requires = PYTHON_REQUIRES,
     python_tag = "cp311",
     python_version = "3.11",
     strip_path_prefixes = ["python/"],
