@@ -1,0 +1,19 @@
+# Packages the deb smoke test (package/smoke_deb.sh) installs alongside the
+# FastSlide debs because a stock Ubuntu 24.04 system lacks them.
+# libfastslide-dev depends on libfmt-dev, because the public C++ headers
+# include <fmt/core.h>.
+#
+# smoke_deb.sh downloads these over HTTPS and checks them against the SHA-256
+# below, then installs everything with dpkg, so no apt mirror is involved. On
+# the hosted runners of late 2026, `apt-get update` hangs.
+#
+# The checksums come from Ubuntu's noble/universe Packages index; noble ships
+# fmt 9.1.0+ds1-2 and has no updates for it. If the debs gain a dependency
+# that the system lacks, dpkg fails with "dependency problems". Add that
+# package here.
+#
+# Format: <deb arch> <sha256> <https url>
+amd64 cc05cae4b7c6e541b6871e3333329605c0d90312a852f2c3b507ad5c30dd9914 https://archive.ubuntu.com/ubuntu/pool/universe/f/fmtlib/libfmt-dev_9.1.0+ds1-2_amd64.deb
+amd64 0a9dd337aea7ae59aba44994a92dd2780365b534a714518477c4e906f0efd297 https://archive.ubuntu.com/ubuntu/pool/universe/f/fmtlib/libfmt9_9.1.0+ds1-2_amd64.deb
+arm64 56152237aacf16c7a678682776b2183c801df5ae9f30d71cbd563f2685aab482 https://ports.ubuntu.com/ubuntu-ports/pool/universe/f/fmtlib/libfmt-dev_9.1.0+ds1-2_arm64.deb
+arm64 48de4d9788be01afa44f0634bf291dbc25d72025ee7f36ca0e01a2e2653ed99f https://ports.ubuntu.com/ubuntu-ports/pool/universe/f/fmtlib/libfmt9_9.1.0+ds1-2_arm64.deb

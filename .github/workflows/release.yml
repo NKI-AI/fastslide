@@ -505,13 +505,15 @@ jobs:
           if-no-files-found: error
           retention-days: 7
   smoke-deb:
-    # Prove the built packages install and are usable on a clean system:
-    # install the runtime + dev debs with apt, then compile a standalone C++
-    # program (package/deb_smoke.cpp) with the SYSTEM compiler against ONLY the
-    # installed SDK and run it, plus exercise the shipped fastslidetool CLI. The
-    # container base (buildpack-deps:noble, i.e. Ubuntu 24.04 with its build
-    # toolchain) matches the build-deb runner so the .so ABI lines up. Runs
-    # natively per arch (no emulation), without network inside the container.
+    # Prove the built packages install and are usable: package/smoke_deb.sh
+    # installs the runtime + dev debs with dpkg on the runner (the same
+    # ubuntu-24.04 image that built them, so the ABI lines up), checks the .so
+    # has no unresolved libraries, compiles package/deb_smoke.cpp with the
+    # SYSTEM compiler against ONLY the installed SDK and runs it, and runs the
+    # shipped fastslidetool CLI. No Docker and no apt: on the hosted runners of
+    # late 2026 containers cannot resolve DNS and `apt-get update` hangs, so
+    # the only extra packages (fmt) come over HTTPS, pinned in
+    # package/deb_smoke_deps.txt. Runs natively per arch.
     name: Smoke deb ${{ matrix.platform }}
     needs: build-deb
     runs-on: ${{ matrix.runner }}
@@ -521,10 +523,8 @@ jobs:
         include:
           - platform: linux_x86_64
             runner: ubuntu-24.04
-            docker_platform: linux/amd64
           - platform: linux_arm64
             runner: ubuntu-24.04-arm
-            docker_platform: linux/arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -545,51 +545,11 @@ jobs:
         with:
           name: debs-${{ matrix.platform }}
           path: debs
-      - name: Docker smoke (${{ matrix.platform }})
+      - name: Smoke debs (${{ matrix.platform }})
         if: steps.gate.outputs.run == 'true'
         shell: bash
-        run: |
-          set -euo pipefail
-          export LC_ALL=C
-          mkdir -p smoke_ctx
-          cp package/Dockerfile package/deb_smoke.cpp smoke_ctx/
-          cp debs/*.deb smoke_ctx/
-          # The smoke image builds with --network=none: since late 2026,
-          # containers on GitHub-hosted runners cannot resolve DNS (not on the
-          # bridge network, not with --network=host, not via the runner's own
-          # systemd-resolved), while the runner itself can. So every package the
-          # install needs is downloaded here, on the runner, and the container
-          # installs only local .deb files.
-          platform="${{ matrix.docker_platform }}"
-          base_image="$(sed -n 's/^FROM //p' smoke_ctx/Dockerfile | head -n 1)"
-          docker pull --platform "${platform}" "${base_image}"
-          echo "::group::Download the dependencies the base image lacks"
-          # Runtime dependencies of the debs, minus the debs themselves.
-          deps="$(for deb in debs/*.deb; do dpkg-deb -f "${deb}" Depends; done \
-            | tr ',' '\n' \
-            | sed -E 's/\(.*\)//; s/\|.*//; s/:any//; s/[[:space:]]//g' \
-            | { grep -v -x -E '(libfastslide|libfastslide-dev)?' || true; } \
-            | sort -u)"
-          echo "Dependencies: $(echo ${deps:-none})"
-          if [[ -n "${deps}" ]]; then
-            sudo apt-get update -qq || echo "::warning::apt-get update reported errors"
-            # shellcheck disable=SC2086 # deps is a word list
-            apt-cache depends --recurse --no-recommends --no-suggests \
-                --no-conflicts --no-breaks --no-replaces --no-enhances ${deps} \
-              | { grep -E '^[a-z0-9]' || true; } | sort -u > closure.txt
-            docker run --rm --network=none --platform "${platform}" "${base_image}" \
-              dpkg-query -W -f '${Package}\n' | sort -u > installed.txt
-            missing="$(comm -23 closure.txt installed.txt)"
-            echo "Missing from ${base_image}: $(echo ${missing:-none})"
-            if [[ -n "${missing}" ]]; then
-              # shellcheck disable=SC2086 # missing is a word list
-              (cd smoke_ctx && apt-get download ${missing})
-            fi
-          fi
-          echo "::endgroup::"
-          ls -l smoke_ctx
-          docker build --network=none --platform "${platform}" \
-            -t fastslide-deb-smoke smoke_ctx
+        timeout-minutes: 15
+        run: package/smoke_deb.sh debs/*.deb
   # TEMPORARILY DISABLED: the source build pulls simpletiff from its pinned git
   # wrap (subprojects/simpletiff.wrap @ 3886522), which predates the
   # <cstdio>-before-<jpeglib.h> fix and so fails to compile under GCC. Re-enable

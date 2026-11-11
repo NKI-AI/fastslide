@@ -1,56 +1,69 @@
 #!/usr/bin/env bash
-# Build the FastSlide Debian packages for one architecture and run the
-# standalone Docker smoke test against them.
+# Smoke-test the FastSlide Debian packages by installing them on THIS system.
 #
 # Usage:
-#   package/smoke_deb.sh [amd64|arm64]
+#   package/smoke_deb.sh libfastslide_<ver>_<arch>.deb libfastslide-dev_<ver>_all.deb
 #
-# Requires: bazelisk (or $BAZEL) and Docker (with the matching --platform
-# available, e.g. via Docker Desktop / binfmt on the host). Runs on the macOS
-# host too, since Docker Desktop runs Linux containers.
+# Run it on Ubuntu 24.04 (the release CI runs it on the ubuntu-24.04 runner
+# that built the debs). Elsewhere, run it in a throwaway ubuntu:24.04
+# container with g++, pkg-config and curl installed. It needs sudo (or root),
+# because it installs packages.
+#
+# It:
+#   1. downloads the dependencies listed in deb_smoke_deps.txt over HTTPS and
+#      checks their SHA-256 (no apt, so no apt mirror is involved);
+#   2. installs everything with dpkg, which fails on any unmet dependency;
+#   3. checks that libfastslide.so has no unresolved shared libraries;
+#   4. compiles deb_smoke.cpp with the system compiler against ONLY the
+#      installed SDK (via pkg-config, which also checks fastslide.pc) and runs
+#      it, then runs the shipped fastslidetool CLI.
 set -euo pipefail
 
-ARCH="${1:-amd64}"
-BAZEL="${BAZEL:-bazelisk}"
-
-case "${ARCH}" in
-amd64)
-  RUNTIME_TARGET="//package:libfastslide_amd64"
-  DOCKER_PLATFORM="linux/amd64"
-  ;;
-arm64)
-  RUNTIME_TARGET="//package:libfastslide_arm64"
-  DOCKER_PLATFORM="linux/arm64"
-  ;;
-*)
-  echo "Usage: $0 [amd64|arm64]" >&2
+if [[ $# -eq 0 ]]; then
+  sed -n '2,6p' "$0" >&2
   exit 2
-  ;;
-esac
+fi
 
-DEV_TARGET="//package:libfastslide_dev"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ARCH="$(dpkg --print-architecture)"
+SUDO=""
+if [[ "${EUID}" -ne 0 ]]; then
+  SUDO="sudo"
+fi
 
-WORKSPACE_DIR="$("${BAZEL}" info workspace)"
-BAZEL_BIN="$("${BAZEL}" info bazel-bin)"
+WORK="$(mktemp -d)"
+trap 'rm -rf "${WORK}"' EXIT
 
-echo "==> Building ${RUNTIME_TARGET} and ${DEV_TARGET}"
-"${BAZEL}" build "${RUNTIME_TARGET}" "${DEV_TARGET}"
+echo "==> Downloading the pinned dependencies for ${ARCH}"
+deps=()
+while read -r arch sha256 url; do
+  [[ "${arch}" == "${ARCH}" ]] || continue
+  file="${WORK}/${url##*/}"
+  curl -fsSL --retry 3 --retry-all-errors --connect-timeout 15 --max-time 120 \
+    -o "${file}" "${url}"
+  echo "${sha256}  ${file}" | sha256sum --check --strict
+  deps+=("${file}")
+done < <(grep -v -E '^[[:space:]]*(#|$)' "${HERE}/deb_smoke_deps.txt")
 
-STAGE="$(mktemp -d)"
-trap 'rm -rf "${STAGE}"' EXIT
+echo "==> Installing $* ${deps[*]##*/}"
+${SUDO} dpkg -i "${deps[@]}" "$@"
 
-# pkg_deb emits the canonical versioned filename plus a Bazel-target-named
-# symlink to it (e.g. libfastslide_amd64.deb -> libfastslide_0.8.0_amd64.deb).
-# Stage only the canonical files so we don't install the same package twice.
-cp -L "${BAZEL_BIN}"/package/libfastslide_*_*.deb "${STAGE}/"
-cp -L "${BAZEL_BIN}"/package/libfastslide-dev_*_all.deb "${STAGE}/"
-cp "${WORKSPACE_DIR}/package/deb_smoke.cpp" "${STAGE}/"
-cp "${WORKSPACE_DIR}/package/Dockerfile" "${STAGE}/"
+echo "==> Checking libfastslide.so's shared-library dependencies"
+so="$(dpkg -L libfastslide | grep -E '/libfastslide\.so(\.|$)' | head -n 1)"
+ldd "${so}"
+if ldd "${so}" | grep -q 'not found'; then
+  echo "error: ${so} has unresolved shared libraries" >&2
+  exit 1
+fi
 
-echo "==> Staged packages:"
-ls -l "${STAGE}"/*.deb
+echo "==> Compiling and running deb_smoke.cpp against the installed SDK"
+echo "fastslide.pc version: $(pkg-config --modversion fastslide)"
+# shellcheck disable=SC2046 # pkg-config output is a word list
+g++ -std=c++20 -Wall -Wextra $(pkg-config --cflags fastslide) \
+  "${HERE}/deb_smoke.cpp" -o "${WORK}/deb_smoke" $(pkg-config --libs fastslide)
+"${WORK}/deb_smoke"
 
-echo "==> Running Docker smoke (${DOCKER_PLATFORM})"
-docker build --platform "${DOCKER_PLATFORM}" -t "fastslide-deb-smoke:${ARCH}" "${STAGE}"
+echo "==> Running fastslidetool"
+fastslidetool --help
 
 echo "==> Debian package smoke test passed for ${ARCH}."
