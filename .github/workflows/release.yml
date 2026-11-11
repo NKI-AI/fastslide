@@ -554,9 +554,15 @@ jobs:
           cp debs/*.deb smoke_ctx/
           ls -l smoke_ctx
           # --network=host: RUN steps use the runner's own network and resolver.
-          # On the default bridge network the build could not resolve
-          # archive.ubuntu.com / ports.ubuntu.com at all (every attempt, both
-          # arches), while the runner itself resolved them fine.
+          # Since late 2026 the hosted runners resolve through a loopback egress
+          # DNS resolver (actions/runner-images#14925). On the default bridge
+          # network BuildKit drops loopback nameservers and falls back to public
+          # DNS, which the runner does not reach, so apt-get could not resolve
+          # archive.ubuntu.com / ports.ubuntu.com (it worked until then). With
+          # host networking the build resolves exactly like the runner does.
+          echo "::group::Runner DNS configuration"
+          grep -H nameserver /etc/resolv.conf /run/systemd/resolve/resolv.conf || true
+          echo "::endgroup::"
           # Retry the build: the arm64 image installs deps from ports.ubuntu.com,
           # which intermittently times out from the CI network. --no-cache on
           # retries forces a fresh apt-get update instead of reusing a failed
