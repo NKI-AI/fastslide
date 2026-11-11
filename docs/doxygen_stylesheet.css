@@ -170,15 +170,18 @@ html {
   --fold-line-color: #808080;
 
   /** font-family */
-  --font-family-normal: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu,
-    Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont, "Segoe UI", Helvetica,
-    Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
-  --font-family-monospace: "JetBrains Mono", Consolas, Monaco, "Andale Mono",
-    "Ubuntu Mono", monospace, fixed;
+  --font-family-normal:
+    system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans,
+    sans-serif, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  --font-family-monospace:
+    "JetBrains Mono", Consolas, Monaco, "Andale Mono", "Ubuntu Mono", monospace,
+    fixed;
   --font-family-nav: "Lucida Grande", Geneva, Helvetica, Arial, sans-serif;
-  --font-family-title: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu,
-    Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont, "Segoe UI", Helvetica,
-    Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  --font-family-title:
+    system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans,
+    sans-serif, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
   --font-family-toc: Verdana, "DejaVu Sans", Geneva, sans-serif;
   --font-family-search: Arial, Verdana, sans-serif;
   --font-family-icon: Arial, Helvetica;
@@ -377,17 +380,18 @@ html {
     --fold-line-color: #808080;
 
     /** font-family */
-    --font-family-normal: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu,
-      Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont, "Segoe UI",
-      Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
-      "Segoe UI Symbol";
-    --font-family-monospace: "JetBrains Mono", Consolas, Monaco, "Andale Mono",
-      "Ubuntu Mono", monospace, fixed;
+    --font-family-normal:
+      system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans,
+      sans-serif, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif,
+      "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+    --font-family-monospace:
+      "JetBrains Mono", Consolas, Monaco, "Andale Mono", "Ubuntu Mono",
+      monospace, fixed;
     --font-family-nav: "Lucida Grande", Geneva, Helvetica, Arial, sans-serif;
-    --font-family-title: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu,
-      Cantarell, Noto Sans, sans-serif, BlinkMacSystemFont, "Segoe UI",
-      Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
-      "Segoe UI Symbol";
+    --font-family-title:
+      system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans,
+      sans-serif, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif,
+      "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
     --font-family-toc: Verdana, "DejaVu Sans", Geneva, sans-serif;
     --font-family-search: Arial, Verdana, sans-serif;
     --font-family-icon: Arial, Helvetica;
@@ -457,7 +461,8 @@ h1.groupheader {
 }
 
 h2.groupheader {
-  box-shadow: 12px 0 var(--page-background-color),
+  box-shadow:
+    12px 0 var(--page-background-color),
     -12px 0 var(--page-background-color),
     12px 1px var(--group-header-separator-color),
     -12px 1px var(--group-header-separator-color);
@@ -471,7 +476,8 @@ h2.groupheader {
 }
 
 td h2.groupheader {
-  box-shadow: 13px 0 var(--page-background-color),
+  box-shadow:
+    13px 0 var(--page-background-color),
     -13px 0 var(--page-background-color),
     13px 1px var(--group-header-separator-color),
     -13px 1px var(--group-header-separator-color);
@@ -1015,7 +1021,8 @@ div.classindex span.ai {
 }
 
 div.groupHeader {
-  box-shadow: 13px 0 var(--page-background-color),
+  box-shadow:
+    13px 0 var(--page-background-color),
     -13px 0 var(--page-background-color),
     13px 1px var(--group-header-separator-color),
     -13px 1px var(--group-header-separator-color);
@@ -1169,7 +1176,8 @@ hr {
   margin-top: 16px;
   margin-bottom: 16px;
   height: 1px;
-  box-shadow: 13px 0 var(--page-background-color),
+  box-shadow:
+    13px 0 var(--page-background-color),
     -13px 0 var(--page-background-color),
     13px 1px var(--group-header-separator-color),
     -13px 1px var(--group-header-separator-color);
@@ -1345,7 +1353,8 @@ tr.template .memItemRight {
   font-weight: 500;
   font-size: 16px;
   float: left;
-  box-shadow: 0 10px 0 -1px var(--memdef-proto-background-color),
+  box-shadow:
+    0 10px 0 -1px var(--memdef-proto-background-color),
     0 2px 8px 0 rgba(0, 0, 0, 0.075);
   position: relative;
 }
