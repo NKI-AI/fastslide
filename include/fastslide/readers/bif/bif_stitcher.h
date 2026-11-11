@@ -16,6 +16,7 @@
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_BIF_BIF_STITCHER_H_
 
 #include <cstdint>
+#include <string_view>
 #include <vector>
 
 #include "aifocore/status/result.h"
@@ -25,19 +26,22 @@
  * @file bif_stitcher.h
  * @brief Level-0 reconstruction for Roche VENTANA BIF snapshot mosaics.
  *
- * Implements the "Reconstruction algorithm" of `docs/source/formats/bif.rst`,
- * following the whitepaper's "Image stitching process": each AOI is a regular
- * serpentine tile grid where neighbouring snapshots abut except for a measured
- * overlap. Horizontally joined pairs (`LEFT`/`RIGHT`) share `OverlapX` pixels
- * along the column boundary between them and vertically joined pairs
- * (`UP`/`DOWN`) share `OverlapY` pixels along the row boundary between them.
- * The overlaps are collected per grid boundary so each boundary carries its own
- * pitch (tile size minus its measured overlap, or the AOI-wide mean where a
- * boundary was not measured); those pitches accumulate into absolute column and
- * row positions. Every tile is placed at its grid position, so the layout
- * covers all tiles regardless of which individual joints survived confidence
- * filtering, while a sharp single-boundary overlap stays at its own boundary
- * instead of being smeared across the grid.
+ * Each AOI is a serpentine grid of snapshot tiles placed at its stage position
+ * (`Pos-X`/`Pos-Y`, relative to the left-/top-most AOI; `Pos-Y` is measured
+ * upwards from below all AOIs). Within an AOI, tile positions follow from the
+ * `<TileJointInfo>` overlaps, whose meaning depends on the scanner generation
+ * (`OverlapModel`):
+ *
+ *   - pre-DP 200 (iScan) joints carry the full overlap of neighbouring tiles,
+ *     so every tile advances by the tile size plus the confidence-weighted
+ *     mean joint offset (`kMeanAdvance`);
+ *   - VENTANA DP 200 joints carry per-tile corrections to the nominal tile
+ *     size (mostly 0), so tiles advance by the tile size and each keeps the
+ *     offset of its own joint, accumulated along its row and column
+ *     (`kPerTile`); level sizes are rounded up to a multiple of 16 px.
+ *
+ * This is the layout of OpenSlide's ventana driver, with the DP 200 changes of
+ * openslide/openslide#395.
  *
  * Higher pyramid levels reuse this geometry scaled by `1/downsample`; that
  * scaling lives in the spatial index builder, not here.
@@ -61,9 +65,9 @@ struct StitchResult {
   uint32_t tile_height = 0;
   uint32_t level0_width = 0;   ///< Stitched bounding-box width.
   uint32_t level0_height = 0;  ///< Stitched bounding-box height.
-  /// DP 200 layout: right/bottom extent of the placed tiles before rounding;
-  /// every level's size is this extent / downsample, rounded up to a multiple
-  /// of 16 px (`RoundUpToMultipleOf16`).
+  /// `OverlapModel::kPerTile`: every level's size is the right/bottom extent of
+  /// the placed tiles / downsample, rounded up to a multiple of 16 px
+  /// (`RoundUpToMultipleOf16`).
   bool align16 = false;
   double extent_x = 0.0;
   double extent_y = 0.0;
@@ -75,30 +79,34 @@ struct StitchResult {
 /// rows (see bif.rst "Coordinate Systems").
 [[nodiscard]] int SerpentineColumn(int tile1_one_based, int num_cols);
 
-/// @brief Reconstruct the level-0 tile placement from IFD-2 stitch metadata.
-///
-/// @param encode     Parsed `<EncodeInfo>` (per-AOI grids + joints).
-/// @param tile_w     Physical tile width in pixels (IFD 2 TileWidth).
-/// @param tile_h     Physical tile height in pixels (IFD 2 TileLength).
-/// @param grid_cols  IFD-2 TIFF tile-grid stride (`ImageWidth / tile_w`).
-/// @return The placed tiles and the stitched level-0 dimensions.
-[[nodiscard]] aifocore::Result<StitchResult> StitchLevel0(
-    const EncodeInfo& encode, uint32_t tile_w, uint32_t tile_h,
-    uint32_t grid_cols);
+/// @brief How `<TileJointInfo>` overlaps turn into tile positions.
+enum class OverlapModel {
+  /// Every tile advances by the tile size plus the confidence-weighted mean
+  /// joint offset (pre-DP 200 scanners).
+  kMeanAdvance,
+  /// Tiles advance by the tile size and keep the offset of their own joint,
+  /// accumulated along the row and column; level sizes are rounded up to a
+  /// multiple of 16 px (VENTANA DP 200).
+  kPerTile,
+};
+
+/// @brief The overlap model of a scanner (`<iScan ScannerModel>`).
+[[nodiscard]] OverlapModel OverlapModelFor(std::string_view scanner_model);
 
 /// @brief Round a level extent up to whole pixels, then to a multiple of 16
 /// (the DP 200 level size, see `StitchResult::align16`).
 [[nodiscard]] uint32_t RoundUpToMultipleOf16(double extent);
 
-/// @brief VENTANA DP 200 layout of OpenSlide's ventana driver with the DP 200
-/// changes of openslide/openslide#395 (DP 200 path of `parse_level0_xml` +
-/// `create_bif_grid`), which match Ventana's viewer: every tile keeps
-/// the overlap of its own joint (`-OverlapX` of the LEFT/RIGHT joint where it
-/// is Tile2, `-OverlapY` of the UP joint where it is Tile1), accumulated along
-/// its row (x) and column (y); AOIs are placed by `Pos-X`/`Pos-Y` relative to
-/// the left-/top-most AOI (`Pos-Y` measured upwards from below all AOIs).
-[[nodiscard]] aifocore::Result<StitchResult> StitchLevel0Dp200(
-    const EncodeInfo& encode, uint32_t tile_w, uint32_t tile_h);
+/// @brief Reconstruct the level-0 tile placement from IFD-2 stitch metadata.
+///
+/// @param encode  Parsed `<EncodeInfo>` (per-AOI grids, positions, joints).
+/// @param tile_w  Physical tile width in pixels (IFD 2 TileWidth).
+/// @param tile_h  Physical tile height in pixels (IFD 2 TileLength).
+/// @param model   How the joint overlaps are applied (`OverlapModelFor`).
+/// @return The placed tiles and the stitched level-0 dimensions.
+[[nodiscard]] aifocore::Result<StitchResult> StitchLevel0(
+    const EncodeInfo& encode, uint32_t tile_w, uint32_t tile_h,
+    OverlapModel model);
 
 }  // namespace bif
 }  // namespace fastslide

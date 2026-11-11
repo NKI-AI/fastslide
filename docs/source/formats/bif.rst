@@ -210,36 +210,15 @@ The relevant XML lives inside the XMP packet of the level-0 IFD:
 - The whitepaper's note that "Tile2 replaces Tile1 in the overlap" applies: when two
   tiles overlap, the later tile's pixels win — no blending.
 
-**Reconstruction algorithm** The placement below is
-defined directly from the ``EncodeInfo`` field semantics and was tuned by measuring
-the joints actually present in the bundled sample files (see *Sample-file
-measurements* below). Each joint is classified purely by axis: ``LEFT`` and
-``RIGHT`` are **horizontal** overlaps (the shared ``OverlapX`` across a column
-boundary) and ``UP`` and ``DOWN`` are **vertical** overlaps (the shared ``OverlapY``
-across a row boundary). Across the measured corpus only ``RIGHT``, ``LEFT`` and
-``UP`` actually occur; ``DOWN`` is never emitted. ``DOWN`` is the mirror of ``UP``
-(``Tile2`` one row below ``Tile1``) and the whitepaper defines ``OverlapY``
-identically for both vertical directions, so its whitepaper-correct geometry is the
-same shared ``OverlapY`` across the row boundary. Because no sample file exercises it,
-the decoder treats ``DOWN`` as **unverified** and fails loudly (returns
-``kUnimplemented``) the moment it encounters such a joint, rather than silently
-emitting an unchecked layout (see *Divergences from the Whitepaper*, item 2).
+**Reconstruction algorithm** (``StitchLevel0`` in ``bif_stitcher.cpp``). This is the
+layout of OpenSlide's ventana driver, including the DP 200 changes of
+openslide/openslide#395; it was checked against OpenSlide on the bundled
+``Ventana-1.bif``, ``OS-1.bif`` and ``OS-2.bif``.
 
 Notation, per AOI: tile size ``tw`` x ``th``; grid of ``C`` columns x ``R`` rows
 (``NumCols`` x ``NumRows``). A joint has a ``Direction``, 1-based serpentine indices
 ``Tile1``/``Tile2``, overlaps ``OverlapX``/``OverlapY`` (pixels of shared edge), a
-``Confidence`` in ``[0, 100]`` and a ``FlagJoined`` flag. The overlap list is *not
-authoritative*: in the measured corpus a large fraction of joints are placeholders
-(``FlagJoined == 0``, ``Confidence == 0``, all-zero overlaps) and the genuinely
-measured joints carry a *broad* confidence spread, not a constant 100 (see
-*Sample-file measurements*). Two filters fall directly out of those measurements: a
-joint is used to estimate geometry only when the scanner actually joined it
-(``FlagJoined == 1``) and reported it at or above a high-confidence floor
-(``Confidence >= 95``). The floor is the empirical knee of the observed distribution
-— high enough to drop the long noisy tail (down to 84 in the samples) while retaining
-the dense, reliable cluster — and is deliberately not a hard equality, because
-requiring ``Confidence == 100`` (as the whitepaper does) would discard almost every
-measured joint in real files.
+``Confidence`` in ``[0, 100]`` and a ``FlagJoined`` flag.
 
 The serpentine index of a tile maps to its image-space **column** ``c in [0, C)``
 and **row** ``r in [0, R)`` via the snake rule (see *Coordinate Systems*; the snake
@@ -251,71 +230,61 @@ starts at the lower-left, so the image row is the mirror of the snake row)::
    col  = (C - 1 - scol) if (srow odd) else scol
    row  = (R - 1) - srow
 
-*Step 1 - bin overlaps onto grid boundaries.* Each trusted joint constrains the
-spacing across exactly one grid boundary, and that boundary - not the joint's
-``Direction`` label - is what places the tiles. A **horizontal** joint
-(``LEFT`` or ``RIGHT``) couples two tiles in adjacent columns and so measures the
-shared ``OverlapX`` across the *column boundary* between them; a **vertical**
-joint (``UP`` or ``DOWN``) measures the shared ``OverlapY`` across the *row
-boundary*. The boundary index is the lower of the two tiles' grid indices::
+*Step 1 - joint offsets.* Every joint gives an offset ``-Overlap`` on its axis:
+``LEFT``/``RIGHT`` joints give ``-OverlapX`` to the right-hand tile (``Tile2``),
+``UP`` joints give ``-OverlapY`` to the upper tile (``Tile1``). Only the on-axis
+overlap is used. ``DOWN`` has never been seen in a sample file and is rejected
+(``kUnimplemented``; *Divergences from the Whitepaper*, item 2).
 
-   horizontal joint:  col_boundary = min(col(Tile1), col(Tile2))   # in [0, C-1)
-                      record OverlapX at that column boundary
-   vertical   joint:  row_boundary = min(row(Tile1), row(Tile2))   # in [0, R-1)
-                      record OverlapY at that row boundary
+*Step 2 - overlap model.* What the offsets mean depends on the scanner generation
+(``OverlapModelFor(ScannerModel)``):
 
-``LEFT`` and ``RIGHT`` are treated identically here (both are horizontal overlaps
-binned by column boundary); the direction label only governs which tile overwrites
-the other in the shared band, not the geometry. Only the on-axis overlap feeds the
-pitch: a small cross-axis component (e.g. a non-zero ``OverlapY`` on a ``RIGHT``
-joint) is a minor stage slip this decoder does not model.
+- **Pre-DP 200 scanners** (``kMeanAdvance``; e.g. ``OS-1.bif``, ``OS-2.bif``): the
+  joints carry the full overlap of neighbouring snapshots. Every tile advances by the
+  tile size plus the confidence-weighted mean offset over all joints of the slide::
 
-*Step 2 - per-boundary pitch.* Every column boundary gets its own horizontal pitch
-and every row boundary its own vertical pitch - the tile size minus the overlap
-*measured at that boundary*. A boundary that no trusted joint crossed falls back to
-the AOI-wide mean overlap, which keeps all tiles on one consistent grid (no gaps)
-without smearing a sharp, localised overlap across boundaries that do not have it::
+     advance_x = tw + sum(Confidence * -OverlapX) / sum(Confidence)   # LEFT/RIGHT
+     advance_y = th + sum(Confidence * -OverlapY) / sum(Confidence)   # UP
 
-   pitch_x[b] = tw - (mean OverlapX at column boundary b   if measured
-                      else mean OverlapX over all horizontal joints)   # tw if none
-   pitch_y[b] = th - (mean OverlapY at row boundary b      if measured
-                      else mean OverlapY over all vertical   joints)   # th if none
+  Placeholder joints (``FlagJoined = 0``, ``Confidence = 0``) carry no weight.
+- **VENTANA DP 200** (``kPerTile``; e.g. ``Ventana-1.bif``): the joints carry
+  per-tile corrections to the nominal tile size, mostly 0. Tiles advance by exactly
+  ``tw`` x ``th`` and each tile keeps the offset of its own joint, accumulated along
+  its row (x) and column (y). Averaging would spread ``Ventana-1.bif``'s few 24 px
+  overlaps over every column.
 
-This is the crucial point for ``LEFT``-only files such as ``Ventana-1.bif``: most
-column boundaries abut (``OverlapX = 0``) while a few overlap by ``24`` px. Binning
-per boundary applies the ``24`` px only where it was measured; a single averaged
-advance would instead spread its mean across every column and misplace the abutting
-ones.
+*Step 3 - AOI placement by stage position.* Each AOI is placed at its stage position
+``Pos-X``/``Pos-Y`` (``ImageInfo``), relative to the left-most and top-most AOI.
+``Pos-Y`` is the distance from the bottom of the AOI to a point below all AOIs, so it
+is flipped::
 
-*Step 3 - accumulate boundaries into positions* (image coordinates; ``col``/``row``
-are 0-based in row-major ``TILE_OFFSETS`` order, ``row = 0`` at the top). A tile's
-position is the running sum of the pitches of all boundaries before it::
+   height(AOI) = (R - 1) * advance_y + th
+   top         = max(Pos-Y + height)          over all AOIs
+   y(AOI)      = top - Pos-Y - height
+   x(AOI)      = Pos-X
 
-   x(col) = anchor_x + sum(pitch_x[b] for b < col)
-   y(row) = anchor_y + sum(pitch_y[b] for b < row)
+and both are made relative to the minimum ``x``/``y`` over the AOIs. A tile in
+column ``c`` and row ``r`` of the AOI is placed at ``(x(AOI) + c * advance_x,
+y(AOI) + r * advance_y)``, plus its accumulated joint offsets for ``kPerTile``.
 
-and every tile ``(col, row)`` in the AOI is placed at ``(x(col), y(row))``.
-
-The AOI is anchored at its image-space tile-grid origin
-``anchor = (round(OriginX/tw) * tw, round(OriginY/th) * th)`` (from
-``AoiOrigin/AOI<n>``). ``Pos-X``/``Pos-Y`` are parsed but not used for placement.
-After all AOIs are placed the bounding box is normalised to ``(0, 0)`` (Step 4).
-
-*Step 4 - level-0 size.* The level-0 dimensions are the bounding box of all placed
-tiles (``ceil(max(x + tw) - min(x))`` by ``ceil(max(y + th) - min(y))``); every
-position is then translated so the box starts at ``(0, 0)``. The level-0 IFD
-``ImageWidth`` / ``ImageLength`` describe the *raw concatenated-snapshot* grid and
-are larger than (or equal to) the stitched size; they are not used for sizing.
+*Step 4 - level-0 size.* The level-0 size is the right/bottom extent of the placed
+tiles, rounded up to whole pixels; for ``kPerTile`` every level's size is
+additionally rounded up to a multiple of 16 px, as in openslide/openslide#395 (which
+matches Ventana's viewer). The level-0 IFD ``ImageWidth`` / ``ImageLength`` describe
+the *raw concatenated-snapshot* grid and are not used for sizing.
 
 *Step 5 - mapping ``(col, row)`` to a TIFF tile.* The level-0 IFD is a standard
 tiled image with ``grid_cols = ImageWidth / tw`` tiles per row, stored row-major.
 The AOI occupies a ``C`` x ``R`` block whose top-left tile is
-``(OriginX / tw, OriginY / th)``, so::
+``(OriginX / tw, OriginY / th)`` (``AoiOrigin/AOI<n>``), so::
 
    tiff_tile_index = (OriginY/th + row) * grid_cols + (OriginX/tw + col)
 
 ``grid_cols`` may exceed ``C`` (the TIFF grid can carry extra trailing columns that
-belong to no AOI); those padding tiles are never referenced.
+belong to no AOI); those padding tiles are never referenced. ``AoiOrigin`` locates an
+AOI's tiles in the TIFF grid; ``Pos-X``/``Pos-Y`` locate them in the image. Files
+without ``AOIIndex`` attributes (``OS-2.bif``) pair the n-th ``ImageInfo`` with
+``AOI<n>``, counting unscanned AOIs.
 
 Tiles whose ``TileOffsets``/``TileByteCounts`` are zero are *unscanned*: paint them
 with ``ScanWhitePoint`` (from the IFD 0 ``iScan`` element) instead of reading from
@@ -333,9 +302,9 @@ x ``21`` rows, ``OriginX = OriginY = 0``. It carries ``922`` joints, **all**
 ``FlagJoined = 1`` and **all** ``Confidence = 100``. Directions are ``462`` ``LEFT``
 + ``460`` ``UP`` and **zero** ``RIGHT``/``DOWN``. ``LEFT`` joints carry
 ``OverlapX in {0, 24}`` (105 of them are ``24``) with ``OverlapY = 0``; ``UP``
-joints are all-zero. So horizontal overlap is sparse and column-local while vertical
-spacing is exactly one tile — which is why per-boundary binning (Step 1) is
-mandatory: averaging the ``LEFT`` overlaps into one advance would misplace the
+joints are all-zero. So horizontal overlap is sparse and tile-local while vertical
+spacing is exactly one tile — which is why DP 200 joints are applied per tile
+(``kPerTile``): averaging the ``LEFT`` overlaps into one advance would misplace the
 abutting columns, and a ``RIGHT``-only decoder cannot place this file at all.
 
 ``OS-1.bif``: the level-0 IFD is ``118784 x 102000`` on a ``1024 x 1360`` tile, a
@@ -347,17 +316,18 @@ are exactly ``100``; the mode is ``99``/``98`` with ``1768``/``1715`` hits and a
 dense cluster through ``96``). Directions are ``2870`` ``RIGHT`` + ``4165`` ``UP``
 and **zero** ``LEFT``/``DOWN``. ``RIGHT`` joints carry ``OverlapX ~ 95..131`` with a
 small ``OverlapY ~ 1..3`` (a minor cross-axis slip this decoder does not model —
-only the on-axis ``OverlapX`` feeds the column pitch); ``UP`` joints carry
+only the on-axis ``OverlapX`` feeds the horizontal advance); ``UP`` joints carry
 ``OverlapY ~ 66..155`` with a small ``OverlapX ~ -3..0`` (likewise ignored — only the
-on-axis ``OverlapY`` feeds the row pitch).
+on-axis ``OverlapY`` feeds the vertical advance).
 
 Two consequences drive the design directly: (1) the union of directions over the
-corpus is ``{RIGHT, LEFT, UP}`` with ``DOWN`` unseen, and all four are classified by
-axis (``LEFT``/``RIGHT`` horizontal, ``UP``/``DOWN`` vertical); (2) ``FlagJoined``
-and the ``>= 95`` confidence floor are both required — without the ``FlagJoined``
-filter OS-1's 10174 zero-overlap placeholders would collapse the per-boundary means,
-and without a sub-100 floor the ``Confidence == 100`` rule would keep only ``124`` of
-OS-1's ``7035`` joins.
+corpus is ``{RIGHT, LEFT, UP}`` with ``DOWN`` unseen, and all are classified by axis
+(``LEFT``/``RIGHT`` horizontal, ``UP`` vertical); (2) the two scanner generations use
+the joints differently. ``Ventana-1.bif``'s sparse 24 px corrections on otherwise
+abutting tiles only place correctly per tile, while ``OS-1.bif``'s full overlaps of
+about 113 px (horizontal) and 109 px (vertical) on every joined pair only place
+correctly as a mean advance: applying them per tile makes the image
+``117904 x 102000`` instead of OpenSlide's ``105813 x 93951``.
 
 Multiple AOIs are merged into one rectangular image. Holes between AOIs are
 represented as zero-length tiles; they are painted with ``ScanWhitePoint``.
@@ -370,9 +340,8 @@ is shift-corrected:
 
 - *Level 0 is off the nominal lattice.* Each level-0 tile is its own physical TIFF
   tile. They are **not** on a clean ``tw`` x ``th`` lattice: the placement
-  accumulates the per-boundary pitches (Steps 1-3), each shorter than a full tile by
-  its measured overlap, so neighbouring tiles are pulled together by exactly the
-  amount their content overlaps. This overlap-compacted mosaic is what level 0
+  (Steps 1-3) pulls neighbouring tiles together by the amount their content
+  overlaps. This overlap-compacted mosaic is what level 0
   reconstructs.
 
 - *Higher levels are raw, uncorrected packings.* The level-``L`` IFD is a plain
@@ -382,15 +351,15 @@ is shift-corrected:
   packed edge-to-edge on a regular ``tw/d x th/d`` lattice. At level 1 that is
   exactly **four** (``2 x 2``) downsampled level-0 tiles packed into a single tile;
   level 2 packs ``4 x 4``; and so on. The scanner applies **no** stitch correction
-  when packing: the per-boundary overlap compaction is absent, and the per-tile
+  when packing: the overlap compaction is absent, and the per-tile
   overlap is still present inside the pixel data (each sub-cell is a full
   downsampled tile, overlap region included). So adjacent sub-cells in a physical
   tile image scene positions that *overlap* by roughly one tile-overlap.
 
 Because the on-disk higher levels are uncorrected, this decoder does **not** trust
 their internal layout. It reconstructs every level from the *level-0* compacted
-geometry, scaled by ``1/d`` (next section): the per-boundary pitches are re-applied
-(scaled) at placement time, while the pixels come from the regular-grid sub-cells of
+geometry, scaled by ``1/d`` (next section): the level-0 tile positions are
+re-applied (scaled) at placement time, while the pixels come from the regular-grid sub-cells of
 the packed physical tile. The whitepaper's claim that higher-resolution levels abut
 (*"there is no overlap between lower-resolution image tiles"*) does not match the
 on-disk layout; see divergence 6.
@@ -411,8 +380,7 @@ data and must be re-applied at every level.
 level-0 geometry scaled by ``1/d`` (``BifSpatialIndex::Build`` in
 ``bif_spatial_index.cpp``):
 
-- *Geometry scales.* Every per-boundary pitch becomes ``pitch/d`` and every placed
-  level-0 tile origin ``P0`` maps to ``P0 / d``; the drawn size of one tile becomes
+- *Geometry scales.* Every placed level-0 tile origin ``P0`` maps to ``P0 / d``; the drawn size of one tile becomes
   ``tw/d`` x ``th/d``.
 - *Pixel source.* A level-0 tile at TIFF grid position ``(gx, gy)`` (Step 5 above)
   was, at level ``L``, packed ``d`` tiles per axis into a single physical
@@ -506,10 +474,9 @@ decode. The discrepancies below were established from the bundled sample files (
 2. **``Direction`` is classified by axis, and ``DOWN`` is gated as unverified.**
    The whitepaper enumerates ``LEFT``, ``RIGHT``, ``UP``, ``DOWN`` as four distinct
    cases. This decoder classifies them by axis: ``LEFT``/``RIGHT`` are horizontal
-   overlaps (shared ``OverlapX`` binned onto a column boundary) and ``UP``/``DOWN``
-   are vertical (shared ``OverlapY`` binned onto a row boundary). Real DP 200 output
-   uses ``LEFT`` + ``UP`` (``Ventana-1.bif``) or ``RIGHT`` + ``UP`` (``OS-1.bif``),
-   all of which are exercised and verified. ``DOWN`` is **never seen** in the
+   (``OverlapX``) and ``UP``/``DOWN`` vertical (``OverlapY``). The samples use
+   ``LEFT`` + ``UP`` (``Ventana-1.bif``, DP 200) and ``RIGHT`` + ``UP``
+   (``OS-1.bif``/``OS-2.bif``, pre-DP 200), all of which are exercised and verified. ``DOWN`` is **never seen** in the
    measured corpus. Its whitepaper-correct geometry is identical to ``UP`` (a vertical
    ``OverlapY`` across the shared row boundary, since the whitepaper defines
    ``OverlapY`` the same way for both vertical directions), and the decoder documents
@@ -520,28 +487,27 @@ decode. The discrepancies below were established from the bundled sample files (
    rather than emitting an unchecked layout. A future file that genuinely carries
    ``DOWN`` can be validated and the guard lifted.
 
-3. **AOI anchoring uses ``AoiOrigin``.** Both ``Pos-X``/``Pos-Y`` (stage
-   coordinates, in ``ImageInfo``) and ``OriginX``/``OriginY`` (image coordinates, in
-   ``AoiOrigin``) appear to anchor each AOI, and the whitepaper does not say which is
-   canonical. ``AoiOrigin`` is already in the image coordinate system and is rounded
-   to a tile multiple, so this decoder anchors on it directly
-   (``round(OriginX/tw)*tw``) and ignores ``Pos-X``/``Pos-Y`` for placement. On
-   well-formed files the two agree to within a tile size.
+3. **AOIs are placed by stage position, not ``AoiOrigin``.** Both ``Pos-X``/``Pos-Y``
+   (stage coordinates, in ``ImageInfo``) and ``OriginX``/``OriginY`` (``AoiOrigin``)
+   appear to anchor each AOI, and the whitepaper does not say which is canonical.
+   ``AoiOrigin`` is the AOI's position in the *raw, unstitched* tile grid, while the
+   AOI itself is stitched with overlaps, so anchoring on it shifts every AOI but the
+   first by about 1.2 % of its distance from the left edge. This decoder places AOIs
+   by ``Pos-X``/``Pos-Y`` (as OpenSlide does) and uses ``AoiOrigin`` only to find an
+   AOI's tiles in the TIFF grid.
 
-4. **``Confidence`` is a floor, not an equality.** The whitepaper says ``Confidence``
+4. **``Confidence`` weights, it does not gate.** The whitepaper says ``Confidence``
    must equal 100 and that decoders should stop otherwise. The data contradicts this:
    in ``OS-1.bif`` only ``124`` of ``7035`` joined joints are exactly ``100`` and the
-   rest spread down to ``84``, so an equality test would discard ~98% of the usable
-   geometry and the file could not be stitched. This decoder keeps joints at or above
-   an empirical high-confidence floor (``>= 95``).
+   rest spread down to ``84``. This decoder weights each joint by its ``Confidence``
+   in the mean advance (``kMeanAdvance``), so placeholders (``Confidence = 0``) drop
+   out and no threshold is needed.
 
 5. **Vertical overlap is real and must be applied.** The whitepaper says DP 200 files
    never have vertical overlap (``OverlapY`` must be 0 and decoders should stop
    otherwise). The data disagrees: ``OS-1.bif`` carries ``4165`` ``UP`` joints with
    ``OverlapY`` ranging roughly ``66..155``, so a non-zero Y advance is required to
-   place that file. The overlap list is also not authoritative in another sense - a
-   large share of the joints are zero-overlap placeholders (``FlagJoined = 0``) that
-   must be filtered out.
+   place that file.
 
 6. **Higher pyramid levels are still stitched** (the most important divergence). The
    whitepaper says IFD 3 and up are pre-stitched abutting-tile pyramids. In reality

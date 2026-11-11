@@ -104,20 +104,13 @@ aifocore::Status BifReader::ProcessMetadata() {
   const auto& l0_tiles = tiff_index_->Tiles(l0.payload_id);
   const uint32_t tile_w = l0_tiles.tile_w;
   const uint32_t tile_h = l0_tiles.tile_h;
-  const uint32_t grid_cols = l0_tiles.tiles_x;
 
   // The level-0 pyramid IFD carries the <EncodeInfo> stitch geometry.
   AIFOCORE_ASSIGN_OR_RETURN(auto encode, bif::ParseEncodeInfo(l0.xmp_packet));
-  // DP 200 scans use the layout of openslide/openslide#395, which matches
-  // Ventana's viewer; other BIF scanners keep the per-boundary whitepaper
-  // layout.
-  if (scanner_info_.scanner_model == "VENTANA DP 200") {
-    AIFOCORE_ASSIGN_OR_RETURN(stitch_,
-                              bif::StitchLevel0Dp200(encode, tile_w, tile_h));
-  } else {
-    AIFOCORE_ASSIGN_OR_RETURN(
-        stitch_, bif::StitchLevel0(encode, tile_w, tile_h, grid_cols));
-  }
+  AIFOCORE_ASSIGN_OR_RETURN(
+      stitch_,
+      bif::StitchLevel0(encode, tile_w, tile_h,
+                        bif::OverlapModelFor(scanner_info_.scanner_model)));
 
   // Build per-level metadata. Downsample is the dyadic ratio of raw widths.
   const uint32_t l0_raw_width = std::max<uint32_t>(l0.width, 1);

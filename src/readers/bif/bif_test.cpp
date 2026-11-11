@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -170,182 +171,33 @@ TEST(BifStitcherTest, SerpentineColumnSnakesByRow) {
   EXPECT_EQ(SerpentineColumn(6, 3), 0);
 }
 
-TEST(BifStitcherTest, PlacesGridWithDefaultAdvanceWhenNoJoints) {
-  EncodeInfo encode;
+// One AOI of `rows` x `cols` tiles at stage position (0, 0), AoiOrigin (0, 0).
+AoiInfo MakeAoi(int rows, int cols) {
   AoiInfo aoi;
-  aoi.aoi_index = 0;
-  aoi.num_rows = 1;
-  aoi.num_cols = 2;
-  aoi.tile_width = 512;
-  aoi.tile_height = 512;
-  encode.aois.push_back(aoi);
-
-  auto stitch_or = StitchLevel0(encode, 512, 512, /*grid_cols=*/2);
-  ASSERT_TRUE(stitch_or.ok());
-  const StitchResult& s = *stitch_or;
-  ASSERT_EQ(s.tiles.size(), 2u);
-  EXPECT_DOUBLE_EQ(s.tiles[0].x, 0.0);
-  EXPECT_DOUBLE_EQ(s.tiles[1].x, 512.0);
-  EXPECT_EQ(s.level0_width, 1024u);
-  EXPECT_EQ(s.level0_height, 512u);
+  aoi.num_rows = rows;
+  aoi.num_cols = cols;
+  return aoi;
 }
 
-TEST(BifStitcherTest, HorizontalOverlapReducesColumnPitch) {
-  // 3 columns, one row. A horizontal joint (LEFT/RIGHT) reports OverlapX=10, so
-  // the horizontal grid pitch is tile_w - 10 = 502 and every column advances by
-  // that pitch. The overlaps describe a uniform serpentine grid, so the mean
-  // overlap sets one pitch for the whole AOI.
-  EncodeInfo encode;
-  AoiInfo aoi;
-  aoi.num_rows = 1;
-  aoi.num_cols = 3;
-  aoi.tile_width = 512;
-  aoi.tile_height = 512;
-
-  TileJoint left;
-  left.direction = JointDirection::kLeft;
-  left.tile1 = 2;
-  left.tile2 = 1;
-  left.overlap_x = 10;
-  left.confidence = 100;
-  left.flag_joined = true;
-  aoi.joints.push_back(left);
-  encode.aois.push_back(aoi);
-
-  auto stitch_or = StitchLevel0(encode, 512, 512, /*grid_cols=*/3);
-  ASSERT_TRUE(stitch_or.ok());
-  const StitchResult& s = *stitch_or;
-  ASSERT_EQ(s.tiles.size(), 3u);
-  EXPECT_DOUBLE_EQ(s.tiles[0].x, 0.0);
-  EXPECT_DOUBLE_EQ(s.tiles[1].x, 502.0);
-  EXPECT_DOUBLE_EQ(s.tiles[2].x, 1004.0);
-  EXPECT_EQ(s.level0_width, static_cast<uint32_t>(1004 + 512));
+TileJoint MakeJoint(JointDirection direction, int tile1, int tile2,
+                    double overlap, int confidence = 100) {
+  TileJoint joint;
+  joint.direction = direction;
+  joint.tile1 = tile1;
+  joint.tile2 = tile2;
+  if (direction == JointDirection::kUp || direction == JointDirection::kDown) {
+    joint.overlap_y = overlap;
+  } else {
+    joint.overlap_x = overlap;
+  }
+  joint.confidence = confidence;
+  return joint;
 }
 
-TEST(BifStitcherTest, LeftOverlapsAppliedPerBoundaryNotAveraged) {
-  // 3 columns, one row, with two LEFT joints carrying DIFFERENT overlaps: the
-  // col0|col1 boundary abuts (OverlapX=0) while the col1|col2 boundary overlaps
-  // by 24. A correct per-boundary layout keeps col1 at the full pitch (512) and
-  // shifts only col2 left by 24 (to 1000). A uniform average would instead
-  // spread the mean (12) across both boundaries, wrongly pulling col1 to 500 -
-  // this is the LEFT regression this test guards against.
-  EncodeInfo encode;
-  AoiInfo aoi;
-  aoi.num_rows = 1;
-  aoi.num_cols = 3;
-  aoi.tile_width = 512;
-  aoi.tile_height = 512;
-
-  TileJoint abut;
-  abut.direction = JointDirection::kLeft;
-  abut.tile1 = 1;  // col0
-  abut.tile2 = 2;  // col1
-  abut.overlap_x = 0;
-  abut.confidence = 100;
-  abut.flag_joined = true;
-  aoi.joints.push_back(abut);
-
-  TileJoint seam;
-  seam.direction = JointDirection::kLeft;
-  seam.tile1 = 2;  // col1
-  seam.tile2 = 3;  // col2
-  seam.overlap_x = 24;
-  seam.confidence = 100;
-  seam.flag_joined = true;
-  aoi.joints.push_back(seam);
-  encode.aois.push_back(aoi);
-
-  auto stitch_or = StitchLevel0(encode, 512, 512, /*grid_cols=*/3);
-  ASSERT_TRUE(stitch_or.ok());
-  const StitchResult& s = *stitch_or;
-  ASSERT_EQ(s.tiles.size(), 3u);
-  EXPECT_DOUBLE_EQ(s.tiles[0].x, 0.0);
-  EXPECT_DOUBLE_EQ(s.tiles[1].x, 512.0);
-  EXPECT_DOUBLE_EQ(s.tiles[2].x, 1000.0);
-}
-
-TEST(BifStitcherTest, RightJointReducesHorizontalAdvance) {
-  EncodeInfo encode;
-  AoiInfo aoi;
-  aoi.num_rows = 1;
-  aoi.num_cols = 2;
-  aoi.tile_width = 512;
-  aoi.tile_height = 512;
-
-  TileJoint right;
-  right.direction = JointDirection::kRight;
-  right.tile1 = 1;
-  right.tile2 = 2;
-  right.overlap_x = 20;
-  right.confidence = 100;
-  right.flag_joined = true;
-  aoi.joints.push_back(right);
-  encode.aois.push_back(aoi);
-
-  auto stitch_or = StitchLevel0(encode, 512, 512, /*grid_cols=*/2);
-  ASSERT_TRUE(stitch_or.ok());
-  const StitchResult& s = *stitch_or;
-  ASSERT_EQ(s.tiles.size(), 2u);
-  // adv_x = tile_w - overlap_x = 492.
-  EXPECT_DOUBLE_EQ(s.tiles[1].x - s.tiles[0].x, 492.0);
-}
-
-TEST(BifStitcherTest, DownDirectionIsRejectedAsUnverified) {
-  // DOWN has whitepaper-defined geometry (identical to UP) but is never emitted
-  // by any sample DP 200 file, so the stitcher refuses to place it and returns
-  // an error rather than silently producing an unchecked layout.
-  EncodeInfo encode;
-  AoiInfo aoi;
-  aoi.num_rows = 2;
-  aoi.num_cols = 1;
-  aoi.tile_width = 512;
-  aoi.tile_height = 512;
-
-  TileJoint down;
-  down.direction = JointDirection::kDown;
-  down.tile1 = 2;
-  down.tile2 = 1;
-  down.overlap_x = 0;
-  down.overlap_y = 30;
-  down.confidence = 100;
-  down.flag_joined = true;
-  aoi.joints.push_back(down);
-  encode.aois.push_back(aoi);
-
-  auto stitch_or = StitchLevel0(encode, 512, 512, /*grid_cols=*/1);
-  ASSERT_FALSE(stitch_or.ok());
-  EXPECT_EQ(stitch_or.status().code(), aifocore::StatusCode::kUnimplemented);
-}
-
-TEST(BifStitcherTest, VerticalOverlapReducesRowPitch) {
-  // 1 column, 2 rows. A vertical joint (UP/DOWN) reports OverlapY=30, so the
-  // vertical grid pitch is tile_h - 30 = 482. Vertical overlaps feed the row
-  // pitch only; horizontal placement is unaffected.
-  EncodeInfo encode;
-  AoiInfo aoi;
-  aoi.num_rows = 2;
-  aoi.num_cols = 1;
-  aoi.tile_width = 512;
-  aoi.tile_height = 512;
-
-  TileJoint up;
-  up.direction = JointDirection::kUp;
-  up.tile1 = 1;
-  up.tile2 = 2;
-  up.overlap_x = 0;
-  up.overlap_y = 30;
-  up.confidence = 100;
-  up.flag_joined = true;
-  aoi.joints.push_back(up);
-  encode.aois.push_back(aoi);
-
-  auto stitch_or = StitchLevel0(encode, 512, 512, /*grid_cols=*/1);
-  ASSERT_TRUE(stitch_or.ok());
-  const StitchResult& s = *stitch_or;
-  ASSERT_EQ(s.tiles.size(), 2u);
-  EXPECT_DOUBLE_EQ(s.tiles[0].y, 0.0);
-  EXPECT_DOUBLE_EQ(s.tiles[1].y, 482.0);
-  EXPECT_EQ(s.level0_height, static_cast<uint32_t>(482 + 512));
+TEST(BifStitcherTest, OverlapModelForScanner) {
+  EXPECT_EQ(OverlapModelFor("VENTANA DP 200"), OverlapModel::kPerTile);
+  EXPECT_EQ(OverlapModelFor("VENTANA iScan HT"), OverlapModel::kMeanAdvance);
+  EXPECT_EQ(OverlapModelFor(""), OverlapModel::kMeanAdvance);
 }
 
 TEST(BifStitcherTest, RoundUpToMultipleOf16) {
@@ -355,26 +207,106 @@ TEST(BifStitcherTest, RoundUpToMultipleOf16) {
   EXPECT_EQ(RoundUpToMultipleOf16(0.5), 16u);
 }
 
-TEST(BifStitcherTest, Dp200KeepsEachJointsOverlapAndAlignsTo16) {
+TEST(BifStitcherTest, TilesAbutWithoutJoints) {
+  EncodeInfo encode;
+  encode.aois.push_back(MakeAoi(1, 2));
+  for (const OverlapModel model :
+       {OverlapModel::kMeanAdvance, OverlapModel::kPerTile}) {
+    auto stitch_or = StitchLevel0(encode, 512, 512, model);
+    ASSERT_TRUE(stitch_or.ok());
+    const StitchResult& s = *stitch_or;
+    ASSERT_EQ(s.tiles.size(), 2u);
+    EXPECT_DOUBLE_EQ(s.tiles[0].x, 0.0);
+    EXPECT_DOUBLE_EQ(s.tiles[1].x, 512.0);
+    EXPECT_EQ(s.level0_width, 1024u);
+    EXPECT_EQ(s.level0_height, 512u);
+  }
+}
+
+TEST(BifStitcherTest, MeanAdvanceUsesConfidenceWeightedMeanOverlap) {
+  // 1 row, 3 columns; the joints overlap by 10 (confidence 100) and 30
+  // (confidence 50), so every tile advances by 512 - (1000 + 1500) / 150.
+  EncodeInfo encode;
+  AoiInfo aoi = MakeAoi(1, 3);
+  aoi.joints = {MakeJoint(JointDirection::kRight, 1, 2, 10, 100),
+                MakeJoint(JointDirection::kRight, 2, 3, 30, 50)};
+  encode.aois.push_back(aoi);
+
+  auto stitch_or = StitchLevel0(encode, 512, 512, OverlapModel::kMeanAdvance);
+  ASSERT_TRUE(stitch_or.ok());
+  const StitchResult& s = *stitch_or;
+  const double advance = 512.0 - 2500.0 / 150.0;
+  ASSERT_EQ(s.tiles.size(), 3u);
+  EXPECT_DOUBLE_EQ(s.tiles[0].x, 0.0);
+  EXPECT_DOUBLE_EQ(s.tiles[1].x, advance);
+  EXPECT_DOUBLE_EQ(s.tiles[2].x, 2 * advance);
+  EXPECT_FALSE(s.align16);
+  EXPECT_EQ(s.level0_width,
+            static_cast<uint32_t>(std::ceil(2 * advance + 512.0)));
+}
+
+TEST(BifStitcherTest, MeanAdvanceAppliesUpJointsToRows) {
+  // 2 rows, 1 column; the UP joint overlaps by 30.
+  EncodeInfo encode;
+  AoiInfo aoi = MakeAoi(2, 1);
+  aoi.joints = {MakeJoint(JointDirection::kUp, 1, 2, 30)};
+  encode.aois.push_back(aoi);
+
+  auto stitch_or = StitchLevel0(encode, 512, 512, OverlapModel::kMeanAdvance);
+  ASSERT_TRUE(stitch_or.ok());
+  const StitchResult& s = *stitch_or;
+  ASSERT_EQ(s.tiles.size(), 2u);
+  EXPECT_DOUBLE_EQ(s.tiles[0].y, 0.0);
+  EXPECT_DOUBLE_EQ(s.tiles[1].y, 482.0);
+  EXPECT_EQ(s.level0_height, 994u);
+}
+
+TEST(BifStitcherTest, PlacesAoisByStagePosition) {
+  // Two 1x1 AOIs. B is 700 px right of A and has the larger Pos-Y, so it sits
+  // above A. A is the second tile row of the TIFF grid (AoiOrigin Y = 512)
+  // and lands 88 px lower than a plain grid would put it.
+  EncodeInfo encode;
+  AoiInfo a = MakeAoi(1, 1);
+  a.origin_y = 512;
+  AoiInfo b = MakeAoi(1, 1);
+  b.pos_x = 700;
+  b.pos_y = 600;
+  b.origin_x = 512;
+  encode.aois = {a, b};
+
+  for (const OverlapModel model :
+       {OverlapModel::kMeanAdvance, OverlapModel::kPerTile}) {
+    auto stitch_or = StitchLevel0(encode, 512, 512, model);
+    ASSERT_TRUE(stitch_or.ok());
+    const StitchResult& s = *stitch_or;
+    ASSERT_EQ(s.tiles.size(), 2u);
+    EXPECT_EQ(s.tiles[0].gx, 0u);
+    EXPECT_EQ(s.tiles[0].gy, 1u);
+    EXPECT_DOUBLE_EQ(s.tiles[0].x, 0.0);
+    EXPECT_DOUBLE_EQ(s.tiles[0].y, 600.0);
+    EXPECT_EQ(s.tiles[1].gx, 1u);
+    EXPECT_EQ(s.tiles[1].gy, 0u);
+    EXPECT_DOUBLE_EQ(s.tiles[1].x, 700.0);
+    EXPECT_DOUBLE_EQ(s.tiles[1].y, 0.0);
+  }
+  auto mean_or = StitchLevel0(encode, 512, 512, OverlapModel::kMeanAdvance);
+  EXPECT_EQ(mean_or->level0_width, 1212u);
+  EXPECT_EQ(mean_or->level0_height, 1112u);
+  auto per_tile_or = StitchLevel0(encode, 512, 512, OverlapModel::kPerTile);
+  EXPECT_EQ(per_tile_or->level0_width, 1216u);   // 1212 rounded up to 16
+  EXPECT_EQ(per_tile_or->level0_height, 1120u);  // 1112 rounded up to 16
+}
+
+TEST(BifStitcherTest, PerTileKeepsEachJointsOverlapAndAlignsTo16) {
   // 1 row, 3 columns. Only the joint of the third tile overlaps (by 10), so
   // the second tile stays at the full pitch and only the third moves left.
   EncodeInfo encode;
-  AoiInfo aoi;
-  aoi.num_rows = 1;
-  aoi.num_cols = 3;
-  TileJoint abut;
-  abut.direction = JointDirection::kRight;
-  abut.tile1 = 1;
-  abut.tile2 = 2;
-  TileJoint seam;
-  seam.direction = JointDirection::kRight;
-  seam.tile1 = 2;
-  seam.tile2 = 3;
-  seam.overlap_x = 10;
-  aoi.joints = {abut, seam};
+  AoiInfo aoi = MakeAoi(1, 3);
+  aoi.joints = {MakeJoint(JointDirection::kRight, 1, 2, 0),
+                MakeJoint(JointDirection::kRight, 2, 3, 10)};
   encode.aois.push_back(aoi);
 
-  auto stitch_or = StitchLevel0Dp200(encode, 512, 512);
+  auto stitch_or = StitchLevel0(encode, 512, 512, OverlapModel::kPerTile);
   ASSERT_TRUE(stitch_or.ok());
   const StitchResult& s = *stitch_or;
   ASSERT_EQ(s.tiles.size(), 3u);
@@ -387,68 +319,32 @@ TEST(BifStitcherTest, Dp200KeepsEachJointsOverlapAndAlignsTo16) {
   EXPECT_EQ(s.level0_height, 512u);
 }
 
-TEST(BifStitcherTest, Dp200OverlapsAccumulateAlongTheRow) {
+TEST(BifStitcherTest, PerTileOverlapsAccumulateAlongTheRow) {
   // Every joint overlaps by 10, so tile c sits at c * (512 - 10).
   EncodeInfo encode;
-  AoiInfo aoi;
-  aoi.num_rows = 1;
-  aoi.num_cols = 3;
-  for (int t = 1; t < 3; ++t) {
-    TileJoint joint;
-    joint.direction = JointDirection::kRight;
-    joint.tile1 = t;
-    joint.tile2 = t + 1;
-    joint.overlap_x = 10;
-    aoi.joints.push_back(joint);
-  }
+  AoiInfo aoi = MakeAoi(1, 3);
+  aoi.joints = {MakeJoint(JointDirection::kLeft, 1, 2, 10),
+                MakeJoint(JointDirection::kLeft, 2, 3, 10)};
   encode.aois.push_back(aoi);
 
-  auto stitch_or = StitchLevel0Dp200(encode, 512, 512);
+  auto stitch_or = StitchLevel0(encode, 512, 512, OverlapModel::kPerTile);
   ASSERT_TRUE(stitch_or.ok());
   ASSERT_EQ(stitch_or->tiles.size(), 3u);
   EXPECT_DOUBLE_EQ(stitch_or->tiles[1].x, 502.0);
   EXPECT_DOUBLE_EQ(stitch_or->tiles[2].x, 1004.0);
 }
 
-TEST(BifStitcherTest, Dp200PlacesAoisByPosWithPosYUpwards) {
-  // Two 1x1 AOIs in the same column; B has the larger Pos-Y, so it is above
-  // A in the image. A is the second tile row (AoiOrigin Y = 512) and sits
-  // 88 px lower than a plain grid would put it.
+TEST(BifStitcherTest, DownJointsAreRejectedAsUnverified) {
   EncodeInfo encode;
-  AoiInfo a;
-  a.num_rows = 1;
-  a.num_cols = 1;
-  a.pos_y = 0;
-  a.origin_y = 512;
-  AoiInfo b;
-  b.num_rows = 1;
-  b.num_cols = 1;
-  b.pos_y = 600;
-  encode.aois = {a, b};
-
-  auto stitch_or = StitchLevel0Dp200(encode, 512, 512);
-  ASSERT_TRUE(stitch_or.ok());
-  const StitchResult& s = *stitch_or;
-  ASSERT_EQ(s.tiles.size(), 2u);
-  EXPECT_EQ(s.tiles[0].gy, 1u);
-  EXPECT_DOUBLE_EQ(s.tiles[0].y, 600.0);
-  EXPECT_EQ(s.tiles[1].gy, 0u);
-  EXPECT_DOUBLE_EQ(s.tiles[1].y, 0.0);
-  EXPECT_EQ(s.level0_height, 1120u);  // 1112 rounded up to 16
-}
-
-TEST(BifStitcherTest, Dp200RejectsDownJoints) {
-  EncodeInfo encode;
-  AoiInfo aoi;
-  aoi.num_rows = 2;
-  aoi.num_cols = 1;
-  TileJoint down;
-  down.direction = JointDirection::kDown;
-  down.tile1 = 1;
-  down.tile2 = 2;
-  aoi.joints.push_back(down);
+  AoiInfo aoi = MakeAoi(2, 1);
+  aoi.joints = {MakeJoint(JointDirection::kDown, 1, 2, 0)};
   encode.aois.push_back(aoi);
-  EXPECT_FALSE(StitchLevel0Dp200(encode, 512, 512).ok());
+  for (const OverlapModel model :
+       {OverlapModel::kMeanAdvance, OverlapModel::kPerTile}) {
+    auto stitch_or = StitchLevel0(encode, 512, 512, model);
+    ASSERT_FALSE(stitch_or.ok());
+    EXPECT_EQ(stitch_or.status().code(), aifocore::StatusCode::kUnimplemented);
+  }
 }
 
 }  // namespace
