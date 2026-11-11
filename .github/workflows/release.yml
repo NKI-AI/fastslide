@@ -553,6 +553,10 @@ jobs:
           cp package/Dockerfile package/deb_smoke.cpp smoke_ctx/
           cp debs/*.deb smoke_ctx/
           ls -l smoke_ctx
+          # --network=host: RUN steps use the runner's own network and resolver.
+          # On the default bridge network the build could not resolve
+          # archive.ubuntu.com / ports.ubuntu.com at all (every attempt, both
+          # arches), while the runner itself resolved them fine.
           # Retry the build: the arm64 image installs deps from ports.ubuntu.com,
           # which intermittently times out from the CI network. --no-cache on
           # retries forces a fresh apt-get update instead of reusing a failed
@@ -564,7 +568,8 @@ jobs:
             if [[ "${attempt}" -gt 1 ]]; then
               cache_flag="--no-cache"
             fi
-            if docker build ${cache_flag} --platform ${{ matrix.docker_platform }} \
+            if docker build ${cache_flag} --network=host \
+                --platform ${{ matrix.docker_platform }} \
                 -t fastslide-deb-smoke smoke_ctx; then
               echo "::endgroup::"
               exit 0
