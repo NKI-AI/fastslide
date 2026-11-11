@@ -509,8 +509,9 @@ jobs:
     # install the runtime + dev debs with apt, then compile a standalone C++
     # program (package/deb_smoke.cpp) with the SYSTEM compiler against ONLY the
     # installed SDK and run it, plus exercise the shipped fastslidetool CLI. The
-    # container base (ubuntu:24.04) matches the build-deb runner so the .so ABI
-    # lines up. Runs natively per arch (no emulation).
+    # container base (buildpack-deps:noble, i.e. Ubuntu 24.04 with its build
+    # toolchain) matches the build-deb runner so the .so ABI lines up. Runs
+    # natively per arch (no emulation), without network inside the container.
     name: Smoke deb ${{ matrix.platform }}
     needs: build-deb
     runs-on: ${{ matrix.runner }}
@@ -549,82 +550,46 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          export LC_ALL=C
           mkdir -p smoke_ctx
           cp package/Dockerfile package/deb_smoke.cpp smoke_ctx/
           cp debs/*.deb smoke_ctx/
+          # The smoke image builds with --network=none: since late 2026,
+          # containers on GitHub-hosted runners cannot resolve DNS (not on the
+          # bridge network, not with --network=host, not via the runner's own
+          # systemd-resolved), while the runner itself can. So every package the
+          # install needs is downloaded here, on the runner, and the container
+          # installs only local .deb files.
+          platform="${{ matrix.docker_platform }}"
+          base_image="$(sed -n 's/^FROM //p' smoke_ctx/Dockerfile | head -n 1)"
+          docker pull --platform "${platform}" "${base_image}"
+          echo "::group::Download the dependencies the base image lacks"
+          # Runtime dependencies of the debs, minus the debs themselves.
+          deps="$(for deb in debs/*.deb; do dpkg-deb -f "${deb}" Depends; done \
+            | tr ',' '\n' \
+            | sed -E 's/\(.*\)//; s/\|.*//; s/:any//; s/[[:space:]]//g' \
+            | { grep -v -x -E '(libfastslide|libfastslide-dev)?' || true; } \
+            | sort -u)"
+          echo "Dependencies: $(echo ${deps:-none})"
+          if [[ -n "${deps}" ]]; then
+            sudo apt-get update -qq || echo "::warning::apt-get update reported errors"
+            # shellcheck disable=SC2086 # deps is a word list
+            apt-cache depends --recurse --no-recommends --no-suggests \
+                --no-conflicts --no-breaks --no-replaces --no-enhances ${deps} \
+              | { grep -E '^[a-z0-9]' || true; } | sort -u > closure.txt
+            docker run --rm --network=none --platform "${platform}" "${base_image}" \
+              dpkg-query -W -f '${Package}\n' | sort -u > installed.txt
+            missing="$(comm -23 closure.txt installed.txt)"
+            echo "Missing from ${base_image}: $(echo ${missing:-none})"
+            if [[ -n "${missing}" ]]; then
+              # shellcheck disable=SC2086 # missing is a word list
+              (cd smoke_ctx && apt-get download ${missing})
+            fi
+          fi
+          echo "::endgroup::"
           ls -l smoke_ctx
-          # Resolve container DNS through the runner's own resolver. The runner
-          # resolves via systemd-resolved (127.0.0.53, forwarding to Azure DNS
-          # 168.63.129.16) and that works. Since the late-October 2026 runner
-          # images, containers cannot resolve anything: apt-get update failed
-          # on every attempt on both arches, with and without --network=host,
-          # while the same build passed on the 20260828 images. So
-          # systemd-resolved also listens on the docker0 address, and that is
-          # Docker's only DNS server: build containers then resolve exactly
-          # like the runner does.
-          echo "::group::Runner DNS configuration"
-          grep -H nameserver /etc/resolv.conf /run/systemd/resolve/resolv.conf || true
-          if [[ -f /etc/docker/daemon.json ]]; then
-            echo "/etc/docker/daemon.json: $(cat /etc/docker/daemon.json)"
-          else
-            echo "/etc/docker/daemon.json: absent"
-          fi
-          echo "::endgroup::"
-          echo "::group::Route container DNS through systemd-resolved"
-          bridge_ip="$(ip -4 -o addr show docker0 | awk '{print $4}' | cut -d/ -f1)"
-          if [[ -z "${bridge_ip}" ]]; then
-            echo "::error::docker0 has no IPv4 address"
-            exit 1
-          fi
-          sudo mkdir -p /etc/systemd/resolved.conf.d
-          printf '[Resolve]\nDNSStubListenerExtra=%s\n' "${bridge_ip}" \
-            | sudo tee /etc/systemd/resolved.conf.d/docker-bridge.conf
-          sudo systemctl restart systemd-resolved
-          daemon_json='{}'
-          if [[ -s /etc/docker/daemon.json ]]; then
-            daemon_json="$(sudo cat /etc/docker/daemon.json)"
-          fi
-          jq --arg ip "${bridge_ip}" '.dns = [$ip]' <<<"${daemon_json}" \
-            | sudo tee /etc/docker/daemon.json
-          sudo systemctl restart docker
-          echo "::endgroup::"
-          # Fail within seconds, with the container's resolv.conf in the log,
-          # instead of waiting out apt's retries inside the build.
-          echo "::group::Container DNS preflight"
-          apt_host=archive.ubuntu.com
-          if [[ "${{ matrix.docker_platform }}" == "linux/arm64" ]]; then
-            apt_host=ports.ubuntu.com
-          fi
-          if ! docker run --rm --platform ${{ matrix.docker_platform }} ubuntu:24.04 \
-              sh -c "cat /etc/resolv.conf && getent hosts ${apt_host}"; then
-            echo "::error::a container cannot resolve ${apt_host}"
-            exit 1
-          fi
-          echo "::endgroup::"
-          # Retry the build: the arm64 image installs deps from ports.ubuntu.com,
-          # which intermittently times out from the CI network. --no-cache on
-          # retries forces a fresh apt-get update instead of reusing a failed
-          # layer.
-          attempts=3
-          for attempt in $(seq 1 "${attempts}"); do
-            echo "::group::docker build (attempt ${attempt}/${attempts})"
-            cache_flag=""
-            if [[ "${attempt}" -gt 1 ]]; then
-              cache_flag="--no-cache"
-            fi
-            if docker build ${cache_flag} --platform ${{ matrix.docker_platform }} \
-                -t fastslide-deb-smoke smoke_ctx; then
-              echo "::endgroup::"
-              exit 0
-            fi
-            echo "::endgroup::"
-            echo "docker build failed on attempt ${attempt}/${attempts}"
-            if [[ "${attempt}" -lt "${attempts}" ]]; then
-              sleep $((attempt * 15))
-            fi
-          done
-          echo "docker build failed after ${attempts} attempts" >&2
-          exit 1
+          docker build --network=none --platform "${platform}" \
+            -t fastslide-deb-smoke smoke_ctx
   # TEMPORARILY DISABLED: the source build pulls simpletiff from its pinned git
   # wrap (subprojects/simpletiff.wrap @ 3886522), which predates the
   # <cstdio>-before-<jpeglib.h> fix and so fails to compile under GCC. Re-enable

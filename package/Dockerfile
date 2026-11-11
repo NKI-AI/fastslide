@@ -1,36 +1,35 @@
 # Standalone smoke test for the FastSlide Debian packages.
 #
-# The build context must contain the built *.deb files plus this directory's
-# deb_smoke.cpp. It installs the packages with apt (so transitive deps resolve),
-# then compiles the smoke program with the SYSTEM compiler against ONLY the
-# installed package (headers in /usr/include, libs in /usr/lib) and runs it.
+# The build context must contain the built *.deb files, this directory's
+# deb_smoke.cpp, and the .deb files of every dependency the base image lacks
+# (the release workflow downloads those on the runner with `apt-get download`).
+# It installs the packages with apt, then compiles the smoke program with the
+# SYSTEM compiler against ONLY the installed package (headers in /usr/include,
+# libs in /usr/lib) and runs it.
 #
-# The base image matches the release CI builder (ubuntu-24.04) so the prebuilt
-# .so's glibc/libstdc++ ABI lines up with the compiler used here.
+# Nothing here uses the network: apt installs only the local .deb files, so
+# the image builds with --network=none. GitHub-hosted
+# runners stopped giving containers working DNS in late 2026, and the Ubuntu
+# mirrors were flaky from CI containers before that.
 #
-#   docker build --platform linux/amd64 -t fastslide-deb-smoke .
-FROM ubuntu:24.04
-
-# Harden apt against transient mirror flakiness. The arm64 image resolves to
-# ports.ubuntu.com (amd64 uses archive.ubuntu.com), which intermittently times
-# out from CI networks and would otherwise fail the very first apt-get update.
-# Retrying each fetch and bounding the connect timeout lets a hiccup self-heal.
-RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' \
-    > /etc/apt/apt.conf.d/80-fastslide-retries
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends g++ pkg-config ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# The base image is Ubuntu 24.04 with its build toolchain (g++, pkg-config)
+# preinstalled. It matches the release CI builder (ubuntu-24.04), so the
+# prebuilt .so's glibc/libstdc++ ABI lines up with the compiler used here.
+#
+#   docker build --network=none --platform linux/amd64 -t fastslide-deb-smoke .
+FROM buildpack-deps:noble
 
 WORKDIR /work
 COPY *.deb ./
 COPY deb_smoke.cpp ./
 
-# Install runtime + dev together so libfastslide-dev's exact-version dependency
-# on libfastslide is satisfied from the local .deb files.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ./*.deb \
-    && rm -rf /var/lib/apt/lists/*
+# Install runtime + dev (and the downloaded dependencies) together, so
+# libfastslide-dev's exact-version dependency on libfastslide and its other
+# dependencies are satisfied from the local .deb files only. The image has no
+# apt lists and the build has no network, so a dependency that is neither in
+# the image nor in the context fails here. (apt's --no-download would say the
+# same, but it rejects local .deb files.)
+RUN apt-get install -y --no-install-recommends ./*.deb
 
 # Compile against the installed SDK via pkg-config (which also proves the
 # shipped fastslide.pc is correct) and run the smoke program. Only -lfastslide
