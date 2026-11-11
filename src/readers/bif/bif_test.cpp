@@ -130,6 +130,36 @@ TEST(BifXmlTest, ParseEncodeInfoKeepsAoiWhenScannedAttributeAbsent) {
   EXPECT_EQ(encode_or->aois.size(), 1u);
 }
 
+TEST(BifXmlTest, ParseEncodeInfoPairsOriginsByOrderWithoutAoiIndex) {
+  // Without AOIIndex the n-th <ImageInfo> pairs with <AOIn>, counting the
+  // unscanned AOI in between (the layout of OpenSlide's OS-2.bif).
+  const std::string xmp = R"(<EncodeInfo>
+      <SlideStitchInfo>
+        <ImageInfo AOIScanned="1" NumRows="17" NumCols="11"
+                   Width="1024" Height="1360"/>
+        <ImageInfo AOIScanned="0" NumRows="10" NumCols="12"
+                   Width="1024" Height="1360"/>
+        <ImageInfo AOIScanned="1" NumRows="61" NumCols="95"
+                   Width="1024" Height="1360"/>
+      </SlideStitchInfo>
+      <AoiOrigin>
+        <AOI0 OriginX="0" OriginY="38080"/>
+        <AOI1 OriginX="6144" OriginY="68000"/>
+        <AOI2 OriginX="30720" OriginY="0"/>
+      </AoiOrigin>
+    </EncodeInfo>)";
+
+  auto encode_or = ParseEncodeInfo(xmp);
+  ASSERT_TRUE(encode_or.ok());
+  ASSERT_EQ(encode_or->aois.size(), 2u);
+  EXPECT_EQ(encode_or->aois[0].aoi_index, 0);
+  EXPECT_DOUBLE_EQ(encode_or->aois[0].origin_x, 0.0);
+  EXPECT_DOUBLE_EQ(encode_or->aois[0].origin_y, 38080.0);
+  EXPECT_EQ(encode_or->aois[1].aoi_index, 2);
+  EXPECT_DOUBLE_EQ(encode_or->aois[1].origin_x, 30720.0);
+  EXPECT_DOUBLE_EQ(encode_or->aois[1].origin_y, 0.0);
+}
+
 TEST(BifStitcherTest, SerpentineColumnSnakesByRow) {
   // 3 columns. Even rows go left->right, odd rows right->left.
   EXPECT_EQ(SerpentineColumn(1, 3), 0);
