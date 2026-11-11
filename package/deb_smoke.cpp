@@ -15,7 +15,7 @@
 /// @file deb_smoke.cpp
 /// @brief Standalone smoke test for the installed FastSlide Debian packages.
 ///
-/// This program is compiled OUTSIDE the Bazel build (see package/Dockerfile),
+/// This program is compiled OUTSIDE the Bazel build (see package/smoke_deb.sh),
 /// using only the headers shipped in libfastslide-dev and linking against the
 /// libfastslide.so shipped in the runtime package. It exercises the public C++
 /// API by initializing the global reader registry and listing the built-in

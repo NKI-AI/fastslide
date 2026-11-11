@@ -23,7 +23,8 @@ exports_files([
     "versions.json",
     "ldconfig_postinst.sh",
     "deb_smoke.cpp",
-    "Dockerfile",
+    "deb_smoke_deps.txt",
+    "smoke_deb.sh",
 ])
 
 # pkg-config metadata for the -dev package. libfastslide.so is self-contained
