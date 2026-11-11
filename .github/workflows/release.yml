@@ -553,15 +553,53 @@ jobs:
           cp package/Dockerfile package/deb_smoke.cpp smoke_ctx/
           cp debs/*.deb smoke_ctx/
           ls -l smoke_ctx
-          # --network=host: RUN steps use the runner's own network and resolver.
-          # Since late 2026 the hosted runners resolve through a loopback egress
-          # DNS resolver (actions/runner-images#14925). On the default bridge
-          # network BuildKit drops loopback nameservers and falls back to public
-          # DNS, which the runner does not reach, so apt-get could not resolve
-          # archive.ubuntu.com / ports.ubuntu.com (it worked until then). With
-          # host networking the build resolves exactly like the runner does.
+          # Resolve container DNS through the runner's own resolver. The runner
+          # resolves via systemd-resolved (127.0.0.53, forwarding to Azure DNS
+          # 168.63.129.16) and that works. Since the late-October 2026 runner
+          # images, containers cannot resolve anything: apt-get update failed
+          # on every attempt on both arches, with and without --network=host,
+          # while the same build passed on the 20260828 images. So
+          # systemd-resolved also listens on the docker0 address, and that is
+          # Docker's only DNS server: build containers then resolve exactly
+          # like the runner does.
           echo "::group::Runner DNS configuration"
           grep -H nameserver /etc/resolv.conf /run/systemd/resolve/resolv.conf || true
+          if [[ -f /etc/docker/daemon.json ]]; then
+            echo "/etc/docker/daemon.json: $(cat /etc/docker/daemon.json)"
+          else
+            echo "/etc/docker/daemon.json: absent"
+          fi
+          echo "::endgroup::"
+          echo "::group::Route container DNS through systemd-resolved"
+          bridge_ip="$(ip -4 -o addr show docker0 | awk '{print $4}' | cut -d/ -f1)"
+          if [[ -z "${bridge_ip}" ]]; then
+            echo "::error::docker0 has no IPv4 address"
+            exit 1
+          fi
+          sudo mkdir -p /etc/systemd/resolved.conf.d
+          printf '[Resolve]\nDNSStubListenerExtra=%s\n' "${bridge_ip}" \
+            | sudo tee /etc/systemd/resolved.conf.d/docker-bridge.conf
+          sudo systemctl restart systemd-resolved
+          daemon_json='{}'
+          if [[ -s /etc/docker/daemon.json ]]; then
+            daemon_json="$(sudo cat /etc/docker/daemon.json)"
+          fi
+          jq --arg ip "${bridge_ip}" '.dns = [$ip]' <<<"${daemon_json}" \
+            | sudo tee /etc/docker/daemon.json
+          sudo systemctl restart docker
+          echo "::endgroup::"
+          # Fail within seconds, with the container's resolv.conf in the log,
+          # instead of waiting out apt's retries inside the build.
+          echo "::group::Container DNS preflight"
+          apt_host=archive.ubuntu.com
+          if [[ "${{ matrix.docker_platform }}" == "linux/arm64" ]]; then
+            apt_host=ports.ubuntu.com
+          fi
+          if ! docker run --rm --platform ${{ matrix.docker_platform }} ubuntu:24.04 \
+              sh -c "cat /etc/resolv.conf && getent hosts ${apt_host}"; then
+            echo "::error::a container cannot resolve ${apt_host}"
+            exit 1
+          fi
           echo "::endgroup::"
           # Retry the build: the arm64 image installs deps from ports.ubuntu.com,
           # which intermittently times out from the CI network. --no-cache on
@@ -574,8 +612,7 @@ jobs:
             if [[ "${attempt}" -gt 1 ]]; then
               cache_flag="--no-cache"
             fi
-            if docker build ${cache_flag} --network=host \
-                --platform ${{ matrix.docker_platform }} \
+            if docker build ${cache_flag} --platform ${{ matrix.docker_platform }} \
                 -t fastslide-deb-smoke smoke_ctx; then
               echo "::endgroup::"
               exit 0
