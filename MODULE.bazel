@@ -46,7 +46,7 @@ git_override(
 bazel_dep(name = "jpeg-compressor", version = "0.0.1")
 git_override(
     module_name = "jpeg-compressor",
-    commit = "927f759d349b7ce2588d50465d719c42011ccb4b",
+    commit = "3d57dff945adbddb2054a9bb08da8b56323d109d",
     remote = "https://github.com/NKI-AI/jpeg-compressor.git",
 )
 
