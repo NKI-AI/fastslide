@@ -82,10 +82,10 @@ jobs:
           # the Intel runner is far slower, and the artifact is still validated
           # on a real Intel host in the smoke phase below.
           - platform: darwin_x86_64
-            builder: macos-14
+            builder: macos-15
             method: bazel
           - platform: darwin_aarch64
-            builder: macos-14
+            builder: macos-15
             method: bazel
           - platform: windows_x86_64
             builder: windows-2022
@@ -224,11 +224,11 @@ jobs:
           # No bootable Intel macOS runner; validate the x86_64 dylib under
           # Rosetta on the arm64 runner with an x86_64 JDK.
           - platform: darwin_x86_64
-            runner: macos-14
+            runner: macos-15
             java_arch: x64
             rosetta: true
           - platform: darwin_aarch64
-            runner: macos-14
+            runner: macos-15
             java_arch: aarch64
           - platform: windows_x86_64
             runner: windows-2022
@@ -293,10 +293,10 @@ jobs:
             builder: ubuntu-24.04-arm
             method: bazel
           - platform: darwin_x86_64
-            builder: macos-14
+            builder: macos-15
             method: bazel
           - platform: darwin_aarch64
-            builder: macos-14
+            builder: macos-15
             method: bazel
           - platform: windows_x86_64
             builder: windows-2022
@@ -629,10 +629,10 @@ jobs:
           # x86_64 wheel runs under Rosetta on the arm64 mac with an x86_64
           # CPython (uv downloads the matching build).
           - platform: darwin_x86_64
-            runner: macos-14
+            runner: macos-15
             rosetta: true
           - platform: darwin_aarch64
-            runner: macos-14
+            runner: macos-15
           - platform: windows_x86_64
             runner: windows-2022
           - platform: windows_arm64

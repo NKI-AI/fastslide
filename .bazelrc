@@ -75,6 +75,13 @@ build:linux --sandbox_add_mount_pair=/tmp
 build:windows --sandbox_add_mount_pair=C:\Temp
 
 # =============================================================================
+# Minimum macOS for every macOS binary (wheels, dylibs, JNI libraries)
+# =============================================================================
+# Without it Bazel targets the SDK of the runner's Xcode, so moving the release
+# runner to a newer macOS would silently raise the macOS version users need.
+build:macos --macos_minimum_os=14.0
+
+# =============================================================================
 # Rust Platforms (Opt-in: --config=rust, Linux x86_64 only)
 # =============================================================================
 # rules_rs's Linux Rust toolchains carry the `@@llvm+//constraints/libc:gnu.2.28`
