@@ -31,9 +31,12 @@ aifocore::Result<std::vector<uint8_t>> ExtractIccProfile(
   const std::span<const simpletiff::PageHeader> pages = index.Pages();
   for (const simpletiff::PageHeader& page : pages) {
     if (!page.icc_profile.empty()) {
-      const auto* begin =
-          reinterpret_cast<const uint8_t*>(page.icc_profile.data());
-      return std::vector<uint8_t>(begin, begin + page.icc_profile.size());
+      std::vector<uint8_t> profile;
+      if (!index.ReadBlob(page.icc_profile, profile)) {
+        return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kDataLoss,
+                                    "Failed to read the embedded ICC profile");
+      }
+      return profile;
     }
   }
   return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,

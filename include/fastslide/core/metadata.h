@@ -63,6 +63,8 @@ inline constexpr std::string_view kChannels =
     "channels";  ///< Number of channels
 inline constexpr std::string_view kAssociatedImages =
     "associated_images";  ///< Number of associated images
+inline constexpr std::string_view kBackgroundColor =
+    "background_color";  ///< Fill of unscanned areas, "RRGGBB" hex
 
 // Format-specific keys (readers may add more as needed)
 

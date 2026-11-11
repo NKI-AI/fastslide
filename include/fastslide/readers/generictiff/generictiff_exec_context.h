@@ -15,14 +15,31 @@
 #ifndef AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_GENERICTIFF_GENERICTIFF_EXEC_CONTEXT_H_
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_GENERICTIFF_GENERICTIFF_EXEC_CONTEXT_H_
 
+#include <memory>
+#include <string>
+
+#include "fastslide/runtime/cache_interface.h"
 #include "simpletiff/index.h"
 
 namespace fastslide {
 
 /// @brief Read-only view of Generic TIFF state needed by the tile executor.
+///
+/// `GetFilename()`, `GetCache()` and `IsCacheEnabled()` are what the
+/// `CachedTileExecutor<...>` templates call on the object they are given.
 struct GenericTiffExecContext {
   const simpletiff::TiffIndex& tiff_index;
   int level_count = 0;
+  std::string filename;
+  std::shared_ptr<runtime::ITileCache> cache;
+
+  [[nodiscard]] const std::string& GetFilename() const { return filename; }
+
+  [[nodiscard]] std::shared_ptr<runtime::ITileCache> GetCache() const {
+    return cache;
+  }
+
+  [[nodiscard]] bool IsCacheEnabled() const { return cache != nullptr; }
 };
 
 }  // namespace fastslide

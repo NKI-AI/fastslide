@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -396,7 +396,7 @@
             const file = await fileHandle.getFile();
             const lower = file.name.toLowerCase();
             const sidecarExt = [...SIDECAR_DIR_EXTENSIONS].find((ext) =>
-              lower.endsWith(ext)
+              lower.endsWith(ext),
             );
 
             if (sidecarExt) {
@@ -404,7 +404,7 @@
               const baseName = file.name.slice(0, -sidecarExt.length);
               showStatus(
                 `Select the data folder for "${file.name}" (usually "${baseName}/" next to it).`,
-                "loading"
+                "loading",
               );
 
               let dirHandle;
@@ -416,7 +416,7 @@
                 if (err.name === "AbortError") {
                   showStatus(
                     "Cancelled \u2014 MRXS needs its data folder.",
-                    "error"
+                    "error",
                   );
                   return;
                 }
@@ -439,11 +439,11 @@
               const hasSlidedat = entries.some(
                 (e) =>
                   e.path.toLowerCase() ===
-                  `${baseName.toLowerCase()}/slidedat.ini`
+                  `${baseName.toLowerCase()}/slidedat.ini`,
               );
               if (!hasSlidedat) {
                 console.warn(
-                  `[open-file] Selected folder does not contain Slidedat.ini at the expected path "${baseName}/Slidedat.ini" \u2014 letting the reader surface the real error.`
+                  `[open-file] Selected folder does not contain Slidedat.ini at the expected path "${baseName}/Slidedat.ini" \u2014 letting the reader surface the real error.`,
                 );
               }
 
@@ -533,10 +533,10 @@
             const sortedByDepth = [...entries].sort(
               (a, b) =>
                 a.path.split("/").length - b.path.split("/").length ||
-                a.path.localeCompare(b.path)
+                a.path.localeCompare(b.path),
             );
             const entry = sortedByDepth.find((e) =>
-              matchesSlideExtension(e.path)
+              matchesSlideExtension(e.path),
             );
             if (!entry) {
               hideLoading();
@@ -577,16 +577,14 @@
 
         // Update header info
         document.getElementById("format-info").textContent = format;
-        document.getElementById(
-          "dimensions-info"
-        ).textContent = `${dimensions[0]} × ${dimensions[1]}`;
+        document.getElementById("dimensions-info").textContent =
+          `${dimensions[0]} × ${dimensions[1]}`;
 
         // Update sidebar info
         document.getElementById("sidebar").classList.remove("hidden");
         document.getElementById("info-format").textContent = format;
-        document.getElementById(
-          "info-dimensions"
-        ).textContent = `${dimensions[0]} × ${dimensions[1]}`;
+        document.getElementById("info-dimensions").textContent =
+          `${dimensions[0]} × ${dimensions[1]}`;
 
         const mppStr =
           mpp && mpp[0] > 0 ? `${((mpp[0] + mpp[1]) / 2).toFixed(4)}` : "N/A";
@@ -597,7 +595,7 @@
 
         // Add Read Region UI
         const readRegionContainer = document.getElementById(
-          "read-region-container"
+          "read-region-container",
         );
         readRegionContainer.innerHTML = `
                 <div class="space-y-4 mt-8 border-t border-gray-700 pt-6 p-6">
@@ -666,10 +664,10 @@
                     }</div>
                     <div class="text-right">
                         <div class="text-gray-300">${level.width} × ${
-            level.height
-          }</div>
+                          level.height
+                        }</div>
                         <div class="text-gray-500 mt-0.5">1/${level.downsampleFactor.toFixed(
-                          0
+                          0,
                         )} scale</div>
                     </div>
           `;
@@ -689,17 +687,17 @@
           .addEventListener("click", () => {
             const level = parseInt(
               document.getElementById("levelSelect").value,
-              10
+              10,
             );
             const x = parseInt(document.getElementById("regionX").value, 10);
             const y = parseInt(document.getElementById("regionY").value, 10);
             const width = parseInt(
               document.getElementById("regionWidth").value,
-              10
+              10,
             );
             const height = parseInt(
               document.getElementById("regionHeight").value,
-              10
+              10,
             );
 
             showStatus("Reading region...", "loading");
@@ -861,7 +859,7 @@
           "text-red-400",
           "bg-red-400/10",
           "text-green-400",
-          "bg-green-400/10"
+          "bg-green-400/10",
         );
 
         if (type === "loading") {

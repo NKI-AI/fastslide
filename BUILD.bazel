@@ -1953,6 +1953,30 @@ cc_test(
 )
 
 cc_test(
+    name = "cached_tile_executor_test",
+    size = "small",
+    srcs = ["src/readers/cached_tile_executor_test.cpp"],
+    deps = [
+        ":readers",
+        ":runtime_lru_tile_cache",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "j2k_decoder_test",
+    size = "small",
+    srcs = ["src/runtime/decoders/j2k_decoder_test.cpp"],
+    deps = [
+        ":runtime_j2k_decoder",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@openjp2",
+    ],
+)
+
+cc_test(
     name = "lru_tile_cache_test",
     size = "small",
     srcs = ["src/runtime/lru_tile_cache_test.cpp"],
@@ -1993,6 +2017,20 @@ cc_test(
     deps = [
         ":hash",
         ":tiff_quickhash",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+cc_test(
+    name = "tiff_tile_utilities_test",
+    size = "small",
+    srcs = ["src/utilities/tiff/tile_utilities_test.cpp"],
+    deps = [
+        ":tiff_utilities",
+        "@aifocore-cpp//:portability",
+        "@aifocore-cpp//:result",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
         "@simpletiff//:simpletiff_lib",

@@ -326,6 +326,11 @@ struct SlideDataInfo {
   int32_t filter_hier_index = -1;
 };
 
+/// @brief Convert Slidedat.ini's `IMAGE_FILL_COLOR_BGR` (0xBBGGRR) to 0xRRGGBB.
+[[nodiscard]] constexpr uint32_t BgrToRgb24(uint32_t bgr) {
+  return ((bgr << 16) & 0xFF0000) | (bgr & 0x00FF00) | ((bgr >> 16) & 0x0000FF);
+}
+
 /// @brief Unpack 24-bit 0xRRGGBB (`SlideZoomLevel::background_color_rgb`).
 [[nodiscard]] constexpr std::array<uint8_t, 3> UnpackRgb24(uint32_t rgb) {
   return {static_cast<uint8_t>((rgb >> 16) & 0xFF),
