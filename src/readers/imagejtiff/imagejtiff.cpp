@@ -199,7 +199,7 @@ aifocore::Result<core::TilePlan> ImageJTiffReader::PrepareRequest(
 aifocore::Status ImageJTiffReader::ExecutePlan(const core::TilePlan& plan,
                                                runtime::Canvas& writer) const {
   const ImageJTiffExecContext context(GetFilename(), pyramid_, *tiff_index_,
-                                      GetCache());
+                                      GetCache(), GetJpegDecodeMode());
   return ImageJTiffTileExecutor::ExecutePlan(plan, context, writer);
 }
 

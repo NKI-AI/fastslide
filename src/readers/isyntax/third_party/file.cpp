@@ -208,7 +208,7 @@ isyntax_cache_t* IsyntaxFile::cache() const {
 }
 
 aifocore::Result<RgbaImage> IsyntaxFile::ReadLabelImage(
-    PixelFormat pixel_format) const {
+    PixelFormat pixel_format, fastslide::JpegDecodeMode mode) const {
   if (isyntax_ == nullptr) {
     return aifocore::Status(aifocore::StatusCode::kFailedPrecondition,
                             "ReadLabelImage called on null IsyntaxFile");
@@ -226,7 +226,7 @@ aifocore::Result<RgbaImage> IsyntaxFile::ReadLabelImage(
 
   auto decoded_or = isyntax::jpeg::ReadAssociatedImagePixels(
       isyntax_.get(), const_cast<isyntax_image_t*>(img),
-      static_cast<isyntax_pixel_format_t>(internal_fmt));
+      static_cast<isyntax_pixel_format_t>(internal_fmt), mode);
   if (!decoded_or.ok()) {
     return aifocore::Status(aifocore::StatusCode::kInternal,
                             "Failed to decode label image");
@@ -247,7 +247,7 @@ aifocore::Result<RgbaImage> IsyntaxFile::ReadLabelImage(
 }
 
 aifocore::Result<RgbaImage> IsyntaxFile::ReadMacroImage(
-    PixelFormat pixel_format) const {
+    PixelFormat pixel_format, fastslide::JpegDecodeMode mode) const {
   if (isyntax_ == nullptr) {
     return aifocore::Status(aifocore::StatusCode::kFailedPrecondition,
                             "ReadMacroImage called on null IsyntaxFile");
@@ -265,7 +265,7 @@ aifocore::Result<RgbaImage> IsyntaxFile::ReadMacroImage(
 
   auto decoded_or = isyntax::jpeg::ReadAssociatedImagePixels(
       isyntax_.get(), const_cast<isyntax_image_t*>(img),
-      static_cast<isyntax_pixel_format_t>(internal_fmt));
+      static_cast<isyntax_pixel_format_t>(internal_fmt), mode);
   if (!decoded_or.ok()) {
     return aifocore::Status(aifocore::StatusCode::kInternal,
                             "Failed to decode macro image");

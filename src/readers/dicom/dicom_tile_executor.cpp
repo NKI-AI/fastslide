@@ -84,11 +84,12 @@ aifocore::Result<RawFrame> ReadRawFrame(DicomFile& file, uint32_t col,
 aifocore::Result<std::vector<uint8_t>> DecodeFrame(DicomFile& file,
                                                    uint32_t col, uint32_t row,
                                                    uint32_t expected_w,
-                                                   uint32_t expected_h) {
+                                                   uint32_t expected_h,
+                                                   JpegDecodeMode mode) {
   AIFOCORE_ASSIGN_OR_RETURN(auto raw_frame, ReadRawFrame(file, col, row));
   return dicom::internal::DecodeDicomFrameBytes(
       raw_frame.bytes, raw_frame.syntax, raw_frame.photometric, expected_w,
-      expected_h);
+      expected_h, mode);
 }
 
 }  // namespace
@@ -124,7 +125,7 @@ runtime::TileKey DicomTileExecutor::MakeCacheKey(
     const core::TileReadOp& op, const DicomExecContext& context) {
   return runtime::TileKey(std::string(context.GetFilename()),
                           static_cast<uint16_t>(op.level), op.tile_coord.x,
-                          op.tile_coord.y);
+                          op.tile_coord.y, context.GetJpegDecodeMode());
 }
 
 aifocore::Result<DecodedTileData> DicomTileExecutor::ReadTileFromDisk(
@@ -144,7 +145,8 @@ aifocore::Result<DecodedTileData> DicomTileExecutor::ReadTileFromDisk(
   std::vector<uint8_t> rgb;
   bool decoded = false;
   for (const auto& part : level.parts) {
-    auto rgb_or = DecodeFrame(*part.file, col, row, level.tile_w, level.tile_h);
+    auto rgb_or = DecodeFrame(*part.file, col, row, level.tile_w, level.tile_h,
+                              context.GetJpegDecodeMode());
     if (rgb_or.ok()) {
       rgb = std::move(*rgb_or);
       decoded = true;

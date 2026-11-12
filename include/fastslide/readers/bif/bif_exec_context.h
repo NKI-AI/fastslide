@@ -19,6 +19,7 @@
 #include <string>
 #include <utility>
 
+#include "fastslide/jpeg_decode_mode.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "simpletiff/index.h"
 
@@ -28,10 +29,12 @@ namespace fastslide {
 class BifExecContext {
  public:
   BifExecContext(const simpletiff::TiffIndex& tiff_index, std::string filename,
-                 std::shared_ptr<runtime::ITileCache> cache)
+                 std::shared_ptr<runtime::ITileCache> cache,
+                 JpegDecodeMode jpeg_decode_mode)
       : tiff_index_(tiff_index),
         filename_(std::move(filename)),
-        cache_(std::move(cache)) {}
+        cache_(std::move(cache)),
+        jpeg_decode_mode_(jpeg_decode_mode) {}
 
   [[nodiscard]] const simpletiff::TiffIndex& Tiff() const {
     return tiff_index_;
@@ -45,10 +48,16 @@ class BifExecContext {
 
   [[nodiscard]] bool IsCacheEnabled() const { return cache_ != nullptr; }
 
+  /// JPEG decode mode of the owning reader, fixed for this plan.
+  [[nodiscard]] JpegDecodeMode GetJpegDecodeMode() const {
+    return jpeg_decode_mode_;
+  }
+
  private:
   const simpletiff::TiffIndex& tiff_index_;
   std::string filename_;
   std::shared_ptr<runtime::ITileCache> cache_;
+  JpegDecodeMode jpeg_decode_mode_;
 };
 
 }  // namespace fastslide

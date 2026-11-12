@@ -632,6 +632,7 @@ aifocore::Status OlympusVsiStackImage::ExecutePlan(
       .pixel_type = ets_.ets.pixel_type,
       .n_channels = GetNChannels(),
       .cache = cache_provider_.GetCache(),
+      .jpeg_decode_mode = cache_provider_.GetJpegDecodeMode(),
   };
   return OlympusVsiTileExecutor::ExecutePlan(plan, context, canvas);
 }
@@ -1123,7 +1124,7 @@ aifocore::Result<RGBImage> OlympusVsiReader::ReadAssociatedImage(
   for (const auto& a : associated_) {
     if (a.name == name) {
       return readers::simpletiff_decode::ReadAssociatedTiffPage(
-          *vsi_tiff_, a.page, a.size, name);
+          *vsi_tiff_, a.page, a.size, name, GetJpegDecodeMode());
     }
   }
   return AIFOCORE_MAKE_STATUS(

@@ -157,15 +157,17 @@ runtime::TileKey AperioTileExecutor::MakeCacheKey(
   // Use tile grid coordinates for key (unique per level)
   return runtime::TileKey(context.GetFilename(),
                           static_cast<uint16_t>(operation.level),
-                          operation.tile_coord.x, operation.tile_coord.y);
+                          operation.tile_coord.x, operation.tile_coord.y,
+                          context.GetJpegDecodeMode());
 }
 
 aifocore::Result<DecodedTileData> AperioTileExecutor::ReadTileFromDisk(
     const core::TileReadOp& operation, const AperioExecContext& context,
     const TiffAccessParams& params) {
-  // Each worker thread uses its own DecodeContext for decompression. This is
-  // thread-safe and avoids per-tile allocations.
-  static thread_local simpletiff::DecodeContext decode_ctx;
+  // The calling thread's context, set to this plan's JPEG decode mode.
+  simpletiff::DecodeContext& decode_ctx =
+      readers::simpletiff_decode::ThreadDecodeContext(
+          context.GetJpegDecodeMode());
   auto& tile_buffer = GetBuffers().tile_buffer;
 
   const auto& tiff_index = context.GetTiffIndex();

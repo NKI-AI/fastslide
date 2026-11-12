@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "aifocore/status/result.h"
+#include "fastslide/jpeg_decode_mode.h"
 #include "fastslide/readers/isyntax/third_party/isyntax.h"
 #include "fastslide/readers/isyntax/third_party/isyntax_types.h"
 
@@ -37,7 +38,8 @@ struct DecodedImage {
 
 // Decode a JPEG byte stream to pixel buffer (RGBA or BGRA depending on fmt).
 aifocore::Result<DecodedImage> DecodeJpeg(std::span<const uint8_t> jpeg_bytes,
-                                          isyntax_pixel_format_t fmt);
+                                          isyntax_pixel_format_t fmt,
+                                          fastslide::JpegDecodeMode mode);
 
 // Read and base64-decode the associated image JPEG bitstream from the iSyntax
 // file.
@@ -50,7 +52,8 @@ aifocore::Result<std::vector<uint8_t>> ReadIccProfileBytes(
 
 // Convenience: read associated image JPEG bytes and decode to pixels.
 aifocore::Result<DecodedImage> ReadAssociatedImagePixels(
-    isyntax_t* isyntax, isyntax_image_t* image, isyntax_pixel_format_t fmt);
+    isyntax_t* isyntax, isyntax_image_t* image, isyntax_pixel_format_t fmt,
+    fastslide::JpegDecodeMode mode);
 
 }  // namespace jpeg
 }  // namespace isyntax

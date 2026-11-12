@@ -18,6 +18,7 @@
 #include <memory>
 #include <string>
 
+#include "fastslide/jpeg_decode_mode.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "simpletiff/index.h"
 
@@ -41,10 +42,12 @@ class AperioExecContext {
  public:
   AperioExecContext(std::string filename,
                     std::shared_ptr<runtime::ITileCache> cache,
-                    const simpletiff::TiffIndex& tiff_index)
+                    const simpletiff::TiffIndex& tiff_index,
+                    JpegDecodeMode jpeg_decode_mode)
       : filename_(std::move(filename)),
         cache_(std::move(cache)),
-        tiff_index_(tiff_index) {}
+        tiff_index_(tiff_index),
+        jpeg_decode_mode_(jpeg_decode_mode) {}
 
   [[nodiscard]] const std::string& GetFilename() const { return filename_; }
 
@@ -58,10 +61,16 @@ class AperioExecContext {
     return tiff_index_;
   }
 
+  /// JPEG decode mode of the owning reader, fixed for this plan.
+  [[nodiscard]] JpegDecodeMode GetJpegDecodeMode() const {
+    return jpeg_decode_mode_;
+  }
+
  private:
   std::string filename_;
   std::shared_ptr<runtime::ITileCache> cache_;
   const simpletiff::TiffIndex& tiff_index_;
+  JpegDecodeMode jpeg_decode_mode_;
 };
 
 }  // namespace fastslide

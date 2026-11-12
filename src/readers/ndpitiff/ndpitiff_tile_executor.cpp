@@ -94,7 +94,7 @@ TileKey NdpiTiffTileExecutor::MakeCacheKey(const core::TileReadOp& op,
   // planes and levels.
   return runtime::TileKey(context.GetFilename(),
                           static_cast<uint16_t>(op.source_id), op.tile_coord.x,
-                          op.tile_coord.y);
+                          op.tile_coord.y, context.GetJpegDecodeMode());
 }
 
 aifocore::Result<DecodedTileData> NdpiTiffTileExecutor::ReadTileFromDisk(
@@ -110,7 +110,9 @@ aifocore::Result<DecodedTileData> NdpiTiffTileExecutor::ReadTileFromDisk(
   const uint32_t tile_channels =
       static_cast<uint32_t>(page_header.samples_per_pixel);
 
-  static thread_local simpletiff::DecodeContext decode_ctx;
+  simpletiff::DecodeContext& decode_ctx =
+      readers::simpletiff_decode::ThreadDecodeContext(
+          context.GetJpegDecodeMode());
   static thread_local std::vector<uint8_t> raw_compressed;
   static thread_local std::vector<uint8_t> patched_header;
 

@@ -72,6 +72,22 @@ if gtest_dep.found()
       env : {'TEST_TMPDIR' : meson.current_build_dir()})
   endforeach
 
+  # JPEG decode mode test: synthetic JPEGs plus the repo's small SVS.
+  jpeg_mode_args = ['-D__ANSI__']
+  if get_option('jpeg_decoder') == 'jpgd'
+    jpeg_mode_args += '-DFASTSLIDE_JPEG_BACKEND_JPGD'
+  endif
+  jpeg_decode_mode = executable('jpeg_decode_mode_test',
+    'jpeg_decode_mode_test.cpp',
+    include_directories : test_inc,
+    dependencies : [fastslide_dep, gtest_dep],
+    cpp_args : jpeg_mode_args)
+  test('jpeg_decode_mode_test', jpeg_decode_mode,
+    env : {
+      'FASTSLIDE_JPEG_TEST_SVS' :
+        meson.current_source_dir() / 'test_data/CMU-1-Small-Region.svs',
+    })
+
   # DICOM concatenation test needs on-disk test fixtures.
   dicom_concat = executable('dicom_concatenation_test',
     '../src/readers/dicom/dicom_concatenation_test.cpp',

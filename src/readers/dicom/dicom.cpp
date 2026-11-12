@@ -953,9 +953,10 @@ aifocore::Result<Image> DicomReader::ReadAssociatedImage(
   const uint32_t h = target->height;
 
   AIFOCORE_ASSIGN_OR_RETURN(
-      auto rgb, dicom::internal::DecodeDicomFrameBytes(
-                    std::span<const uint8_t>(raw, length),
-                    file->transfer_syntax, file->photometric, w, h));
+      auto rgb,
+      dicom::internal::DecodeDicomFrameBytes(
+          std::span<const uint8_t>(raw, length), file->transfer_syntax,
+          file->photometric, w, h, GetJpegDecodeMode()));
 
   Image image({w, h}, ImageFormat::kRGB, DataType::kUInt8);
   if (rgb.size() != image.SizeBytes()) {
@@ -1038,7 +1039,8 @@ aifocore::Result<core::TilePlan> DicomReader::PrepareRequest(
 
 aifocore::Status DicomReader::ExecutePlan(const core::TilePlan& plan,
                                           runtime::Canvas& writer) const {
-  const DicomExecContext context(filename_, levels_, GetCache());
+  const DicomExecContext context(filename_, levels_, GetCache(),
+                                 GetJpegDecodeMode());
   return DicomTileExecutor::ExecutePlan(plan, context, writer);
 }
 

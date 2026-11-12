@@ -345,9 +345,10 @@ runtime::TileKey OmeZarrTileExecutor::MakeCacheKey(
   const uint64_t cx = DecodeChunkX(operation.byte_offset);
   const uint32_t encoded_y =
       (static_cast<uint32_t>(cc) << 16) | (static_cast<uint32_t>(cy) & 0xFFFFU);
-  return runtime::TileKey(std::string(context.filename),
-                          static_cast<uint16_t>(level_index),
-                          static_cast<uint32_t>(cx), encoded_y);
+  // OME-Zarr chunks are not JPEG: one entry for both modes.
+  return runtime::TileKey(
+      std::string(context.filename), static_cast<uint16_t>(level_index),
+      static_cast<uint32_t>(cx), encoded_y, JpegDecodeMode::kFast);
 }
 
 aifocore::Result<DecodedTileData> OmeZarrTileExecutor::ReadTileFromDisk(

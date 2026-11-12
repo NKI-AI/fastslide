@@ -173,7 +173,7 @@ aifocore::Result<RGBImage> QpTiffReader::ReadAssociatedImage(
         aifocore::fmt::format("TIFF index not initialized for '{}'", name));
   }
   return readers::simpletiff_decode::ReadAssociatedTiffPage(
-      *tiff_index_, info.page, info.size, name);
+      *tiff_index_, info.page, info.size, name, GetJpegDecodeMode());
 }
 
 // TODO(jonasteuwen): This function could fail,
@@ -257,7 +257,7 @@ aifocore::Status QpTiffReader::ExecutePlan(const core::TilePlan& plan,
                                            runtime::Canvas& writer) const {
   // Use the tile executor helper to execute the plan with tiff_index_
   const QptiffExecContext context(GetFilename(), pyramid_, *tiff_index_,
-                                  GetCache());
+                                  GetCache(), GetJpegDecodeMode());
   return QptiffTileExecutor::ExecutePlan(plan, context, writer);
 }
 

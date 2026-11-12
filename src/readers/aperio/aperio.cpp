@@ -131,7 +131,7 @@ aifocore::Result<RGBImage> AperioReader::ReadAssociatedImage(
         aifocore::fmt::format("TIFF index not initialized for '{}'", name));
   }
   return readers::simpletiff_decode::ReadAssociatedTiffPage(
-      *tiff_index_, info->page, info->size, name);
+      *tiff_index_, info->page, info->size, name, GetJpegDecodeMode());
 }
 
 // GetBestLevelForDownsample uses the base class implementation
@@ -364,7 +364,8 @@ aifocore::Result<core::TilePlan> AperioReader::PrepareRequest(
 aifocore::Status AperioReader::ExecutePlan(const core::TilePlan& plan,
                                            runtime::Canvas& writer) const {
   // Delegate to executor which handles tile reading with handle pool
-  const AperioExecContext context(GetFilename(), GetCache(), GetTiffIndex());
+  const AperioExecContext context(GetFilename(), GetCache(), GetTiffIndex(),
+                                  GetJpegDecodeMode());
   return AperioTileExecutor::ExecutePlan(plan, context, writer);
 }
 

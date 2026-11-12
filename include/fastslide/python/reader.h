@@ -201,8 +201,11 @@ class FastSlide {
   /// @param file_path Path to the slide file.
   /// @param apply_icc When true and the slide carries an embedded ICC profile,
   ///        `read_region` returns pixels converted to sRGB (perceptual intent).
+  /// @param jpeg_decode_mode JPEG decoder settings (see
+  ///        `SlideReader::SetJpegDecodeMode`).
   [[nodiscard]] static std::unique_ptr<FastSlide> FromFilePath(
-      const std::string& file_path, bool apply_icc = false);
+      const std::string& file_path, bool apply_icc = false,
+      JpegDecodeMode jpeg_decode_mode = JpegDecodeMode::kFast);
 
   /// @brief Future factory method for URIs
   [[nodiscard]] static std::unique_ptr<FastSlide> FromUri(
@@ -254,6 +257,8 @@ class FastSlide {
 
   /// @brief Whether ICC color management is currently applied on read.
   [[nodiscard]] bool GetApplyIcc() const;
+  /// @brief JPEG decoder settings: "fast" or "libjpeg".
+  [[nodiscard]] std::string GetJpegDecode() const;
   [[nodiscard]] std::string GetQuickHash() const;
   [[nodiscard]] nb::list GetChannelMetadata() const;
   [[nodiscard]] int GetNumChannels() const;

@@ -99,12 +99,15 @@ runtime::TileKey GenericTiffTileExecutor::MakeCacheKey(
   // tile index (tiled pages) or strip index (striped pages).
   return runtime::TileKey(context.GetFilename(),
                           static_cast<uint16_t>(operation.source_id),
-                          static_cast<uint32_t>(operation.byte_offset), 0);
+                          static_cast<uint32_t>(operation.byte_offset), 0,
+                          context.GetJpegDecodeMode());
 }
 
 aifocore::Result<DecodedTileData> GenericTiffTileExecutor::ReadTileFromDisk(
     const core::TileReadOp& operation, const GenericTiffExecContext& context) {
-  static thread_local simpletiff::DecodeContext decode_ctx;
+  simpletiff::DecodeContext& decode_ctx =
+      readers::simpletiff_decode::ThreadDecodeContext(
+          context.GetJpegDecodeMode());
   auto& decoded_buffer = GetBuffers().tile_buffer;
   AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
                             readers::simpletiff_decode::ReadTileOrStrip(

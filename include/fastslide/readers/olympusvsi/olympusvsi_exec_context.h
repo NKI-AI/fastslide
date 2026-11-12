@@ -20,6 +20,7 @@
 #include <string>
 #include <string_view>
 
+#include "fastslide/jpeg_decode_mode.h"
 #include "fastslide/readers/olympusvsi/olympusvsi_ets.h"
 #include "fastslide/readers/olympusvsi/olympusvsi_level_info.h"
 #include "fastslide/runtime/cache_interface.h"
@@ -64,6 +65,13 @@ struct OlympusVsiExecContext {
   }
 
   [[nodiscard]] bool IsCacheEnabled() const { return cache != nullptr; }
+
+  /// JPEG decode mode of the owning reader, fixed for this plan.
+  JpegDecodeMode jpeg_decode_mode = JpegDecodeMode::kFast;
+
+  [[nodiscard]] JpegDecodeMode GetJpegDecodeMode() const {
+    return jpeg_decode_mode;
+  }
 };
 
 }  // namespace fastslide::formats::olympusvsi

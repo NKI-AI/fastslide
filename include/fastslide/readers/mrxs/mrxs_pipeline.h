@@ -71,11 +71,13 @@ class MrxsPipeline {
   /// @param dirname MRXS directory used to resolve data files.
   /// @param slide_info Parsed slide metadata.
   /// @param cache Optional shared tile cache (may be null).
+  /// @param jpeg_decode_mode JPEG decode mode of the owning reader.
   /// @param writer Output canvas to paint into.
   [[nodiscard]] static aifocore::Status ExecutePlan(
       const core::TilePlan& plan, const fs::path& dirname,
       const SlideDataInfo& slide_info,
-      std::shared_ptr<runtime::ITileCache> cache, runtime::Canvas& writer);
+      std::shared_ptr<runtime::ITileCache> cache,
+      JpegDecodeMode jpeg_decode_mode, runtime::Canvas& writer);
 };
 
 }  // namespace mrxs

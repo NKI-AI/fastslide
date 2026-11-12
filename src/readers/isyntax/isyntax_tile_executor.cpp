@@ -125,10 +125,11 @@ aifocore::Status IsyntaxTileExecutor::ExecuteTileOperation(
 
 runtime::TileKey IsyntaxTileExecutor::MakeCacheKey(
     const core::TileReadOp& op, const IsyntaxExecContext& context) {
-  return runtime::TileKey(std::string(context.GetFilename()),
-                          static_cast<uint16_t>(op.level),
-                          static_cast<uint32_t>(op.tile_coord.x),
-                          static_cast<uint32_t>(op.tile_coord.y));
+  // iSyntax tiles are wavelet-coded, not JPEG: one entry for both modes.
+  return runtime::TileKey(
+      std::string(context.GetFilename()), static_cast<uint16_t>(op.level),
+      static_cast<uint32_t>(op.tile_coord.x),
+      static_cast<uint32_t>(op.tile_coord.y), JpegDecodeMode::kFast);
 }
 
 aifocore::Result<DecodedTileData> IsyntaxTileExecutor::ReadTileFromDisk(

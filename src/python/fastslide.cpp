@@ -465,7 +465,14 @@ NB_MODULE(_fastslide, m) {
       .def_static(
           "from_file_path",
           [](const nb::object& file_path, bool apply_icc,
-             const nb::object& cache) {
+             const nb::object& cache, const std::string& jpeg_decode) {
+            auto jpeg_decode_mode = fastslide::JpegDecodeMode::kFast;
+            if (jpeg_decode == "libjpeg") {
+              jpeg_decode_mode = fastslide::JpegDecodeMode::kLibjpeg;
+            } else if (jpeg_decode != "fast") {
+              throw nb::value_error(
+                  "jpeg_decode must be \"fast\" or \"libjpeg\"");
+            }
             std::string path_str;
             if (nb::isinstance<nb::str>(file_path)) {
               path_str = nb::cast<std::string>(file_path);
@@ -476,7 +483,8 @@ NB_MODULE(_fastslide, m) {
             } else {
               path_str = nb::cast<std::string>(file_path);
             }
-            auto slide = FastSlide::FromFilePath(path_str, apply_icc);
+            auto slide =
+                FastSlide::FromFilePath(path_str, apply_icc, jpeg_decode_mode);
             if (slide && !cache.is_none()) {
               slide->SetCache(ResolveCacheObject(cache));
             }
@@ -491,9 +499,15 @@ NB_MODULE(_fastslide, m) {
           "        returned unchanged.\n"
           "    cache: Optional tile cache to attach. Accepts an int byte\n"
           "        capacity (a new per-slide LRU cache), a CacheManager, a\n"
-          "        TileCache, or None to disable caching.",
+          "        TileCache, or None to disable caching.\n"
+          "    jpeg_decode: JPEG decoder settings. \"fast\" (default) uses\n"
+          "        a fast integer IDCT without fancy upsampling.\n"
+          "        \"libjpeg\" uses libjpeg's defaults, which are\n"
+          "        pixel-identical to OpenSlide and libtiff, at a few percent\n"
+          "        of speed. Raises NotImplementedError on builds with the\n"
+          "        jpgd backend.",
           nb::arg("file_path"), nb::arg("apply_icc") = false,
-          nb::arg("cache").none() = nb::none())
+          nb::arg("cache").none() = nb::none(), nb::arg("jpeg_decode") = "fast")
       .def_static("from_uri", &FastSlide::FromUri,
                   "Create FastSlide from URI (future)", nb::arg("uri"))
 
@@ -609,6 +623,9 @@ NB_MODULE(_fastslide, m) {
       .def_prop_ro("apply_icc", &FastSlide::GetApplyIcc,
                    "True if ICC color management is applied on read_region "
                    "(see from_file_path(apply_icc=True)).")
+      .def_prop_ro("jpeg_decode", &FastSlide::GetJpegDecode,
+                   "JPEG decoder settings: \"fast\" or \"libjpeg\" (see "
+                   "from_file_path(jpeg_decode=...)).")
       .def_prop_ro(
           "quickhash", &FastSlide::GetQuickHash,
           "SHA-256 quickhash (unique identifier, OpenSlide-compatible)")

@@ -66,9 +66,14 @@ static thread_local ThreadLocalJpeg g_tls_jpeg;
 
 }  // namespace
 
+bool JpegDecodeModeSupported(JpegDecodeMode /*mode*/) {
+  return true;
+}
+
 aifocore::Result<DecodedRgb> DecodeJpegToRgb(
     std::span<const uint8_t> jpeg_bytes, const JpegDecodeOptions& options) {
-  (void)options;  // libjpeg path always converts to RGB.
+  // `no_ycbcr_conversion` is jpgd-only: the libjpeg path always converts to
+  // RGB.
   if (jpeg_bytes.empty()) {
     return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
                                 "JPEG input is empty");
@@ -90,9 +95,13 @@ aifocore::Result<DecodedRgb> DecodeJpegToRgb(
                                 "Failed to read JPEG header");
   }
 
-  c->dct_method = JDCT_IFAST;
-  c->do_fancy_upsampling = FALSE;
-  c->do_block_smoothing = FALSE;
+  // jpeg_read_header resets these to libjpeg's defaults on every call, so
+  // kLibjpeg leaves them untouched.
+  if (options.mode == JpegDecodeMode::kFast) {
+    c->dct_method = JDCT_IFAST;
+    c->do_fancy_upsampling = FALSE;
+    c->do_block_smoothing = FALSE;
+  }
   c->quantize_colors = FALSE;
   c->dither_mode = JDITHER_NONE;
 

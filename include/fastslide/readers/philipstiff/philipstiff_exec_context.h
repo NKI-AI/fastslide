@@ -18,6 +18,7 @@
 #include <memory>
 #include <string>
 
+#include "fastslide/jpeg_decode_mode.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "simpletiff/index.h"
 
@@ -32,6 +33,13 @@ struct PhilipsTiffExecContext {
   int level_count = 0;
   std::string filename;
   std::shared_ptr<runtime::ITileCache> cache;
+
+  /// JPEG decode mode of the owning reader, fixed for this plan.
+  JpegDecodeMode jpeg_decode_mode = JpegDecodeMode::kFast;
+
+  [[nodiscard]] JpegDecodeMode GetJpegDecodeMode() const {
+    return jpeg_decode_mode;
+  }
 
   [[nodiscard]] const std::string& GetFilename() const { return filename; }
 

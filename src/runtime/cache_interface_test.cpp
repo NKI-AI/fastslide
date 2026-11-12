@@ -97,7 +97,8 @@ class SimpleCacheStub : public ITileCache {
  private:
   std::string KeyToString(const TileKey& key) const {
     return key.filename + "_" + std::to_string(key.level) + "_" +
-           std::to_string(key.tile_x) + "_" + std::to_string(key.tile_y);
+           std::to_string(key.tile_x) + "_" + std::to_string(key.tile_y) + "_" +
+           std::to_string(static_cast<int>(key.decode_mode));
   }
 
   std::unordered_map<std::string, std::shared_ptr<CachedTileData>> tiles_;
@@ -207,10 +208,11 @@ TEST(TileKeyTest, DefaultConstruction) {
   EXPECT_EQ(key.level, 0);
   EXPECT_EQ(key.tile_x, 0);
   EXPECT_EQ(key.tile_y, 0);
+  EXPECT_EQ(key.decode_mode, JpegDecodeMode::kFast);
 }
 
 TEST(TileKeyTest, ConstructionWithValues) {
-  TileKey key{"test.mrxs", 2, 100, 200};
+  TileKey key{"test.mrxs", 2, 100, 200, JpegDecodeMode::kFast};
 
   EXPECT_EQ(key.filename, "test.mrxs");
   EXPECT_EQ(key.level, 2);
@@ -219,9 +221,9 @@ TEST(TileKeyTest, ConstructionWithValues) {
 }
 
 TEST(TileKeyTest, Equality) {
-  TileKey key1{"test.mrxs", 0, 10, 20};
-  TileKey key2{"test.mrxs", 0, 10, 20};
-  TileKey key3{"test.mrxs", 0, 10, 21};  // Different y
+  TileKey key1{"test.mrxs", 0, 10, 20, JpegDecodeMode::kFast};
+  TileKey key2{"test.mrxs", 0, 10, 20, JpegDecodeMode::kFast};
+  TileKey key3{"test.mrxs", 0, 10, 21, JpegDecodeMode::kFast};  // Different y
 
   EXPECT_TRUE(key1 == key2);
   EXPECT_FALSE(key1 == key3);
@@ -230,17 +232,19 @@ TEST(TileKeyTest, Equality) {
 }
 
 TEST(TileKeyTest, DifferentFields) {
-  TileKey base{"file.mrxs", 0, 10, 20};
+  TileKey base{"file.mrxs", 0, 10, 20, JpegDecodeMode::kFast};
 
-  TileKey diff_file{"other.mrxs", 0, 10, 20};
-  TileKey diff_level{"file.mrxs", 1, 10, 20};
-  TileKey diff_x{"file.mrxs", 0, 11, 20};
-  TileKey diff_y{"file.mrxs", 0, 10, 21};
+  TileKey diff_file{"other.mrxs", 0, 10, 20, JpegDecodeMode::kFast};
+  TileKey diff_level{"file.mrxs", 1, 10, 20, JpegDecodeMode::kFast};
+  TileKey diff_x{"file.mrxs", 0, 11, 20, JpegDecodeMode::kFast};
+  TileKey diff_y{"file.mrxs", 0, 10, 21, JpegDecodeMode::kFast};
+  TileKey diff_mode{"file.mrxs", 0, 10, 20, JpegDecodeMode::kLibjpeg};
 
   EXPECT_NE(base, diff_file);
   EXPECT_NE(base, diff_level);
   EXPECT_NE(base, diff_x);
   EXPECT_NE(base, diff_y);
+  EXPECT_NE(base, diff_mode);
 }
 
 // ============================================================================
@@ -294,7 +298,7 @@ TEST(CachedTileDataTest, EmptyTile) {
 TEST(SimpleCacheStubTest, BasicOperations) {
   SimpleCacheStub cache;
 
-  TileKey key{"test.mrxs", 0, 10, 20};
+  TileKey key{"test.mrxs", 0, 10, 20, JpegDecodeMode::kFast};
   std::vector<uint8_t> data(256 * 256 * 3, 128);
   auto tile = std::make_shared<CachedTileData>(
       std::move(data), aifocore::Size<uint32_t, 2>{256, 256}, 3);
@@ -317,8 +321,8 @@ TEST(SimpleCacheStubTest, BasicOperations) {
 TEST(SimpleCacheStubTest, Statistics) {
   SimpleCacheStub cache;
 
-  TileKey key1{"test.mrxs", 0, 0, 0};
-  TileKey key2{"test.mrxs", 0, 1, 0};
+  TileKey key1{"test.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
+  TileKey key2{"test.mrxs", 0, 1, 0, JpegDecodeMode::kFast};
 
   std::vector<uint8_t> data(256 * 256 * 3);
   auto tile = std::make_shared<CachedTileData>(
@@ -343,7 +347,7 @@ TEST(SimpleCacheStubTest, NoEviction) {
 
   // Add many tiles (no eviction in this stub)
   for (uint32_t i = 0; i < 2000; ++i) {
-    TileKey key{"test.mrxs", 0, i, 0};
+    TileKey key{"test.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     std::vector<uint8_t> data(100);
     auto tile = std::make_shared<CachedTileData>(
         std::move(data), aifocore::Size<uint32_t, 2>{10, 10}, 1);
@@ -361,8 +365,8 @@ TEST(SimpleCacheStubTest, NoEviction) {
 TEST(AlwaysMissCacheStubTest, AlwaysReturnsNull) {
   AlwaysMissCacheStub cache;
 
-  TileKey key1{"test.mrxs", 0, 0, 0};
-  TileKey key2{"test.mrxs", 0, 1, 0};
+  TileKey key1{"test.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
+  TileKey key2{"test.mrxs", 0, 1, 0, JpegDecodeMode::kFast};
 
   std::vector<uint8_t> data(256 * 256 * 3);
   auto tile = std::make_shared<CachedTileData>(
@@ -387,7 +391,7 @@ TEST(AlwaysMissCacheStubTest, SimulatesCacheBypass) {
   // Simulate reader behavior when cache always misses
   std::vector<TileKey> keys;
   for (uint32_t i = 0; i < 10; ++i) {
-    keys.push_back(TileKey{"bypass.mrxs", 0, i, 0});
+    keys.push_back(TileKey{"bypass.mrxs", 0, i, 0, JpegDecodeMode::kFast});
   }
 
   // Reader checks cache, always misses
@@ -416,9 +420,9 @@ TEST(AlwaysMissCacheStubTest, SimulatesCacheBypass) {
 TEST(AlwaysHitCacheStubTest, AlwaysReturnsTile) {
   AlwaysHitCacheStub cache;
 
-  TileKey key1{"test.mrxs", 0, 0, 0};
-  TileKey key2{"test.mrxs", 0, 1, 0};
-  TileKey key3{"other.mrxs", 1, 50, 100};
+  TileKey key1{"test.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
+  TileKey key2{"test.mrxs", 0, 1, 0, JpegDecodeMode::kFast};
+  TileKey key3{"other.mrxs", 1, 50, 100, JpegDecodeMode::kFast};
 
   // All gets return tile (even without Put)
   EXPECT_NE(cache.Get(key1), nullptr);
@@ -433,7 +437,7 @@ TEST(AlwaysHitCacheStubTest, SimulatesWarmCache) {
 
   // Simulate reader behavior when cache is fully warmed
   for (uint32_t i = 0; i < 100; ++i) {
-    TileKey key{"warm.mrxs", 0, i, 0};
+    TileKey key{"warm.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     auto tile = cache.Get(key);
 
     ASSERT_NE(tile, nullptr);
@@ -455,7 +459,7 @@ TEST(CacheInterfaceTest, CompareStubImplementations) {
   AlwaysMissCacheStub miss_cache;
   AlwaysHitCacheStub hit_cache;
 
-  TileKey key{"compare.mrxs", 0, 0, 0};
+  TileKey key{"compare.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
   std::vector<uint8_t> data(256 * 256 * 3, 42);
   auto tile = std::make_shared<CachedTileData>(
       std::move(data), aifocore::Size<uint32_t, 2>{256, 256}, 3);
@@ -487,7 +491,7 @@ TEST(CacheInterfaceTest, PolymorphicUsage) {
   for (auto& cache : caches) {
     EXPECT_GT(cache->GetCapacityBytes(), 0);  // Has some capacity
 
-    TileKey key{"poly.mrxs", 0, 0, 0};
+    TileKey key{"poly.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
     std::vector<uint8_t> data(256 * 256 * 3);
     auto tile = std::make_shared<CachedTileData>(
         std::move(data), aifocore::Size<uint32_t, 2>{256, 256}, 3);
@@ -547,7 +551,7 @@ TEST(CacheStubTest, TestCacheMissPath) {
   int decode_count = 0;
 
   for (uint32_t i = 0; i < 10; ++i) {
-    TileKey key{"test.mrxs", 0, i, 0};
+    TileKey key{"test.mrxs", 0, i, 0, JpegDecodeMode::kFast};
 
     auto cached = cache.Get(key);
     if (!cached) {
@@ -572,7 +576,7 @@ TEST(CacheStubTest, TestCacheHitPath) {
   int decode_count = 0;
 
   for (uint32_t i = 0; i < 10; ++i) {
-    TileKey key{"test.mrxs", 0, i, 0};
+    TileKey key{"test.mrxs", 0, i, 0, JpegDecodeMode::kFast};
 
     auto cached = cache.Get(key);
     if (!cached) {
@@ -594,7 +598,7 @@ TEST(CacheStubTest, MixedCacheBehavior) {
       std::move(data), aifocore::Size<uint32_t, 2>{256, 256}, 3);
 
   for (uint32_t i = 0; i < 5; ++i) {
-    TileKey key{"test.mrxs", 0, i, 0};
+    TileKey key{"test.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     cache.Put(key, tile);
   }
 
@@ -603,7 +607,7 @@ TEST(CacheStubTest, MixedCacheBehavior) {
   int misses = 0;
 
   for (uint32_t i = 0; i < 10; ++i) {
-    TileKey key{"test.mrxs", 0, i, 0};
+    TileKey key{"test.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     auto result = cache.Get(key);
 
     if (result) {

@@ -42,12 +42,14 @@ RGBImage RgbToImage(const runtime::decoders::DecodedRgb& decoded) {
 }  // namespace
 
 aifocore::Result<RGBImage> DecodeImage(const std::vector<uint8_t>& data,
-                                       MrxsImageFormat format) {
+                                       MrxsImageFormat format,
+                                       JpegDecodeMode jpeg_decode_mode) {
   const std::span<const uint8_t> bytes(data);
   switch (format) {
     case MrxsImageFormat::kJpeg: {
       runtime::decoders::JpegDecodeOptions opts{};
       opts.no_ycbcr_conversion = true;
+      opts.mode = jpeg_decode_mode;
       AIFOCORE_ASSIGN_OR_RETURN(
           auto decoded, runtime::decoders::DecodeJpegToRgb(bytes, opts));
       return RgbToImage(decoded);

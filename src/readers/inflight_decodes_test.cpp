@@ -51,7 +51,8 @@ class SlowExecutor : public CachedTileExecutor<SlowExecutor> {
 
   static runtime::TileKey MakeCacheKey(const core::TileReadOp& op,
                                        const FakeContext&) {
-    return runtime::TileKey("slow", 0, op.tile_coord.x, 0);
+    return runtime::TileKey("slow", 0, op.tile_coord.x, 0,
+                            JpegDecodeMode::kFast);
   }
 
   static aifocore::Result<DecodedTileData> ReadTileFromDisk(

@@ -104,7 +104,7 @@ class AperioTileExecutorResolveTest : public ::testing::Test {
 TEST_F(AperioTileExecutorResolveTest, ResolveMatchesPageGeometry) {
   simpletiff::TiffIndex index = BuildSyntheticIndex(levels_);
   AperioExecContext context(/*filename=*/"synthetic.svs",
-                            /*cache=*/nullptr, index);
+                            /*cache=*/nullptr, index, JpegDecodeMode::kFast);
 
   for (uint32_t page_idx = 0; page_idx < levels_.size(); ++page_idx) {
     core::TileReadOp op;
@@ -127,7 +127,7 @@ TEST_F(AperioTileExecutorResolveTest, ResolveMatchesPageGeometry) {
 TEST_F(AperioTileExecutorResolveTest, RejectsOutOfRangePage) {
   simpletiff::TiffIndex index = BuildSyntheticIndex(levels_);
   AperioExecContext context(/*filename=*/"synthetic.svs",
-                            /*cache=*/nullptr, index);
+                            /*cache=*/nullptr, index, JpegDecodeMode::kFast);
 
   core::TileReadOp op;
   op.source_id = static_cast<uint32_t>(levels_.size() + 5);
@@ -147,7 +147,7 @@ TEST_F(AperioTileExecutorResolveTest, RejectsOutOfRangePage) {
 TEST_F(AperioTileExecutorResolveTest, ConcurrentResolveIsRaceFree) {
   simpletiff::TiffIndex index = BuildSyntheticIndex(levels_);
   AperioExecContext context(/*filename=*/"synthetic.svs",
-                            /*cache=*/nullptr, index);
+                            /*cache=*/nullptr, index, JpegDecodeMode::kFast);
 
   constexpr int kNumThreads = 16;
   constexpr int kIterationsPerThread = 5000;

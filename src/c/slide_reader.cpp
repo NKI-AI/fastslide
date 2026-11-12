@@ -942,6 +942,29 @@ int fastslide_slide_reader_enable_icc_transform(
   return 1;
 }
 
+int fastslide_slide_reader_set_jpeg_decode_mode(FastSlideSlideReader* reader,
+                                                FastSlideJpegDecodeMode mode) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+  const auto status = reader->reader->SetJpegDecodeMode(
+      mode == FASTSLIDE_JPEG_DECODE_LIBJPEG
+          ? fastslide::JpegDecodeMode::kLibjpeg
+          : fastslide::JpegDecodeMode::kFast);
+  if (!status.ok()) {
+    SetLastError(std::string(status.message()).c_str());
+    return 0;
+  }
+  return 1;
+}
+
+FastSlideJpegDecodeMode fastslide_slide_reader_get_jpeg_decode_mode(
+    const FastSlideSlideReader* reader) {
+  FASTSLIDE_REQUIRE_READER(reader, FASTSLIDE_JPEG_DECODE_FAST);
+  return reader->reader->GetJpegDecodeMode() ==
+                 fastslide::JpegDecodeMode::kLibjpeg
+             ? FASTSLIDE_JPEG_DECODE_LIBJPEG
+             : FASTSLIDE_JPEG_DECODE_FAST;
+}
+
 namespace {
 
 FastSlideCacheStats CacheStatsToC(

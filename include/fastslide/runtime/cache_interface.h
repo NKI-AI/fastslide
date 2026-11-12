@@ -24,6 +24,7 @@
 
 #include "aifocore/concepts/numeric.h"  // For aifocore::Size
 #include "aifocore/status/result.h"
+#include "fastslide/jpeg_decode_mode.h"
 
 /**
  * @file cache_interface.h
@@ -46,22 +47,34 @@ struct TileKey {
   uint16_t level;        ///< Pyramid level (0 = highest resolution)
   uint32_t tile_x;       ///< Tile X coordinate in the grid
   uint32_t tile_y;       ///< Tile Y coordinate in the grid
+  /// JPEG decode mode the tile was decoded with. Part of the key because one
+  /// cache can be shared by readers of the same file in different modes.
+  /// Formats without JPEG pass kFast so both modes share one entry.
+  JpegDecodeMode decode_mode;
 
   /// @brief Equality comparison operator
   bool operator==(const TileKey& other) const {
     return filename == other.filename && level == other.level &&
-           tile_x == other.tile_x && tile_y == other.tile_y;
+           tile_x == other.tile_x && tile_y == other.tile_y &&
+           decode_mode == other.decode_mode;
   }
 
   /// @brief Inequality comparison operator
   bool operator!=(const TileKey& other) const { return !(*this == other); }
 
   /// @brief Default constructor
-  TileKey() : level(0), tile_x(0), tile_y(0) {}
+  TileKey()
+      : level(0), tile_x(0), tile_y(0), decode_mode(JpegDecodeMode::kFast) {}
 
-  /// @brief Constructor with values
-  TileKey(std::string fname, uint16_t lvl, uint32_t tx, uint32_t ty)
-      : filename(std::move(fname)), level(lvl), tile_x(tx), tile_y(ty) {}
+  /// @brief Constructor with values. `mode` has no default so that every
+  /// reader states which decode mode its tiles were decoded with.
+  TileKey(std::string fname, uint16_t lvl, uint32_t tx, uint32_t ty,
+          JpegDecodeMode mode)
+      : filename(std::move(fname)),
+        level(lvl),
+        tile_x(tx),
+        tile_y(ty),
+        decode_mode(mode) {}
 };
 
 /// @brief Cached tile data container

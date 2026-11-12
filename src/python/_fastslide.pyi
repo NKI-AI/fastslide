@@ -4,7 +4,7 @@ FastSlide: High-performance, thread-safe digital pathology slide reader
 
 from collections.abc import Mapping, Sequence
 import enum
-from typing import TypeAlias
+from typing import Literal, TypeAlias
 
 class ImageFormat(enum.Enum):
     GRAY = 1
@@ -309,6 +309,7 @@ class FastSlide:
         file_path: object,
         apply_icc: bool = False,
         cache: object | None = None,
+        jpeg_decode: Literal["fast", "libjpeg"] = "fast",
     ) -> FastSlide:
         """Create FastSlide from file path (accepts str or pathlib.Path)
 
@@ -320,6 +321,11 @@ class FastSlide:
             cache: Optional tile cache to attach. Accepts an int byte capacity
                 (a new per-slide LRU cache), a CacheManager, a TileCache, or
                 None to disable caching.
+            jpeg_decode: JPEG decoder settings. "fast" (default) uses a fast
+                integer IDCT without fancy upsampling. "libjpeg" uses libjpeg's
+                defaults, which are pixel-identical to OpenSlide and libtiff,
+                at a few percent of speed. Raises NotImplementedError on
+                builds with the jpgd backend.
         """
 
     @staticmethod
@@ -445,6 +451,10 @@ class FastSlide:
     @property
     def apply_icc(self) -> bool:
         """True if ICC color management is applied on read_region."""
+
+    @property
+    def jpeg_decode(self) -> Literal["fast", "libjpeg"]:
+        """JPEG decoder settings: "fast" or "libjpeg"."""
 
     @property
     def quickhash(self) -> str:

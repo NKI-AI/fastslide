@@ -41,6 +41,8 @@ __attribute__((used)) static const fn_ptr fastslide_exports[] = {
     (fn_ptr)fastslide_slide_reader_get_icc_profile_size,
     (fn_ptr)fastslide_slide_reader_read_icc_profile,
     (fn_ptr)fastslide_slide_reader_enable_icc_transform,
+    (fn_ptr)fastslide_slide_reader_set_jpeg_decode_mode,
+    (fn_ptr)fastslide_slide_reader_get_jpeg_decode_mode,
     // Multi-image container API.
     (fn_ptr)fastslide_slide_reader_get_image_count,
     (fn_ptr)fastslide_slide_reader_get_primary_image_index,

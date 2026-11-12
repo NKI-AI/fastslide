@@ -310,7 +310,7 @@ runtime::TileKey CziTileExecutor::MakeCacheKey(const core::TileReadOp& op,
   // tile uniquely across channels, focal planes and time points.
   return runtime::TileKey(std::string(context.GetFilename()),
                           static_cast<uint16_t>(op.level), op.source_id,
-                          op.tile_coord.x);
+                          op.tile_coord.x, context.GetJpegDecodeMode());
 }
 
 aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
@@ -421,8 +421,9 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
         std::span<const uint8_t>(tile_buf.data(), tile_buf.size()), sb.w, sb.h,
         3};
   } else if (comp == Compression::kJpeg) {
-    AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
-                              runtime::decoders::DecodeJpegToRgb(payload));
+    AIFOCORE_ASSIGN_OR_RETURN(
+        auto decoded, runtime::decoders::DecodeJpegToRgb(
+                          payload, {.mode = context.GetJpegDecodeMode()}));
     auto& tile_buf = GetBuffers().tile_buffer;
     if (spectral) {
       const size_t npx = static_cast<size_t>(sb.w) * sb.h;

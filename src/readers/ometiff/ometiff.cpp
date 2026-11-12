@@ -235,7 +235,7 @@ aifocore::Result<core::TilePlan> OmeTiffReader::PrepareRequest(
 aifocore::Status OmeTiffReader::ExecutePlan(const core::TilePlan& plan,
                                             runtime::Canvas& writer) const {
   const OmetiffExecContext context(GetFilename(), pyramid_, *tiff_index_,
-                                   GetCache());
+                                   GetCache(), GetJpegDecodeMode());
   return OmetiffTileExecutor::ExecutePlan(plan, context, writer);
 }
 

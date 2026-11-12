@@ -146,13 +146,15 @@ DecompressResult MaybeInflateAssociatedPayload(
 ///        variant, based on @p type. Decoding failures bubble up.
 aifocore::Status PopulateAssociatedDataPayload(AssociatedDataType type,
                                                std::vector<uint8_t> payload,
+                                               JpegDecodeMode jpeg_decode_mode,
                                                AssociatedData& out) {
   switch (type) {
     case AssociatedDataType::kImage: {
       const MrxsImageFormat img_format = DetectImageFormat(payload);
       RGBImage decoded_image;
-      AIFOCORE_ASSIGN_OR_RETURN(decoded_image,
-                                internal::DecodeImage(payload, img_format));
+      AIFOCORE_ASSIGN_OR_RETURN(
+          decoded_image,
+          internal::DecodeImage(payload, img_format, jpeg_decode_mode));
       out.data = std::move(decoded_image);
       break;
     }
@@ -224,7 +226,7 @@ aifocore::Result<AssociatedDataInfo> MrxsAssociatedData::GetInfo(
 
 aifocore::Result<AssociatedData> MrxsAssociatedData::Load(
     const fs::path& dirname, const SlideDataInfo& slide_info,
-    std::string_view name) {
+    std::string_view name, JpegDecodeMode jpeg_decode_mode) {
   const NonHierarchicalLayer* layer = nullptr;
   const NonHierarchicalRecord* target_record =
       FindRecord(slide_info, name, &layer);
@@ -262,17 +264,18 @@ aifocore::Result<AssociatedData> MrxsAssociatedData::Load(
   result.info.type = type;
 
   AIFOCORE_RETURN_IF_ERROR(PopulateAssociatedDataPayload(
-      type, std::move(decompressed.data), result));
+      type, std::move(decompressed.data), jpeg_decode_mode, result));
   return result;
 }
 
 aifocore::Result<RGBImage> MrxsAssociatedData::ReadImage(
     const fs::path& dirname, const SlideDataInfo& slide_info,
-    std::string_view name) {
+    std::string_view name, JpegDecodeMode jpeg_decode_mode) {
   std::string full_name =
       std::string(internal::kAssociatedImagePrefix) + std::string(name);
   AssociatedData data;
-  AIFOCORE_ASSIGN_OR_RETURN(data, Load(dirname, slide_info, full_name));
+  AIFOCORE_ASSIGN_OR_RETURN(
+      data, Load(dirname, slide_info, full_name, jpeg_decode_mode));
   if (!data.IsImage()) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kNotFound,
@@ -291,7 +294,9 @@ aifocore::Result<RGBImage> MrxsAssociatedData::ReadImage(
 aifocore::Result<ImageDimensions> MrxsAssociatedData::ReadImageDimensions(
     const fs::path& dirname, const SlideDataInfo& slide_info,
     std::string_view name) {
-  AIFOCORE_ASSIGN_OR_RETURN(auto image, ReadImage(dirname, slide_info, name));
+  // The decode mode does not change the dimensions.
+  AIFOCORE_ASSIGN_OR_RETURN(
+      auto image, ReadImage(dirname, slide_info, name, JpegDecodeMode::kFast));
   return image.GetDimensions();
 }
 

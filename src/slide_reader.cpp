@@ -24,9 +24,11 @@
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
+#include "fastslide/runtime/decoders/jpeg_decoder.h"
 #include "fastslide/runtime/tile_writer.h"
 #include "fastslide/self_image_view.h"
 #include "fastslide/utilities/color_transform.h"
+#include "simpletiff/reader.h"
 
 namespace fastslide {
 
@@ -71,6 +73,24 @@ aifocore::Status SlideReader::SetColorTransform(ColorSpace target,
       image_or.value()->SetColorTransform(shared);
     }
   }
+  return aifocore::Status::OkStatus();
+}
+
+aifocore::Status SlideReader::SetJpegDecodeMode(JpegDecodeMode mode) {
+  // FastSlide's own decoder and simpletiff pick their JPEG backend
+  // independently, so both must honour the mode.
+  const bool supported = runtime::decoders::JpegDecodeModeSupported(mode) &&
+                         simpletiff::JpegDecodeModeSupported(
+                             mode == JpegDecodeMode::kLibjpeg
+                                 ? simpletiff::JpegDecodeMode::kLibjpeg
+                                 : simpletiff::JpegDecodeMode::kFast);
+  if (!supported) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kUnimplemented,
+        "libjpeg-default JPEG decoding needs the libjpeg backend in both "
+        "FastSlide and simpletiff; this build uses jpgd");
+  }
+  jpeg_decode_mode_.store(mode, std::memory_order_relaxed);
   return aifocore::Status::OkStatus();
 }
 

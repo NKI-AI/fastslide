@@ -46,12 +46,15 @@ struct TileKeyHash {
     std::size_t hash2 = std::hash<uint16_t>{}(key.level);
     std::size_t hash3 = std::hash<uint32_t>{}(key.tile_x);
     std::size_t hash4 = std::hash<uint32_t>{}(key.tile_y);
+    std::size_t hash5 =
+        std::hash<uint8_t>{}(static_cast<uint8_t>(key.decode_mode));
 
     // Use a better hash combination method than simple XOR
     std::size_t result = hash1;
     result = result * 31 + hash2;
     result = result * 31 + hash3;
     result = result * 31 + hash4;
+    result = result * 31 + hash5;
 
     return result;
   }

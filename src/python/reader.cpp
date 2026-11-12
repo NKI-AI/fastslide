@@ -447,8 +447,9 @@ FastSlide::FastSlide(std::shared_ptr<SlideReader> reader,
   images_ = std::make_unique<SlideImages>(reader_);
 }
 
-std::unique_ptr<FastSlide> FastSlide::FromFilePath(const std::string& file_path,
-                                                   bool apply_icc) {
+std::unique_ptr<FastSlide> FastSlide::FromFilePath(
+    const std::string& file_path, bool apply_icc,
+    JpegDecodeMode jpeg_decode_mode) {
   // Validate file existence up front so callers get a clean, predictable
   // error instead of a format-specific factory writing to stderr and
   // returning a half-initialised reader (e.g. the Aperio/TIFF factory does
@@ -467,6 +468,13 @@ std::unique_ptr<FastSlide> FastSlide::FromFilePath(const std::string& file_path,
   }
 
   auto reader = std::move(reader_or.value());
+  if (jpeg_decode_mode != JpegDecodeMode::kFast) {
+    const auto status = reader->SetJpegDecodeMode(jpeg_decode_mode);
+    if (!status.ok()) {
+      ThrowPyErrorFromStatus(
+          status, "Failed to set the JPEG decode mode for '" + file_path + "'");
+    }
+  }
   if (apply_icc) {
     // Enabling on a slide with no embedded profile is a successful no-op; a
     // non-ok status means the profile was present but could not be used.
@@ -683,6 +691,15 @@ bool FastSlide::GetApplyIcc() const {
     throw std::runtime_error("Cannot query ICC state: slide reader is closed");
   }
   return reader_->IsColorTransformEnabled();
+}
+
+std::string FastSlide::GetJpegDecode() const {
+  if (is_closed_) {
+    throw std::runtime_error(
+        "Cannot query the JPEG decode mode: slide reader is closed");
+  }
+  return reader_->GetJpegDecodeMode() == JpegDecodeMode::kLibjpeg ? "libjpeg"
+                                                                  : "fast";
 }
 
 std::string FastSlide::GetQuickHash() const {

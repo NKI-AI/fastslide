@@ -55,7 +55,8 @@ core::TilePlan PlanOver(const std::vector<uint32_t>& subblock_indices) {
 std::vector<uint32_t> Painted(const std::vector<CziSubblockInfo>& subblocks,
                               const std::vector<uint32_t>& plan_subblocks,
                               bool first_writer_wins) {
-  const CziExecContext context("synthetic.czi", subblocks, nullptr);
+  const CziExecContext context("synthetic.czi", subblocks, nullptr,
+                               /*is_spectral=*/false, JpegDecodeMode::kFast);
   const core::TilePlan plan = PlanOver(plan_subblocks);
   std::vector<uint32_t> out;
   for (const uint32_t i :
@@ -115,7 +116,8 @@ TEST(CziExecutePlanTest, ASubblockThatFailsToDecodeFailsTheRead) {
   const std::vector<CziSubblockInfo> subblocks = {
       Subblock(0, kCziNoMosaicIndex), Subblock(1, kCziNoMosaicIndex)};
   const CziExecContext context("/nonexistent/fastslide-missing.czi", subblocks,
-                               nullptr);
+                               nullptr, /*is_spectral=*/false,
+                               JpegDecodeMode::kFast);
   core::TilePlan plan = PlanOver({0, 1});
   for (auto& op : plan.operations) {
     op.transform.source = {0.0, 0.0, 256, 256};

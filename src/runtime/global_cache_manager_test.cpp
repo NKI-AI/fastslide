@@ -34,7 +34,7 @@ std::shared_ptr<CachedTileData> Tile(size_t bytes) {
 }
 
 TileKey Key(uint32_t x) {
-  return TileKey("slide", 0, x, 0);
+  return TileKey("slide", 0, x, 0, JpegDecodeMode::kFast);
 }
 
 // The manager is a process-wide singleton: give every test its own cache and

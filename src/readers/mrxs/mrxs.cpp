@@ -532,7 +532,8 @@ aifocore::Result<ImageDimensions> MrxsReader::GetAssociatedImageDimensions(
 
 aifocore::Result<RGBImage> MrxsReader::ReadAssociatedImage(
     std::string_view name) const {
-  return mrxs::MrxsAssociatedData::ReadImage(dirname_, slide_info_, name);
+  return mrxs::MrxsAssociatedData::ReadImage(dirname_, slide_info_, name,
+                                             GetJpegDecodeMode());
 }
 
 /// @brief Get slide metadata as key-value pairs
@@ -798,7 +799,8 @@ aifocore::Result<AssociatedDataInfo> MrxsReader::GetAssociatedDataInfo(
 
 aifocore::Result<AssociatedData> MrxsReader::LoadAssociatedData(
     std::string_view name) const {
-  return mrxs::MrxsAssociatedData::Load(dirname_, slide_info_, name);
+  return mrxs::MrxsAssociatedData::Load(dirname_, slide_info_, name,
+                                        GetJpegDecodeMode());
 }
 
 // ============================================================================
@@ -846,8 +848,8 @@ aifocore::Result<core::TilePlan> MrxsReader::PrepareRequest(
 /// @note Continues processing after individual tile failures (logs warnings)
 aifocore::Status MrxsReader::ExecutePlan(const core::TilePlan& plan,
                                          runtime::Canvas& writer) const {
-  return mrxs::MrxsPipeline::ExecutePlan(plan, dirname_, slide_info_,
-                                         GetCache(), writer);
+  return mrxs::MrxsPipeline::ExecutePlan(
+      plan, dirname_, slide_info_, GetCache(), GetJpegDecodeMode(), writer);
 }
 
 }  // namespace fastslide

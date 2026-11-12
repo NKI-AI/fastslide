@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "aifocore/status/result.h"
+#include "fastslide/jpeg_decode_mode.h"
 #include "fastslide/readers/dicom/dicom.h"
 
 namespace fastslide {
@@ -45,11 +46,12 @@ namespace internal {
 /// @param photometric Photometric interpretation (controls YCbCr conversion).
 /// @param expected_width Frame width in pixels (Columns).
 /// @param expected_height Frame height in pixels (Rows).
+/// @param jpeg_decode_mode JPEG decode mode of the owning reader.
 /// @return Decoded RGB8 buffer (width * height * 3 bytes) or an error status.
 aifocore::Result<std::vector<uint8_t>> DecodeDicomFrameBytes(
     std::span<const uint8_t> frame_bytes, DicomTransferSyntax syntax,
     DicomPhotometric photometric, uint32_t expected_width,
-    uint32_t expected_height);
+    uint32_t expected_height, JpegDecodeMode jpeg_decode_mode);
 
 }  // namespace internal
 }  // namespace dicom

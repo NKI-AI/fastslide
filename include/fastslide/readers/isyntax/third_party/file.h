@@ -33,6 +33,7 @@
 #include <vector>
 
 #include "aifocore/status/result.h"
+#include "fastslide/jpeg_decode_mode.h"
 
 typedef struct isyntax_t isyntax_t;
 typedef struct isyntax_cache_t isyntax_cache_t;
@@ -95,8 +96,10 @@ class IsyntaxFile {
 
   const char* barcode() const;
 
-  aifocore::Result<RgbaImage> ReadLabelImage(PixelFormat pixel_format) const;
-  aifocore::Result<RgbaImage> ReadMacroImage(PixelFormat pixel_format) const;
+  aifocore::Result<RgbaImage> ReadLabelImage(
+      PixelFormat pixel_format, fastslide::JpegDecodeMode mode) const;
+  aifocore::Result<RgbaImage> ReadMacroImage(
+      PixelFormat pixel_format, fastslide::JpegDecodeMode mode) const;
 
   aifocore::Result<JpegBuffer> ReadLabelImageJpeg() const;
   aifocore::Result<JpegBuffer> ReadMacroImageJpeg() const;

@@ -22,6 +22,7 @@
 #include <string>
 #include <utility>
 
+#include "fastslide/jpeg_decode_mode.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "simpletiff/index.h"
 
@@ -40,14 +41,16 @@ class NdpiTiffExecContext {
                       const simpletiff::TiffIndex& tiff_index, int level_count,
                       std::span<const uint8_t> jpeg_header_template,
                       std::span<const size_t> sof_height_offsets,
-                      std::span<const size_t> sof_width_offsets)
+                      std::span<const size_t> sof_width_offsets,
+                      JpegDecodeMode jpeg_decode_mode)
       : filename_(std::move(filename)),
         cache_(std::move(cache)),
         tiff_index_(tiff_index),
         level_count_(level_count),
         jpeg_header_template_(jpeg_header_template),
         sof_height_offsets_(sof_height_offsets),
-        sof_width_offsets_(sof_width_offsets) {}
+        sof_width_offsets_(sof_width_offsets),
+        jpeg_decode_mode_(jpeg_decode_mode) {}
 
   [[nodiscard]] const std::string& GetFilename() const { return filename_; }
 
@@ -75,6 +78,11 @@ class NdpiTiffExecContext {
     return sof_width_offsets_;
   }
 
+  /// JPEG decode mode of the owning reader, fixed for this plan.
+  [[nodiscard]] JpegDecodeMode GetJpegDecodeMode() const {
+    return jpeg_decode_mode_;
+  }
+
  private:
   std::string filename_;
   std::shared_ptr<runtime::ITileCache> cache_;
@@ -83,6 +91,7 @@ class NdpiTiffExecContext {
   std::span<const uint8_t> jpeg_header_template_;
   std::span<const size_t> sof_height_offsets_;
   std::span<const size_t> sof_width_offsets_;
+  JpegDecodeMode jpeg_decode_mode_;
 };
 
 }  // namespace fastslide

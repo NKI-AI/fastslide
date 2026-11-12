@@ -163,7 +163,8 @@ aifocore::Result<std::vector<uint8_t>> ReadIccProfileBytes(
 }
 
 aifocore::Result<DecodedImage> DecodeJpeg(std::span<const uint8_t> jpeg_bytes,
-                                          isyntax_pixel_format_t fmt) {
+                                          isyntax_pixel_format_t fmt,
+                                          fastslide::JpegDecodeMode mode) {
   if (jpeg_bytes.empty()) {
     return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
                             "DecodeJpeg: empty input");
@@ -194,8 +195,10 @@ aifocore::Result<DecodedImage> DecodeJpeg(std::span<const uint8_t> jpeg_bytes,
 
   AIFOCORE_ASSIGN_OR_RETURN(
       auto decoded_rgb,
-      fastslide::runtime::decoders::DecodeJpegToRgb(std::span<const uint8_t>(
-          input, with_markers.empty() ? input_len : with_markers.size())));
+      fastslide::runtime::decoders::DecodeJpegToRgb(
+          std::span<const uint8_t>(
+              input, with_markers.empty() ? input_len : with_markers.size()),
+          {.mode = mode}));
 
   const int w = static_cast<int>(decoded_rgb.width);
   const int h = static_cast<int>(decoded_rgb.height);
@@ -227,11 +230,12 @@ aifocore::Result<DecodedImage> DecodeJpeg(std::span<const uint8_t> jpeg_bytes,
 }
 
 aifocore::Result<DecodedImage> ReadAssociatedImagePixels(
-    isyntax_t* isyntax, isyntax_image_t* image, isyntax_pixel_format_t fmt) {
+    isyntax_t* isyntax, isyntax_image_t* image, isyntax_pixel_format_t fmt,
+    fastslide::JpegDecodeMode mode) {
   auto jpeg_or = ReadAssociatedImageJpegBytes(isyntax, image);
   AIFOCORE_RETURN_IF_ERROR(jpeg_or.status());
   return DecodeJpeg(std::span<const uint8_t>(jpeg_or->data(), jpeg_or->size()),
-                    fmt);
+                    fmt, mode);
 }
 
 }  // namespace jpeg

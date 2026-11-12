@@ -20,6 +20,7 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/image.h"
+#include "fastslide/jpeg_decode_mode.h"
 #include "fastslide/runtime/decoders/decoded_image.h"
 
 namespace fastslide::runtime::decoders {
@@ -28,7 +29,15 @@ struct JpegDecodeOptions {
   // When using the jpgd backend, MRXS needs to skip YCbCr->RGB conversion for
   // some slides. For libjpeg-turbo this flag is currently ignored.
   bool no_ycbcr_conversion = false;
+  /// IDCT and upsampling settings. The jpgd backend only honours kFast (see
+  /// `JpegDecodeModeSupported`).
+  JpegDecodeMode mode = JpegDecodeMode::kFast;
 };
+
+/// @brief Whether this build's JPEG backend honours `mode`.
+///
+/// Always true for kFast; false for kLibjpeg on the jpgd backend.
+[[nodiscard]] bool JpegDecodeModeSupported(JpegDecodeMode mode);
 
 /// @brief Decode a JPEG bitstream to RGB8.
 [[nodiscard]] aifocore::Result<DecodedRgb> DecodeJpegToRgb(

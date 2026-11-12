@@ -921,6 +921,37 @@ class TestFastSlideIcc:
         assert plain_region.dtype == icc_region.dtype
 
 
+class TestFastSlideJpegDecode:
+    """JPEG decoder settings (``from_file_path(jpeg_decode=...)``)."""
+
+    def test_defaults_to_fast(self, jpeg_slide_path: str) -> None:
+        with fastslide.FastSlide.from_file_path(jpeg_slide_path) as slide:
+            assert slide.jpeg_decode == "fast"
+
+    def test_libjpeg_mode_changes_pixels(self, jpeg_slide_path: str) -> None:
+        region = {"location": (0, 0), "level": 0, "size": (512, 512)}
+        with fastslide.FastSlide.from_file_path(jpeg_slide_path) as fast:
+            fast_px = fast.read_region(**region).numpy()
+        with fastslide.FastSlide.from_file_path(jpeg_slide_path, jpeg_decode="libjpeg") as slide:
+            assert slide.jpeg_decode == "libjpeg"
+            libjpeg_px = slide.read_region(**region).numpy()
+        assert fast_px.shape == libjpeg_px.shape
+        assert not np.array_equal(fast_px, libjpeg_px)
+
+    def test_invalid_mode_raises(self, jpeg_slide_path: str) -> None:
+        with pytest.raises(ValueError):
+            fastslide.FastSlide.from_file_path(jpeg_slide_path, jpeg_decode="accurate")
+
+
+@pytest.fixture(scope="session")
+def jpeg_slide_path() -> str:
+    """The repository's small JPEG SVS."""
+    path = Path(__file__).resolve().parents[1] / "test_data" / "CMU-1-Small-Region.svs"
+    if not path.exists():
+        pytest.skip("CMU-1-Small-Region.svs not available")
+    return str(path)
+
+
 @pytest.fixture(scope="session")
 def sample_slide_path() -> str:
     """

@@ -157,7 +157,8 @@ class InflightDecodes {
       std::size_t h = std::hash<std::string>{}(key.filename);
       for (const std::size_t v :
            {std::size_t{key.level}, std::size_t{key.tile_x},
-            std::size_t{key.tile_y}}) {
+            std::size_t{key.tile_y},
+            static_cast<std::size_t>(key.decode_mode)}) {
         h ^= v + 0x9e3779b97f4a7c15ULL + (h << 6) + (h >> 2);
       }
       return h;

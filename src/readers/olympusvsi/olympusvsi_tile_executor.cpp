@@ -49,7 +49,7 @@ aifocore::Status PreadBytes(FileReader& file, uint64_t offset, uint32_t n_bytes,
 }
 
 aifocore::Result<runtime::decoders::DecodedRgb> DecodeTileBytes(
-    std::span<const uint8_t> bytes, TileCodec declared) {
+    std::span<const uint8_t> bytes, TileCodec declared, JpegDecodeMode mode) {
   TileCodec codec =
       SniffCodec(bytes.subspan(0, std::min<size_t>(bytes.size(), 16)));
   if (codec == TileCodec::kUnknown) {
@@ -57,7 +57,7 @@ aifocore::Result<runtime::decoders::DecodedRgb> DecodeTileBytes(
   }
   switch (codec) {
     case TileCodec::kJpeg:
-      return runtime::decoders::DecodeJpegToRgb(bytes);
+      return runtime::decoders::DecodeJpegToRgb(bytes, {.mode = mode});
     case TileCodec::kJp2:
       return runtime::decoders::DecodeJ2kToRgb(bytes);
     case TileCodec::kUnknown:
@@ -169,10 +169,10 @@ runtime::TileKey OlympusVsiTileExecutor::MakeCacheKey(
   // (channel, x, y) plane — so different channels sharing an (x, y) grid
   // cell never collide. The path is the per-stack .ets file, so the images
   // of one .vsi cache independently.
-  return runtime::TileKey(std::string(context.ets_path),
-                          static_cast<uint16_t>(level_index),
-                          static_cast<uint32_t>(op.byte_offset & 0xFFFFFFFFU),
-                          static_cast<uint32_t>(op.byte_offset >> 32));
+  return runtime::TileKey(
+      std::string(context.ets_path), static_cast<uint16_t>(level_index),
+      static_cast<uint32_t>(op.byte_offset & 0xFFFFFFFFU),
+      static_cast<uint32_t>(op.byte_offset >> 32), context.GetJpegDecodeMode());
 }
 
 aifocore::Result<DecodedTileData> OlympusVsiTileExecutor::ReadTileFromDisk(
@@ -233,7 +233,8 @@ aifocore::Result<DecodedTileData> OlympusVsiTileExecutor::ReadTileFromDisk(
         compressed.begin() + static_cast<std::ptrdiff_t>(expected));
   } else if (!is_16bit) {
     AIFOCORE_ASSIGN_OR_RETURN(
-        auto decoded, DecodeTileBytes(compressed_span, context.declared_codec));
+        auto decoded, DecodeTileBytes(compressed_span, context.declared_codec,
+                                      context.GetJpegDecodeMode()));
     tile_w = decoded.width;
     tile_h = decoded.height;
     tile_channels = 3U;

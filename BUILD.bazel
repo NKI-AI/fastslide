@@ -298,12 +298,20 @@ cc_library(
 )
 
 cc_library(
+    name = "jpeg_decode_mode",
+    hdrs = ["include/fastslide/jpeg_decode_mode.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "slide_options",
     hdrs = ["include/fastslide/slide_options.h"],
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
         ":colors",
+        ":jpeg_decode_mode",
     ],
 )
 
@@ -382,6 +390,7 @@ cc_library(
     includes = ["include"],
     visibility = ["//visibility:public"],
     deps = [
+        ":jpeg_decode_mode",
         "@aifocore-cpp//:concepts",  # For aifocore::Size
         "@aifocore-cpp//:result",
     ],
@@ -531,11 +540,13 @@ cc_library(
         ":core_tile_request",
         ":image",
         ":metadata",
+        ":runtime_jpeg_decoder",
         ":runtime_tile_writer",
         ":slide_options",
         "@aifocore-cpp//:concepts",
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
+        "@simpletiff//:simpletiff_lib",
     ],
 )
 
@@ -976,6 +987,7 @@ cc_library(
     includes = ["include"],
     visibility = ["//visibility:private"],
     deps = [
+        ":jpeg_decode_mode",
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
     ],
@@ -1355,6 +1367,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":core",
+        ":jpeg_decode_mode",
         ":runtime_decoded_image",
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
@@ -1985,6 +1998,32 @@ cc_test(
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],
+)
+
+cc_test(
+    name = "jpeg_decode_mode_test",
+    size = "small",
+    srcs = ["tests/jpeg_decode_mode_test.cpp"],
+    copts = select({
+        ":use_jpgd": ["-DFASTSLIDE_JPEG_BACKEND_JPGD"],
+        "//conditions:default": [],
+    }),
+    data = ["tests/test_data/CMU-1-Small-Region.svs"],
+    env = {
+        "FASTSLIDE_JPEG_TEST_SVS": "$(rootpath tests/test_data/CMU-1-Small-Region.svs)",
+    },
+    deps = [
+        ":formats_aperio",
+        ":jpeg_decode_mode",
+        ":runtime_jpeg_decoder",
+        ":runtime_lru_tile_cache",
+        ":slide_reader",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ] + select({
+        ":use_jpgd": [],
+        "//conditions:default": ["@libjpeg_turbo//:jpeg"],
+    }),
 )
 
 cc_test(

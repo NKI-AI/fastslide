@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <optional>
 
+#include "fastslide/jpeg_decode_mode.h"
 #include "fastslide/utilities/colors.h"
 
 namespace fastslide {

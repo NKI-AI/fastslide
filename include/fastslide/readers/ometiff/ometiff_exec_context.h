@@ -20,6 +20,7 @@
 #include <string_view>
 #include <utility>
 
+#include "fastslide/jpeg_decode_mode.h"
 #include "fastslide/readers/ometiff/ometiff_level_info.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "simpletiff/index.h"
@@ -32,11 +33,13 @@ class OmetiffExecContext {
   OmetiffExecContext(std::string_view filename,
                      std::span<const OmeTiffLevelInfo> pyramid,
                      const simpletiff::TiffIndex& tiff_index,
-                     std::shared_ptr<runtime::ITileCache> cache)
+                     std::shared_ptr<runtime::ITileCache> cache,
+                     JpegDecodeMode jpeg_decode_mode)
       : filename_(filename),
         pyramid_(pyramid),
         tiff_index_(tiff_index),
-        cache_(std::move(cache)) {}
+        cache_(std::move(cache)),
+        jpeg_decode_mode_(jpeg_decode_mode) {}
 
   [[nodiscard]] std::string_view GetFilename() const { return filename_; }
 
@@ -54,11 +57,17 @@ class OmetiffExecContext {
 
   [[nodiscard]] bool IsCacheEnabled() const { return cache_ != nullptr; }
 
+  /// JPEG decode mode of the owning reader, fixed for this plan.
+  [[nodiscard]] JpegDecodeMode GetJpegDecodeMode() const {
+    return jpeg_decode_mode_;
+  }
+
  private:
   std::string_view filename_;
   std::span<const OmeTiffLevelInfo> pyramid_;
   const simpletiff::TiffIndex& tiff_index_;
   std::shared_ptr<runtime::ITileCache> cache_;
+  JpegDecodeMode jpeg_decode_mode_;
 };
 
 }  // namespace fastslide

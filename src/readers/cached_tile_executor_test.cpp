@@ -47,7 +47,8 @@ class FakeExecutor : public CachedTileExecutor<FakeExecutor> {
 
   static runtime::TileKey MakeCacheKey(const core::TileReadOp& op,
                                        const FakeContext&) {
-    return runtime::TileKey("fake", 0, op.tile_coord.x, op.tile_coord.y);
+    return runtime::TileKey("fake", 0, op.tile_coord.x, op.tile_coord.y,
+                            JpegDecodeMode::kFast);
   }
 
   static aifocore::Result<DecodedTileData> ReadTileFromDisk(

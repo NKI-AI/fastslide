@@ -235,15 +235,17 @@ TileKey BifTileExecutor::MakeCacheKey(const core::TileReadOp& op,
                                       const BifExecContext& context) {
   // The decoded physical tile is identified by (file, source IFD, tile index);
   // the same tile is reused for multiple sub-rect crops at higher levels.
-  return runtime::TileKey(context.GetFilename(),
-                          static_cast<uint16_t>(op.source_id),
-                          static_cast<uint32_t>(op.byte_offset), 0U);
+  return runtime::TileKey(
+      context.GetFilename(), static_cast<uint16_t>(op.source_id),
+      static_cast<uint32_t>(op.byte_offset), 0U, context.GetJpegDecodeMode());
 }
 
 aifocore::Result<DecodedTileData> BifTileExecutor::ReadTileFromDisk(
     const core::TileReadOp& op, const BifExecContext& context) {
   const auto& tiff = context.Tiff();
-  static thread_local simpletiff::DecodeContext decode_ctx;
+  simpletiff::DecodeContext& decode_ctx =
+      readers::simpletiff_decode::ThreadDecodeContext(
+          context.GetJpegDecodeMode());
   auto& decoded_buffer = GetBuffers().tile_buffer;
 
   AIFOCORE_ASSIGN_OR_RETURN(

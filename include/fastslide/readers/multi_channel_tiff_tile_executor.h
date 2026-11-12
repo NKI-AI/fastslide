@@ -122,15 +122,17 @@ class MultiChannelTiffTileExecutor
     (void)page_state;
     return runtime::TileKey(std::string(context.GetFilename()),
                             operation.source_id,
-                            static_cast<uint32_t>(operation.byte_offset), 0);
+                            static_cast<uint32_t>(operation.byte_offset), 0,
+                            context.GetJpegDecodeMode());
   }
 
   static aifocore::Result<DecodedTileData> ReadTileFromDisk(
       const core::TileReadOp& operation, const ExecContext& context,
       const simpletiff::TiffIndex& tiff_index, const PageState& page_state) {
-    (void)context;
     auto& tile_buffer = Base::GetBuffers().tile_buffer;
-    static thread_local simpletiff::DecodeContext decode_ctx;
+    simpletiff::DecodeContext& decode_ctx =
+        readers::simpletiff_decode::ThreadDecodeContext(
+            context.GetJpegDecodeMode());
 
     const uint32_t page_index = page_state.current_page;
     const uint32_t tile_or_strip_index =

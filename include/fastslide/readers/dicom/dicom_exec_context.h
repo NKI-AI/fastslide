@@ -21,6 +21,7 @@
 #include <string_view>
 #include <utility>
 
+#include "fastslide/jpeg_decode_mode.h"
 #include "fastslide/readers/dicom/dicom_level_info.h"
 #include "fastslide/runtime/cache_interface.h"
 
@@ -31,8 +32,12 @@ class DicomExecContext {
  public:
   DicomExecContext(std::string_view filename,
                    std::span<const DicomLevel> levels,
-                   std::shared_ptr<runtime::ITileCache> cache)
-      : filename_(filename), levels_(levels), cache_(std::move(cache)) {}
+                   std::shared_ptr<runtime::ITileCache> cache,
+                   JpegDecodeMode jpeg_decode_mode)
+      : filename_(filename),
+        levels_(levels),
+        cache_(std::move(cache)),
+        jpeg_decode_mode_(jpeg_decode_mode) {}
 
   [[nodiscard]] std::string_view GetFilename() const { return filename_; }
 
@@ -46,10 +51,16 @@ class DicomExecContext {
 
   [[nodiscard]] bool IsCacheEnabled() const { return cache_ != nullptr; }
 
+  /// JPEG decode mode of the owning reader, fixed for this plan.
+  [[nodiscard]] JpegDecodeMode GetJpegDecodeMode() const {
+    return jpeg_decode_mode_;
+  }
+
  private:
   std::string_view filename_;
   std::span<const DicomLevel> levels_;
   std::shared_ptr<runtime::ITileCache> cache_;
+  JpegDecodeMode jpeg_decode_mode_;
 };
 
 }  // namespace fastslide

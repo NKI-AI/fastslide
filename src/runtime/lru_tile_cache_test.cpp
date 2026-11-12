@@ -49,7 +49,7 @@ std::shared_ptr<CachedTileData> CreateTestTile(uint32_t width, uint32_t height,
 void FillCacheWithTestTiles(LRUTileCache& cache, uint32_t count,
                             std::string_view filename = "test.mrxs") {
   for (uint32_t i = 0; i < count; ++i) {
-    TileKey key{std::string(filename), 0, i, 0};
+    TileKey key{std::string(filename), 0, i, 0, JpegDecodeMode::kFast};
     cache.Put(key, CreateTestTile(256, 256, 3));
   }
 }
@@ -90,7 +90,7 @@ TEST(LRUTileCacheTest, DirectConstruction) {
 TEST(LRUTileCacheTest, PutAndGet) {
   LRUTileCache cache(kTileSize * 10);
 
-  TileKey key{"test.mrxs", 0, 10, 20};
+  TileKey key{"test.mrxs", 0, 10, 20, JpegDecodeMode::kFast};
   auto tile = CreateTestTile(256, 256, 3);
 
   cache.Put(key, tile);
@@ -105,7 +105,7 @@ TEST(LRUTileCacheTest, PutAndGet) {
 TEST(LRUTileCacheTest, GetNonExistentKey) {
   LRUTileCache cache(kTileSize * 10);
 
-  TileKey key{"test.mrxs", 0, 10, 20};
+  TileKey key{"test.mrxs", 0, 10, 20, JpegDecodeMode::kFast};
   auto result = cache.Get(key);
 
   EXPECT_EQ(result, nullptr);
@@ -119,7 +119,7 @@ TEST(LRUTileCacheTest, PutMultipleTiles) {
 
   // Verify all tiles are retrievable
   for (uint32_t i = 0; i < 10; ++i) {
-    TileKey key{"test.mrxs", 0, i, 0};
+    TileKey key{"test.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     EXPECT_NE(cache.Get(key), nullptr);
   }
 }
@@ -127,7 +127,7 @@ TEST(LRUTileCacheTest, PutMultipleTiles) {
 TEST(LRUTileCacheTest, OverwriteExistingKey) {
   LRUTileCache cache(kTileSize * 10);
 
-  TileKey key{"test.mrxs", 0, 10, 20};
+  TileKey key{"test.mrxs", 0, 10, 20, JpegDecodeMode::kFast};
 
   auto tile1 = CreateTestTile(256, 256, 3);
   cache.Put(key, tile1);
@@ -153,10 +153,10 @@ TEST(LRUTileCacheTest, OverwriteExistingKey) {
 TEST(LRUTileCacheTest, EvictLeastRecentlyUsed) {
   LRUTileCache cache(kTileSize * 3);  // Small capacity
 
-  TileKey key1{"test.mrxs", 0, 0, 0};
-  TileKey key2{"test.mrxs", 0, 1, 0};
-  TileKey key3{"test.mrxs", 0, 2, 0};
-  TileKey key4{"test.mrxs", 0, 3, 0};
+  TileKey key1{"test.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
+  TileKey key2{"test.mrxs", 0, 1, 0, JpegDecodeMode::kFast};
+  TileKey key3{"test.mrxs", 0, 2, 0, JpegDecodeMode::kFast};
+  TileKey key4{"test.mrxs", 0, 3, 0, JpegDecodeMode::kFast};
 
   // Fill cache to capacity
   cache.Put(key1, CreateTestTile(256, 256, 3));
@@ -178,10 +178,10 @@ TEST(LRUTileCacheTest, EvictLeastRecentlyUsed) {
 TEST(LRUTileCacheTest, AccessUpdatesLRU) {
   LRUTileCache cache(kTileSize * 3);
 
-  TileKey key1{"test.mrxs", 0, 0, 0};
-  TileKey key2{"test.mrxs", 0, 1, 0};
-  TileKey key3{"test.mrxs", 0, 2, 0};
-  TileKey key4{"test.mrxs", 0, 3, 0};
+  TileKey key1{"test.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
+  TileKey key2{"test.mrxs", 0, 1, 0, JpegDecodeMode::kFast};
+  TileKey key3{"test.mrxs", 0, 2, 0, JpegDecodeMode::kFast};
+  TileKey key4{"test.mrxs", 0, 3, 0, JpegDecodeMode::kFast};
 
   cache.Put(key1, CreateTestTile(256, 256, 3));
   cache.Put(key2, CreateTestTile(256, 256, 3));
@@ -224,7 +224,7 @@ TEST(LRUTileCacheTest, ClearPopulatedCache) {
 
   // Verify all keys are gone
   for (uint32_t i = 0; i < 10; ++i) {
-    TileKey key{"test.mrxs", 0, i, 0};
+    TileKey key{"test.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     EXPECT_EQ(cache.Get(key), nullptr);
   }
 }
@@ -307,8 +307,8 @@ TEST(LRUTileCacheTest, GetStatsEmpty) {
 TEST(LRUTileCacheTest, GetStatsWithTiles) {
   LRUTileCache cache(kTileSize * 100);
 
-  TileKey key1{"test.mrxs", 0, 0, 0};
-  TileKey key2{"test.mrxs", 0, 1, 0};
+  TileKey key1{"test.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
+  TileKey key2{"test.mrxs", 0, 1, 0, JpegDecodeMode::kFast};
 
   cache.Put(key1, CreateTestTile(256, 256, 3));
   cache.Put(key2, CreateTestTile(256, 256, 3));
@@ -323,14 +323,14 @@ TEST(LRUTileCacheTest, GetStatsWithTiles) {
 TEST(LRUTileCacheTest, HitRatioTracking) {
   LRUTileCache cache(kTileSize * 100);
 
-  TileKey key{"test.mrxs", 0, 0, 0};
+  TileKey key{"test.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
   cache.Put(key, CreateTestTile(256, 256, 3));
 
   // Hit
   cache.Get(key);
 
   // Miss
-  TileKey missing_key{"test.mrxs", 0, 1, 0};
+  TileKey missing_key{"test.mrxs", 0, 1, 0, JpegDecodeMode::kFast};
   cache.Get(missing_key);
 
   auto stats = cache.GetStats();
@@ -343,7 +343,7 @@ TEST(LRUTileCacheTest, HitRatioTracking) {
 TEST(LRUTileCacheTest, MemoryUsageCalculation) {
   LRUTileCache cache(kTileSize * 100);
 
-  TileKey key{"test.mrxs", 0, 0, 0};
+  TileKey key{"test.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
   auto tile = CreateTestTile(256, 256, 3);
   size_t expected_size = tile->data.size();
 
@@ -363,7 +363,8 @@ TEST(LRUTileCacheTest, ConcurrentPuts) {
   for (int t = 0; t < 10; ++t) {
     threads.emplace_back([&cache, t]() {
       for (uint32_t i = 0; i < 100; ++i) {
-        TileKey key{"test.mrxs", 0, static_cast<uint32_t>(t * 100 + i), 0};
+        TileKey key{"test.mrxs", 0, static_cast<uint32_t>(t * 100 + i), 0,
+                    JpegDecodeMode::kFast};
         cache.Put(key, CreateTestTile(256, 256, 3));
       }
     });
@@ -387,7 +388,7 @@ TEST(LRUTileCacheTest, ConcurrentGetsAndPuts) {
   for (int t = 0; t < 5; ++t) {
     threads.emplace_back([&cache]() {
       for (uint32_t i = 0; i < 100; ++i) {
-        TileKey key{"test.mrxs", 0, i % 100, 0};
+        TileKey key{"test.mrxs", 0, i % 100, 0, JpegDecodeMode::kFast};
         cache.Get(key);
       }
     });
@@ -397,8 +398,8 @@ TEST(LRUTileCacheTest, ConcurrentGetsAndPuts) {
   for (int t = 0; t < 5; ++t) {
     threads.emplace_back([&cache, t]() {
       for (uint32_t i = 0; i < 100; ++i) {
-        TileKey key{"test.mrxs", 0, static_cast<uint32_t>(100 + t * 100 + i),
-                    0};
+        TileKey key{"test.mrxs", 0, static_cast<uint32_t>(100 + t * 100 + i), 0,
+                    JpegDecodeMode::kFast};
         cache.Put(key, CreateTestTile(256, 256, 3));
       }
     });
@@ -419,8 +420,8 @@ TEST(LRUTileCacheTest, ConcurrentGetsAndPuts) {
 TEST(LRUTileCacheTest, CapacityOne) {
   LRUTileCache cache(kTileSize);
 
-  TileKey key1{"test.mrxs", 0, 0, 0};
-  TileKey key2{"test.mrxs", 0, 1, 0};
+  TileKey key1{"test.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
+  TileKey key2{"test.mrxs", 0, 1, 0, JpegDecodeMode::kFast};
 
   cache.Put(key1, CreateTestTile(256, 256, 3));
   EXPECT_EQ(cache.GetSize(), 1);
@@ -443,8 +444,8 @@ TEST(LRUTileCacheTest, LargeCapacity) {
 TEST(LRUTileCacheTest, DifferentTileSizes) {
   LRUTileCache cache(kTileSize * 10);
 
-  TileKey key1{"test.mrxs", 0, 0, 0};
-  TileKey key2{"test.mrxs", 0, 1, 0};
+  TileKey key1{"test.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
+  TileKey key2{"test.mrxs", 0, 1, 0, JpegDecodeMode::kFast};
 
   cache.Put(key1, CreateTestTile(256, 256, 3));  // 256*256*3 bytes
   cache.Put(key2, CreateTestTile(512, 512, 4));  // 512*512*4 bytes
@@ -459,8 +460,8 @@ TEST(LRUTileCacheTest, DifferentTileSizes) {
 TEST(LRUTileCacheTest, SameKeyDifferentSlides) {
   LRUTileCache cache(kTileSize * 10);
 
-  TileKey key1{"slide1.mrxs", 0, 10, 20};
-  TileKey key2{"slide2.mrxs", 0, 10, 20};
+  TileKey key1{"slide1.mrxs", 0, 10, 20, JpegDecodeMode::kFast};
+  TileKey key2{"slide2.mrxs", 0, 10, 20, JpegDecodeMode::kFast};
 
   cache.Put(key1, CreateTestTile(256, 256, 3));
   cache.Put(key2, CreateTestTile(256, 256, 3));
@@ -475,7 +476,7 @@ TEST(LRUTileCacheTest, MultiLevel) {
   LRUTileCache cache(kTileSize * 10);
 
   for (uint16_t level = 0; level < 5; ++level) {
-    TileKey key{"test.mrxs", level, 10, 20};
+    TileKey key{"test.mrxs", level, 10, 20, JpegDecodeMode::kFast};
     cache.Put(key, CreateTestTile(256, 256, 3));
   }
 
@@ -483,7 +484,7 @@ TEST(LRUTileCacheTest, MultiLevel) {
   EXPECT_EQ(cache.GetSize(), 5);
 
   for (uint16_t level = 0; level < 5; ++level) {
-    TileKey key{"test.mrxs", level, 10, 20};
+    TileKey key{"test.mrxs", level, 10, 20, JpegDecodeMode::kFast};
     EXPECT_NE(cache.Get(key), nullptr);
   }
 }
@@ -500,7 +501,7 @@ TEST(LRUTileCacheTest, OversizedTiles) {
   auto large_tile = std::make_shared<CachedTileData>(
       std::move(large_data), aifocore::Size<uint32_t, 2>{2048, 2048}, 10);
 
-  TileKey key{"large.mrxs", 0, 0, 0};
+  TileKey key{"large.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
   cache.Put(key, large_tile);
 
   EXPECT_EQ(cache.GetSize(), 1);
@@ -515,18 +516,18 @@ TEST(LRUTileCacheTest, MixedTileSizes) {
   LRUTileCache cache(50 * 1024 * 1024);
 
   // Small tile (256x256x3)
-  TileKey small_key{"test.mrxs", 0, 0, 0};
+  TileKey small_key{"test.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
   cache.Put(small_key, CreateTestTile(256, 256, 3));
 
   // Medium tile (512x512x4)
-  TileKey medium_key{"test.mrxs", 0, 1, 0};
+  TileKey medium_key{"test.mrxs", 0, 1, 0, JpegDecodeMode::kFast};
   std::vector<uint8_t> medium_data(512 * 512 * 4, 128);
   auto medium_tile = std::make_shared<CachedTileData>(
       std::move(medium_data), aifocore::Size<uint32_t, 2>{512, 512}, 4);
   cache.Put(medium_key, medium_tile);
 
   // Large tile (1024x1024x16 for spectral)
-  TileKey large_key{"test.qptiff", 0, 0, 0};
+  TileKey large_key{"test.qptiff", 0, 0, 0, JpegDecodeMode::kFast};
   std::vector<uint8_t> large_data(1024 * 1024 * 16, 255);
   auto large_tile = std::make_shared<CachedTileData>(
       std::move(large_data), aifocore::Size<uint32_t, 2>{1024, 1024}, 16);
@@ -546,7 +547,7 @@ TEST(LRUTileCacheTest, OversizedTileEviction) {
 
   // Fill with oversized tiles
   for (uint32_t i = 0; i < 5; ++i) {
-    TileKey key{"large.mrxs", 0, i, 0};
+    TileKey key{"large.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     std::vector<uint8_t> data(1024 * 1024, static_cast<uint8_t>(i));
     auto tile = std::make_shared<CachedTileData>(
         std::move(data), aifocore::Size<uint32_t, 2>{1024, 1024}, 1);
@@ -558,7 +559,7 @@ TEST(LRUTileCacheTest, OversizedTileEviction) {
   EXPECT_EQ(stats.memory_usage_bytes, 5 * 1024 * 1024);
 
   // Add one more - should evict oldest
-  TileKey new_key{"large.mrxs", 0, 5, 0};
+  TileKey new_key{"large.mrxs", 0, 5, 0, JpegDecodeMode::kFast};
   std::vector<uint8_t> data(1024 * 1024, 99);
   auto tile = std::make_shared<CachedTileData>(
       std::move(data), aifocore::Size<uint32_t, 2>{1024, 1024}, 1);
@@ -567,7 +568,7 @@ TEST(LRUTileCacheTest, OversizedTileEviction) {
   EXPECT_EQ(cache.GetSize(), 5);
 
   // First tile should be evicted
-  TileKey first_key{"large.mrxs", 0, 0, 0};
+  TileKey first_key{"large.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
   EXPECT_EQ(cache.Get(first_key), nullptr);
 }
 
@@ -580,16 +581,16 @@ TEST(LRUTileCacheTest, MixedHitMissPattern) {
 
   // Populate cache with some tiles
   for (uint32_t i = 0; i < 5; ++i) {
-    TileKey key{"test.mrxs", 0, i, 0};
+    TileKey key{"test.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     cache.Put(key, CreateTestTile(256, 256, 3));
   }
 
   // Access pattern: hit, miss, hit, miss, hit
-  TileKey hit1{"test.mrxs", 0, 0, 0};    // Hit
-  TileKey miss1{"test.mrxs", 0, 10, 0};  // Miss
-  TileKey hit2{"test.mrxs", 0, 1, 0};    // Hit
-  TileKey miss2{"test.mrxs", 0, 11, 0};  // Miss
-  TileKey hit3{"test.mrxs", 0, 2, 0};    // Hit
+  TileKey hit1{"test.mrxs", 0, 0, 0, JpegDecodeMode::kFast};    // Hit
+  TileKey miss1{"test.mrxs", 0, 10, 0, JpegDecodeMode::kFast};  // Miss
+  TileKey hit2{"test.mrxs", 0, 1, 0, JpegDecodeMode::kFast};    // Hit
+  TileKey miss2{"test.mrxs", 0, 11, 0, JpegDecodeMode::kFast};  // Miss
+  TileKey hit3{"test.mrxs", 0, 2, 0, JpegDecodeMode::kFast};    // Hit
 
   cache.Get(hit1);
   cache.Get(miss1);
@@ -609,7 +610,7 @@ TEST(LRUTileCacheTest, SequentialAccessPattern) {
   // Simulate sequential tile reading (common for slide scanning)
   for (uint32_t y = 0; y < 10; ++y) {
     for (uint32_t x = 0; x < 10; ++x) {
-      TileKey key{"scan.mrxs", 0, x, y};
+      TileKey key{"scan.mrxs", 0, x, y, JpegDecodeMode::kFast};
       cache.Put(key, CreateTestTile(256, 256, 3));
     }
   }
@@ -621,7 +622,7 @@ TEST(LRUTileCacheTest, SequentialAccessPattern) {
   size_t hits_before = stats.hits;
   for (uint32_t y = 5; y < 10; ++y) {
     for (uint32_t x = 5; x < 10; ++x) {
-      TileKey key{"scan.mrxs", 0, x, y};
+      TileKey key{"scan.mrxs", 0, x, y, JpegDecodeMode::kFast};
       cache.Get(key);
     }
   }
@@ -635,7 +636,7 @@ TEST(LRUTileCacheTest, RandomAccessPattern) {
 
   // Populate with tiles
   for (uint32_t i = 0; i < 50; ++i) {
-    TileKey key{"random.mrxs", 0, i, 0};
+    TileKey key{"random.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     cache.Put(key, CreateTestTile(256, 256, 3));
   }
 
@@ -643,7 +644,7 @@ TEST(LRUTileCacheTest, RandomAccessPattern) {
   std::vector<uint32_t> access_pattern = {5, 15, 5, 25, 5, 35, 15, 25, 35, 5};
 
   for (uint32_t idx : access_pattern) {
-    TileKey key{"random.mrxs", 0, idx, 0};
+    TileKey key{"random.mrxs", 0, idx, 0, JpegDecodeMode::kFast};
     cache.Get(key);
   }
 
@@ -663,7 +664,7 @@ TEST(LRUTileCacheTest, HashCollisionResistance) {
   // Create many keys that might collide
   for (uint32_t i = 0; i < 100; ++i) {
     for (uint16_t level = 0; level < 10; ++level) {
-      TileKey key{"test.mrxs", level, i, i};
+      TileKey key{"test.mrxs", level, i, i, JpegDecodeMode::kFast};
       cache.Put(key, CreateTestTile(256, 256, 3));
     }
   }
@@ -674,7 +675,7 @@ TEST(LRUTileCacheTest, HashCollisionResistance) {
   // Verify all tiles are retrievable
   for (uint32_t i = 0; i < 100; ++i) {
     for (uint16_t level = 0; level < 10; ++level) {
-      TileKey key{"test.mrxs", level, i, i};
+      TileKey key{"test.mrxs", level, i, i, JpegDecodeMode::kFast};
       EXPECT_NE(cache.Get(key), nullptr);
     }
   }
@@ -684,25 +685,31 @@ TEST(LRUTileCacheTest, SimilarKeysDifferentiate) {
   LRUTileCache cache(kTileSize * 10);
 
   // Keys that differ only in one field
-  TileKey key_file1{"file1.mrxs", 0, 10, 20};
-  TileKey key_file2{"file2.mrxs", 0, 10, 20};  // Different file
-  TileKey key_level{"file1.mrxs", 1, 10, 20};  // Different level
-  TileKey key_x{"file1.mrxs", 0, 11, 20};      // Different x
-  TileKey key_y{"file1.mrxs", 0, 10, 21};      // Different y
+  TileKey key_file1{"file1.mrxs", 0, 10, 20, JpegDecodeMode::kFast};
+  TileKey key_file2{"file2.mrxs", 0, 10, 20,
+                    JpegDecodeMode::kFast};  // Different file
+  TileKey key_level{"file1.mrxs", 1, 10, 20,
+                    JpegDecodeMode::kFast};  // Different level
+  TileKey key_x{"file1.mrxs", 0, 11, 20, JpegDecodeMode::kFast};  // Different x
+  TileKey key_y{"file1.mrxs", 0, 10, 21, JpegDecodeMode::kFast};  // Different y
+  TileKey key_mode{"file1.mrxs", 0, 10, 20,
+                   JpegDecodeMode::kLibjpeg};  // Different decode mode
 
   cache.Put(key_file1, CreateTestTile(256, 256, 3));
   cache.Put(key_file2, CreateTestTile(256, 256, 3));
   cache.Put(key_level, CreateTestTile(256, 256, 3));
   cache.Put(key_x, CreateTestTile(256, 256, 3));
   cache.Put(key_y, CreateTestTile(256, 256, 3));
+  cache.Put(key_mode, CreateTestTile(256, 256, 3));
 
   // All should be present (no overwrites)
-  EXPECT_EQ(cache.GetSize(), 5);
+  EXPECT_EQ(cache.GetSize(), 6);
   EXPECT_NE(cache.Get(key_file1), nullptr);
   EXPECT_NE(cache.Get(key_file2), nullptr);
   EXPECT_NE(cache.Get(key_level), nullptr);
   EXPECT_NE(cache.Get(key_x), nullptr);
   EXPECT_NE(cache.Get(key_y), nullptr);
+  EXPECT_NE(cache.Get(key_mode), nullptr);
 }
 
 // ============================================================================
@@ -720,13 +727,13 @@ TEST(LRUTileCacheTest, StatisticsAccuracyWithEvictions) {
 
   // Access some tiles (hits)
   for (uint32_t i = 0; i < 5; ++i) {
-    TileKey key{"test.mrxs", 0, i, 0};
+    TileKey key{"test.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     cache.Get(key);
   }
 
   // Access non-existent tiles (misses)
   for (uint32_t i = 20; i < 25; ++i) {
-    TileKey key{"test.mrxs", 0, i, 0};
+    TileKey key{"test.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     cache.Get(key);
   }
 
@@ -737,7 +744,7 @@ TEST(LRUTileCacheTest, StatisticsAccuracyWithEvictions) {
 
   // Add more tiles (trigger evictions)
   for (uint32_t i = 100; i < 110; ++i) {
-    TileKey key{"test.mrxs", 0, i, 0};
+    TileKey key{"test.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     cache.Put(key, CreateTestTile(256, 256, 3));
   }
 
@@ -757,12 +764,12 @@ TEST(LRUTileCacheTest, StatisticsAfterClearPreserveCapacity) {
   FillCacheWithTestTiles(cache, 30);
 
   for (uint32_t i = 0; i < 20; ++i) {
-    TileKey key{"test.mrxs", 0, i, 0};
+    TileKey key{"test.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     cache.Get(key);  // Hits
   }
 
   for (uint32_t i = 50; i < 60; ++i) {
-    TileKey key{"test.mrxs", 0, i, 0};
+    TileKey key{"test.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     cache.Get(key);  // Misses
   }
 
@@ -796,7 +803,8 @@ TEST(LRUTileCacheTest, ConcurrentEvictionPressure) {
   for (int t = 0; t < 10; ++t) {
     threads.emplace_back([&cache, &tiles_added, t]() {
       for (uint32_t i = 0; i < 50; ++i) {
-        TileKey key{"test.mrxs", 0, static_cast<uint32_t>(t * 1000 + i), 0};
+        TileKey key{"test.mrxs", 0, static_cast<uint32_t>(t * 1000 + i), 0,
+                    JpegDecodeMode::kFast};
         cache.Put(key, CreateTestTile(256, 256, 3));
         tiles_added++;
       }
@@ -828,7 +836,7 @@ TEST(LRUTileCacheTest, ConcurrentAccessDuringEviction) {
   for (int t = 0; t < 5; ++t) {
     threads.emplace_back([&cache, &hits, &misses]() {
       for (uint32_t i = 0; i < 100; ++i) {
-        TileKey key{"test.mrxs", 0, i % 50, 0};
+        TileKey key{"test.mrxs", 0, i % 50, 0, JpegDecodeMode::kFast};
         auto result = cache.Get(key);
         if (result) {
           hits++;
@@ -843,8 +851,8 @@ TEST(LRUTileCacheTest, ConcurrentAccessDuringEviction) {
   for (int t = 0; t < 5; ++t) {
     threads.emplace_back([&cache, t]() {
       for (uint32_t i = 0; i < 100; ++i) {
-        TileKey key{"test.mrxs", 0, static_cast<uint32_t>(100 + t * 100 + i),
-                    0};
+        TileKey key{"test.mrxs", 0, static_cast<uint32_t>(100 + t * 100 + i), 0,
+                    JpegDecodeMode::kFast};
         cache.Put(key, CreateTestTile(256, 256, 3));
       }
     });
@@ -869,14 +877,15 @@ TEST(LRUTileCacheTest, CacheWarmingScenario) {
   // Simulate cache warming - preload common tiles
   std::vector<TileKey> hot_tiles;
   for (uint32_t i = 0; i < 20; ++i) {
-    TileKey key{"hotspot.mrxs", 0, i / 5, i % 5};  // 4x5 region
+    TileKey key{"hotspot.mrxs", 0, i / 5, i % 5,
+                JpegDecodeMode::kFast};  // 4x5 region
     hot_tiles.push_back(key);
     cache.Put(key, CreateTestTile(256, 256, 3));
   }
 
   // Add many other tiles
   for (uint32_t i = 0; i < 200; ++i) {
-    TileKey key{"large.mrxs", 0, i, 0};
+    TileKey key{"large.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     cache.Put(key, CreateTestTile(256, 256, 3));
   }
 
@@ -895,7 +904,7 @@ TEST(LRUTileCacheTest, CacheWarmingScenario) {
 TEST(LRUTileCacheTest, RepeatedAccessKeepsInCache) {
   LRUTileCache cache(kTileSize * 10);
 
-  TileKey frequent_key{"frequent.mrxs", 0, 5, 5};
+  TileKey frequent_key{"frequent.mrxs", 0, 5, 5, JpegDecodeMode::kFast};
   cache.Put(frequent_key, CreateTestTile(256, 256, 3));
 
   // Access this key frequently while adding others
@@ -904,7 +913,7 @@ TEST(LRUTileCacheTest, RepeatedAccessKeepsInCache) {
     cache.Get(frequent_key);
 
     // Add new tile
-    TileKey new_key{"test.mrxs", 0, i, 0};
+    TileKey new_key{"test.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     cache.Put(new_key, CreateTestTile(256, 256, 3));
   }
 
@@ -919,7 +928,7 @@ TEST(LRUTileCacheTest, RepeatedAccessKeepsInCache) {
 TEST(LRUTileCacheTest, NullTileRejection) {
   LRUTileCache cache(kTileSize * 10);
 
-  TileKey key{"test.mrxs", 0, 0, 0};
+  TileKey key{"test.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
   cache.Put(key, nullptr);
 
   // Null tiles should not be added
@@ -930,9 +939,9 @@ TEST(LRUTileCacheTest, NullTileRejection) {
 TEST(LRUTileCacheTest, MixedNullAndValidTiles) {
   LRUTileCache cache(kTileSize * 10);
 
-  TileKey key1{"test.mrxs", 0, 0, 0};
-  TileKey key2{"test.mrxs", 0, 1, 0};
-  TileKey key3{"test.mrxs", 0, 2, 0};
+  TileKey key1{"test.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
+  TileKey key2{"test.mrxs", 0, 1, 0, JpegDecodeMode::kFast};
+  TileKey key3{"test.mrxs", 0, 2, 0, JpegDecodeMode::kFast};
 
   cache.Put(key1, CreateTestTile(256, 256, 3));  // Valid
   cache.Put(key2, nullptr);                      // Null
@@ -953,7 +962,7 @@ TEST(LRUTileCacheTest, HighMemoryPressure) {
 
   // Fill with large tiles
   for (uint32_t i = 0; i < 100; ++i) {
-    TileKey key{"large.qptiff", 0, i, 0};
+    TileKey key{"large.qptiff", 0, i, 0, JpegDecodeMode::kFast};
     std::vector<uint8_t> data(512 * 512 * 16, static_cast<uint8_t>(i));
     auto tile = std::make_shared<CachedTileData>(
         std::move(data), aifocore::Size<uint32_t, 2>{512, 512}, 16);
@@ -982,7 +991,8 @@ TEST(LRUTileCacheTest, MemoryTrackingAccuracy) {
     uint32_t channels = 3;
     size_t bytes = w * h * channels;
 
-    TileKey key{"test.mrxs", 0, static_cast<uint32_t>(i), 0};
+    TileKey key{"test.mrxs", 0, static_cast<uint32_t>(i), 0,
+                JpegDecodeMode::kFast};
     std::vector<uint8_t> data(bytes, 42);
     auto tile = std::make_shared<CachedTileData>(
         std::move(data), aifocore::Size<uint32_t, 2>{w, h}, channels);
@@ -1006,7 +1016,7 @@ TEST(LRUTileCacheTest, VeryLargeCapacity) {
 
   // Add some tiles
   for (uint32_t i = 0; i < 100; ++i) {
-    TileKey key{"test.mrxs", 0, i, 0};
+    TileKey key{"test.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     cache.Put(key, CreateTestTile(256, 256, 3));
   }
 
@@ -1031,7 +1041,7 @@ TEST(LRUTileCacheTest, CapacityReductionWithOversizedCache) {
 
   // Verify can use new capacity
   for (uint32_t i = 0; i < 10; ++i) {
-    TileKey key{"new.mrxs", 0, i, 0};
+    TileKey key{"new.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     cache.Put(key, CreateTestTile(256, 256, 3));
   }
 
@@ -1048,19 +1058,19 @@ TEST(LRUTileCacheTest, SlideViewerZoomPattern) {
   // Simulate user zooming in on a region
   // Level 2 (overview)
   for (uint32_t i = 0; i < 10; ++i) {
-    TileKey key{"viewer.mrxs", 2, i, 0};
+    TileKey key{"viewer.mrxs", 2, i, 0, JpegDecodeMode::kFast};
     cache.Put(key, CreateTestTile(256, 256, 3));
   }
 
   // Level 1 (medium zoom)
   for (uint32_t i = 0; i < 20; ++i) {
-    TileKey key{"viewer.mrxs", 1, i, 0};
+    TileKey key{"viewer.mrxs", 1, i, 0, JpegDecodeMode::kFast};
     cache.Put(key, CreateTestTile(256, 256, 3));
   }
 
   // Level 0 (full resolution) - user's focus
   for (uint32_t i = 0; i < 40; ++i) {
-    TileKey key{"viewer.mrxs", 0, i, 0};
+    TileKey key{"viewer.mrxs", 0, i, 0, JpegDecodeMode::kFast};
     cache.Put(key, CreateTestTile(256, 256, 3));
   }
 
@@ -1070,7 +1080,7 @@ TEST(LRUTileCacheTest, SlideViewerZoomPattern) {
   // Repeatedly access level 0 tiles (user panning)
   for (int repeat = 0; repeat < 5; ++repeat) {
     for (uint32_t i = 10; i < 30; ++i) {
-      TileKey key{"viewer.mrxs", 0, i, 0};
+      TileKey key{"viewer.mrxs", 0, i, 0, JpegDecodeMode::kFast};
       cache.Get(key);
     }
   }
@@ -1089,7 +1099,7 @@ TEST(LRUTileCacheTest, MultiSlideWorkflow) {
 
   for (const auto& slide : slides) {
     for (uint32_t i = 0; i < 50; ++i) {
-      TileKey key{slide, 0, i, 0};
+      TileKey key{slide, 0, i, 0, JpegDecodeMode::kFast};
       cache.Put(key, CreateTestTile(256, 256, 3));
     }
   }
@@ -1099,7 +1109,7 @@ TEST(LRUTileCacheTest, MultiSlideWorkflow) {
   // Access tiles from different slides
   for (const auto& slide : slides) {
     for (uint32_t i = 0; i < 10; ++i) {
-      TileKey key{slide, 0, i, 0};
+      TileKey key{slide, 0, i, 0, JpegDecodeMode::kFast};
       auto result = cache.Get(key);
       EXPECT_NE(result, nullptr);
     }
@@ -1116,7 +1126,7 @@ TEST(LRUTileCacheTest, MultiSlideWorkflow) {
 TEST(LRUTileCacheTest, EmptyTileData) {
   LRUTileCache cache(kTileSize * 10);
 
-  TileKey key{"empty.mrxs", 0, 0, 0};
+  TileKey key{"empty.mrxs", 0, 0, 0, JpegDecodeMode::kFast};
   std::vector<uint8_t> empty_data;  // Empty vector
   auto empty_tile = std::make_shared<CachedTileData>(
       std::move(empty_data), aifocore::Size<uint32_t, 2>{0, 0}, 0);

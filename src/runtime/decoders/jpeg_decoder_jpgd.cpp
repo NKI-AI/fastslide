@@ -21,6 +21,11 @@
 
 namespace fastslide::runtime::decoders {
 
+// jpgd has no IDCT or upsampling choice: it only honours kFast.
+bool JpegDecodeModeSupported(JpegDecodeMode mode) {
+  return mode == JpegDecodeMode::kFast;
+}
+
 aifocore::Result<DecodedRgb> DecodeJpegToRgb(
     std::span<const uint8_t> jpeg_bytes, const JpegDecodeOptions& options) {
   if (jpeg_bytes.empty()) {

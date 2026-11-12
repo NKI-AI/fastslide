@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "aifocore/status/result.h"
+#include "fastslide/jpeg_decode_mode.h"
 #include "fastslide/readers/mrxs/mrxs_data_reader.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
 #include "fastslide/runtime/cache_interface.h"
@@ -33,10 +34,12 @@ class MrxsExecContext {
  public:
   MrxsExecContext(std::filesystem::path dirname,
                   const mrxs::SlideDataInfo& slide_info,
-                  std::shared_ptr<runtime::ITileCache> cache)
+                  std::shared_ptr<runtime::ITileCache> cache,
+                  JpegDecodeMode jpeg_decode_mode)
       : dirname_(std::move(dirname)),
         slide_info_(slide_info),
-        cache_(std::move(cache)) {}
+        cache_(std::move(cache)),
+        jpeg_decode_mode_(jpeg_decode_mode) {}
 
   [[nodiscard]] const mrxs::SlideDataInfo& GetMrxsInfo() const {
     return slide_info_;
@@ -54,10 +57,16 @@ class MrxsExecContext {
                                               slide_info_.datafile_paths);
   }
 
+  /// JPEG decode mode of the owning reader, fixed for this plan.
+  [[nodiscard]] JpegDecodeMode GetJpegDecodeMode() const {
+    return jpeg_decode_mode_;
+  }
+
  private:
   std::filesystem::path dirname_;
   const mrxs::SlideDataInfo& slide_info_;
   std::shared_ptr<runtime::ITileCache> cache_;
+  JpegDecodeMode jpeg_decode_mode_;
 };
 
 }  // namespace fastslide

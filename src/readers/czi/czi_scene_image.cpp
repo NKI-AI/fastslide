@@ -309,7 +309,7 @@ aifocore::Status CziSceneImage::ExecutePlan(const core::TilePlan& plan,
                                             runtime::Canvas& canvas) const {
   const CziExecContext context(container_.GetFilename(),
                                container_.SubblockSpan(), container_.GetCache(),
-                               is_spectral_);
+                               is_spectral_, container_.GetJpegDecodeMode());
   return CziTileExecutor::ExecutePlan(plan, context, canvas);
 }
 

@@ -834,7 +834,8 @@ aifocore::Result<Image> CziReader::ReadAssociatedImage(
                               file.ReadBytes(static_cast<size_t>(data_size)));
 
     AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
-                              runtime::decoders::DecodeJpegToRgb(jpg_bytes));
+                              runtime::decoders::DecodeJpegToRgb(
+                                  jpg_bytes, {.mode = GetJpegDecodeMode()}));
     if (decoded.rgb.empty() || decoded.width == 0 || decoded.height == 0) {
       return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
                                   "Failed to decode JPEG associated image");

@@ -31,6 +31,7 @@
 #include "fastslide/readers/bif/bif_plan_builder.h"
 #include "fastslide/readers/bif/bif_plan_context.h"
 #include "fastslide/readers/bif/bif_tile_executor.h"
+#include "fastslide/readers/simpletiff_decode_utils.h"
 #include "simpletiff/index.h"
 #include "simpletiff/reader.h"
 #include "simpletiff/tiff_parser.h"
@@ -247,6 +248,8 @@ aifocore::Result<RGBImage> BifReader::ReadAssociatedImage(
 
   RGBImage image({width, height}, format, DataType::kUInt8);
   simpletiff::DecodeContext ctx;
+  ctx.jpeg_decode_mode =
+      readers::simpletiff_decode::ToSimpletiff(GetJpegDecodeMode());
   simpletiff::Roi roi{0, 0, width, height};
   const int stride = static_cast<int>(width) * spp;
   auto result = simpletiff::ReadPage(*tiff_index_, info->page, roi, ctx,
@@ -357,7 +360,8 @@ aifocore::Result<core::TilePlan> BifReader::PrepareRequest(
 
 aifocore::Status BifReader::ExecutePlan(const core::TilePlan& plan,
                                         runtime::Canvas& writer) const {
-  const BifExecContext context(GetTiffIndex(), GetFilename(), GetCache());
+  const BifExecContext context(GetTiffIndex(), GetFilename(), GetCache(),
+                               GetJpegDecodeMode());
   return BifTileExecutor::ExecutePlan(plan, context, writer);
 }
 

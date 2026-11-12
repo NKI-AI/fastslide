@@ -16,6 +16,7 @@
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_SLIDE_READER_H_
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -369,6 +370,25 @@ class SlideReader {
     return color_transform_ != nullptr;
   }
 
+  /// @brief Choose the JPEG decoder settings for this reader.
+  ///
+  /// Applies to every JPEG decode of the reader and its images: tiles and
+  /// associated images. Each `ReadRegion` decodes in the mode current when it
+  /// starts. Cached tiles are keyed by mode, so readers in different modes can
+  /// share a cache.
+  ///
+  /// @param mode `kFast` (default) or `kLibjpeg` (libjpeg's defaults,
+  ///        pixel-identical to libtiff and OpenSlide).
+  /// @return OK, or `kUnimplemented` when this build cannot honour `mode`
+  ///         (`kLibjpeg` needs libjpeg in both FastSlide and simpletiff, not
+  ///         jpgd). The mode is unchanged on error.
+  aifocore::Status SetJpegDecodeMode(JpegDecodeMode mode);
+
+  /// @brief The JPEG decoder settings in use.
+  [[nodiscard]] JpegDecodeMode GetJpegDecodeMode() const {
+    return jpeg_decode_mode_.load(std::memory_order_relaxed);
+  }
+
   /// @brief Utility function to clamp region to image bounds
   /// @param region Input region specification
   /// @param image_dims Image dimensions to clamp against
@@ -414,6 +434,9 @@ class SlideReader {
   /// Built by `SetColorTransform`; null when color management is disabled.
   /// Shared with this reader's `SlideImage`s so per-image reads apply it too.
   std::shared_ptr<IccTransform> color_transform_;
+
+  /// @brief JPEG decoder settings, read when each plan is executed.
+  std::atomic<JpegDecodeMode> jpeg_decode_mode_{JpegDecodeMode::kFast};
 
   /// @brief Lazily constructed default adapter returned by `GetImage(0)`
   /// when a reader does not override the multi-image API.

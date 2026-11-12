@@ -30,7 +30,7 @@ namespace internal {
 aifocore::Result<std::vector<uint8_t>> DecodeDicomFrameBytes(
     std::span<const uint8_t> frame_bytes, DicomTransferSyntax syntax,
     DicomPhotometric photometric, uint32_t expected_width,
-    uint32_t expected_height) {
+    uint32_t expected_height, JpegDecodeMode jpeg_decode_mode) {
   switch (syntax) {
     case DicomTransferSyntax::kExplicitVRLittleEndian: {
       const size_t expected =
@@ -45,8 +45,9 @@ aifocore::Result<std::vector<uint8_t>> DecodeDicomFrameBytes(
     case DicomTransferSyntax::kJpegBaseline: {
       // jpgd auto-converts YCbCr to RGB via JCS_YCbCr; the photometric tag is
       // therefore informational only for this branch.
-      AIFOCORE_ASSIGN_OR_RETURN(
-          auto decoded, runtime::decoders::DecodeJpegToRgb(frame_bytes));
+      AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
+                                runtime::decoders::DecodeJpegToRgb(
+                                    frame_bytes, {.mode = jpeg_decode_mode}));
       return std::move(decoded.rgb);
     }
 

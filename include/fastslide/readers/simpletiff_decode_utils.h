@@ -26,12 +26,30 @@
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/image.h"
+#include "fastslide/jpeg_decode_mode.h"
 #include "simpletiff/index.h"
 #include "simpletiff/reader.h"
 
 namespace fastslide {
 namespace readers {
 namespace simpletiff_decode {
+
+/// @brief simpletiff's equivalent of `mode`.
+inline simpletiff::JpegDecodeMode ToSimpletiff(JpegDecodeMode mode) {
+  return mode == JpegDecodeMode::kLibjpeg ? simpletiff::JpegDecodeMode::kLibjpeg
+                                          : simpletiff::JpegDecodeMode::kFast;
+}
+
+/// @brief The calling thread's decode context, set to decode in `mode`.
+///
+/// One context per thread is shared by every slide read on that thread, so
+/// the mode is set on every call. Tile executors use this rather than their
+/// own `thread_local` context, so none can inherit another slide's mode.
+inline simpletiff::DecodeContext& ThreadDecodeContext(JpegDecodeMode mode) {
+  static thread_local simpletiff::DecodeContext ctx;
+  ctx.jpeg_decode_mode = ToSimpletiff(mode);
+  return ctx;
+}
 
 /// @brief Simple rectangle with unsigned integer coordinates.
 struct RectU32 {
@@ -294,10 +312,11 @@ inline aifocore::Result<std::span<const uint8_t>> CropInterleavedRoi(
 /// @param size         Expected image size (width, height) in pixels; used to
 ///                     allocate the destination buffer and crop ROI.
 /// @param image_name   Display name used in error messages (e.g. "label").
+/// @param mode         JPEG decode mode of the owning reader.
 /// @return A populated `RGBImage` or an error status.
 inline aifocore::Result<RGBImage> ReadAssociatedTiffPage(
     const simpletiff::TiffIndex& tiff_index, uint32_t page,
-    ImageDimensions size, std::string_view image_name) {
+    ImageDimensions size, std::string_view image_name, JpegDecodeMode mode) {
   if (page >= tiff_index.NumPages()) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInternal,
@@ -313,6 +332,7 @@ inline aifocore::Result<RGBImage> ReadAssociatedTiffPage(
   RGBImage rgb_image({width, height}, ImageFormat::kRGB, DataType::kUInt8);
 
   simpletiff::DecodeContext ctx;
+  ctx.jpeg_decode_mode = ToSimpletiff(mode);
   simpletiff::Roi roi{0, 0, width, height};
   const int stride = static_cast<int>(width) * samples_per_pixel;
   auto result = simpletiff::ReadPage(tiff_index, page, roi, ctx,

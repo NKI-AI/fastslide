@@ -230,9 +230,11 @@ aifocore::Result<RGBImage> IsyntaxReader::ReadAssociatedImage(
   aifocore::Result<isyntax::RgbaImage> rgba_or = AIFOCORE_MAKE_STATUS(
       aifocore::StatusCode::kNotFound, "Unknown associated image");
   if (name == "label") {
-    rgba_or = isyntax_file_->ReadLabelImage(isyntax::PixelFormat::kRgba);
+    rgba_or = isyntax_file_->ReadLabelImage(isyntax::PixelFormat::kRgba,
+                                            GetJpegDecodeMode());
   } else if (name == "macro") {
-    rgba_or = isyntax_file_->ReadMacroImage(isyntax::PixelFormat::kRgba);
+    rgba_or = isyntax_file_->ReadMacroImage(isyntax::PixelFormat::kRgba,
+                                            GetJpegDecodeMode());
   }
   AIFOCORE_RETURN_IF_ERROR(rgba_or);
   const isyntax::RgbaImage& rgba = *rgba_or;

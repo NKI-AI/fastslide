@@ -131,7 +131,7 @@ aifocore::Result<RGBImage> GenericTiffReader::ReadAssociatedImage(
         aifocore::fmt::format("TIFF index not initialized for '{}'", name));
   }
   return readers::simpletiff_decode::ReadAssociatedTiffPage(
-      *tiff_index_, info->page, info->size, name);
+      *tiff_index_, info->page, info->size, name, GetJpegDecodeMode());
 }
 
 Metadata GenericTiffReader::GetMetadata() const {
@@ -219,6 +219,7 @@ aifocore::Status GenericTiffReader::ExecutePlan(const core::TilePlan& plan,
       .level_count = GetLevelCount(),
       .filename = GetFilename(),
       .cache = GetCache(),
+      .jpeg_decode_mode = GetJpegDecodeMode(),
   };
   return GenericTiffTileExecutor::ExecutePlan(plan, context, writer);
 }

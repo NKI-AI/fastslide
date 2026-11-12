@@ -20,6 +20,7 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/image.h"
+#include "fastslide/jpeg_decode_mode.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
 
 namespace fastslide {
@@ -35,10 +36,12 @@ namespace internal {
 ///
 /// @param data Compressed image bitstream.
 /// @param format Image format (JPEG / PNG / BMP).
+/// @param jpeg_decode_mode JPEG decode mode of the owning reader.
 /// @return RGB8 `RGBImage` on success, otherwise a status describing the
 ///         decode failure.
 [[nodiscard]] aifocore::Result<RGBImage> DecodeImage(
-    const std::vector<uint8_t>& data, MrxsImageFormat format);
+    const std::vector<uint8_t>& data, MrxsImageFormat format,
+    JpegDecodeMode jpeg_decode_mode);
 
 /// @brief Decode a compressed MRXS image into an RGB16 `Image`.
 ///

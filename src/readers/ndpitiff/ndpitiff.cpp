@@ -35,6 +35,7 @@
 #include "fastslide/readers/ndpitiff/ndpitiff_plan_builder.h"
 #include "fastslide/readers/ndpitiff/ndpitiff_plan_context.h"
 #include "fastslide/readers/ndpitiff/ndpitiff_tile_executor.h"
+#include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/runtime/decoders/jpeg_xr_decoder.h"
 #include "simpletiff/index.h"
 #include "simpletiff/io_utils.h"
@@ -458,7 +459,8 @@ aifocore::Result<RGBImage> NdpiTiffReader::ReadAssociatedImage(
   if (page_header.compression == kCompressionJpeg &&
       (page_header.storage == simpletiff::Storage::kTiles ||
        page_header.storage == simpletiff::Storage::kStrips)) {
-    static thread_local simpletiff::DecodeContext decode_ctx;
+    simpletiff::DecodeContext& decode_ctx =
+        readers::simpletiff_decode::ThreadDecodeContext(GetJpegDecodeMode());
     static thread_local std::vector<uint8_t> raw_compressed;
     static thread_local std::vector<uint8_t> patched_header;
     static thread_local std::vector<uint8_t> decoded_rgb;
@@ -631,6 +633,8 @@ aifocore::Result<RGBImage> NdpiTiffReader::ReadAssociatedImage(
 
   // Fallback: use simpletiff directly.
   simpletiff::DecodeContext ctx;
+  ctx.jpeg_decode_mode =
+      readers::simpletiff_decode::ToSimpletiff(GetJpegDecodeMode());
   simpletiff::Roi roi{0, 0, width, height};
   const int stride = static_cast<int>(width) * 3;
   AIFOCORE_RETURN_IF_ERROR(
@@ -751,7 +755,7 @@ aifocore::Status NdpiTiffReader::ExecutePlan(const core::TilePlan& plan,
       GetFilename(), GetCache(), GetTiffIndex(), GetLevelCount(),
       std::span<const uint8_t>(jpeg_header_template_),
       std::span<const size_t>(sof_height_offsets_),
-      std::span<const size_t>(sof_width_offsets_));
+      std::span<const size_t>(sof_width_offsets_), GetJpegDecodeMode());
   return NdpiTiffTileExecutor::ExecutePlan(plan, context, writer);
 }
 

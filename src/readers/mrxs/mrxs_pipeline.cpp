@@ -44,8 +44,9 @@ aifocore::Result<core::TilePlan> MrxsPipeline::BuildPlan(
 aifocore::Status MrxsPipeline::ExecutePlan(
     const core::TilePlan& plan, const fs::path& dirname,
     const SlideDataInfo& slide_info, std::shared_ptr<runtime::ITileCache> cache,
-    runtime::Canvas& writer) {
-  const MrxsExecContext context(dirname, slide_info, std::move(cache));
+    JpegDecodeMode jpeg_decode_mode, runtime::Canvas& writer) {
+  const MrxsExecContext context(dirname, slide_info, std::move(cache),
+                                jpeg_decode_mode);
   return MrxsTileExecutor::ExecutePlan(plan, context, writer);
 }
 

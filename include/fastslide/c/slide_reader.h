@@ -50,6 +50,12 @@ typedef enum {
   FASTSLIDE_RENDERING_INTENT_ABSOLUTE_COLORIMETRIC   ///< Absolute colorimetric
 } FastSlideRenderingIntent;
 
+/// @brief JPEG decoder settings
+typedef enum {
+  FASTSLIDE_JPEG_DECODE_FAST,    ///< Fast integer IDCT, no fancy upsampling
+  FASTSLIDE_JPEG_DECODE_LIBJPEG  ///< libjpeg's defaults (OpenSlide-identical)
+} FastSlideJpegDecodeMode;
+
 /// @brief Property value union
 typedef struct {
   FastSlidePropertyType type;
@@ -427,6 +433,26 @@ FASTSLIDE_API size_t fastslide_slide_reader_read_icc_profile(
 FASTSLIDE_API int fastslide_slide_reader_enable_icc_transform(
     FastSlideSlideReader* reader, FastSlideColorSpace target_space,
     FastSlideRenderingIntent intent, int use_lut);
+
+// JPEG decoding
+
+/// @brief Choose the JPEG decoder settings for subsequent reads.
+///
+/// Applies to tiles and associated images. `FASTSLIDE_JPEG_DECODE_LIBJPEG`
+/// uses libjpeg's defaults (accurate IDCT, fancy upsampling) and is
+/// pixel-identical to libtiff and OpenSlide; it fails on jpgd builds.
+///
+/// @param reader Slide reader handle
+/// @param mode Decode mode
+/// @return 1 on success, 0 on failure (the mode is then unchanged).
+FASTSLIDE_API int fastslide_slide_reader_set_jpeg_decode_mode(
+    FastSlideSlideReader* reader, FastSlideJpegDecodeMode mode);
+
+/// @brief Get the JPEG decoder settings in use.
+/// @param reader Slide reader handle
+/// @return The decode mode (`FASTSLIDE_JPEG_DECODE_FAST` for a null reader).
+FASTSLIDE_API FastSlideJpegDecodeMode
+fastslide_slide_reader_get_jpeg_decode_mode(const FastSlideSlideReader* reader);
 
 // Tile caching
 

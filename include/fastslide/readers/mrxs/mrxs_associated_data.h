@@ -24,6 +24,7 @@
 #include "aifocore/status/result.h"
 #include "fastslide/associated_data.h"
 #include "fastslide/image.h"
+#include "fastslide/jpeg_decode_mode.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
 
 /// @file mrxs_associated_data.h
@@ -98,9 +99,10 @@ class MrxsAssociatedData {
   /// @param dirname Path to the MRXS directory.
   /// @param slide_info Slide metadata.
   /// @param name Record name as returned by @ref GetNames.
+  /// @param jpeg_decode_mode JPEG decode mode of the owning reader.
   [[nodiscard]] static aifocore::Result<AssociatedData> Load(
       const fs::path& dirname, const SlideDataInfo& slide_info,
-      std::string_view name);
+      std::string_view name, JpegDecodeMode jpeg_decode_mode);
 
   /// @brief Decode an `ScanDataLayer_Slide<name>` record as an RGB image.
   ///
@@ -108,7 +110,7 @@ class MrxsAssociatedData {
   /// prefix and unwraps the variant.
   [[nodiscard]] static aifocore::Result<RGBImage> ReadImage(
       const fs::path& dirname, const SlideDataInfo& slide_info,
-      std::string_view name);
+      std::string_view name, JpegDecodeMode jpeg_decode_mode);
 
   /// @brief Read and return only the dimensions of an associated image.
   ///

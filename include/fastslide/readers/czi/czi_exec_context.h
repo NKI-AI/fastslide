@@ -20,6 +20,7 @@
 #include <string_view>
 #include <utility>
 
+#include "fastslide/jpeg_decode_mode.h"
 #include "fastslide/readers/czi/czi_level_info.h"
 #include "fastslide/runtime/cache_interface.h"
 
@@ -30,12 +31,13 @@ class CziExecContext {
  public:
   CziExecContext(std::string_view filename,
                  std::span<const CziSubblockInfo> subblocks,
-                 std::shared_ptr<runtime::ITileCache> cache,
-                 bool is_spectral = false)
+                 std::shared_ptr<runtime::ITileCache> cache, bool is_spectral,
+                 JpegDecodeMode jpeg_decode_mode)
       : filename_(filename),
         subblocks_(subblocks),
         cache_(std::move(cache)),
-        is_spectral_(is_spectral) {}
+        is_spectral_(is_spectral),
+        jpeg_decode_mode_(jpeg_decode_mode) {}
 
   [[nodiscard]] std::string_view GetFilename() const { return filename_; }
 
@@ -53,11 +55,17 @@ class CziExecContext {
   ///        yields a single-channel plane rather than an RGB triplet.
   [[nodiscard]] bool IsSpectral() const { return is_spectral_; }
 
+  /// JPEG decode mode of the owning reader, fixed for this plan.
+  [[nodiscard]] JpegDecodeMode GetJpegDecodeMode() const {
+    return jpeg_decode_mode_;
+  }
+
  private:
   std::string_view filename_;
   std::span<const CziSubblockInfo> subblocks_;
   std::shared_ptr<runtime::ITileCache> cache_;
   bool is_spectral_ = false;
+  JpegDecodeMode jpeg_decode_mode_;
 };
 
 }  // namespace fastslide

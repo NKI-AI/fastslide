@@ -273,9 +273,9 @@ runtime::TileKey MrxsTileExecutor::MakeCacheKey(
   // uniqueness
   return runtime::TileKey(
       context.GetMrxsInfo().dirname, op.level,
-      static_cast<uint32_t>(op.source_id),   // Use data_file_number as tile_x
-      static_cast<uint32_t>(op.byte_offset)  // Use offset as tile_y
-  );
+      static_cast<uint32_t>(op.source_id),    // Use data_file_number as tile_x
+      static_cast<uint32_t>(op.byte_offset),  // Use offset as tile_y
+      context.GetJpegDecodeMode());
 }
 
 aifocore::Result<DecodedTileData> MrxsTileExecutor::ReadTileFromDisk(
@@ -321,8 +321,8 @@ aifocore::Result<DecodedTileData> MrxsTileExecutor::ReadTileFromDisk(
   }
 
   // 8-bit path
-  auto image_or =
-      mrxs::internal::DecodeImage(*data_or, zoom_level.image_format);
+  auto image_or = mrxs::internal::DecodeImage(*data_or, zoom_level.image_format,
+                                              context.GetJpegDecodeMode());
   if (!image_or.ok()) {
     return ToAifoStatus(image_or.status());
   }
