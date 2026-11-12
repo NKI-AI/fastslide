@@ -15,6 +15,8 @@
 #ifndef AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_ISYNTAX_ISYNTAX_PLAN_CONTEXT_H_
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_ISYNTAX_ISYNTAX_PLAN_CONTEXT_H_
 
+#include <cstdint>
+
 #include "fastslide/image.h"
 #include "fastslide/slide_reader.h"
 
@@ -24,6 +26,13 @@ namespace fastslide {
 struct IsyntaxPlanContext {
   ImageDimensions tile_size = {0, 0};
   LevelInfo level_info;
+  /// Offset, in pixels of this level, from the API origin (the top-left of the
+  /// unpadded image, as exposed by the Philips SDK) to the origin of the
+  /// libisyntax tile grid. See IsyntaxPlanBuilder::ComputeGridOffset.
+  int64_t grid_offset = 0;
+  /// Size of this level's tile grid, in tiles.
+  int64_t grid_width_in_tiles = 0;
+  int64_t grid_height_in_tiles = 0;
 };
 
 }  // namespace fastslide

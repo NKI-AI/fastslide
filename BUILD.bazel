@@ -1751,6 +1751,29 @@ cc_test(
 )
 
 cc_test(
+    name = "isyntax_color_cpp_test",
+    size = "small",
+    srcs = ["tests/isyntax_color_cpp_test.cpp"],
+    deps = [
+        ":libisyntax",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "isyntax_plan_builder_test",
+    size = "small",
+    srcs = ["src/readers/isyntax/isyntax_plan_builder_test.cpp"],
+    deps = [
+        ":core",
+        ":formats_isyntax",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
     name = "isyntax_jpeg_cpp_test",
     size = "small",
     srcs = ["tests/isyntax_jpeg_cpp_test.cpp"],
