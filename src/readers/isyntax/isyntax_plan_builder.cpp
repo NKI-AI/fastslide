@@ -17,6 +17,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
+#include <string_view>
 #include <vector>
 
 namespace fastslide {
@@ -28,6 +30,29 @@ int64_t IsyntaxPlanBuilder::ComputeGridOffset(int32_t level,
   // of the level, so the fractional part of the offset is dropped.
   return (static_cast<int64_t>(level0_padding) - origin_offset_in_pixels) >>
          level;
+}
+
+double IsyntaxPlanBuilder::ComputeOriginShift(int32_t level,
+                                              double downsample) {
+  if (level <= 0) {
+    return 0.0;
+  }
+  return -1.5 + (1.5 / downsample);
+}
+
+double IsyntaxPlanBuilder::ComputeCorrectedGridOffset(int32_t level,
+                                                      int32_t level0_padding,
+                                                      double downsample) {
+  return (static_cast<double>(level0_padding) / downsample) +
+         ComputeOriginShift(level, downsample);
+}
+
+bool IsyntaxPlanBuilder::SubpixelCorrectionFromEnv() {
+  static const bool enabled = [] {
+    const char* env = std::getenv("FASTSLIDE_ISYNTAX_SUBPIXEL_CORRECTION");
+    return env != nullptr && std::string_view(env) == "1";
+  }();
+  return enabled;
 }
 
 aifocore::Result<core::TilePlan> IsyntaxPlanBuilder::BuildPlan(
@@ -66,14 +91,23 @@ aifocore::Result<core::TilePlan> IsyntaxPlanBuilder::BuildPlan(
 
   // 3. Calculate tile grid coverage
   // request.region_bounds.x/y are in level pixels (API space). The tile grid
-  // is offset from it by a whole number of level pixels:
+  // is offset from it by the Philips SDK's whole-pixel offset, or, with the
+  // sub-pixel correction, by the padding plus the wavelet-origin shift:
   //   grid_coord = api_coord + offset
   double x_min = region.x;
   double y_min = region.y;
   double width = region.width;
   double height = region.height;
 
-  const auto offset = static_cast<double>(context.grid_offset);
+  const bool subpixel_correction =
+      context.subpixel_correction.value_or(SubpixelCorrectionFromEnv());
+  const double offset =
+      subpixel_correction
+          ? ComputeCorrectedGridOffset(request.level, context.level0_padding,
+                                       context.level_info.downsample_factor)
+          : static_cast<double>(
+                ComputeGridOffset(request.level, context.level0_padding,
+                                  context.origin_offset_in_pixels));
   double offset_x = offset;
   double offset_y = offset;
 
@@ -106,9 +140,11 @@ aifocore::Result<core::TilePlan> IsyntaxPlanBuilder::BuildPlan(
   end_tile_y = std::min<int64_t>(end_tile_y, max_tiles_y - 1);
 
   // 4. Generate tile operations
-  // Tile positions in API space are whole pixels:
+  // Tile positions in API space:
   //   tile_api_pos = tile_grid_pos - offset
-  // so the Canvas copies tiles without resampling.
+  // Whole pixels without the sub-pixel correction, so the Canvas copies tiles
+  // as decoded. With it, levels above 0 are fractional and the Canvas places
+  // them with its BilinearRgbBlit path.
   for (int64_t ty = start_tile_y; ty <= end_tile_y; ++ty) {
     for (int64_t tx = start_tile_x; tx <= end_tile_x; ++tx) {
       core::TileReadOp op;
@@ -134,18 +170,25 @@ aifocore::Result<core::TilePlan> IsyntaxPlanBuilder::BuildPlan(
       double intersect_h = std::max(0.0, intersect_b - intersect_y);
 
       if (intersect_w > 0 && intersect_h > 0) {
+        // The Canvas places a whole-pixel source rectangle at a possibly
+        // fractional destination, and resamples only when the destination is
+        // fractional: a fractional source offset would be truncated. So the
+        // source starts on a whole tile pixel and any fraction goes into the
+        // destination, which may then start just left of / above the region.
+        const double src_x = std::floor(intersect_x - tile_x_px);
+        const double src_y = std::floor(intersect_y - tile_y_px);
         auto visible_w =
-            static_cast<uint32_t>(std::ceil(intersect_r - intersect_x));
+            static_cast<uint32_t>(std::ceil(intersect_r - tile_x_px - src_x));
         auto visible_h =
-            static_cast<uint32_t>(std::ceil(intersect_b - intersect_y));
+            static_cast<uint32_t>(std::ceil(intersect_b - tile_y_px - src_y));
 
-        op.transform.source.x = intersect_x - tile_x_px;
-        op.transform.source.y = intersect_y - tile_y_px;
+        op.transform.source.x = src_x;
+        op.transform.source.y = src_y;
         op.transform.source.width = visible_w;
         op.transform.source.height = visible_h;
 
-        op.transform.dest.x = intersect_x - x_min;
-        op.transform.dest.y = intersect_y - y_min;
+        op.transform.dest.x = tile_x_px + src_x - x_min;
+        op.transform.dest.y = tile_y_px + src_y - y_min;
         op.transform.dest.width = visible_w;
         op.transform.dest.height = visible_h;
 
