@@ -42,7 +42,7 @@ class IsyntaxPlanBuilder {
   /// origin is the top-left of the unpadded image, which is the convention of
   /// the Philips SDK. The offset is an integer number of level pixels: pixel
   /// `x` of a level is grid pixel `x + offset`, so tiles are copied without
-  /// resampling.
+  /// resampling, bit-exact with the Philips SDK.
   ///
   /// @param level Pyramid level (0 = full resolution).
   /// @param level0_padding Padding of level 0, in level 0 pixels.
@@ -51,6 +51,39 @@ class IsyntaxPlanBuilder {
   /// @return Offset in pixels of @p level.
   static int64_t ComputeGridOffset(int32_t level, int32_t level0_padding,
                                    int32_t origin_offset_in_pixels);
+
+  /// @brief Grid offset with the sub-pixel correction, in level pixels.
+  ///
+  /// `level0_padding / downsample` plus the wavelet-origin shift of the level
+  /// (ComputeOriginShift). Equal to ComputeGridOffset at level 0; above it,
+  /// it differs from it by a fraction of a pixel, so those levels are
+  /// resampled. Used when FASTSLIDE_ISYNTAX_SUBPIXEL_CORRECTION=1.
+  ///
+  /// @param level Pyramid level (0 = full resolution).
+  /// @param level0_padding Padding of level 0, in level 0 pixels.
+  /// @param downsample Downsample factor of the level (2^level).
+  /// @return Offset in pixels of @p level.
+  static double ComputeCorrectedGridOffset(int32_t level,
+                                           int32_t level0_padding,
+                                           double downsample);
+
+  /// @brief Wavelet-origin sub-pixel shift in level pixels.
+  ///
+  /// Aligns levels above 0 with level 0, where the Philips SDK's whole-pixel
+  /// grid leaves them up to half a level pixel off. On a test slide it was
+  /// within 0.05 level pixels of the shift that best matched level 0
+  /// box-downsampled to the level, at levels 1 to 5.
+  ///
+  /// @param level Pyramid level (0 = full resolution, no shift).
+  /// @param downsample Downsample factor for the level (2^level).
+  /// @return Shift in level pixels (0.0 for level 0).
+  static double ComputeOriginShift(int32_t level, double downsample);
+
+  /// @brief Whether FASTSLIDE_ISYNTAX_SUBPIXEL_CORRECTION is set to "1".
+  ///
+  /// Read once, on first use. Used for plans whose context leaves
+  /// `subpixel_correction` unset.
+  static bool SubpixelCorrectionFromEnv();
 };
 
 }  // namespace fastslide
