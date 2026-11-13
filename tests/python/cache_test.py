@@ -276,6 +276,31 @@ class TestGlobalCacheManager:
             )
 
 
+class TestIsyntaxCacheCapacity:
+    """Test the memory budget of the shared iSyntax coefficient cache."""
+
+    def test_default_capacity(self) -> None:
+        assert fastslide.get_isyntax_cache_capacity() == 1 << 30
+
+    def test_set_capacity(self) -> None:
+        previous = fastslide.get_isyntax_cache_capacity()
+        try:
+            fastslide.set_isyntax_cache_capacity(256 << 20)
+            assert fastslide.get_isyntax_cache_capacity() == 256 << 20
+        finally:
+            fastslide.set_isyntax_cache_capacity(previous)
+
+    def test_zero_capacity_rejected(self) -> None:
+        previous = fastslide.get_isyntax_cache_capacity()
+        with pytest.raises(ValueError):
+            fastslide.set_isyntax_cache_capacity(0)
+        assert fastslide.get_isyntax_cache_capacity() == previous
+
+    def test_negative_capacity_rejected(self) -> None:
+        with pytest.raises(TypeError):
+            fastslide.set_isyntax_cache_capacity(-1)
+
+
 class TestCacheIntegration:
     """Test integration between cache managers and slide readers."""
 

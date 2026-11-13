@@ -256,6 +256,10 @@ any slide:
 
    fastslide::set_isyntax_cache_capacity(4 << 30)?;
 
+.. code-block:: python
+
+   fastslide.set_isyntax_cache_capacity(4 << 30)
+
 A budget too small for the reads in flight makes them evict the coefficients
 of each other, and decode them again.
 
@@ -903,6 +907,14 @@ Python Classes
       def get_size() -> int
       def get_stats() -> RuntimeCacheStats
       def clear() -> None
+
+iSyntax coefficient cache (module functions)
+   Memory budget of the cache shared by every open iSyntax slide, in bytes.
+
+   .. code-block:: python
+
+      def set_isyntax_cache_capacity(capacity_bytes: int) -> None  # > 0
+      def get_isyntax_cache_capacity() -> int
 
 ``RuntimeCacheStats``
    Cache statistics structure.

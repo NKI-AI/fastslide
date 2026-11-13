@@ -29,4 +29,6 @@ __all__ = [
     "AssociatedImages",
     "AssociatedData",
     "XYZPyramid",
+    "set_isyntax_cache_capacity",
+    "get_isyntax_cache_capacity",
 ]

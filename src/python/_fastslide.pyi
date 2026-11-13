@@ -532,3 +532,11 @@ def get_supported_extensions() -> list[str]:
 
 def is_supported(filename: str) -> bool:
     """Check if file format is supported"""
+
+def set_isyntax_cache_capacity(capacity_bytes: int) -> None:
+    """
+    Set the memory budget of the iSyntax coefficient cache (default 1 GiB). Every open iSyntax slide shares the cache: it keeps the decoded wavelet coefficients of recently read tiles, so that neighbouring reads do not decode them again. Caches over the budget evict tiles on their next read.
+    """
+
+def get_isyntax_cache_capacity() -> int:
+    """Get the memory budget of the iSyntax coefficient cache, in bytes."""
