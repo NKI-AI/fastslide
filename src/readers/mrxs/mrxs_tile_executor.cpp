@@ -14,7 +14,7 @@
 
 #include "fastslide/readers/mrxs/mrxs_tile_executor.h"
 
-#include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <cstring>
 #include <iomanip>
@@ -22,8 +22,10 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <numeric>
 #include <span>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -71,24 +73,87 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
 
   const auto& zoom_level = slide_info.zoom_levels[level];
 
-  // Get global thread pool for parallel tile processing
-  auto& pool = aifocore::ThreadPoolManager::GetInstance();
-  std::mutex accumulator_mutex;
-  std::atomic<int> error_count{0};
+  // Camera tiles overlap, and the canvas resolves overlaps first-writer-wins
+  // (coverage map). Painting from parallel tasks let whichever decode finished
+  // first win, so the same read returned different pixels from call to call.
+  // Phase 1 decodes each stored image of the read once, in parallel; phase 2
+  // paints the operations serially in a fixed order, so the result depends
+  // only on the slide.
 
-  auto futures = pool.submit_sequence(0, plan.operations.size(), [&](size_t i) {
+  // One decode per stored image (data file + offset); at higher zoom levels
+  // several operations crop the same image.
+  std::unordered_map<uint64_t, uint32_t> group_of;
+  std::vector<uint32_t> rep_op;  // first operation of each stored image
+  std::vector<uint32_t> op_group(plan.operations.size());
+  group_of.reserve(plan.operations.size());
+  for (uint32_t i = 0; i < plan.operations.size(); ++i) {
     const auto& op = plan.operations[i];
-    auto status = ExecuteTileOperation(op, context, zoom_level, writer,
-                                       accumulator_mutex);
+    const uint64_t key = (static_cast<uint64_t>(op.source_id) << 32) |
+                         static_cast<uint32_t>(op.byte_offset);
+    auto [it, inserted] =
+        group_of.try_emplace(key, static_cast<uint32_t>(rep_op.size()));
+    if (inserted) {
+      rep_op.push_back(i);
+    }
+    op_group[i] = it->second;
+  }
+
+  // Phase 1: decode in parallel. The span from ReadWithCache points into
+  // thread-local storage, so keep an owned copy for phase 2.
+  struct DecodedImage {
+    std::vector<uint8_t> data;
+    bool decoded = false;
+  };
+
+  std::vector<DecodedImage> decoded(rep_op.size());
+
+  auto& pool = aifocore::ThreadPoolManager::GetInstance();
+  auto futures = pool.submit_sequence(size_t{0}, rep_op.size(), [&](size_t g) {
+    const auto& op = plan.operations[rep_op[g]];
+    auto image_or = ReadWithCache(op, context, zoom_level);
+    if (!image_or.ok()) {
+      std::cerr << "Failed to read/decode tile at (" << op.tile_coord.x << ", "
+                << op.tile_coord.y << "): " << image_or.status().ToString();
+      return;  // Continue processing other tiles
+    }
+    decoded[g].data.assign(image_or->begin(), image_or->end());
+    decoded[g].decoded = true;
+  });
+  futures.wait();
+
+  // Phase 2: paint serially, bottom row first and right to left within a row,
+  // so the bottom-right tile wins an overlap. OpenSlide does the same: its
+  // read_tiles() walks the grid backwards and paints with the cairo SATURATE
+  // operator, which is first-writer-wins too. The order comes from the tile
+  // positions only, not from the order the spatial index returns them in.
+  std::vector<uint32_t> paint_order(plan.operations.size());
+  std::iota(paint_order.begin(), paint_order.end(), uint32_t{0});
+  std::stable_sort(paint_order.begin(), paint_order.end(),
+                   [&](uint32_t a, uint32_t b) {
+                     const auto& ca = plan.operations[a].tile_coord;
+                     const auto& cb = plan.operations[b].tile_coord;
+                     if (ca.y != cb.y) {
+                       return ca.y > cb.y;
+                     }
+                     return ca.x > cb.x;
+                   });
+
+  std::mutex accumulator_mutex;
+  int error_count = 0;
+  for (const uint32_t i : paint_order) {
+    const DecodedImage& image = decoded[op_group[i]];
+    if (!image.decoded) {
+      continue;
+    }
+    const auto& op = plan.operations[i];
+    auto status = PaintTileOperation(op, image.data, context, zoom_level,
+                                     writer, accumulator_mutex);
     if (!status.ok()) {
       error_count++;
       std::cerr << "Tile at (" << op.tile_coord.x << ", " << op.tile_coord.y
                 << ") failed: " << status.ToString();
     }
-  });
-
-  // Wait for all tiles to complete
-  futures.wait();
+  }
 
   if (error_count > 0) {
     std::cerr << error_count << " tile(s) failed during parallel execution"
@@ -98,20 +163,10 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
   return aifocore::Status::OkStatus();
 }
 
-aifocore::Status MrxsTileExecutor::ExecuteTileOperation(
-    const core::TileReadOp& op, const MrxsExecContext& context,
-    const mrxs::SlideZoomLevel& zoom_level, runtime::Canvas& writer,
-    std::mutex& accumulator_mutex) {
-
-  // Read and decode the tile (returns span view of thread-local buffer)
-  auto image_or = ReadWithCache(op, context, zoom_level);
-  if (!image_or.ok()) {
-    std::cerr << "Failed to read/decode tile at (" << op.tile_coord.x << ", "
-              << op.tile_coord.y << "): " << image_or.status().ToString();
-    return aifocore::Status::OkStatus();  // Continue processing other tiles
-  }
-
-  const auto& tile_data = *image_or;
+aifocore::Status MrxsTileExecutor::PaintTileOperation(
+    const core::TileReadOp& op, std::span<const uint8_t> tile_data,
+    const MrxsExecContext& context, const mrxs::SlideZoomLevel& zoom_level,
+    runtime::Canvas& writer, std::mutex& accumulator_mutex) {
 
   const auto& exec_slide_info = context.GetMrxsInfo();
   const uint32_t tile_w = zoom_level.image_width;
