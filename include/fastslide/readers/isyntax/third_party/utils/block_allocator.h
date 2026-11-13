@@ -85,6 +85,8 @@ block_allocator_t* block_allocator_create(size_t block_size,
 void block_allocator_destroy(block_allocator_t* allocator);
 void* block_alloc(block_allocator_t* allocator);
 void block_free(block_allocator_t* allocator, void* ptr_to_free);
+/// Bytes of the blocks allocated and not freed yet.
+size_t block_allocator_used_bytes(block_allocator_t* allocator);
 
 #ifdef __cplusplus
 namespace isyntax::alloc {

@@ -39,6 +39,7 @@
 #include "fastslide/python/cache.h"
 #include "fastslide/python/reader.h"
 #include "fastslide/python/status_error.h"
+#include "fastslide/readers/isyntax/third_party/cache.h"
 #include "fastslide/runtime/global_cache_manager.h"
 #include "fastslide/runtime/reader_registry.h"
 #include "fastslide/slide_reader.h"
@@ -291,6 +292,26 @@ NB_MODULE(_fastslide, m) {
       .def("clear", &fastslide::runtime::GlobalCacheManager::Clear,
            nb::call_guard<nb::gil_scoped_release>(),
            "Drop all entries from the global cache (capacity is preserved).");
+
+  // iSyntax coefficient cache, shared by every open iSyntax slide
+  m.def(
+      "set_isyntax_cache_capacity",
+      [](size_t capacity_bytes) {
+        if (capacity_bytes == 0) {
+          throw nb::value_error("capacity_bytes must be > 0");
+        }
+        isyntax::IsyntaxCache::SetSharedCapacityBytes(capacity_bytes);
+      },
+      nb::arg("capacity_bytes"),
+      "Set the memory budget of the iSyntax coefficient cache (default "
+      "1 GiB). Every open iSyntax slide shares the cache: it keeps the "
+      "decoded wavelet coefficients of recently read tiles, so that "
+      "neighbouring reads do not decode them again. Caches over the budget "
+      "evict tiles on their next read.");
+  m.def(
+      "get_isyntax_cache_capacity",
+      []() { return isyntax::IsyntaxCache::SharedCapacityBytes(); },
+      "Get the memory budget of the iSyntax coefficient cache, in bytes.");
 
   // Associated images accessor
   nb::class_<AssociatedImages>(m, "AssociatedImages")

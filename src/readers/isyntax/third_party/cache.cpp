@@ -28,9 +28,12 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <new>
 #include <string>
+#include <utility>
 
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/isyntax/third_party/isyntax.h"
@@ -110,17 +113,17 @@ void DestroyCacheHandle(isyntax_cache_t* handle) {
 }  // namespace
 
 aifocore::Result<std::unique_ptr<IsyntaxCache>> IsyntaxCache::CreateAndInject(
-    std::string_view debug_name_or_null, int32_t cache_size,
+    std::string_view debug_name_or_null, size_t capacity_bytes,
     isyntax_t* isyntax) {
   if (isyntax == nullptr) {
     return aifocore::Status(
         aifocore::StatusCode::kInvalidArgument,
         "IsyntaxCache::CreateAndInject called with null isyntax");
   }
-  if (cache_size <= 0) {
+  if (capacity_bytes == 0) {
     return aifocore::Status(
         aifocore::StatusCode::kInvalidArgument,
-        "IsyntaxCache::CreateAndInject called with non-positive cache_size");
+        "IsyntaxCache::CreateAndInject called with zero capacity_bytes");
   }
 
   // The cache owns its allocators. Injection is only valid for an isyntax
@@ -142,7 +145,7 @@ aifocore::Result<std::unique_ptr<IsyntaxCache>> IsyntaxCache::CreateAndInject(
   std::string debug_name(debug_name_or_null);
   isyntax::tilelist::Init(&cache_ptr->cache_list,
                           debug_name.empty() ? nullptr : debug_name.c_str());
-  cache_ptr->target_cache_size = cache_size;
+  cache_ptr->capacity_bytes = capacity_bytes;
   cache_ptr->allocator_block_width = isyntax->block_width;
   cache_ptr->allocator_block_height = isyntax->block_height;
 
@@ -184,6 +187,92 @@ aifocore::Result<std::unique_ptr<IsyntaxCache>> IsyntaxCache::CreateAndInject(
 
   // `IsyntaxCache` takes ownership of the raw handle.
   return std::unique_ptr<IsyntaxCache>(new IsyntaxCache(cache_ptr.release()));
+}
+
+namespace {
+
+std::mutex g_shared_mutex;
+size_t g_shared_capacity_bytes = IsyntaxCache::kDefaultSharedCapacityBytes;
+// Shared caches by block width and height; a cache lives while a file uses it.
+std::map<std::pair<int32_t, int32_t>, std::weak_ptr<IsyntaxCache>>
+    g_shared_caches;
+
+}  // namespace
+
+aifocore::Result<std::shared_ptr<IsyntaxCache>> IsyntaxCache::Shared(
+    isyntax_t* isyntax) {
+  if (isyntax == nullptr) {
+    return aifocore::Status(aifocore::StatusCode::kInvalidArgument,
+                            "IsyntaxCache::Shared called with null isyntax");
+  }
+  if (isyntax->ll_coeff_block_allocator != nullptr ||
+      isyntax->h_coeff_block_allocator != nullptr) {
+    return aifocore::Status(
+        aifocore::StatusCode::kInvalidArgument,
+        "IsyntaxCache::Shared: isyntax already has allocators");
+  }
+  std::lock_guard<std::mutex> lock(g_shared_mutex);
+  auto& entry = g_shared_caches[{isyntax->block_width, isyntax->block_height}];
+  std::shared_ptr<IsyntaxCache> cache = entry.lock();
+  if (cache == nullptr) {
+    AIFOCORE_ASSIGN_OR_RETURN(
+        std::unique_ptr<IsyntaxCache> created,
+        CreateAndInject("IsyntaxSharedCache", g_shared_capacity_bytes,
+                        isyntax));
+    cache = std::move(created);
+    entry = cache;
+    return cache;
+  }
+  isyntax->ll_coeff_block_allocator = cache->handle_->ll_coeff_block_allocator;
+  isyntax->h_coeff_block_allocator = cache->handle_->h_coeff_block_allocator;
+  isyntax->is_block_allocator_owned = false;
+  return cache;
+}
+
+void IsyntaxCache::SetSharedCapacityBytes(size_t capacity_bytes) {
+  std::lock_guard<std::mutex> lock(g_shared_mutex);
+  g_shared_capacity_bytes = capacity_bytes;
+  for (auto& [block_size, weak_cache] : g_shared_caches) {
+    if (std::shared_ptr<IsyntaxCache> cache = weak_cache.lock()) {
+      std::lock_guard<std::mutex> cache_lock(cache->handle_->mutex);
+      cache->handle_->capacity_bytes = capacity_bytes;
+    }
+  }
+}
+
+size_t IsyntaxCache::SharedCapacityBytes() {
+  std::lock_guard<std::mutex> lock(g_shared_mutex);
+  return g_shared_capacity_bytes;
+}
+
+void IsyntaxCache::Release(isyntax_t* isyntax) {
+  if (isyntax == nullptr || handle_ == nullptr) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(handle_->mutex);
+  isyntax_image_t* wsi = &isyntax->images[isyntax->wsi_image_index];
+  for (int32_t level = 0; level < wsi->level_count; ++level) {
+    isyntax_level_t* l = &wsi->levels[level];
+    if (l->tiles == nullptr) {
+      continue;
+    }
+    for (int64_t i = 0; i < static_cast<int64_t>(l->tile_count); ++i) {
+      isyntax_tile_t* tile = &l->tiles[i];
+      isyntax::tilelist::Remove(&handle_->cache_list, tile);
+      for (isyntax_tile_channel_t& channel : tile->color_channels) {
+        if (channel.coeff_ll != nullptr) {
+          block_free(handle_->ll_coeff_block_allocator, channel.coeff_ll);
+          channel.coeff_ll = nullptr;
+        }
+        if (channel.coeff_h != nullptr) {
+          block_free(handle_->h_coeff_block_allocator, channel.coeff_h);
+          channel.coeff_h = nullptr;
+        }
+      }
+      tile->has_ll = false;
+      tile->has_h = false;
+    }
+  }
 }
 
 IsyntaxCache::~IsyntaxCache() {

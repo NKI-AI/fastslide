@@ -107,6 +107,18 @@ FASTSLIDE_API int fastslide_global_cache_get_stats(
 /// @brief Clear all tiles from the process-wide global tile cache.
 FASTSLIDE_API void fastslide_global_cache_clear(void);
 
+/// @brief Set the memory budget of the iSyntax coefficient cache.
+///
+/// Every open iSyntax slide shares the cache: it keeps the decoded wavelet
+/// coefficients of recently read tiles, so that neighbouring reads do not
+/// decode them again. Caches over the budget evict tiles on their next read.
+/// The default is 1 GiB.
+///
+/// @param capacity_bytes Budget in bytes (must be > 0)
+/// @return 1 on success, 0 on failure.
+FASTSLIDE_API int fastslide_isyntax_cache_set_capacity_bytes(
+    size_t capacity_bytes);
+
 // Utility functions
 
 /// @brief Get supported file extensions

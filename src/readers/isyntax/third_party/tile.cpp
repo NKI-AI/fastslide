@@ -356,53 +356,35 @@ aifocore::Status DistributeLlToChildrenFromIdwtImpl(
   auto& bl_chan = child_bottom_left->color_channels[color];
   auto& br_chan = child_bottom_right->color_channels[color];
 
-  // Free existing blocks (legacy behavior).
-  if (tl_chan.coeff_ll) {
-    block_free(ll_coeff_block_allocator, tl_chan.coeff_ll);
-    tl_chan.coeff_ll = nullptr;
-  }
-  if (tr_chan.coeff_ll) {
-    block_free(ll_coeff_block_allocator, tr_chan.coeff_ll);
-    tr_chan.coeff_ll = nullptr;
-  }
-  if (bl_chan.coeff_ll) {
-    block_free(ll_coeff_block_allocator, bl_chan.coeff_ll);
-    bl_chan.coeff_ll = nullptr;
-  }
-  if (br_chan.coeff_ll) {
-    block_free(ll_coeff_block_allocator, br_chan.coeff_ll);
-    br_chan.coeff_ll = nullptr;
-  }
-
-  // Allocate new blocks.
-  tl_chan.coeff_ll =
-      static_cast<icoeff_t*>(block_alloc(ll_coeff_block_allocator));
-  tr_chan.coeff_ll =
-      static_cast<icoeff_t*>(block_alloc(ll_coeff_block_allocator));
-  bl_chan.coeff_ll =
-      static_cast<icoeff_t*>(block_alloc(ll_coeff_block_allocator));
-  br_chan.coeff_ll =
-      static_cast<icoeff_t*>(block_alloc(ll_coeff_block_allocator));
-
-  if (tl_chan.coeff_ll == nullptr || tr_chan.coeff_ll == nullptr ||
-      bl_chan.coeff_ll == nullptr || br_chan.coeff_ll == nullptr) {
-    return aifocore::Status(aifocore::StatusCode::kResourceExhausted,
-                            "Failed to allocate LL blocks for children");
-  }
-
   const int32_t dest_stride = block_width;
   const int32_t src0_x = first_valid_pixel;
   const int32_t src0_y = first_valid_pixel;
 
-  CopyLlBlockFromIdwt(tl_chan.coeff_ll, dest_stride, idwt, idwt_stride, src0_x,
-                      src0_y, block_width, block_height);
-  CopyLlBlockFromIdwt(tr_chan.coeff_ll, dest_stride, idwt, idwt_stride,
-                      src0_x + block_width, src0_y, block_width, block_height);
-  CopyLlBlockFromIdwt(bl_chan.coeff_ll, dest_stride, idwt, idwt_stride, src0_x,
-                      src0_y + block_height, block_width, block_height);
-  CopyLlBlockFromIdwt(br_chan.coeff_ll, dest_stride, idwt, idwt_stride,
-                      src0_x + block_width, src0_y + block_height, block_width,
-                      block_height);
+  struct {
+    isyntax_tile_channel_t* channel;
+    int32_t x;
+    int32_t y;
+  } const children[4] = {
+      {&tl_chan, src0_x, src0_y},
+      {&tr_chan, src0_x + block_width, src0_y},
+      {&bl_chan, src0_x, src0_y + block_height},
+      {&br_chan, src0_x + block_width, src0_y + block_height},
+  };
+
+  for (const auto& child : children) {
+    // Concurrent reads may be reading the LL blocks children already have.
+    if (child.channel->coeff_ll != nullptr) {
+      continue;
+    }
+    child.channel->coeff_ll =
+        static_cast<icoeff_t*>(block_alloc(ll_coeff_block_allocator));
+    if (child.channel->coeff_ll == nullptr) {
+      return aifocore::Status(aifocore::StatusCode::kResourceExhausted,
+                              "Failed to allocate LL blocks for children");
+    }
+    CopyLlBlockFromIdwt(child.channel->coeff_ll, dest_stride, idwt, idwt_stride,
+                        child.x, child.y, block_width, block_height);
+  }
 
   return aifocore::Status::OkStatus();
 }
@@ -450,10 +432,9 @@ aifocore::Status LoadTileImpl(isyntax_t* isyntax, isyntax_image_t* wsi,
                             "isyntax_load_tile: null input");
   }
 
-  isyntax_level_t* level = wsi->levels + scale;
+  [[maybe_unused]] isyntax_level_t* level = wsi->levels + scale;
   ASSERT(tile_x >= 0 && tile_x < level->width_in_tiles);
   ASSERT(tile_y >= 0 && tile_y < level->height_in_tiles);
-  isyntax_tile_t* tile = level->tiles + tile_y * level->width_in_tiles + tile_x;
 
   const int32_t block_width = isyntax->block_width;
   const int32_t block_height = isyntax->block_height;
@@ -503,20 +484,6 @@ aifocore::Status LoadTileImpl(isyntax_t* isyntax, isyntax_image_t* wsi,
     }
 
     if (color == 2 && scale > 0) {
-      isyntax_level_t* next_level = wsi->levels + (scale - 1);
-      isyntax_tile_t* child_top_left =
-          next_level->tiles + (tile_y * 2) * next_level->width_in_tiles +
-          (tile_x * 2);
-      isyntax_tile_t* child_top_right = child_top_left + 1;
-      isyntax_tile_t* child_bottom_left =
-          child_top_left + next_level->width_in_tiles;
-      isyntax_tile_t* child_bottom_right = child_bottom_left + 1;
-
-      child_top_left->has_ll = true;
-      child_top_right->has_ll = true;
-      child_bottom_left->has_ll = true;
-      child_bottom_right->has_ll = true;
-
       if (invalid_edges != 0) {
         return AIFOCORE_MAKE_STATUS(
             aifocore::StatusCode::kInternal,
@@ -526,7 +493,6 @@ aifocore::Status LoadTileImpl(isyntax_t* isyntax, isyntax_image_t* wsi,
     }
   }
 
-  tile->is_loaded = true;
   if (out_buffer_or_null == nullptr) {
     return aifocore::Status::OkStatus();
   }
