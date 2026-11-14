@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <algorithm>
+#include <cerrno>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -86,6 +88,31 @@ aifocore::Result<std::vector<uint8_t>> FileReader::ReadBytes(
     size_t size) const {
   std::vector<uint8_t> buffer(size);
   AIFOCORE_RETURN_IF_ERROR(Read(buffer.data(), size));
+  return buffer;
+}
+
+aifocore::Result<std::vector<uint8_t>> FileReader::ReadAt(int64_t offset,
+                                                          size_t size) const {
+  // The Windows portable_pread issues one ReadFile, whose length is a DWORD.
+  constexpr size_t kMaxChunk = size_t{1} << 30;
+  std::vector<uint8_t> buffer(size);
+  const int fd = aifocore::portable_fileno(file_.get());
+  size_t done = 0;
+  while (done < size) {
+    const ssize_t n = aifocore::portable_pread(
+        fd, buffer.data() + done, std::min(size - done, kMaxChunk),
+        static_cast<uint64_t>(offset) + done);
+    if (n < 0 && errno == EINTR) {
+      continue;
+    }
+    if (n <= 0) {
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kInternal,
+          aifocore::fmt::format("Failed to read {} bytes at offset {}", size,
+                                offset));
+    }
+    done += static_cast<size_t>(n);
+  }
   return buffer;
 }
 
