@@ -32,6 +32,7 @@ if gtest_dep.found()
     'cached_tile_executor_test' : '../src/readers/cached_tile_executor_test.cpp',
     'j2k_decoder_test' : '../src/runtime/decoders/j2k_decoder_test.cpp',
     'cache_interface_test' : '../src/runtime/cache_interface_test.cpp',
+    'cached_tile_insert_test' : '../src/readers/cached_tile_insert_test.cpp',
     'hash_test' : '../src/utilities/hash_test.cpp',
     'tiff_quickhash_test' : '../src/readers/tiff_quickhash_test.cpp',
     'tiff_tile_utilities_test' : '../src/utilities/tiff/tile_utilities_test.cpp',
