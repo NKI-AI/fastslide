@@ -14,6 +14,7 @@
 
 #include "fastslide/runtime/tile_writer.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -45,7 +46,8 @@ aifocore::Status Canvas::PaintTileLocked(const core::TileReadOp& op,
                                          std::span<const uint8_t> pixel_data,
                                          uint32_t tile_width,
                                          uint32_t tile_height,
-                                         uint32_t tile_channels) {
+                                         uint32_t tile_channels,
+                                         RowRange rows) {
   if (!output_image_) {
     return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInternal,
                                 "Canvas has null image pointer");
@@ -91,12 +93,12 @@ aifocore::Status Canvas::PaintTileLocked(const core::TileReadOp& op,
 
   if (use_rgb8_blending_) {
     return PaintTileRgb8Blended(op, pixel_data, tile_width, tile_height,
-                                tile_channels);
+                                tile_channels, rows);
   }
 
   if (use_rgb16_copy_blending_) {
     return PaintTileRgb16Copy(op, pixel_data, tile_width, tile_height,
-                              tile_channels);
+                              tile_channels, rows);
   }
 
   // PaintTilePlanar / PaintTileInterleaved both clip the source/dest
@@ -105,17 +107,18 @@ aifocore::Status Canvas::PaintTileLocked(const core::TileReadOp& op,
   // border) are silently dropped instead of raised as errors. This is the
   // common case for sub-tile reads such as the 1x1 pixel inspector probe.
   if (config_.planar_config == PlanarConfig::kSeparate) {
-    return PaintTilePlanar(op, pixel_data, tile_width, tile_height);
+    return PaintTilePlanar(op, pixel_data, tile_width, tile_height, rows);
   }
   return PaintTileInterleaved(op, pixel_data, tile_width, tile_height,
-                              tile_channels);
+                              tile_channels, rows);
 }
 
 aifocore::Status Canvas::PaintTile(const core::TileReadOp& op,
                                    std::span<const uint8_t> tile_data,
                                    uint32_t tile_width, uint32_t tile_height,
                                    uint32_t tile_channels) {
-  return PaintTileLocked(op, tile_data, tile_width, tile_height, tile_channels);
+  return PaintTileLocked(op, tile_data, tile_width, tile_height, tile_channels,
+                         {0, out_h_});
 }
 
 aifocore::Status Canvas::PaintTile(const core::TileReadOp& op,
@@ -124,7 +127,21 @@ aifocore::Status Canvas::PaintTile(const core::TileReadOp& op,
                                    uint32_t tile_channels,
                                    std::mutex& accumulator_mutex) {
   std::lock_guard<std::mutex> lock(accumulator_mutex);
-  return PaintTileLocked(op, tile_data, tile_width, tile_height, tile_channels);
+  return PaintTileLocked(op, tile_data, tile_width, tile_height, tile_channels,
+                         {0, out_h_});
+}
+
+aifocore::Status Canvas::PaintTileRows(const core::TileReadOp& op,
+                                       std::span<const uint8_t> tile_data,
+                                       uint32_t tile_width,
+                                       uint32_t tile_height,
+                                       uint32_t tile_channels,
+                                       uint32_t row_begin, uint32_t row_end) {
+  const auto canvas_rows = static_cast<uint32_t>(out_h_);
+  const RowRange rows{static_cast<int>(std::min(row_begin, canvas_rows)),
+                      static_cast<int>(std::min(row_end, canvas_rows))};
+  return PaintTileLocked(op, tile_data, tile_width, tile_height, tile_channels,
+                         rows);
 }
 
 }  // namespace fastslide::runtime

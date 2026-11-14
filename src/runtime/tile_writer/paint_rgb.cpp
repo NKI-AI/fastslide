@@ -14,6 +14,7 @@
 
 #include "fastslide/runtime/tile_writer.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -28,7 +29,8 @@ namespace fastslide::runtime {
 
 aifocore::Status Canvas::PaintTileRgb8Blended(
     const core::TileReadOp& op, std::span<const uint8_t> pixel_data,
-    uint32_t tile_width, uint32_t tile_height, uint32_t tile_channels) {
+    uint32_t tile_width, uint32_t tile_height, uint32_t tile_channels,
+    RowRange rows) {
   if (tile_channels != 3) {
     return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
                                 "RGB8-blended canvas requires 3-channel tiles");
@@ -41,17 +43,6 @@ aifocore::Status Canvas::PaintTileRgb8Blended(
                                 "Tile buffer smaller than declared dimensions");
   }
 
-  const float gain =
-      op.blend_metadata.has_value() ? op.blend_metadata->gain : 1.0F;
-
-  const uint8_t* src = pixel_data.data();
-  thread_local std::vector<uint8_t> gain_scratch;
-  if (std::abs(gain - 1.0F) >= 1e-4F) {
-    gain_scratch.resize(expected_bytes);
-    pixel::ApplyGainLinear(src, gain_scratch.data(), pixel_count, gain);
-    src = gain_scratch.data();
-  }
-
   const double dest_x = op.transform.dest.x;
   const double dest_y = op.transform.dest.y;
   const double src_x = op.transform.source.x;
@@ -61,6 +52,43 @@ aifocore::Status Canvas::PaintTileRgb8Blended(
   const int tw = static_cast<int>(tile_width);
   const int th = static_cast<int>(tile_height);
 
+  // Output rows the blits below may write, within `rows`.
+  const int paint_begin =
+      std::max(rows.begin, static_cast<int>(std::floor(dest_y)));
+  const int paint_end =
+      std::min(rows.end, static_cast<int>(std::ceil(dest_y + dest_h)));
+  if (paint_begin >= paint_end) {
+    return aifocore::Status::OkStatus();
+  }
+
+  const float gain =
+      op.blend_metadata.has_value() ? op.blend_metadata->gain : 1.0F;
+
+  const uint8_t* src = pixel_data.data();
+  thread_local std::vector<uint8_t> gain_scratch;
+  if (std::abs(gain - 1.0F) >= 1e-4F) {
+    // Only the tile rows the blits read for these output rows: output row y
+    // reads tile rows y + offset (and y + offset + 1 when bilinear), clamped
+    // to the source rectangle. Painting a tile band by band then applies the
+    // gain to each tile row about once, not once per band.
+    gain_scratch.resize(expected_bytes);
+    int gain_begin = 0;
+    int gain_end = th;
+    const int sub_begin = std::max(0, static_cast<int>(src_y));
+    const int sub_end = std::min(th, static_cast<int>(src_y) + dest_h);
+    if (sub_begin < sub_end) {
+      const int offset = static_cast<int>(std::floor(src_y - dest_y));
+      gain_begin = std::clamp(paint_begin + offset, sub_begin, sub_end - 1);
+      gain_end = std::clamp(paint_end + offset, sub_begin, sub_end - 1) + 1;
+    }
+    const size_t row_bytes = static_cast<size_t>(tw) * 3;
+    pixel::ApplyGainLinear(
+        src + (gain_begin * row_bytes),
+        gain_scratch.data() + (gain_begin * row_bytes),
+        static_cast<size_t>(gain_end - gain_begin) * tile_width, gain);
+    src = gain_scratch.data();
+  }
+
   const double frac_x = dest_x - std::floor(dest_x);
   const double frac_y = dest_y - std::floor(dest_y);
   const bool is_integer_pos = (frac_x < 1e-9 && frac_y < 1e-9);
@@ -69,13 +97,14 @@ aifocore::Status Canvas::PaintTileRgb8Blended(
 
   if (is_integer_pos && !needs_subtile) {
     RgbBlitT<uint8_t>(src, tw, th, static_cast<int>(dest_x),
-                      static_cast<int>(dest_y));
+                      static_cast<int>(dest_y), rows);
   } else if (is_integer_pos && needs_subtile) {
-    RgbBlitOffsetT<uint8_t>(src, tw, th, static_cast<int>(src_x),
-                            static_cast<int>(src_y), dest_w, dest_h,
-                            static_cast<int>(dest_x), static_cast<int>(dest_y));
+    RgbBlitOffsetT<uint8_t>(
+        src, tw, th, static_cast<int>(src_x), static_cast<int>(src_y), dest_w,
+        dest_h, static_cast<int>(dest_x), static_cast<int>(dest_y), rows);
   } else {
-    BilinearRgbBlit(src, tw, th, dest_x, dest_y, src_x, src_y, dest_w, dest_h);
+    BilinearRgbBlit(src, tw, th, dest_x, dest_y, src_x, src_y, dest_w, dest_h,
+                    rows);
   }
 
   return aifocore::Status::OkStatus();
@@ -85,7 +114,8 @@ aifocore::Status Canvas::PaintTileRgb16Copy(const core::TileReadOp& op,
                                             std::span<const uint8_t> pixel_data,
                                             uint32_t tile_width,
                                             uint32_t tile_height,
-                                            uint32_t tile_channels) {
+                                            uint32_t tile_channels,
+                                            RowRange rows) {
   if (tile_channels != 3) {
     return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kInvalidArgument,
                                 "RGB16-copy canvas requires 3-channel tiles");
@@ -117,10 +147,10 @@ aifocore::Status Canvas::PaintTileRgb16Copy(const core::TileReadOp& op,
       (src_x != 0 || src_y != 0 || dest_w != tw || dest_h != th);
 
   if (!needs_subtile) {
-    RgbBlitT<uint16_t>(src, tw, th, dest_x, dest_y);
+    RgbBlitT<uint16_t>(src, tw, th, dest_x, dest_y, rows);
   } else {
     RgbBlitOffsetT<uint16_t>(src, tw, th, src_x, src_y, dest_w, dest_h, dest_x,
-                             dest_y);
+                             dest_y, rows);
   }
   return aifocore::Status::OkStatus();
 }

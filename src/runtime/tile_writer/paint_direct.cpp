@@ -26,10 +26,30 @@
 
 namespace fastslide::runtime {
 
+namespace {
+
+/// @brief Limit a clipped paint rectangle to the output rows
+///        [row_begin, row_end).
+/// @return False when nothing is left to paint.
+bool ClipRows(int row_begin, int row_end,
+              tile_writer_internal::ClippedRegion& clip) {
+  if (clip.dst_y < row_begin) {
+    clip.src_y += row_begin - clip.dst_y;
+    clip.copy_h -= row_begin - clip.dst_y;
+    clip.dst_y = row_begin;
+  }
+  if (clip.dst_y + clip.copy_h > row_end) {
+    clip.copy_h = row_end - clip.dst_y;
+  }
+  return clip.copy_h > 0;
+}
+
+}  // namespace
+
 aifocore::Status Canvas::PaintTilePlanar(const core::TileReadOp& operation,
                                          std::span<const uint8_t> pixel_data,
                                          uint32_t tile_width,
-                                         uint32_t tile_height) {
+                                         uint32_t tile_height, RowRange rows) {
   const auto& src = operation.transform.source;
   const auto& dst = operation.transform.dest;
   uint8_t* image_data = output_image_->GetData();
@@ -48,7 +68,8 @@ aifocore::Status Canvas::PaintTilePlanar(const core::TileReadOp& operation,
   if (!tile_writer_internal::ClipPaintRegion(
           src, dst, static_cast<int>(tile_width), static_cast<int>(tile_height),
           static_cast<int>(config_.dimensions[0]),
-          static_cast<int>(config_.dimensions[1]), clip)) {
+          static_cast<int>(config_.dimensions[1]), clip) ||
+      !ClipRows(rows.begin, rows.end, clip)) {
     return aifocore::Status::OkStatus();
   }
 
@@ -65,7 +86,8 @@ aifocore::Status Canvas::PaintTilePlanar(const core::TileReadOp& operation,
 
 aifocore::Status Canvas::PaintTileInterleaved(
     const core::TileReadOp& operation, std::span<const uint8_t> pixel_data,
-    uint32_t tile_width, uint32_t tile_height, uint32_t tile_channels) {
+    uint32_t tile_width, uint32_t tile_height, uint32_t tile_channels,
+    RowRange rows) {
   const auto& src = operation.transform.source;
   const auto& dst = operation.transform.dest;
   uint8_t* image_data = output_image_->GetData();
@@ -75,7 +97,8 @@ aifocore::Status Canvas::PaintTileInterleaved(
   if (!tile_writer_internal::ClipPaintRegion(
           src, dst, static_cast<int>(tile_width), static_cast<int>(tile_height),
           static_cast<int>(config_.dimensions[0]),
-          static_cast<int>(config_.dimensions[1]), clip)) {
+          static_cast<int>(config_.dimensions[1]), clip) ||
+      !ClipRows(rows.begin, rows.end, clip)) {
     return aifocore::Status::OkStatus();
   }
 

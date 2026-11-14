@@ -27,14 +27,15 @@ namespace fastslide::runtime {
 
 template <typename PixelT>
 void Canvas::RgbBlitT(const PixelT* src, int src_w, int src_h, int dest_x,
-                      int dest_y) {
-  RgbBlitOffsetT<PixelT>(src, src_w, src_h, 0, 0, src_w, src_h, dest_x, dest_y);
+                      int dest_y, RowRange rows) {
+  RgbBlitOffsetT<PixelT>(src, src_w, src_h, 0, 0, src_w, src_h, dest_x, dest_y,
+                         rows);
 }
 
 template <typename PixelT>
 void Canvas::RgbBlitOffsetT(const PixelT* src, int src_w, int /*src_h*/,
                             int src_off_x, int src_off_y, int blit_w,
-                            int blit_h, int dest_x, int dest_y) {
+                            int blit_h, int dest_x, int dest_y, RowRange rows) {
   int sx0 = src_off_x;
   int sy0 = src_off_y;
   int dx0 = dest_x;
@@ -55,6 +56,14 @@ void Canvas::RgbBlitOffsetT(const PixelT* src, int src_w, int /*src_h*/,
   }
   if (dy0 + blit_h > out_h_) {
     blit_h = out_h_ - dy0;
+  }
+  if (dy0 < rows.begin) {
+    sy0 += rows.begin - dy0;
+    blit_h -= rows.begin - dy0;
+    dy0 = rows.begin;
+  }
+  if (dy0 + blit_h > rows.end) {
+    blit_h = rows.end - dy0;
   }
   if (blit_w <= 0 || blit_h <= 0) {
     return;
@@ -89,23 +98,30 @@ void Canvas::RgbBlitOffsetT(const PixelT* src, int src_w, int /*src_h*/,
 
 // Explicit instantiations: the templated blit is defined in this TU and used
 // from PaintTileRgb8Blended (uint8_t) and PaintTileRgb16Copy (uint16_t).
-template void Canvas::RgbBlitT<uint8_t>(const uint8_t*, int, int, int, int);
-template void Canvas::RgbBlitT<uint16_t>(const uint16_t*, int, int, int, int);
+template void Canvas::RgbBlitT<uint8_t>(const uint8_t*, int, int, int, int,
+                                        RowRange);
+template void Canvas::RgbBlitT<uint16_t>(const uint16_t*, int, int, int, int,
+                                         RowRange);
 template void Canvas::RgbBlitOffsetT<uint8_t>(const uint8_t*, int, int, int,
-                                              int, int, int, int, int);
+                                              int, int, int, int, int,
+                                              RowRange);
 template void Canvas::RgbBlitOffsetT<uint16_t>(const uint16_t*, int, int, int,
-                                               int, int, int, int, int);
+                                               int, int, int, int, int,
+                                               RowRange);
 
 void Canvas::BilinearRgbBlit(const uint8_t* src, int src_w, int src_h,
                              double dest_x, double dest_y, double src_offset_x,
-                             double src_offset_y, int visible_w,
-                             int visible_h) {
+                             double src_offset_y, int visible_w, int visible_h,
+                             RowRange rows) {
+  // Every output pixel depends only on the source and its own coverage, so
+  // limiting the rows leaves the pixels of the remaining rows unchanged.
   const int dx_start = std::max(static_cast<int>(std::floor(dest_x)), 0);
-  const int dy_start = std::max(static_cast<int>(std::floor(dest_y)), 0);
+  const int dy_start =
+      std::max(static_cast<int>(std::floor(dest_y)), std::max(rows.begin, 0));
   const int dx_end =
       std::min(static_cast<int>(std::ceil(dest_x + visible_w)), out_w_);
-  const int dy_end =
-      std::min(static_cast<int>(std::ceil(dest_y + visible_h)), out_h_);
+  const int dy_end = std::min(static_cast<int>(std::ceil(dest_y + visible_h)),
+                              std::min(rows.end, out_h_));
   if (dx_start >= dx_end || dy_start >= dy_end) {
     return;
   }

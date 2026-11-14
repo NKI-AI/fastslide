@@ -15,7 +15,9 @@
 #include "fastslide/readers/mrxs/mrxs_tile_executor.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
@@ -51,6 +53,47 @@ aifocore::Status ToAifoStatus(const T& status) {
       static_cast<aifocore::StatusCode>(static_cast<int>(status.code())),
       std::string(status.message()));
 }
+
+// Fewest output rows a paint band gets, so that painting a band outweighs
+// handing it to the thread pool.
+constexpr uint32_t kMinPaintBandRows = 64;
+
+/// Calls `paint(band)` once for every band in [0, band_count). The calling
+/// thread claims bands one at a time, and so do band_count - 1 pool tasks. A
+/// task that starts after every band is claimed returns without calling
+/// `paint`, so the caller waits only for bands being painted, never for a
+/// task queued behind other reads in a busy pool.
+template <typename Paint>
+void PaintBands(aifocore::InlineThreadPool& pool, size_t band_count,
+                const Paint& paint) {
+  struct Claims {
+    std::atomic<size_t> next{0};
+    std::atomic<size_t> done{0};
+    std::mutex mutex;
+    std::condition_variable all_done;
+  };
+
+  const auto claims = std::make_shared<Claims>();
+  // `paint` is used only after a claim succeeds, while the caller waits.
+  const auto claim_and_paint = [band_count, &paint](Claims& c) {
+    for (size_t band = c.next.fetch_add(1); band < band_count;
+         band = c.next.fetch_add(1)) {
+      paint(band);
+      if (c.done.fetch_add(1) + 1 == band_count) {
+        const std::lock_guard<std::mutex> lock(c.mutex);
+        c.all_done.notify_all();
+      }
+    }
+  };
+  for (size_t i = 1; i < band_count; ++i) {
+    pool.detach_task([claims, claim_and_paint] { claim_and_paint(*claims); });
+  }
+  claim_and_paint(*claims);
+  std::unique_lock<std::mutex> lock(claims->mutex);
+  claims->all_done.wait(lock,
+                        [&] { return claims->done.load() == band_count; });
+}
+
 }  // namespace
 
 aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
@@ -77,8 +120,8 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
   // (coverage map). Painting from parallel tasks let whichever decode finished
   // first win, so the same read returned different pixels from call to call.
   // Phase 1 decodes each stored image of the read once, in parallel; phase 2
-  // paints the operations serially in a fixed order, so the result depends
-  // only on the slide.
+  // paints the operations in a fixed order, so the result depends only on the
+  // slide.
 
   // One decode per stored image (data file + offset); at higher zoom levels
   // several operations crop the same image.
@@ -121,8 +164,8 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
   });
   futures.wait();
 
-  // Phase 2: paint serially, bottom row first and right to left within a row,
-  // so the bottom-right tile wins an overlap. OpenSlide does the same: its
+  // Phase 2: paint bottom row first and right to left within a row, so the
+  // bottom-right tile wins an overlap. OpenSlide does the same: its
   // read_tiles() walks the grid backwards and paints with the cairo SATURATE
   // operator, which is first-writer-wins too. The order comes from the tile
   // positions only, not from the order the spatial index returns them in.
@@ -138,21 +181,45 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
                      return ca.x > cb.x;
                    });
 
-  std::mutex accumulator_mutex;
-  int error_count = 0;
-  for (const uint32_t i : paint_order) {
-    const DecodedImage& image = decoded[op_group[i]];
-    if (!image.decoded) {
-      continue;
+  // The order decides which tile a pixel takes, but painting a pixel never
+  // depends on another row. So the canvas is cut into bands of rows, painted
+  // in parallel, each in the whole order: every pixel sees the same paints in
+  // the same order as on one thread, and the image is the same. A fluorescence
+  // tile split into planes is deinterleaved whole for every paint, so such
+  // reads keep one band.
+  const uint32_t canvas_rows = writer.GetDimensions()[1];
+  size_t band_count = 1;
+  if (writer.GetChannels() <= 3U) {
+    const size_t max_bands = std::max<size_t>(pool.get_thread_count(), 1);
+    band_count =
+        std::clamp<size_t>(canvas_rows / kMinPaintBandRows, 1, max_bands);
+  }
+  const auto band_rows =
+      static_cast<uint32_t>((canvas_rows + band_count - 1) / band_count);
+
+  std::atomic<int> error_count{0};
+  const auto paint_band = [&](size_t band) {
+    const auto row_begin = static_cast<uint32_t>(band) * band_rows;
+    const uint32_t row_end = std::min(canvas_rows, row_begin + band_rows);
+    for (const uint32_t i : paint_order) {
+      const DecodedImage& image = decoded[op_group[i]];
+      if (!image.decoded) {
+        continue;
+      }
+      const auto& op = plan.operations[i];
+      auto status = PaintTileOperation(op, image.data, context, zoom_level,
+                                       writer, row_begin, row_end);
+      if (!status.ok()) {
+        error_count++;
+        std::cerr << "Tile at (" << op.tile_coord.x << ", " << op.tile_coord.y
+                  << ") failed: " << status.ToString();
+      }
     }
-    const auto& op = plan.operations[i];
-    auto status = PaintTileOperation(op, image.data, context, zoom_level,
-                                     writer, accumulator_mutex);
-    if (!status.ok()) {
-      error_count++;
-      std::cerr << "Tile at (" << op.tile_coord.x << ", " << op.tile_coord.y
-                << ") failed: " << status.ToString();
-    }
+  };
+  if (band_count == 1) {
+    paint_band(0);
+  } else {
+    PaintBands(pool, band_count, paint_band);
   }
 
   if (error_count > 0) {
@@ -166,7 +233,7 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
 aifocore::Status MrxsTileExecutor::PaintTileOperation(
     const core::TileReadOp& op, std::span<const uint8_t> tile_data,
     const MrxsExecContext& context, const mrxs::SlideZoomLevel& zoom_level,
-    runtime::Canvas& writer, std::mutex& accumulator_mutex) {
+    runtime::Canvas& writer, uint32_t row_begin, uint32_t row_end) {
 
   const auto& exec_slide_info = context.GetMrxsInfo();
   const uint32_t tile_w = zoom_level.image_width;
@@ -198,8 +265,8 @@ aifocore::Status MrxsTileExecutor::PaintTileOperation(
   const bool needs_planar_split = output_channels > 3U;
 
   if (!needs_planar_split) {
-    auto status =
-        writer.PaintTile(op, tile_data, tile_w, tile_h, 3, accumulator_mutex);
+    auto status = writer.PaintTileRows(op, tile_data, tile_w, tile_h, 3,
+                                       row_begin, row_end);
     (void)status;
     return aifocore::Status::OkStatus();
   }
@@ -254,10 +321,10 @@ aifocore::Status MrxsTileExecutor::PaintTileOperation(
 
     core::TileReadOp plane_op = op;
     plane_op.tile_coord.x = out_channel;  // PaintTilePlanar reads this
-    auto status = writer.PaintTile(
+    auto status = writer.PaintTileRows(
         plane_op,
         std::span<const uint8_t>(plane_scratch.data(), plane_scratch.size()),
-        tile_w, tile_h, /*tile_channels=*/1U, accumulator_mutex);
+        tile_w, tile_h, /*tile_channels=*/1U, row_begin, row_end);
     (void)status;
   }
 
