@@ -17,7 +17,10 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <cstring>
 #include <memory>
+#include <random>
+#include <thread>
 #include <vector>
 
 #include "aifocore/status/result.h"
@@ -541,6 +544,162 @@ TEST(CanvasTest, LargeImage) {
   EXPECT_EQ(output.GetDimensions()[0], 4096);
   EXPECT_EQ(output.GetDimensions()[1], 4096);
   EXPECT_EQ(output.SizeBytes(), 4096 * 4096 * 3);
+}
+
+// ============================================================================
+// Painting by row bands
+// ============================================================================
+
+namespace {
+
+struct BandTestTile {
+  core::TileReadOp op;
+  std::vector<uint8_t> data;
+  uint32_t width = 0;
+  uint32_t height = 0;
+  uint32_t channels = 0;
+};
+
+/// A tile of random samples, read from source rectangle (src_x, src_y,
+/// w, h) and painted at (dest_x, dest_y).
+BandTestTile MakeBandTestTile(uint32_t tile_w, uint32_t tile_h,
+                              uint32_t channels, uint32_t bytes_per_sample,
+                              double src_x, double src_y, uint32_t w,
+                              uint32_t h, double dest_x, double dest_y,
+                              float gain, uint32_t seed) {
+  BandTestTile tile;
+  tile.width = tile_w;
+  tile.height = tile_h;
+  tile.channels = channels;
+  tile.data.resize(static_cast<size_t>(tile_w) * tile_h * channels *
+                   bytes_per_sample);
+  std::mt19937 rng(seed);
+  for (auto& byte : tile.data) {
+    byte = static_cast<uint8_t>(rng());
+  }
+  tile.op.level = 0;
+  tile.op.tile_coord = {0, 0};
+  tile.op.transform.source = {src_x, src_y, w, h};
+  tile.op.transform.dest = {dest_x, dest_y, w, h};
+  core::BlendMetadata blend;
+  blend.gain = gain;
+  tile.op.blend_metadata = blend;
+  return tile;
+}
+
+/// Paints `tiles` whole, in order, on one canvas, and band by band on
+/// another, every band on its own thread and in the same order; both must
+/// hold the same bytes.
+void ExpectBandsMatchWholePaint(const Canvas::Config& config,
+                                const std::vector<BandTestTile>& tiles,
+                                uint32_t band_rows) {
+  Canvas whole(config);
+  for (const auto& tile : tiles) {
+    ASSERT_TRUE(whole
+                    .PaintTile(tile.op, tile.data, tile.width, tile.height,
+                               tile.channels)
+                    .ok());
+  }
+
+  Canvas banded(config);
+  std::vector<std::thread> threads;
+  for (uint32_t begin = 0; begin < config.dimensions[1]; begin += band_rows) {
+    threads.emplace_back([&, begin] {
+      for (const auto& tile : tiles) {
+        EXPECT_TRUE(banded
+                        .PaintTileRows(tile.op, tile.data, tile.width,
+                                       tile.height, tile.channels, begin,
+                                       begin + band_rows)
+                        .ok());
+      }
+    });
+  }
+  for (auto& thread : threads) {
+    thread.join();
+  }
+
+  auto expected = whole.GetOutput();
+  auto actual = banded.GetOutput();
+  ASSERT_TRUE(expected.ok() && actual.ok());
+  ASSERT_EQ(expected->SizeBytes(), actual->SizeBytes());
+  EXPECT_EQ(std::memcmp(expected->GetData(), actual->GetData(),
+                        expected->SizeBytes()),
+            0)
+      << "bands of " << band_rows << " rows";
+}
+
+Canvas::Config BandTestConfig(uint32_t channels, DataType data_type,
+                              PlanarConfig planar_config) {
+  Canvas::Config config;
+  config.dimensions = {97, 83};
+  config.channels = channels;
+  config.data_type = data_type;
+  config.planar_config = planar_config;
+  return config;
+}
+
+}  // namespace
+
+TEST(CanvasTest, PaintTileRowsMatchesPaintTileRgb8) {
+  // Overlapping tiles at integer and sub-pixel positions, with and without
+  // gain, cropped from a larger stored image, and partly off the canvas.
+  const std::vector<BandTestTile> tiles = {
+      MakeBandTestTile(40, 30, 3, 1, 0, 0, 40, 30, 0, 0, 1.0F, 1),
+      MakeBandTestTile(48, 40, 3, 1, 5, 7, 30, 20, 30, 20, 1.0F, 2),
+      MakeBandTestTile(50, 40, 3, 1, 0, 0, 50, 40, 10.25, 33.75, 1.3F, 3),
+      MakeBandTestTile(64, 48, 3, 1, 8, 6, 32, 24, -3.5, 60.4, 0.8F, 4),
+      MakeBandTestTile(40, 30, 3, 1, 0, 0, 40, 30, 60, 70, 1.1F, 5),
+      MakeBandTestTile(40, 30, 3, 1, 0, 0, 40, 30, 70.5, -12.25, 1.0F, 6),
+  };
+  const auto config =
+      BandTestConfig(3, DataType::kUInt8, PlanarConfig::kContiguous);
+  for (uint32_t band_rows : {1U, 7U, 64U, 83U}) {
+    ExpectBandsMatchWholePaint(config, tiles, band_rows);
+  }
+}
+
+TEST(CanvasTest, PaintTileRowsMatchesPaintTileRgb16) {
+  const std::vector<BandTestTile> tiles = {
+      MakeBandTestTile(40, 30, 3, 2, 0, 0, 40, 30, 0, 0, 1.0F, 1),
+      MakeBandTestTile(48, 40, 3, 2, 5, 7, 30, 20, 30, 20, 1.0F, 2),
+      MakeBandTestTile(50, 40, 3, 2, 0, 0, 50, 40, 10.25, 33.75, 1.0F, 3),
+      MakeBandTestTile(40, 30, 3, 2, 0, 0, 40, 30, 60, 70, 1.0F, 5),
+  };
+  const auto config =
+      BandTestConfig(3, DataType::kUInt16, PlanarConfig::kContiguous);
+  for (uint32_t band_rows : {1U, 7U, 64U}) {
+    ExpectBandsMatchWholePaint(config, tiles, band_rows);
+  }
+}
+
+TEST(CanvasTest, PaintTileRowsMatchesPaintTileInterleaved) {
+  const std::vector<BandTestTile> tiles = {
+      MakeBandTestTile(40, 30, 4, 1, 0, 0, 40, 30, 0, 0, 1.0F, 1),
+      MakeBandTestTile(48, 40, 4, 1, 5, 7, 30, 20, 30, 20, 1.0F, 2),
+      MakeBandTestTile(40, 30, 4, 1, 0, 0, 40, 30, 60, 70, 1.0F, 5),
+  };
+  const auto config =
+      BandTestConfig(4, DataType::kUInt8, PlanarConfig::kContiguous);
+  for (uint32_t band_rows : {1U, 7U, 64U}) {
+    ExpectBandsMatchWholePaint(config, tiles, band_rows);
+  }
+}
+
+TEST(CanvasTest, PaintTileRowsMatchesPaintTilePlanar) {
+  // Single-channel tiles; PaintTilePlanar takes the target channel from
+  // tile_coord.x.
+  std::vector<BandTestTile> tiles;
+  for (uint32_t channel = 0; channel < 5; ++channel) {
+    tiles.push_back(MakeBandTestTile(48, 40, 1, 1, channel, 3, 40, 30,
+                                     7.0 * channel, 11.0 * channel, 1.0F,
+                                     10 + channel));
+    tiles.back().op.tile_coord.x = channel;
+  }
+  const auto config =
+      BandTestConfig(5, DataType::kUInt8, PlanarConfig::kSeparate);
+  for (uint32_t band_rows : {1U, 7U, 64U}) {
+    ExpectBandsMatchWholePaint(config, tiles, band_rows);
+  }
 }
 
 }  // namespace runtime

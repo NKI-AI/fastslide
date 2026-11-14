@@ -123,6 +123,19 @@ class Canvas {
                                            uint32_t tile_channels,
                                            std::mutex& accumulator_mutex);
 
+  /// @brief Paint the part of a decoded tile that falls in the output rows
+  ///        [row_begin, row_end).
+  ///
+  /// Writes exactly the pixels, with exactly the values, that `PaintTile`
+  /// writes in those rows; rows outside the canvas are ignored. Calls whose
+  /// row ranges do not overlap write disjoint memory, so they may run
+  /// concurrently without a lock. Painting a set of tiles band by band in a
+  /// fixed order gives the same image as painting them whole in that order.
+  [[nodiscard]] aifocore::Status PaintTileRows(
+      const core::TileReadOp& op, std::span<const uint8_t> tile_data,
+      uint32_t tile_width, uint32_t tile_height, uint32_t tile_channels,
+      uint32_t row_begin, uint32_t row_end);
+
   /// @brief Fill entire canvas with background color (for empty plans).
   [[nodiscard]] aifocore::Status FillBackground(uint8_t r, uint8_t g,
                                                 uint8_t b);
@@ -145,16 +158,22 @@ class Canvas {
 
   // -- Paint internals ------------------------------------------------------
 
+  /// @brief Output rows [begin, end) a paint may write, within the canvas.
+  struct RowRange {
+    int begin;
+    int end;
+  };
+
   aifocore::Status PaintTileLocked(const core::TileReadOp& op,
                                    std::span<const uint8_t> pixel_data,
                                    uint32_t tile_width, uint32_t tile_height,
-                                   uint32_t tile_channels);
+                                   uint32_t tile_channels, RowRange rows);
 
   aifocore::Status PaintTileRgb8Blended(const core::TileReadOp& op,
                                         std::span<const uint8_t> pixel_data,
                                         uint32_t tile_width,
                                         uint32_t tile_height,
-                                        uint32_t tile_channels);
+                                        uint32_t tile_channels, RowRange rows);
 
   /// @brief Integer-position copy with coverage tracking for 16-bit RGB.
   ///
@@ -165,7 +184,7 @@ class Canvas {
   aifocore::Status PaintTileRgb16Copy(const core::TileReadOp& op,
                                       std::span<const uint8_t> pixel_data,
                                       uint32_t tile_width, uint32_t tile_height,
-                                      uint32_t tile_channels);
+                                      uint32_t tile_channels, RowRange rows);
 
   /// @brief Templated integer-position RGB blit with coverage tracking.
   ///
@@ -173,27 +192,28 @@ class Canvas {
   /// applied to the source pixels) and the new 16-bit fluorescence copy
   /// path. The coverage map remains a single byte per pixel.
   template <typename PixelT>
-  void RgbBlitT(const PixelT* src, int src_w, int src_h, int dest_x,
-                int dest_y);
+  void RgbBlitT(const PixelT* src, int src_w, int src_h, int dest_x, int dest_y,
+                RowRange rows);
 
   template <typename PixelT>
   void RgbBlitOffsetT(const PixelT* src, int src_w, int src_h, int src_off_x,
                       int src_off_y, int blit_w, int blit_h, int dest_x,
-                      int dest_y);
+                      int dest_y, RowRange rows);
 
   void BilinearRgbBlit(const uint8_t* src, int src_w, int src_h, double dest_x,
                        double dest_y, double src_offset_x, double src_offset_y,
-                       int visible_w, int visible_h);
+                       int visible_w, int visible_h, RowRange rows);
 
   aifocore::Status PaintTilePlanar(const core::TileReadOp& op,
                                    std::span<const uint8_t> pixel_data,
-                                   uint32_t tile_width, uint32_t tile_height);
+                                   uint32_t tile_width, uint32_t tile_height,
+                                   RowRange rows);
 
   aifocore::Status PaintTileInterleaved(const core::TileReadOp& op,
                                         std::span<const uint8_t> pixel_data,
                                         uint32_t tile_width,
                                         uint32_t tile_height,
-                                        uint32_t tile_channels);
+                                        uint32_t tile_channels, RowRange rows);
 
   // -- State ----------------------------------------------------------------
 
