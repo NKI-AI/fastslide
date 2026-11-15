@@ -152,20 +152,22 @@ NDPI and JPEG 2000 slides and comparable on MRXS. `FastSlide` is therefore the
 faster of the two for a single caller, but not for every format when many
 threads share a process.
 
-: Regions per second (median of five runs) for 1,000 random 512 × 512
-level-0 regions, read from one open slide by one or eight Python threads and
-converted to NumPy arrays. Both libraries ran with default settings and the
-files were in the page cache. Measured on a shared server with two 64-core AMD
-EPYC 7763 processors; the script is in `paper/scripts/benchmark.py`.
-\label{tab:bench}
+: Regions read per second when one
+Python thread, or eight Python threads sharing one open slide, read 1,000
+random 512 × 512 level-0 regions and convert each to a NumPy array. Values are
+the median of five runs. Bold marks the faster library for that slide and
+thread count; neither is bold where the ranges of the five runs overlap. Both
+libraries ran with default settings and the files were in the page cache.
+Measured on a shared server with two 64-core AMD EPYC 7763 processors; the
+script is in `paper/scripts/benchmark.py`. \label{tab:bench}
 
-| Slide (compression)       | FastSlide, 1 | OpenSlide, 1 | FastSlide, 8 | OpenSlide, 8 |
-|:--------------------------|-------------:|-------------:|-------------:|-------------:|
-| Aperio SVS (JPEG)         |          839 |          171 |          924 |          496 |
-| Aperio SVS (JPEG 2000)    |          136 |           56 |          160 |          193 |
-| Hamamatsu NDPI (JPEG)     |          342 |          182 |          307 |          604 |
-| 3DHISTECH MRXS (JPEG)     |        3,405 |        1,683 |        3,486 |        3,273 |
-| Generic tiled TIFF (JPEG) |        1,021 |          178 |        1,163 |          524 |
+| Slide (compression)       | FastSlide, 1 thread | OpenSlide, 1 thread | FastSlide, 8 threads | OpenSlide, 8 threads |
+|:--------------------------|----------:|----------:|----------:|----------:|
+| Aperio SVS (JPEG)         |   **839** |       171 |   **924** |       496 |
+| Aperio SVS (JPEG 2000)    |   **136** |        56 |       160 |   **193** |
+| Hamamatsu NDPI (JPEG)     |   **342** |       182 |       307 |   **604** |
+| 3DHISTECH MRXS (JPEG)     | **3,405** |     1,683 |     3,486 |     3,273 |
+| Generic tiled TIFF (JPEG) | **1,021** |       178 | **1,163** |       524 |
 
 # Example
 
