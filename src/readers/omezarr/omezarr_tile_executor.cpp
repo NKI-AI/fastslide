@@ -127,13 +127,14 @@ std::vector<uint8_t> MakeFillValueChunk(const OmeZarrLevelInfo& level) {
   return buffer;
 }
 
-/// @brief Decoded contiguous chunk in scalar host-endian form.
+/// @brief View of a decoded contiguous chunk in scalar host-endian form.
 ///
 /// Layout matches the original Zarr chunk_shape with axes in the array's
 /// declared order. For trivially-transposed chunks (the only form we accept)
-/// the `(c, y, x)` slicing is row-major along the last two axes.
+/// the `(c, y, x)` slicing is row-major along the last two axes. `data` points
+/// into the tile cache or the executor's thread-local decode buffer.
 struct DecodedChunk {
-  std::vector<uint8_t> data;
+  std::span<const uint8_t> data;
   uint64_t chunk_y = 0;
   uint64_t chunk_x = 0;
   size_t y_stride_bytes = 0;
@@ -164,63 +165,48 @@ void ComputeStrides(const OmeZarrLevelInfo& level, DecodedChunk* chunk) {
       chunk->element_bytes;
 }
 
-/// @brief Read + decode a single chunk for a given (cy, cx, channel).
+/// @brief Copy the `width` x `height` window at (`src_x`, `src_y`) of one
+/// channel of a decoded chunk into a contiguous (height, width) buffer.
 ///
-/// If the chunk file does not exist on disk, returns a buffer pre-filled with
-/// the array's `fill_value` per the Zarr V3 spec. Other I/O or decode errors
-/// propagate as failures.
-aifocore::Status ReadAndDecodeChunk(const OmeZarrLevelInfo& level, uint64_t cy,
-                                    uint64_t cx, uint64_t cc,
-                                    DecodedChunk* out) {
-  const fs::path chunk_path =
-      fs::path(level.array_dir) / BuildChunkRelativePath(level, cy, cx, cc);
-
-  std::error_code ec;
-  if (!fs::exists(chunk_path, ec) || ec) {
-    out->data = MakeFillValueChunk(level);
-    out->chunk_y = cy;
-    out->chunk_x = cx;
-    ComputeStrides(level, out);
-    return aifocore::Status::OkStatus();
-  }
-
-  AIFOCORE_ASSIGN_OR_RETURN(const auto compressed, ReadFileBytes(chunk_path));
-  AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
-                            level.codec_chain.Decode(std::span<const uint8_t>(
-                                compressed.data(), compressed.size())));
-  out->data = std::move(decoded);
-  out->chunk_y = cy;
-  out->chunk_x = cx;
-  ComputeStrides(level, out);
-  return aifocore::Status::OkStatus();
-}
-
-/// @brief Extract a single (channel, full-spatial) plane from a decoded chunk
-/// into a contiguous (height, width) byte buffer.
-void ExtractChannelPlane(const DecodedChunk& chunk,
-                         const OmeZarrLevelInfo& level, size_t source_channel,
-                         std::vector<uint8_t>* plane_out) {
-  const uint64_t plane_h = std::min<uint64_t>(
-      level.chunk_y, level.y_size - chunk.chunk_y * level.chunk_y);
-  const uint64_t plane_w = std::min<uint64_t>(
-      level.chunk_x, level.x_size - chunk.chunk_x * level.chunk_x);
-  const size_t plane_bytes_actual =
-      static_cast<size_t>(plane_h) * plane_w * chunk.element_bytes;
-  plane_out->assign(plane_bytes_actual, 0);
-
+/// Only the window a read needs is copied, not the chunk's whole channel plane
+/// (chunks can be thousands of pixels wide). Fails if the window would reach
+/// past the decoded bytes, e.g. for a truncated chunk.
+aifocore::Status ExtractChannelWindow(const DecodedChunk& chunk,
+                                      const OmeZarrLevelInfo& level,
+                                      size_t source_channel, uint32_t src_x,
+                                      uint32_t src_y, uint32_t width,
+                                      uint32_t height,
+                                      std::vector<uint8_t>* out) {
   const size_t channel_offset = (level.c_axis != static_cast<size_t>(-1))
                                     ? source_channel * chunk.channel_plane_bytes
                                     : 0;
-  // Inner loop: for each row, copy `plane_w * element_bytes` bytes from the
-  // source row of the channel plane to the destination. The y stride
-  // corresponds to one row in the chunk; the x stride is `element_bytes`
-  // because x is the trailing axis in OME-NGFF C-order arrays.
-  for (uint64_t y = 0; y < plane_h; ++y) {
-    const size_t src = channel_offset + y * chunk.y_stride_bytes;
-    const size_t dst = static_cast<size_t>(y) * plane_w * chunk.element_bytes;
-    std::memcpy(plane_out->data() + dst, chunk.data.data() + src,
-                static_cast<size_t>(plane_w) * chunk.element_bytes);
+  // Rows are `y_stride_bytes` apart; within a row x is the trailing axis
+  // (C-order OME-NGFF arrays), so a row's pixels are contiguous.
+  const size_t row_bytes = static_cast<size_t>(width) * chunk.element_bytes;
+  const size_t first = channel_offset +
+                       static_cast<size_t>(src_y) * chunk.y_stride_bytes +
+                       static_cast<size_t>(src_x) * chunk.element_bytes;
+  if (width == 0 || height == 0) {
+    out->clear();
+    return aifocore::Status::OkStatus();
   }
+  const size_t end = first +
+                     static_cast<size_t>(height - 1) * chunk.y_stride_bytes +
+                     row_bytes;
+  if (end > chunk.data.size()) {
+    return MakeIoError(aifocore::fmt::format(
+        "OME-Zarr: window ({}, {}, {}x{}) of channel {} reaches byte {} of a "
+        "{}-byte chunk",
+        src_x, src_y, width, height, source_channel, end, chunk.data.size()));
+  }
+  out->resize(row_bytes * height);
+  for (uint32_t y = 0; y < height; ++y) {
+    std::memcpy(out->data() + static_cast<size_t>(y) * row_bytes,
+                chunk.data.data() + first +
+                    static_cast<size_t>(y) * chunk.y_stride_bytes,
+                row_bytes);
+  }
+  return aifocore::Status::OkStatus();
 }
 
 }  // namespace
@@ -236,8 +222,6 @@ aifocore::Status OmeZarrTileExecutor::ExecutePlan(
         aifocore::fmt::format("OME-Zarr: invalid level {}", level_index));
   }
   const OmeZarrLevelInfo& level = pyramid[level_index];
-  const auto cache = context.cache;
-  const std::string filename(context.filename);
   const auto& source_channels = plan.output.channel_indices;
 
   // Pre-compute (output_slot, in_chunk_channel) groupings keyed by
@@ -267,6 +251,16 @@ aifocore::Status OmeZarrTileExecutor::ExecutePlan(
     }
   }
 
+  // A chunk can be 100+ MB, and every decode allocates a new buffer anyway, so
+  // do not keep one alive per pool thread after its read is painted.
+  const auto release_decode_buffer = [] {
+    constexpr size_t kKeepBytes = static_cast<size_t>(16) << 20;
+    auto& buffer = GetBuffers().tile_buffer;
+    if (buffer.capacity() > kKeepBytes) {
+      std::vector<uint8_t>().swap(buffer);
+    }
+  };
+
   return readers::simpletiff_exec::ExecuteOpsWithThreadPoolStopOnError(
       plan, canvas,
       [&](const core::TileReadOp& operation, runtime::Canvas& writer,
@@ -275,70 +269,117 @@ aifocore::Status OmeZarrTileExecutor::ExecutePlan(
         const uint64_t cx = DecodeChunkX(operation.byte_offset);
         const uint64_t cc = operation.source_id;
 
-        // Cache key for the decoded chunk. We pack the channel-chunk index
-        // `cc` into the upper 16 bits of `tile_y`; this bounds OME-Zarr to
-        // <=65535 channel chunks and <=65535 spatial rows of chunks per
-        // level, which is more than sufficient for any realistic dataset.
-        const uint32_t encoded_y = (static_cast<uint32_t>(cc) << 16) |
-                                   (static_cast<uint32_t>(cy) & 0xFFFFU);
-        runtime::TileKey key(filename, static_cast<uint16_t>(level_index),
-                             static_cast<uint32_t>(cx), encoded_y);
-
+        // The whole decoded chunk (every channel in it), from the cache or
+        // decoded now and cached. The view stays valid until this thread
+        // reads the next chunk.
+        AIFOCORE_ASSIGN_OR_RETURN(
+            const DecodedTileData decoded,
+            ReadWithCacheDecoded(operation, context, level_index, level));
         DecodedChunk chunk;
-        std::shared_ptr<runtime::CachedTileData> cached_full_chunk;
-        if (cache) {
-          cached_full_chunk = cache->Get(key);
-        }
-        if (cached_full_chunk) {
-          chunk.data = cached_full_chunk->data;
-          chunk.chunk_y = cy;
-          chunk.chunk_x = cx;
-          ComputeStrides(level, &chunk);
-        } else {
-          AIFOCORE_RETURN_IF_ERROR(
-              ReadAndDecodeChunk(level, cy, cx, cc, &chunk));
-          if (cache) {
-            auto entry = std::make_shared<runtime::CachedTileData>(
-                chunk.data,
-                aifocore::Size<uint32_t, 2>{
-                    static_cast<uint32_t>(level.chunk_x),
-                    static_cast<uint32_t>(level.chunk_y)},
-                static_cast<uint32_t>(level.chunk_c));
-            cache->Put(key, std::move(entry));
-          }
-        }
+        chunk.data = decoded.data;
+        chunk.chunk_y = cy;
+        chunk.chunk_x = cx;
+        ComputeStrides(level, &chunk);
 
+        // The part of the chunk this read covers (the plan builder clips it to
+        // the chunk and the level, and never scales).
+        const auto src_x = static_cast<uint32_t>(operation.transform.source.x);
+        const auto src_y = static_cast<uint32_t>(operation.transform.source.y);
+        const uint32_t window_w = operation.transform.source.width;
+        const uint32_t window_h = operation.transform.source.height;
         const uint64_t plane_h = std::min<uint64_t>(
             level.chunk_y, level.y_size - cy * level.chunk_y);
         const uint64_t plane_w = std::min<uint64_t>(
             level.chunk_x, level.x_size - cx * level.chunk_x);
+        if (static_cast<uint64_t>(src_x) + window_w > plane_w ||
+            static_cast<uint64_t>(src_y) + window_h > plane_h) {
+          return AIFOCORE_MAKE_STATUS(
+              aifocore::StatusCode::kInternal,
+              aifocore::fmt::format(
+                  "OME-Zarr: window ({}, {}, {}x{}) outside chunk ({}, {}) of "
+                  "{}x{}",
+                  src_x, src_y, window_w, window_h, cx, cy, plane_w, plane_h));
+        }
 
         if (cc >= slots_by_cc.size()) {
           // Defensive: plan referenced a cc with no requested output slots.
+          release_decode_buffer();
           return aifocore::Status::OkStatus();
         }
 
-        // Reuse one allocation per worker thread for the per-channel plane.
-        thread_local std::vector<uint8_t> plane_buffer;
+        // Reuse one allocation per worker thread for the per-channel window.
+        thread_local std::vector<uint8_t> window_buffer;
         for (const auto& [output_slot, in_chunk_channel] : slots_by_cc[cc]) {
-          ExtractChannelPlane(chunk, level, in_chunk_channel, &plane_buffer);
+          AIFOCORE_RETURN_IF_ERROR(
+              ExtractChannelWindow(chunk, level, in_chunk_channel, src_x, src_y,
+                                   window_w, window_h, &window_buffer));
 
           // Synthesize a per-channel paint op: identical to `operation`
           // except for `tile_coord.x`, which selects the output canvas slot
-          // (`Canvas::PaintTilePlanar` reads only this field plus transform).
+          // (`Canvas::PaintTilePlanar` reads only this field plus transform),
+          // and a source rectangle relative to the extracted window.
           core::TileReadOp paint_op = operation;
           paint_op.tile_coord.x = output_slot;
+          paint_op.transform.source = {0.0, 0.0, window_w, window_h};
           AIFOCORE_RETURN_IF_ERROR(
               readers::simpletiff_exec::PaintTileMaybeLocked(
                   writer, paint_op,
-                  std::span<const uint8_t>(plane_buffer.data(),
-                                           plane_buffer.size()),
-                  static_cast<uint32_t>(plane_w),
-                  static_cast<uint32_t>(plane_h),
-                  /*tile_channels=*/1, writer_mutex));
+                  std::span<const uint8_t>(window_buffer.data(),
+                                           window_buffer.size()),
+                  window_w, window_h, /*tile_channels=*/1, writer_mutex));
         }
+        release_decode_buffer();
         return aifocore::Status::OkStatus();
       });
+}
+
+runtime::TileKey OmeZarrTileExecutor::MakeCacheKey(
+    const core::TileReadOp& operation, const OmeZarrExecContext& context,
+    int level_index, const OmeZarrLevelInfo& level) {
+  (void)level;
+  // We pack the channel-chunk index `cc` into the upper 16 bits of `tile_y`;
+  // this bounds OME-Zarr to <=65535 channel chunks and <=65535 spatial rows of
+  // chunks per level, which is more than sufficient for any realistic dataset.
+  const uint64_t cc = operation.source_id;
+  const uint64_t cy = DecodeChunkY(operation.byte_offset);
+  const uint64_t cx = DecodeChunkX(operation.byte_offset);
+  const uint32_t encoded_y =
+      (static_cast<uint32_t>(cc) << 16) | (static_cast<uint32_t>(cy) & 0xFFFFU);
+  return runtime::TileKey(std::string(context.filename),
+                          static_cast<uint16_t>(level_index),
+                          static_cast<uint32_t>(cx), encoded_y);
+}
+
+aifocore::Result<DecodedTileData> OmeZarrTileExecutor::ReadTileFromDisk(
+    const core::TileReadOp& operation, const OmeZarrExecContext& context,
+    int level_index, const OmeZarrLevelInfo& level) {
+  (void)context;
+  (void)level_index;
+  const uint64_t cy = DecodeChunkY(operation.byte_offset);
+  const uint64_t cx = DecodeChunkX(operation.byte_offset);
+  const uint64_t cc = operation.source_id;
+  const fs::path chunk_path =
+      fs::path(level.array_dir) / BuildChunkRelativePath(level, cy, cx, cc);
+
+  // A chunk missing on disk reads as the array's `fill_value` (Zarr V3
+  // spec). Other I/O or decode errors propagate as failures.
+  auto& buffer = GetBuffers().tile_buffer;
+  std::error_code ec;
+  if (!fs::exists(chunk_path, ec) || ec) {
+    buffer = MakeFillValueChunk(level);
+  } else {
+    AIFOCORE_ASSIGN_OR_RETURN(const auto compressed, ReadFileBytes(chunk_path));
+    AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
+                              level.codec_chain.Decode(std::span<const uint8_t>(
+                                  compressed.data(), compressed.size())));
+    buffer = std::move(decoded);
+  }
+  return DecodedTileData{
+      .data = std::span<const uint8_t>(buffer.data(), buffer.size()),
+      .width = static_cast<uint32_t>(level.chunk_x),
+      .height = static_cast<uint32_t>(level.chunk_y),
+      .channels = static_cast<uint32_t>(level.chunk_c),
+  };
 }
 
 }  // namespace fastslide

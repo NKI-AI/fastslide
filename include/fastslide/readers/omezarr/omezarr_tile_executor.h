@@ -17,7 +17,10 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
+#include "fastslide/readers/cached_tile_executor.h"
 #include "fastslide/readers/omezarr/omezarr_exec_context.h"
+#include "fastslide/readers/omezarr/omezarr_level_info.h"
+#include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/tile_writer.h"
 
 namespace fastslide {
@@ -27,11 +30,22 @@ namespace fastslide {
 /// Reads compressed Zarr V3 chunks from disk, decodes them through the
 /// per-level codec chain, extracts the requested channel slice, and paints
 /// the slice onto the output canvas via `runtime::Canvas::PaintTilePlanar`.
-class OmeZarrTileExecutor {
+class OmeZarrTileExecutor : public CachedTileExecutor<OmeZarrTileExecutor> {
  public:
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
                                       const OmeZarrExecContext& context,
                                       runtime::Canvas& canvas);
+
+  // CachedTileExecutor hooks. A cached entry is one whole decoded chunk, all
+  // of its channels, so reads of other channels or crops reuse it.
+  static runtime::TileKey MakeCacheKey(const core::TileReadOp& operation,
+                                       const OmeZarrExecContext& context,
+                                       int level_index,
+                                       const OmeZarrLevelInfo& level);
+
+  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
+      const core::TileReadOp& operation, const OmeZarrExecContext& context,
+      int level_index, const OmeZarrLevelInfo& level);
 };
 
 }  // namespace fastslide
