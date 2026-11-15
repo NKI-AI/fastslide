@@ -68,8 +68,7 @@ through the same call.
 
 `OpenSlide` [@goode2013openslide] is the established open-source WSI
 reader. It is a C library under the LGPL 2.1; version 4.0.1 lists thirteen
-formats, has been safe for concurrent reads on one handle since version 3.3.1,
-and lets several slides share a tile cache since version 4.0.0. Its read
+formats and has been safe for concurrent reads on one handle since version 3.3.1. Its read
 function copies premultiplied 8-bit ARGB into a caller-provided buffer and
 takes a position, a level, and a size. There is no argument to select a
 channel, a focal plane, or a time point, so fluorescence channels beyond three
@@ -87,8 +86,8 @@ We wrote a new library instead of extending `OpenSlide` because the features we
 needed, pixel data in its stored type with any number of channels and selection
 of a Z/T plane, do not fit an interface whose output is a `w × h × 4` byte ARGB
 buffer. To keep existing datasets usable, `FastSlide` computes the same
-"quickhash" slide identifier as `OpenSlide`: the two agreed on all seven public
-OpenSlide test slides we compared.
+"quickhash" slide identifier as `OpenSlide`: the two agreed on seven of the eight public
+OpenSlide test slides we compared, the exception being a Ventana BIF slide.
 
 # Software design
 
@@ -125,9 +124,9 @@ by all slides in the process, and it reports hits and misses. When several
 threads miss on the same tile, it is decoded once.
 
 **Distribution.** All codecs are compiled into the Python extension, so on
-Linux the extension links only against the C and C++ runtime libraries. The same core is exposed
-through a C API and Java bindings, and the repository also contains Rust, Go,
-and WebAssembly bindings and a command-line tool.
+Linux the extension links only against the C and C++ runtime libraries. The same core is exposed through a C API; the
+repository also holds Java, Rust, Go, and WebAssembly bindings and a
+command-line tool.
 
 **Limitations.** Where tiles overlap, as in CZI mosaics, `FastSlide` paints
 them in a fixed order, so a region does not depend on thread timing; this
@@ -144,8 +143,11 @@ slide and for all 35 Z/T planes of an OME-TIFF test file, and to zarr-python
 Resource (idr0033) and an H&E slide from the SpatialData sample data. For
 lossy JPEG and JPEG 2000 data, where decoders round differently, SVS regions
 differed from `OpenSlide` and DICOM tiles from an OpenJPEG decode by at most
-one grey level. We had no independent reader for iSyntax, BIF, and VSI; for
-these we only checked that reads are reproducible.
+one grey level. VSI regions differed from Bio-Formats 8.1.1 by at most two grey levels. A
+BIF slide was aligned with `OpenSlide`, with 99.8% of pixels within five grey
+levels; on a second BIF slide, which `OpenSlide` could not open, regions were
+shifted horizontally by up to 17 pixels relative to Bio-Formats. We had no
+independent reader for iSyntax.
 
 \autoref{tab:bench} compares `FastSlide` 0.8.4 with `OpenSlide`
 4.0.1 (openslide-python 1.4.7) on five public OpenSlide test slides. With one
@@ -196,13 +198,10 @@ print(len(tiles), tiles[0].shape, tiles[0].dtype)  # 352 (512, 512, 3) uint8
 # Research impact statement
 
 `FastSlide` has been available on PyPI since May 2026. It is a dependency and
-slide backend of `DLUP` [@dlup], our library of deep learning utilities for
-pathology, and the default slide reader of
-[`dlux`](https://github.com/NKI-AI/dlux), our pipeline for slide-level
-classification from WSIs. Through a separate
+slide backend of `DLUP` [@dlup], and the default slide reader of
+[`dlux`](https://github.com/NKI-AI/dlux). Through a separate
 [extension](https://github.com/NKI-AI/qupath-extension-fastslide) it is
-an image reader for QuPath [@bankhead2017qupath], which makes its formats
-available to users who do not program. On 15 November 2026, pypistats.org
+an image reader for QuPath [@bankhead2017qupath]. On 15 November 2026, pypistats.org
 reported 2,272 downloads from PyPI over the preceding 30 days, and the issue
 tracker held 31 issues opened by seven GitHub accounts. The benchmark and
 figure in this paper can be regenerated with the scripts in `paper/scripts`.
