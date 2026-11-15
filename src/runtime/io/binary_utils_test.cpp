@@ -27,13 +27,14 @@
 namespace fastslide::runtime::io {
 namespace {
 
-std::vector<uint8_t> ZlibCompress(std::vector<uint8_t> data) {
+std::vector<uint8_t> ZlibCompress(std::vector<uint8_t> data,
+                                  int level = Z_BEST_SPEED) {
   const uLong src_len = static_cast<uLong>(data.size());
   uLongf dst_len = compressBound(src_len);
   std::vector<uint8_t> compressed(static_cast<size_t>(dst_len));
 
-  const int ret = compress2(compressed.data(), &dst_len, data.data(), src_len,
-                            Z_BEST_SPEED);
+  const int ret =
+      compress2(compressed.data(), &dst_len, data.data(), src_len, level);
   EXPECT_EQ(ret, Z_OK);
   compressed.resize(static_cast<size_t>(dst_len));
   return compressed;
@@ -79,6 +80,37 @@ TEST(DecompressZlibTest, WithActualSizeAllowsLargerThanHint) {
 
   EXPECT_EQ(out_or->actual_size_bytes, original.size());
   EXPECT_EQ(out_or->data, original);
+}
+
+TEST(HasZlibHeaderTest, AcceptsStreamsOfEveryCompressionLevel) {
+  const std::string payload = "position position position position";
+  const std::vector<uint8_t> original(payload.begin(), payload.end());
+  for (int level = Z_NO_COMPRESSION; level <= Z_BEST_COMPRESSION; ++level) {
+    EXPECT_TRUE(HasZlibHeader(ZlibCompress(original, level)))
+        << "level " << level;
+  }
+}
+
+// Only the first two bytes are fixed: 3DHISTECH position buffers start with
+// 78 9C followed by whatever the deflate stream begins with.
+TEST(HasZlibHeaderTest, IgnoresTheBytesAfterTheHeader) {
+  EXPECT_TRUE(HasZlibHeader(std::vector<uint8_t>{0x78, 0x9C, 0xED}));
+  EXPECT_TRUE(HasZlibHeader(std::vector<uint8_t>{0x78, 0x9C, 0xEC}));
+  EXPECT_TRUE(HasZlibHeader(std::vector<uint8_t>{0x78, 0xDA}));
+}
+
+TEST(HasZlibHeaderTest, RejectsOtherData) {
+  EXPECT_FALSE(HasZlibHeader(std::vector<uint8_t>{}));
+  EXPECT_FALSE(HasZlibHeader(std::vector<uint8_t>{0x78}));
+  // A raw MRXS position record starts with a 0/1 flag byte.
+  EXPECT_FALSE(HasZlibHeader(std::vector<uint8_t>{0x00, 0x10, 0x00, 0x00}));
+  EXPECT_FALSE(HasZlibHeader(std::vector<uint8_t>{0x01, 0x10, 0x00, 0x00}));
+  // Wrong check bits.
+  EXPECT_FALSE(HasZlibHeader(std::vector<uint8_t>{0x78, 0x9D}));
+  // Not deflate (method 9), and a window above 32 KiB (CINFO 8), each with
+  // valid check bits.
+  EXPECT_FALSE(HasZlibHeader(std::vector<uint8_t>{0x79, 0x18}));
+  EXPECT_FALSE(HasZlibHeader(std::vector<uint8_t>{0x88, 0x1C}));
 }
 
 }  // namespace
