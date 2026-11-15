@@ -118,12 +118,22 @@ array is a view of the image buffer.
 lock while a region is read, and one slide handle can be shared between
 threads. In our tests, 200 random regions read by 32 threads from one handle
 were bit-identical to the same regions read serially for SVS, NDPI, MRXS, BIF,
-VSI, QPTIFF, DICOM, and generic TIFF files. The tiles of one region are decoded
+VSI, CZI, iSyntax, QPTIFF, OME-TIFF, OME-Zarr, DICOM, and generic TIFF files.
+The tiles of one region are decoded
 in parallel on a process-wide thread pool, so a single calling thread already
 uses several cores. Decoded tiles are not cached unless the
 user asks: a least-recently-used cache can be attached to one slide or shared
 by all slides in the process, and it reports hits and misses. When several
 threads miss on the same tile, it is decoded once.
+
+**Agreement with reference readers.** Where tiles overlap, as in CZI mosaics,
+`FastSlide` paints them in a fixed order, so a region does not depend on thread
+timing. On three slides of the public SurGen dataset [@myles2025surgen], all
+180 level-0 regions of 1024 × 1024 pixels that we compared were bit-identical
+to the output of libCZI (through pylibCZIrw 6.1.0). An OME-Zarr image written
+with lossless compression was returned unchanged at every level. The OME-Zarr
+reader is the narrowest: it reads version 0.5 images with a single Z and T
+plane, and not yet sharded or Blosc-compressed arrays.
 
 **Distribution.** All codecs are compiled into the Python extension, so on
 Linux the extension links only against the C and C++ runtime libraries. The same core is exposed
@@ -131,11 +141,11 @@ through a C API and Java bindings, and the repository also contains Rust, Go,
 and WebAssembly bindings and a command-line tool. Pixel resampling and color
 conversion use Highway [@highway] for SIMD with run-time dispatch.
 
-**Throughput.** \autoref{tab:bench} compares `FastSlide` 0.8.3 with `OpenSlide`
+**Throughput.** \autoref{tab:bench} compares `FastSlide` 0.8.4 with `OpenSlide`
 4.0.1 (openslide-python 1.4.7) on five public OpenSlide test slides. With one
 calling thread, `FastSlide` read 1.9 to 5.7 times as many regions per second.
 This is not a single-core comparison: because of its thread pool, `FastSlide`
-used 3.3 (JPEG) to 4.3 (JPEG 2000) CPU-seconds per second of wall-clock time on
+used 3.9 (JPEG) to 4.5 (JPEG 2000) CPU-seconds per second of wall-clock time on
 the two SVS slides, where `OpenSlide` used one. With eight calling threads the
 throughput of `FastSlide` changed little, and `OpenSlide` was faster on the
 NDPI and JPEG 2000 slides and comparable on MRXS. `FastSlide` is therefore the
@@ -151,11 +161,11 @@ EPYC 7763 processors; the script is in `paper/scripts/benchmark.py`.
 
 | Slide (compression)       | FastSlide, 1 | OpenSlide, 1 | FastSlide, 8 | OpenSlide, 8 |
 |:--------------------------|-------------:|-------------:|-------------:|-------------:|
-| Aperio SVS (JPEG)         |          839 |          172 |          967 |          482 |
-| Aperio SVS (JPEG 2000)    |          140 |           56 |          167 |          189 |
-| Hamamatsu NDPI (JPEG)     |          344 |          186 |          307 |          611 |
-| 3DHISTECH MRXS (JPEG)     |        3,576 |        1,689 |        3,348 |        3,551 |
-| Generic tiled TIFF (JPEG) |        1,018 |          178 |        1,169 |          516 |
+| Aperio SVS (JPEG)         |          839 |          171 |          924 |          496 |
+| Aperio SVS (JPEG 2000)    |          136 |           56 |          160 |          193 |
+| Hamamatsu NDPI (JPEG)     |          342 |          182 |          307 |          604 |
+| 3DHISTECH MRXS (JPEG)     |        3,405 |        1,683 |        3,486 |        3,273 |
+| Generic tiled TIFF (JPEG) |        1,021 |          178 |        1,163 |          524 |
 
 # Example
 
