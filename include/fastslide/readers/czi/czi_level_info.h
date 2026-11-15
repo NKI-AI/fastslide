@@ -16,8 +16,13 @@
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_CZI_CZI_LEVEL_INFO_H_
 
 #include <cstdint>
+#include <limits>
 
 namespace fastslide {
+
+/// @brief `CziSubblockInfo::m` of a subblock without an M dimension.
+inline constexpr int32_t kCziNoMosaicIndex =
+    std::numeric_limits<int32_t>::min();
 
 /// @brief Parsed CZI subblock metadata used by planning and execution.
 ///
@@ -38,8 +43,11 @@ struct CziSubblockInfo {
   int32_t z = 0;            ///< Focal-plane index (CZI "Z" dimension start).
   int32_t t = 0;            ///< Time-point index (CZI "T" dimension start).
   int32_t c = 0;            ///< Channel index (CZI "C" dimension start).
-  int32_t downsample = 1;   ///< Integer downsample factor (level-0 = 1).
-  int32_t dim_count = 0;    ///< Directory entry's DimensionEntryDV count.
+  /// Mosaic tile index (CZI "M" dimension start). Where mosaic tiles overlap,
+  /// the larger index is visible. `kCziNoMosaicIndex` when absent.
+  int32_t m = kCziNoMosaicIndex;
+  int32_t downsample = 1;  ///< Integer downsample factor (level-0 = 1).
+  int32_t dim_count = 0;   ///< Directory entry's DimensionEntryDV count.
 };
 
 }  // namespace fastslide

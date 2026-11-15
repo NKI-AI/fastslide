@@ -47,6 +47,7 @@ if gtest_dep.found()
     'czi_spatial_index_test' : '../src/readers/czi/czi_spatial_index_test.cpp',
     'czi_parse_test' : '../src/readers/czi/czi_parse_test.cpp',
     'czi_scene_plane_test' : '../src/readers/czi/czi_scene_plane_test.cpp',
+    'czi_tile_executor_test' : '../src/readers/czi/czi_tile_executor_test.cpp',
     'bif_test' : '../src/readers/bif/bif_test.cpp',
     'dicom_magic_test' : '../src/readers/dicom/dicom_magic_test.cpp',
     'aperio_metadata_parser_test' : '../src/readers/aperio/metadata_parser_test.cpp',
