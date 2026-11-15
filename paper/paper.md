@@ -39,13 +39,12 @@ Akoya QPTIFF, OME-TIFF, OME-Zarr, DICOM, and generic tiled TIFF. A region is
 returned in the pixel type of the file, for example 8-bit or 16-bit, and is
 exposed to NumPy [@harris2020numpy] without copying. Besides brightfield RGB
 slides, `FastSlide` reads multi-channel fluorescence images, focal planes (Z),
-time points (T), and files that hold several images, such as the overview and
-high-resolution scans in an Olympus VSI file (\autoref{fig:regions}). A single
+time points (T), and files that hold several images (\autoref{fig:regions}). A single
 open slide can be read from many threads at once. `FastSlide` is released under
 the Apache License 2.0, and wheels for CPython 3.11 and later are published on
 PyPI for Linux, macOS, and Windows on x86-64 and ARM64.
 
-![Regions read with `FastSlide` from two public slides. Left: a brightfield H&E slide in Aperio SVS format (CMU-1 from the OpenSlide test data). Right: a five-channel fluorescence slide in QPTIFF format (LuCa-7color_Scan1 from the OME sample images), showing the DAPI (blue), FITC (green), and CY5 (red) channels, each scaled to its 99.8th percentile.\label{fig:regions}](figures/regions.png)
+![Regions read with `FastSlide` from two public slides. Left: a brightfield H&E slide in Aperio SVS format (CMU-1 from the OpenSlide test data). Right: a five-channel fluorescence slide in QPTIFF format (LuCa-7color_Scan1 from the OME sample images), showing the DAPI (blue), FITC (green), and CY5 (red) channels.\label{fig:regions}](figures/regions.png)
 
 # Statement of need
 
@@ -61,8 +60,8 @@ unchanged.
 
 `FastSlide` is written for researchers who build data pipelines and viewers
 on top of WSIs and want one dependency for the formats in their cohorts. It reports pyramid levels, pixel spacing, channel names,
-associated images (label, macro, thumbnail), and the embedded ICC profile in
-the same way for every format, and it reads brightfield and fluorescence slides
+associated images (label, macro, thumbnail), and the embedded ICC profile
+through the same properties for every format, and it reads brightfield and fluorescence slides
 through the same call.
 
 # State of the field
@@ -89,8 +88,7 @@ needed, pixel data in its stored type with any number of channels and selection
 of a Z/T plane, do not fit an interface whose output is a `w × h × 4` byte ARGB
 buffer. To keep existing datasets usable, `FastSlide` computes the same
 "quickhash" slide identifier as `OpenSlide`: the two agreed on all seven public
-OpenSlide test slides we compared (Aperio JPEG and JPEG 2000, NDPI, MRXS,
-Philips TIFF, generic TIFF, DICOM).
+OpenSlide test slides we compared.
 
 # Software design
 
@@ -117,8 +115,8 @@ array is a view of the image buffer.
 **Concurrency and caching.** The Python binding releases the global interpreter
 lock while a region is read, and one slide handle can be shared between
 threads. In our tests, 200 random regions read by 32 threads from one handle
-were bit-identical to the same regions read serially for SVS, NDPI, MRXS, BIF,
-VSI, CZI, iSyntax, QPTIFF, OME-TIFF, OME-Zarr, DICOM, and generic TIFF files.
+were bit-identical to the same regions read serially for files in all twelve
+formats.
 The tiles of one region are decoded
 in parallel on a process-wide thread pool, so a single calling thread already
 uses several cores. Decoded tiles are not cached unless the
@@ -126,23 +124,30 @@ user asks: a least-recently-used cache can be attached to one slide or shared
 by all slides in the process, and it reports hits and misses. When several
 threads miss on the same tile, it is decoded once.
 
-**Agreement with reference readers.** Where tiles overlap, as in CZI mosaics,
-`FastSlide` paints them in a fixed order, so a region does not depend on thread
-timing. On three slides of the public SurGen dataset [@myles2025surgen], all
-180 level-0 regions of 1024 × 1024 pixels that we compared were bit-identical
-to the output of libCZI (through pylibCZIrw 6.1.0). Two public OME-Zarr
-images, a five-channel 16-bit image from the Image Data Resource (idr0033) and
-an H&E slide from the SpatialData sample data, were identical at every level
-to the arrays read by zarr-python 3.1.5. The OME-Zarr reader takes version 0.5
-images with one Z and T plane, and not yet sharded or Blosc-compressed arrays.
-
 **Distribution.** All codecs are compiled into the Python extension, so on
 Linux the extension links only against the C and C++ runtime libraries. The same core is exposed
 through a C API and Java bindings, and the repository also contains Rust, Go,
-and WebAssembly bindings and a command-line tool. Pixel resampling and color
-conversion use Highway [@highway] for SIMD with run-time dispatch.
+and WebAssembly bindings and a command-line tool.
 
-**Throughput.** \autoref{tab:bench} compares `FastSlide` 0.8.4 with `OpenSlide`
+**Limitations.** Where tiles overlap, as in CZI mosaics, `FastSlide` paints
+them in a fixed order, so a region does not depend on thread timing; this
+makes painting serial. The OME-Zarr reader takes version 0.5 images with one Z
+and T plane, and not yet sharded or Blosc-compressed arrays.
+
+# Validation and performance
+
+We compared level-0 pixels with independent readers on public files. Output
+was bit-identical to libCZI (through pylibCZIrw 6.1.0) for 180 regions on
+three slides of the SurGen dataset [@myles2025surgen], to tifffile for a QPTIFF
+slide and for all 35 Z/T planes of an OME-TIFF test file, and to zarr-python
+3.1.5 for two OME-Zarr images: a five-channel 16-bit image from the Image Data
+Resource (idr0033) and an H&E slide from the SpatialData sample data. For
+lossy JPEG and JPEG 2000 data, where decoders round differently, SVS regions
+differed from `OpenSlide` and DICOM tiles from an OpenJPEG decode by at most
+one grey level. We had no independent reader for iSyntax, BIF, and VSI; for
+these we only checked that reads are reproducible.
+
+\autoref{tab:bench} compares `FastSlide` 0.8.4 with `OpenSlide`
 4.0.1 (openslide-python 1.4.7) on five public OpenSlide test slides. With one
 calling thread, `FastSlide` read 1.9 to 5.7 times as many regions per second.
 This is not a single-core comparison: because of its thread pool, `FastSlide`
@@ -157,8 +162,7 @@ random 512 × 512 level-0 regions and convert each to a NumPy array. Values are
 the median of five runs. Bold marks the faster library for that slide and
 thread count; neither is bold where the ranges of the five runs overlap. Both
 libraries ran with default settings and the files were in the page cache.
-Measured on a shared server with two 64-core AMD EPYC 7763 processors; the
-script is in `paper/scripts/benchmark.py`. \label{tab:bench}
+Measured on a shared server with two 64-core AMD EPYC 7763 processors. \label{tab:bench}
 
 | Slide (compression)       | FastSlide, 1 thread | OpenSlide, 1 thread | FastSlide, 8 threads | OpenSlide, 8 threads |
 |:--------------------------|----------:|----------:|----------:|----------:|
@@ -174,8 +178,6 @@ Reading a grid of tiles from one slide with a thread pool:
 
 ```python
 from concurrent.futures import ThreadPoolExecutor
-
-import numpy as np
 from fastslide import FastSlide
 
 with FastSlide.from_file_path("CMU-1.svs") as slide:
@@ -184,14 +186,11 @@ with FastSlide.from_file_path("CMU-1.svs") as slide:
     # Locations are in the pixel coordinates of the level being read.
     grid = [(x, y) for y in range(0, height - 512, 512)
             for x in range(0, width - 512, 512)]
-
-    def read(location):
-        return slide.read_region(location, level, (512, 512)).numpy()
-
     with ThreadPoolExecutor(max_workers=8) as pool:
-        tiles = np.stack(list(pool.map(read, grid)))
+        tiles = list(pool.map(
+            lambda xy: slide.read_region(xy, level, (512, 512)).numpy(), grid))
 
-print(tiles.shape, tiles.dtype)  # (352, 512, 512, 3) uint8
+print(len(tiles), tiles[0].shape, tiles[0].dtype)  # 352 (512, 512, 3) uint8
 ```
 
 # Research impact statement
@@ -205,8 +204,9 @@ classification from WSIs. Through a separate
 an image reader for QuPath [@bankhead2017qupath], which makes its formats
 available to users who do not program. On 15 November 2026, pypistats.org
 reported 2,272 downloads from PyPI over the preceding 30 days, and the issue
-tracker held 31 issues opened by seven GitHub accounts. We are not aware of
-published studies that used `FastSlide` yet.
+tracker held 31 issues opened by seven GitHub accounts. The benchmark and
+figure in this paper can be regenerated with the scripts in `paper/scripts`.
+We are not aware of published studies that used `FastSlide` yet.
 
 # AI usage disclosure
 
