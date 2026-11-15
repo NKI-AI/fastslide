@@ -21,6 +21,7 @@ if gtest_dep.found()
     'isyntax_cpp_test' : 'isyntax_cpp_test.cpp',
     'isyntax_color_cpp_test' : 'isyntax_color_cpp_test.cpp',
     'isyntax_plan_builder_test' : '../src/readers/isyntax/isyntax_plan_builder_test.cpp',
+    'isyntax_envelopes_test' : '../src/readers/isyntax/isyntax_envelopes_test.cpp',
     'isyntax_jpeg_cpp_test' : 'isyntax_jpeg_cpp_test.cpp',
     'isyntax_cache_cpp_test' : 'isyntax_cache_cpp_test.cpp',
     'isyntax_open_cpp_test' : 'isyntax_open_cpp_test.cpp',

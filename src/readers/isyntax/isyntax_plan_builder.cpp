@@ -55,6 +55,17 @@ bool IsyntaxPlanBuilder::SubpixelCorrectionFromEnv() {
   return enabled;
 }
 
+IsyntaxPlanBuilder::ValidRange IsyntaxPlanBuilder::ComputeValidRange(
+    int32_t level, int64_t width, int64_t height) {
+  ValidRange range{.start = 0, .end_x = width - 1, .end_y = height - 1};
+  for (int32_t l = 0; l < level; ++l) {
+    range.start = (range.start + 1) / 2 + 1;
+    range.end_x = range.end_x / 2 - 1;
+    range.end_y = range.end_y / 2 - 1;
+  }
+  return range;
+}
+
 aifocore::Result<core::TilePlan> IsyntaxPlanBuilder::BuildPlan(
     const core::TileRequest& request, const IsyntaxPlanContext& context) {
   core::TilePlan plan;
@@ -101,13 +112,16 @@ aifocore::Result<core::TilePlan> IsyntaxPlanBuilder::BuildPlan(
 
   const bool subpixel_correction =
       context.subpixel_correction.value_or(SubpixelCorrectionFromEnv());
-  const double offset =
+  const double grid_offset =
       subpixel_correction
           ? ComputeCorrectedGridOffset(request.level, context.level0_padding,
                                        context.level_info.downsample_factor)
           : static_cast<double>(
                 ComputeGridOffset(request.level, context.level0_padding,
                                   context.origin_offset_in_pixels));
+  // Pixel 0 of the level is the first pixel of its Philips SDK valid range.
+  const double offset =
+      grid_offset + static_cast<double>(context.valid_range_start);
   double offset_x = offset;
   double offset_y = offset;
 

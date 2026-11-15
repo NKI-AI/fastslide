@@ -117,6 +117,7 @@ fastslide_sources = [
   'src/readers/imagejtiff/imagejtiff_plan_builder.cpp',
   # readers/isyntax (third_party, minus isyntax.c handled above)
   'src/readers/isyntax/isyntax.cpp',
+  'src/readers/isyntax/isyntax_envelopes.cpp',
   'src/readers/isyntax/isyntax_plan_builder.cpp',
   'src/readers/isyntax/isyntax_tile_executor.cpp',
   'src/readers/isyntax/third_party/base64.cpp',
