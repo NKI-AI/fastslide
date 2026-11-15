@@ -29,6 +29,7 @@ if gtest_dep.found()
     'tile_writer_uint16_test' : '../src/runtime/tile_writer_uint16_test.cpp',
     'reader_registry_test' : '../src/runtime/reader_registry_test.cpp',
     'lru_tile_cache_test' : '../src/runtime/lru_tile_cache_test.cpp',
+    'inflight_decodes_test' : '../src/readers/inflight_decodes_test.cpp',
     'cached_tile_executor_test' : '../src/readers/cached_tile_executor_test.cpp',
     'j2k_decoder_test' : '../src/runtime/decoders/j2k_decoder_test.cpp',
     'cache_interface_test' : '../src/runtime/cache_interface_test.cpp',
