@@ -220,6 +220,18 @@ aifocore::Result<std::vector<uint8_t>> DecompressZlib(const uint8_t* data,
   return std::move(out.data);
 }
 
+bool HasZlibHeader(std::span<const uint8_t> data) {
+  if (data.size() < 2) {
+    return false;
+  }
+  const uint32_t cmf = data[0];  // CINFO (high nibble) | CM (low nibble)
+  const uint32_t flg = data[1];
+  constexpr uint32_t kDeflate = 8;
+  constexpr uint32_t kMaxWindowLog2Minus8 = 7;  // 32 KiB
+  return (cmf & 0x0Fu) == kDeflate && (cmf >> 4) <= kMaxWindowLog2Minus8 &&
+         ((cmf << 8) | flg) % 31u == 0u;
+}
+
 aifocore::Result<ZlibDecompressionResult> DecompressZlibWithActualSize(
     const uint8_t* data, size_t compressed_size, size_t expected_size_hint) {
   return DecompressZlibImpl(data, compressed_size, expected_size_hint,

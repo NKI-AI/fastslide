@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "aifocore/concepts/numeric.h"  // For aifocore::Size
+#include "aifocore/status/result.h"
 
 /**
  * @file cache_interface.h
@@ -127,6 +128,21 @@ class ITileCache {
   ///        will hold before evicting)
   /// @return Maximum cache capacity in bytes
   [[nodiscard]] virtual size_t GetCapacityBytes() const = 0;
+
+  /// @brief Change the capacity in bytes, in place
+  ///
+  /// Readers that hold this cache keep using it; a smaller capacity evicts
+  /// tiles until the rest fits. `GlobalCacheManager::SetCapacityBytes` relies
+  /// on this. A cache that cannot be resized keeps this default, which
+  /// returns kUnimplemented.
+  ///
+  /// @param capacity_bytes New capacity in bytes (> 0)
+  /// @return Status indicating success or failure
+  virtual aifocore::Status SetCapacityBytes(size_t capacity_bytes) {
+    (void)capacity_bytes;
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,
+                                "This tile cache cannot be resized");
+  }
 
   /// @brief Get total memory usage in bytes
   /// @return Total memory usage of all cached tiles

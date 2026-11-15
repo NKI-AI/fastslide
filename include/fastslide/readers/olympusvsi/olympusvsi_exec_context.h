@@ -57,6 +57,13 @@ struct OlympusVsiExecContext {
 
   /// @brief Optional decoded-tile cache. May be null when caching is off.
   std::shared_ptr<runtime::ITileCache> cache;
+
+  // What CachedTileExecutor asks of a reader.
+  [[nodiscard]] std::shared_ptr<runtime::ITileCache> GetCache() const {
+    return cache;
+  }
+
+  [[nodiscard]] bool IsCacheEnabled() const { return cache != nullptr; }
 };
 
 }  // namespace fastslide::formats::olympusvsi

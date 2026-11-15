@@ -16,7 +16,7 @@
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_CZI_CZI_TILE_EXECUTOR_H_
 
 #include <cstdint>
-#include <mutex>
+#include <vector>
 
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
@@ -43,11 +43,16 @@ class CziTileExecutor : public CachedTileExecutor<CziTileExecutor> {
   static aifocore::Result<DecodedTileData> ReadTileFromDisk(
       const core::TileReadOp& op, const CziExecContext& context);
 
- private:
-  static aifocore::Status ExecuteTileOperation(const core::TileReadOp& op,
-                                               const CziExecContext& context,
-                                               runtime::Canvas& writer,
-                                               std::mutex& writer_mutex);
+  /// @brief Order in which `ExecutePlan` paints `plan.operations` (indices).
+  ///
+  /// Overlapping mosaic tiles resolve as in libCZI: the subblock with the
+  /// highest M index is on top, subblocks without one at the bottom, and ties
+  /// go to the later subblock in the directory. With `first_writer_wins` (see
+  /// `runtime::Canvas::FirstWriterWins`) the top subblock comes first,
+  /// otherwise last.
+  static std::vector<uint32_t> PaintOrder(const core::TilePlan& plan,
+                                          const CziExecContext& context,
+                                          bool first_writer_wins);
 };
 
 }  // namespace fastslide

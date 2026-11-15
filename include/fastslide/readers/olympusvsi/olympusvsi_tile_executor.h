@@ -17,7 +17,9 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
+#include "fastslide/readers/cached_tile_executor.h"
 #include "fastslide/readers/olympusvsi/olympusvsi_exec_context.h"
+#include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/tile_writer.h"
 
 namespace fastslide::formats::olympusvsi {
@@ -34,13 +36,24 @@ namespace fastslide::formats::olympusvsi {
 ///   4. Paints the decoded tile onto the canvas via
 ///      `simpletiff_exec::PaintTileMaybeLocked` with 3 channels.
 ///
-/// Decoded tiles can be cached in the slide's optional `ITileCache` to
-/// avoid redundant decoder work when the same region is read repeatedly.
-class OlympusVsiTileExecutor {
+/// Decoded tiles go through the slide's optional `ITileCache` via
+/// `CachedTileExecutor`, like the other readers: a hit paints the cached tile
+/// without copying it, and concurrent misses on one tile decode it once.
+class OlympusVsiTileExecutor
+    : public CachedTileExecutor<OlympusVsiTileExecutor> {
  public:
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
                                       const OlympusVsiExecContext& context,
                                       runtime::Canvas& canvas);
+
+  // CachedTileExecutor hooks. A cached entry is the full decoded tile.
+  static runtime::TileKey MakeCacheKey(const core::TileReadOp& op,
+                                       const OlympusVsiExecContext& context,
+                                       int level_index);
+
+  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
+      const core::TileReadOp& op, const OlympusVsiExecContext& context,
+      int level_index);
 };
 
 }  // namespace fastslide::formats::olympusvsi

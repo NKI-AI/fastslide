@@ -243,7 +243,10 @@ NB_MODULE(_fastslide, m) {
               ThrowPyErrorFromStatus(status);
             }
           },
-          "Resize cache capacity (in bytes)", nb::arg("new_capacity_bytes"));
+          "Resize the cache in place (bytes). Slides that already use this "
+          "cache keep it; least recently used tiles that no longer fit are "
+          "evicted.",
+          nb::arg("new_capacity_bytes"));
 
   // Expose ITileCache::Stats
   nb::class_<fastslide::runtime::ITileCache::Stats>(m, "RuntimeCacheStats")
@@ -280,8 +283,9 @@ NB_MODULE(_fastslide, m) {
             }
           },
           nb::arg("capacity_bytes"),
-          "Replace the global cache with a new LRU cache of the given "
-          "capacity (bytes). Drops all currently cached tiles.")
+          "Resize the global cache in place (bytes). Slides that already "
+          "use it keep sharing it; least recently used tiles that no longer "
+          "fit are evicted (call clear() to drop all tiles).")
       .def("get_capacity_bytes",
            &fastslide::runtime::GlobalCacheManager::GetCapacityBytes,
            "Get the current global cache capacity in bytes.")
@@ -717,5 +721,5 @@ NB_MODULE(_fastslide, m) {
       "Check if file format is supported", nb::arg("filename"));
 
   // Version and constants
-  m.attr("__version__") = "0.8.3";
+  m.attr("__version__") = "0.8.4";
 }

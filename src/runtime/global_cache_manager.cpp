@@ -62,9 +62,14 @@ void GlobalCacheManager::SetCache(std::shared_ptr<ITileCache> cache) {
 aifocore::Status GlobalCacheManager::SetCapacityBytes(size_t capacity_bytes) {
   std::lock_guard<std::mutex> lock(mutex_);
 
-  AIFOCORE_ASSIGN_OR_RETURN(cache_, LRUTileCache::Create(capacity_bytes));
-
-  return aifocore::Status::OkStatus();
+  if (cache_ == nullptr) {
+    AIFOCORE_ASSIGN_OR_RETURN(cache_, LRUTileCache::Create(capacity_bytes));
+    return aifocore::Status::OkStatus();
+  }
+  // Resize the cache in place: readers that already hold it (use_global_cache,
+  // SetCache(GetCache())) keep sharing it. Swapping in a new cache left them on
+  // the old one while the stats reported the new, empty one.
+  return cache_->SetCapacityBytes(capacity_bytes);
 }
 
 size_t GlobalCacheManager::GetCapacityBytes() const {

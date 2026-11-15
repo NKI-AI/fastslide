@@ -110,15 +110,14 @@ void ParseGainBuffer(const uint8_t* data, size_t data_size, int npositions,
 /// @brief Read and (optionally) decode the per-position gain metadata.
 ///
 /// `compressed_metadata` is the raw payload of the second item in the
-/// position non-hier data page. If it carries a zlib magic (0x78 0x9C) we
-/// decompress first; otherwise we treat it as raw float buffer.
+/// position non-hier data page. If it starts with a zlib header we decompress
+/// first; otherwise we treat it as raw float buffer.
 aifocore::Status ParseGainMetadata(
     const std::vector<uint8_t>& compressed_metadata,
     const SlideDataInfo& slide_info, std::vector<float>& gains) {
   const int npositions = NumCameraPositions(slide_info);
 
-  if (compressed_metadata.size() >= 2 && compressed_metadata[0] == 0x78 &&
-      compressed_metadata[1] == 0x9C) {
+  if (runtime::io::HasZlibHeader(compressed_metadata)) {
     const int expected_size = 4 * npositions;
     AIFOCORE_ASSIGN_OR_RETURN(
         runtime::io::ZlibDecompressionResult decompressed,
@@ -136,20 +135,14 @@ aifocore::Status ParseGainMetadata(
 
 /// @brief Decompress a zlib-wrapped position buffer to its expected size.
 ///
-/// 3DHISTECH stitching layers use a fixed three-byte zlib prefix
-/// `78 9C ED`. If the prefix matches we decompress and right-pad / clamp
-/// to `expected_size`. Otherwise the buffer is already raw and is returned
-/// unchanged.
+/// 3DHISTECH stitching layers store the buffer zlib-compressed. If it starts
+/// with a zlib header we decompress and right-pad / clamp to `expected_size`.
+/// Otherwise the buffer is already raw and is returned unchanged (a raw buffer
+/// starts with a 0/1 flag byte, never a zlib header).
 aifocore::Result<std::vector<uint8_t>> MaybeDecompressPositionData(
     std::vector<uint8_t> compressed_data, int expected_size,
     bool is_stitching_layer) {
-  if (!is_stitching_layer) {
-    return compressed_data;
-  }
-  const bool has_zlib_prefix =
-      compressed_data.size() >= 3 && compressed_data[0] == 0x78 &&
-      compressed_data[1] == 0x9C && compressed_data[2] == 0xED;
-  if (!has_zlib_prefix) {
+  if (!is_stitching_layer || !runtime::io::HasZlibHeader(compressed_data)) {
     return compressed_data;
   }
 

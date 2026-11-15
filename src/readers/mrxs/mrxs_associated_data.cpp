@@ -126,9 +126,7 @@ struct DecompressResult {
 
 DecompressResult MaybeInflateAssociatedPayload(
     std::vector<uint8_t> raw_data, std::string_view diagnostic_name) {
-  const bool has_zlib_prefix =
-      raw_data.size() >= 3 && raw_data[0] == 0x78 && raw_data[1] == 0x9C;
-  if (!has_zlib_prefix) {
+  if (!runtime::io::HasZlibHeader(raw_data)) {
     return {std::move(raw_data), /*was_compressed=*/false};
   }
 

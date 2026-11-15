@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <span>
 #include <vector>
 
 #include "aifocore/status/result.h"
@@ -93,6 +94,15 @@ aifocore::Result<std::vector<uint8_t>> DecompressZlib(const uint8_t* data,
 /// @return Decompressed bytes and the actual decompressed size
 aifocore::Result<ZlibDecompressionResult> DecompressZlibWithActualSize(
     const uint8_t* data, size_t compressed_size, size_t expected_size_hint);
+
+/// @brief True if `data` starts with a zlib (RFC 1950) stream header.
+///
+/// Checks the two header bytes: deflate method, a window of at most 32 KiB,
+/// and the check bits that make the header a multiple of 31. These are the
+/// only fixed bytes of a zlib stream; the second byte also depends on the
+/// compression level (`78 01`, `78 5E`, `78 9C`, `78 DA` for the default
+/// window), and everything after it is compressed data.
+[[nodiscard]] bool HasZlibHeader(std::span<const uint8_t> data);
 
 }  // namespace io
 }  // namespace runtime

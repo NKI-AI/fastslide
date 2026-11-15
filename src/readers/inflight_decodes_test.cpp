@@ -44,6 +44,7 @@ struct FakeContext {
 class SlowExecutor : public CachedTileExecutor<SlowExecutor> {
  public:
   using CachedTileExecutor<SlowExecutor>::ReadWithCacheDecoded;
+  using CachedTileExecutor<SlowExecutor>::ReadWithCacheShared;
 
   static inline std::atomic<int> decodes{0};
   static inline std::atomic<bool> fail{false};
@@ -106,6 +107,38 @@ TEST(InflightDecodesTest, ConcurrentMissesOnOneTileDecodeItOnce) {
 
   EXPECT_EQ(ReadConcurrently(context, 3, 16), 16);
   EXPECT_EQ(SlowExecutor::decodes.load(), 1);
+  EXPECT_EQ(readers::InflightDecodes::Instance().Size(), 0u);
+}
+
+// The owning-handle read (BIF, CZI) goes through the same single-flight path,
+// and every thread gets the one cached tile.
+TEST(InflightDecodesTest, ConcurrentSharedReadsOfOneTileDecodeItOnce) {
+  SlowExecutor::decodes = 0;
+  SlowExecutor::fail = false;
+  const FakeContext context{std::make_shared<runtime::LRUTileCache>(1 << 20)};
+
+  constexpr int kThreads = 16;
+  std::vector<std::shared_ptr<const runtime::CachedTileData>> tiles(kThreads);
+  std::vector<std::thread> pool;
+  pool.reserve(kThreads);
+  for (int i = 0; i < kThreads; ++i) {
+    pool.emplace_back([&, i] {
+      auto tile = SlowExecutor::ReadWithCacheShared(OpAt(5), context);
+      if (tile.ok()) {
+        tiles[i] = *std::move(tile);
+      }
+    });
+  }
+  for (auto& t : pool) {
+    t.join();
+  }
+
+  EXPECT_EQ(SlowExecutor::decodes.load(), 1);
+  for (const auto& tile : tiles) {
+    ASSERT_NE(tile, nullptr);
+    EXPECT_EQ(tile.get(), tiles[0].get());
+  }
+  EXPECT_EQ(tiles[0]->data, std::vector<uint8_t>(12, 5));
   EXPECT_EQ(readers::InflightDecodes::Instance().Size(), 0u);
 }
 

@@ -43,6 +43,13 @@ struct OmeZarrExecContext {
 
   /// @brief Slide source path, used only as the cache-key namespace string.
   std::string_view filename;
+
+  // What CachedTileExecutor asks of a reader.
+  [[nodiscard]] std::shared_ptr<runtime::ITileCache> GetCache() const {
+    return cache;
+  }
+
+  [[nodiscard]] bool IsCacheEnabled() const { return cache != nullptr; }
 };
 
 }  // namespace fastslide

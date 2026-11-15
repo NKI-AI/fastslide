@@ -69,7 +69,8 @@ class CacheManager {
 
   [[nodiscard]] CacheInspectionStats GetDetailedStats() const;
 
-  /// @brief Resize the underlying cache by replacing it with a new LRU cache.
+  /// @brief Resize the underlying cache in place (slides that use it keep it;
+  /// least recently used tiles that no longer fit are evicted).
   /// @param new_capacity_bytes New capacity in bytes
   [[nodiscard]] aifocore::Status Resize(size_t new_capacity_bytes);
 

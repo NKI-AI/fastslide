@@ -88,10 +88,11 @@ class LRUTileCache : public ITileCache {
   size_t GetMemoryUsage() const override;
   Stats GetStats() const override;
 
-  /// @brief Set cache capacity in bytes
+  /// @brief Set cache capacity in bytes, in place (evicts LRU tiles that no
+  /// longer fit)
   /// @param capacity_bytes New capacity in bytes
   /// @return Status indicating success or failure
-  aifocore::Status SetCapacityBytes(size_t capacity_bytes);
+  aifocore::Status SetCapacityBytes(size_t capacity_bytes) override;
 
  private:
   /// @brief Internal cache entry
