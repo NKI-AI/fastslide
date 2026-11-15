@@ -65,11 +65,8 @@ CacheInspectionStats CacheManager::GetDetailedStats() const {
 }
 
 aifocore::Status CacheManager::Resize(size_t new_capacity_bytes) {
-  std::shared_ptr<LRUTileCache> new_cache;
-  AIFOCORE_ASSIGN_OR_RETURN(new_cache,
-                            LRUTileCache::Create(new_capacity_bytes));
-  cache_ = std::move(new_cache);
-  return aifocore::Status::OkStatus();
+  // In place, so slides that already use this manager's cache keep sharing it.
+  return cache_->SetCapacityBytes(new_capacity_bytes);
 }
 
 }  // namespace fastslide::python

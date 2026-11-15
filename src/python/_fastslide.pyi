@@ -135,7 +135,9 @@ class CacheManager:
         """Get detailed cache statistics"""
 
     def resize(self, new_capacity_bytes: int) -> None:
-        """Resize cache capacity (in bytes)"""
+        """
+        Resize the cache in place (bytes). Slides that already use this cache keep it; least recently used tiles that no longer fit are evicted.
+        """
 
 class RuntimeCacheStats:
     @property

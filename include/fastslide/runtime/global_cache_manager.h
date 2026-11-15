@@ -89,12 +89,15 @@ class GlobalCacheManager {
 
   /// @brief Set the capacity of the global cache in bytes
   ///
-  /// Replaces the current cache with a new LRU cache of the requested byte
-  /// capacity. All previously cached tiles are dropped.
+  /// Resizes the current cache in place, so readers that already use it keep
+  /// sharing it. A smaller capacity evicts the least recently used tiles that
+  /// no longer fit; call `Clear()` to drop everything. A custom cache installed
+  /// with `SetCache` must implement `ITileCache::SetCapacityBytes`, otherwise
+  /// this returns kUnimplemented.
   ///
   /// @param capacity_bytes New cache capacity in bytes
   /// @return Status indicating success or failure
-  /// @note Thread-safe. Replaces the existing cache (clears all entries).
+  /// @note Thread-safe.
   [[nodiscard]] aifocore::Status SetCapacityBytes(size_t capacity_bytes);
 
   /// @brief Get current cache capacity in bytes

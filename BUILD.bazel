@@ -383,6 +383,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         "@aifocore-cpp//:concepts",  # For aifocore::Size
+        "@aifocore-cpp//:result",
     ],
 )
 
@@ -2052,6 +2053,19 @@ cc_test(
     srcs = ["src/runtime/lru_tile_cache_test.cpp"],
     deps = [
         ":runtime_cache_interface",
+        ":runtime_lru_tile_cache",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "global_cache_manager_test",
+    size = "small",
+    srcs = ["src/runtime/global_cache_manager_test.cpp"],
+    deps = [
+        ":runtime_cache_interface",
+        ":runtime_global_cache_manager",
         ":runtime_lru_tile_cache",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
