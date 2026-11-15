@@ -765,6 +765,40 @@ class TestFromFilePathCache:
             slide.read_region((0, 0), 0, (256, 256))
             assert global_cache.get_stats().capacity_bytes == 128 << 20
 
+    def test_global_cache_resize_keeps_attached_slides(
+        self, slide_path: str
+    ) -> None:
+        """Resizing the global cache resizes the cache slides already use."""
+        global_cache = fastslide.GlobalCacheManager.instance()
+        global_cache.set_capacity_bytes(128 << 20)
+        global_cache.clear()
+
+        with fastslide.FastSlide.from_file_path(slide_path) as slide:
+            slide.use_global_cache()
+            slide.read_region((0, 0), 0, (256, 256))
+            global_cache.set_capacity_bytes(256 << 20)
+            slide.read_region((0, 0), 0, (256, 256))
+
+            # The second read hit the tiles of the first, in the one cache
+            # that both the slide and the manager see.
+            assert slide.cache_stats.capacity_bytes == 256 << 20
+            assert global_cache.get_stats().capacity_bytes == 256 << 20
+            assert global_cache.get_stats().hits > 0
+            assert global_cache.get_stats().hits == slide.cache_stats.hits
+
+    def test_cache_manager_resize_keeps_attached_slides(
+        self, slide_path: str
+    ) -> None:
+        """`CacheManager.resize` resizes the cache slides already use."""
+        manager = fastslide.CacheManager.create(capacity_bytes=64 << 20)
+
+        with fastslide.FastSlide.from_file_path(slide_path, cache=manager) as slide:
+            slide.read_region((0, 0), 0, (256, 256))
+            manager.resize(128 << 20)
+
+            assert slide.cache_stats.capacity_bytes == 128 << 20
+            assert manager.get_basic_stats().capacity_bytes == 128 << 20
+
 
 # Test configuration and utilities
 

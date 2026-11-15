@@ -19,6 +19,8 @@ The caching system stores **decoded** tile data in memory, avoiding expensive di
 - **Per-reader caching**: Isolate caches for specific workflows
 - **Zero overhead**: Optional—adds no overhead when disabled
 - **Thread-safe**: All operations protected by mutexes
+- **One decode per tile**: threads that miss on the same tile at the same time
+  wait for one decode instead of each decoding it (every reader)
 - **LRU eviction**: Automatic memory management
 - **Format-specific**: Caches decoded camera images (MRXS) or tiles (TIFF)
 
@@ -305,7 +307,8 @@ Cache Management
    // Clear cache (free memory)
    cache_mgr.Clear();
 
-   // Change capacity (clears existing cache); here 4 GiB
+   // Change capacity in place; here 4 GiB. Readers that use the cache keep
+   // it, and least recently used tiles that no longer fit are evicted.
    cache_mgr.SetCapacityBytes(static_cast<size_t>(4) << 30);
 
    // Get current capacity (bytes)
@@ -328,10 +331,11 @@ Global Cache
    cache_mgr = fastslide.GlobalCacheManager.instance()
    cache_mgr.set_capacity_bytes(2 * 1024**3)
 
-   # Create reader - global cache automatically used
+   # Readers open without a cache; attach the global one explicitly
    slide = fastslide.FastSlide.from_file_path("slide.mrxs")
+   slide.use_global_cache()
 
-   # Read regions - caching happens transparently
+   # Read regions - tiles now go through the global cache
    region = slide.read_region(
        location=(1000, 2000),
        level=0,
@@ -355,7 +359,7 @@ Cache Management
    # Clear cache
    cache_mgr.clear()
 
-   # Change capacity (4 GiB)
+   # Change capacity in place (4 GiB); slides that use the cache keep it
    cache_mgr.set_capacity_bytes(4 * 1024**3)
 
    # Query current state
@@ -465,6 +469,7 @@ Python batch processing with monitoring:
    
    for i, slide_path in enumerate(slide_paths):
        slide = fastslide.FastSlide.from_file_path(str(slide_path))
+       slide.use_global_cache()  # readers open without a cache
        
        # Extract multi-scale patches
        for level in range(slide.level_count):
@@ -517,8 +522,9 @@ The optimal cache size depends on your workload:
 Memory Footprint
 ----------------
 
-Cache capacity is a byte budget. The cache stops admitting new tiles
-when the total stored tile bytes would exceed the configured capacity:
+Cache capacity is a byte budget. When storing a tile would exceed it, the
+least recently used tiles are evicted first; a single tile larger than the
+whole capacity is not cached:
 
 .. code-block:: none
 

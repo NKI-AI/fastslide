@@ -264,9 +264,6 @@ struct TilePlan {
 
   /// @brief Get total number of operations
   [[nodiscard]] size_t GetOperationCount() const { return operations.size(); }
-
-  /// @brief Get operations that need I/O (not in cache)
-  [[nodiscard]] std::vector<const TileReadOp*> GetUncachedOperations() const;
 };
 
 /// @brief Batch tile reading plan for multiple requests

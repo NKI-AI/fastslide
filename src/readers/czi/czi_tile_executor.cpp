@@ -20,11 +20,14 @@
 #include "fastslide/readers/czi/czi_tile_executor.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <mutex>
 #include <numeric>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -228,32 +231,50 @@ aifocore::Status CziTileExecutor::ExecutePlan(const core::TilePlan& plan,
   // pixels from call to call. Phase 1 decodes the subblocks in parallel, each
   // held by an owning handle (a cache hit shares the cached tile); phase 2
   // paints them serially in libCZI's drawing order (see PaintOrder). A
-  // subblock that fails to decode stays background, as before.
+  // subblock that fails to decode fails the read, as in the other readers,
+  // instead of quietly leaving background where its pixels belong.
   std::vector<std::shared_ptr<const CachedTileData>> decoded(
       plan.operations.size());
+  std::mutex error_mutex;
+  std::optional<aifocore::Status> first_error;
+  std::atomic<bool> has_error{false};
   auto& pool = aifocore::ThreadPoolManager::GetInstance();
   auto futures =
       pool.submit_sequence(size_t{0}, plan.operations.size(), [&](size_t i) {
-        auto tile_or = ReadWithCacheShared(plan.operations[i], context);
-        if (tile_or.ok()) {
-          decoded[i] = *std::move(tile_or);
+        if (has_error.load(std::memory_order_relaxed)) {
+          return;
         }
+        const core::TileReadOp& op = plan.operations[i];
+        auto tile_or = ReadWithCacheShared(op, context);
+        if (!tile_or.ok()) {
+          has_error.store(true, std::memory_order_relaxed);
+          std::lock_guard<std::mutex> lock(error_mutex);
+          if (!first_error.has_value()) {
+            first_error = AIFOCORE_MAKE_STATUS(
+                tile_or.status().code(),
+                aifocore::fmt::format("CZI subblock {}: {}", op.source_id,
+                                      tile_or.status().message()));
+          }
+          return;
+        }
+        decoded[i] = *std::move(tile_or);
       });
   futures.wait();
+  if (first_error.has_value()) {
+    return *first_error;
+  }
 
   // Spectral scenes decode one channel plane per subblock; RGB scenes decode
   // a 3-channel triplet.
   const uint32_t tile_channels = context.IsSpectral() ? 1U : 3U;
   for (const uint32_t i : PaintOrder(plan, context, writer.FirstWriterWins())) {
     const auto& tile = decoded[i];
-    if (!tile) {
-      continue;
-    }
     const auto& op = plan.operations[i];
     const auto& sb = context.GetSubblockInfo(op.source_id);
     // Canvas extracts sub-regions from full tiles when op.transform.source
     // specifies one.
-    (void)writer.PaintTile(op, tile->data, sb.w, sb.h, tile_channels);
+    AIFOCORE_RETURN_IF_ERROR(
+        writer.PaintTile(op, tile->data, sb.w, sb.h, tile_channels));
   }
   return aifocore::Status::OkStatus();
 }
