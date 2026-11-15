@@ -35,6 +35,9 @@
 #include "fastslide/readers/omezarr/omezarr_metadata.h"
 #include "fastslide/readers/omezarr/omezarr_plan_builder.h"
 #include "fastslide/readers/omezarr/omezarr_tile_executor.h"
+#include "fastslide/runtime/io/filesystem_utils.h"
+#include "fastslide/runtime/io/path_utils.h"
+#include "fastslide/utilities/hash.h"
 
 namespace fs = std::filesystem;
 
@@ -178,24 +181,11 @@ OmeZarrReader::OmeZarrReader(std::string path)
     : filename_(std::move(path)), root_dir_(filename_) {}
 
 aifocore::Status OmeZarrReader::LoadMetadata() {
-  if (!fs::exists(root_dir_)) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kNotFound,
-        aifocore::fmt::format("OME-Zarr root '{}' not found", filename_));
-  }
-  if (!fs::is_directory(root_dir_)) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kInvalidArgument,
-        aifocore::fmt::format("OME-Zarr root '{}' is not a directory",
-                              filename_));
-  }
+  AIFOCORE_RETURN_IF_ERROR(
+      runtime::io::RequireDirectory(root_dir_, "OME-Zarr root"));
 
   const fs::path root_json = root_dir_ / "zarr.json";
-  if (!fs::exists(root_json)) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kNotFound,
-        aifocore::fmt::format("Missing zarr.json in '{}'", filename_));
-  }
+  AIFOCORE_RETURN_IF_ERROR(runtime::io::RequireExists(root_json, "zarr.json"));
 
   AIFOCORE_ASSIGN_OR_RETURN(const std::string root_text,
                             ReadFileToString(root_json));
@@ -214,8 +204,13 @@ aifocore::Status OmeZarrReader::LoadMetadata() {
   pyramid_.reserve(ngff_.datasets.size());
   for (const auto& dataset : ngff_.datasets) {
     OmeZarrLevelInfo level;
-    level.array_dir = (root_dir_ / dataset.path).string();
-    const fs::path array_json_path = fs::path(level.array_dir) / "zarr.json";
+    // `dataset.path` comes straight out of the store's zarr.json, so it has to
+    // be confined to the store directory before it reaches the filesystem.
+    AIFOCORE_ASSIGN_OR_RETURN(
+        const fs::path array_dir,
+        runtime::io::ResolveContainedPath(root_dir_, dataset.path));
+    level.array_dir = array_dir.string();
+    const fs::path array_json_path = array_dir / "zarr.json";
     AIFOCORE_ASSIGN_OR_RETURN(const std::string array_text,
                               ReadFileToString(array_json_path));
     AIFOCORE_ASSIGN_OR_RETURN(
@@ -365,6 +360,49 @@ aifocore::Result<RGBImage> OmeZarrReader::ReadAssociatedImage(
                               "OME-Zarr does not expose associated images");
 }
 
+size_t OmeZarrReader::CoarsestLevelIndex() const {
+  const auto smallest = std::min_element(
+      pyramid_.begin(), pyramid_.end(),
+      [](const OmeZarrLevelInfo& lhs, const OmeZarrLevelInfo& rhs) {
+        return lhs.y_size * lhs.x_size < rhs.y_size * rhs.x_size;
+      });
+  return static_cast<size_t>(std::distance(pyramid_.begin(), smallest));
+}
+
+aifocore::Result<std::string> OmeZarrReader::GetQuickHash() const {
+  if (pyramid_.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "OME-Zarr store has no pyramid levels to hash");
+  }
+  const OmeZarrLevelInfo& level = pyramid_[CoarsestLevelIndex()];
+
+  QuickHashBuilder hasher;
+  AIFOCORE_RETURN_IF_ERROR(hasher.HashFile((root_dir_ / "zarr.json").string()));
+  AIFOCORE_RETURN_IF_ERROR(
+      hasher.HashFile((fs::path(level.array_dir) / "zarr.json").string()));
+
+  // Row-major over the chunk grid so the digest is independent of directory
+  // iteration order. Sparse stores legitimately omit chunks; a missing file is
+  // part of the slide's identity, so it is skipped rather than failing.
+  const uint64_t chunks_c = level.ChunkCountC();
+  const uint64_t chunks_y = level.ChunkCountY();
+  const uint64_t chunks_x = level.ChunkCountX();
+  for (uint64_t cc = 0; cc < chunks_c; ++cc) {
+    for (uint64_t cy = 0; cy < chunks_y; ++cy) {
+      for (uint64_t cx = 0; cx < chunks_x; ++cx) {
+        const fs::path chunk_path = fs::path(level.array_dir) /
+                                    BuildChunkRelativePath(level, cy, cx, cc);
+        std::error_code ec;
+        if (!fs::exists(chunk_path, ec) || ec) {
+          continue;
+        }
+        AIFOCORE_RETURN_IF_ERROR(hasher.HashFile(chunk_path.string()));
+      }
+    }
+  }
+  return hasher.Finalize();
+}
+
 Metadata OmeZarrReader::GetMetadata() const {
   Metadata md;
   md[std::string(MetadataKeys::kFormat)] = std::string("OME-ZARR");
@@ -386,7 +424,7 @@ ImageDimensions OmeZarrReader::GetTileSize() const {
 aifocore::Result<core::TilePlan> OmeZarrReader::PrepareRequest(
     const core::TileRequest& request) const {
   return OmeZarrPlanBuilder::BuildPlan(request, pyramid_, planar_config_,
-                                       data_type_, visible_channels_);
+                                       data_type_);
 }
 
 aifocore::Status OmeZarrReader::ExecutePlan(const core::TilePlan& plan,

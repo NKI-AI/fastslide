@@ -23,6 +23,7 @@
 #include "fastslide/image.h"
 #include "fastslide/metadata.h"
 #include "fastslide/slide_reader.h"
+#include "fastslide/utilities/hash.h"
 
 namespace fastslide::testing {
 
@@ -78,6 +79,20 @@ class MinimalSlideReader : public SlideReader {
   }
 
   [[nodiscard]] Metadata GetMetadata() const override { return Metadata(); }
+
+  /// @brief Digest of the fixed string "MinimalSlideReader".
+  ///
+  /// A stand-in reader has no image data to fingerprint, but GetQuickHash() is
+  /// pure on SlideReader precisely so nothing can quietly go without one. A
+  /// constant keeps the never-empty invariant intact for tests that only care
+  /// that some digest comes back.
+  [[nodiscard]] aifocore::Result<std::string> GetQuickHash() const override {
+    constexpr std::string_view kSentinel = "MinimalSlideReader";
+    QuickHashBuilder hasher;
+    AIFOCORE_RETURN_IF_ERROR(hasher.HashData(
+        reinterpret_cast<const uint8_t*>(kSentinel.data()), kSentinel.size()));
+    return hasher.Finalize();
+  }
 
   [[nodiscard]] std::string GetFormatName() const override {
     return "MinimalSlideReader";

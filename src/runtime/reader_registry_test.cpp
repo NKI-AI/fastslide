@@ -41,11 +41,6 @@ FormatDescriptor CreateMockMrxsDescriptor() {
   desc.format_name = "MRXS";
   desc.primary_extension = ".mrxs";
   desc.aliases = {".slidedat.ini"};
-  desc.capabilities = SetCapability(0, FormatCapability::kPyramidal);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kTiled);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kCompressed);
   desc.factory = [](std::shared_ptr<ITileCache> cache,
                     std::string_view filename)
       -> aifocore::Result<std::unique_ptr<SlideReader>> {
@@ -61,11 +56,6 @@ FormatDescriptor CreateMockQptiffDescriptor() {
   desc.format_name = "QPTIFF";
   desc.primary_extension = ".qptiff";
   desc.aliases = {".tif", ".tiff"};
-  desc.capabilities = SetCapability(0, FormatCapability::kPyramidal);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kTiled);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kSpectral);
   desc.factory = [](std::shared_ptr<ITileCache> cache,
                     std::string_view filename)
       -> aifocore::Result<std::unique_ptr<SlideReader>> {
@@ -80,13 +70,6 @@ FormatDescriptor CreateMockSvsDescriptor() {
   FormatDescriptor desc;
   desc.format_name = "SVS";
   desc.primary_extension = ".svs";
-  desc.capabilities = SetCapability(0, FormatCapability::kPyramidal);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kTiled);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kCompressed);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kAssociatedImages);
   desc.factory = [](std::shared_ptr<ITileCache> cache,
                     std::string_view filename)
       -> aifocore::Result<std::unique_ptr<SlideReader>> {
@@ -165,7 +148,6 @@ TEST(ReaderRegistryTest, ReplaceExistingFormat) {
   FormatDescriptor mrxs1;
   mrxs1.format_name = "MRXS";
   mrxs1.primary_extension = ".mrxs";
-  mrxs1.capabilities = SetCapability(0, FormatCapability::kPyramidal);
   mrxs1.factory = [](std::shared_ptr<ITileCache> cache,
                      std::string_view filename)
       -> aifocore::Result<std::unique_ptr<SlideReader>> {
@@ -181,7 +163,6 @@ TEST(ReaderRegistryTest, ReplaceExistingFormat) {
   FormatDescriptor mrxs2;
   mrxs2.format_name = "MRXS_V2";
   mrxs2.primary_extension = ".mrxs";
-  mrxs2.capabilities = SetCapability(0, FormatCapability::kPyramidal);
   mrxs2.factory = [](std::shared_ptr<ITileCache> cache,
                      std::string_view filename)
       -> aifocore::Result<std::unique_ptr<SlideReader>> {
@@ -248,7 +229,6 @@ TEST(ReaderRegistryTest, GetSupportedExtensionsSorted) {
   FormatDescriptor mrxs;
   mrxs.format_name = "MRXS";
   mrxs.primary_extension = ".mrxs";
-  mrxs.capabilities = SetCapability(0, FormatCapability::kPyramidal);
   mrxs.factory = [](std::shared_ptr<ITileCache> cache,
                     std::string_view filename)
       -> aifocore::Result<std::unique_ptr<SlideReader>> {
@@ -259,7 +239,6 @@ TEST(ReaderRegistryTest, GetSupportedExtensionsSorted) {
   FormatDescriptor qptiff;
   qptiff.format_name = "QPTIFF";
   qptiff.primary_extension = ".qptiff";
-  qptiff.capabilities = SetCapability(0, FormatCapability::kSpectral);
   qptiff.factory = [](std::shared_ptr<ITileCache> cache,
                       std::string_view filename)
       -> aifocore::Result<std::unique_ptr<SlideReader>> {
@@ -280,84 +259,6 @@ TEST(ReaderRegistryTest, GetSupportedExtensionsSorted) {
               extensions.end());
   EXPECT_TRUE(std::find(extensions.begin(), extensions.end(), ".svs") !=
               extensions.end());
-}
-
-// ============================================================================
-// Capability Tests
-// ============================================================================
-
-TEST(ReaderRegistryTest, SupportsCapability) {
-  ReaderRegistry registry;
-  registry.RegisterFormat(CreateMockMrxsDescriptor());
-  registry.RegisterFormat(CreateMockQptiffDescriptor());
-
-  // MRXS supports Compressed
-  EXPECT_TRUE(
-      registry.SupportsCapability(".mrxs", FormatCapability::kCompressed));
-  EXPECT_FALSE(
-      registry.SupportsCapability(".mrxs", FormatCapability::kSpectral));
-
-  // QPTIFF supports Spectral
-  EXPECT_TRUE(
-      registry.SupportsCapability(".qptiff", FormatCapability::kSpectral));
-  EXPECT_FALSE(
-      registry.SupportsCapability(".qptiff", FormatCapability::kCompressed));
-
-  // Unknown extension returns false
-  EXPECT_FALSE(
-      registry.SupportsCapability(".unknown", FormatCapability::kPyramidal));
-}
-
-TEST(ReaderRegistryTest, ListFormatsByCapability) {
-  ReaderRegistry registry;
-  registry.RegisterFormat(CreateMockMrxsDescriptor());
-  registry.RegisterFormat(CreateMockQptiffDescriptor());
-  registry.RegisterFormat(CreateMockSvsDescriptor());
-
-  // All support Pyramidal
-  auto pyramidal =
-      registry.ListFormatsByCapability(FormatCapability::kPyramidal);
-  EXPECT_EQ(pyramidal.size(), 3);
-
-  // MRXS and SVS support Compressed
-  auto compressed =
-      registry.ListFormatsByCapability(FormatCapability::kCompressed);
-  EXPECT_EQ(compressed.size(), 2);
-  EXPECT_TRUE(std::find(compressed.begin(), compressed.end(), "MRXS") !=
-              compressed.end());
-  EXPECT_TRUE(std::find(compressed.begin(), compressed.end(), "SVS") !=
-              compressed.end());
-
-  // Only QPTIFF supports Spectral
-  auto spectral = registry.ListFormatsByCapability(FormatCapability::kSpectral);
-  EXPECT_EQ(spectral.size(), 1);
-  EXPECT_EQ(spectral[0], "QPTIFF");
-
-  // Only SVS has associated images
-  auto assoc =
-      registry.ListFormatsByCapability(FormatCapability::kAssociatedImages);
-  EXPECT_EQ(assoc.size(), 1);
-  EXPECT_EQ(assoc[0], "SVS");
-
-  // Check capability that isn't set on any format
-  auto random_access =
-      registry.ListFormatsByCapability(FormatCapability::kRandomAccess);
-  EXPECT_TRUE(random_access.empty());
-}
-
-TEST(ReaderRegistryTest, MultipleCapabilityCheck) {
-  ReaderRegistry registry;
-  registry.RegisterFormat(CreateMockMrxsDescriptor());
-
-  auto* format = registry.GetFormat(".mrxs");
-  ASSERT_NE(format, nullptr);
-
-  // Check multiple capabilities
-  EXPECT_TRUE(
-      registry.SupportsCapability(".mrxs", FormatCapability::kPyramidal));
-  EXPECT_TRUE(registry.SupportsCapability(".mrxs", FormatCapability::kTiled));
-  EXPECT_TRUE(
-      registry.SupportsCapability(".mrxs", FormatCapability::kCompressed));
 }
 
 // ============================================================================
@@ -475,7 +376,6 @@ TEST(ReaderRegistryTest, ConcurrentRegistration) {
       FormatDescriptor desc;
       desc.format_name = "Format" + std::to_string(i);
       desc.primary_extension = ".fmt" + std::to_string(i);
-      desc.capabilities = SetCapability(0, FormatCapability::kPyramidal);
       desc.factory = [](std::shared_ptr<ITileCache> cache,
                         std::string_view filename)
           -> aifocore::Result<std::unique_ptr<SlideReader>> {
@@ -540,7 +440,6 @@ TEST(ReaderRegistryTest, MultiDotExtension) {
   FormatDescriptor desc;
   desc.format_name = "Archive";
   desc.primary_extension = ".tar.gz";
-  desc.capabilities = 0;
   desc.factory = [](std::shared_ptr<ITileCache> cache,
                     std::string_view filename)
       -> aifocore::Result<std::unique_ptr<SlideReader>> {
@@ -601,7 +500,6 @@ FormatDescriptor MakeContentMatchingDescriptor(std::string format_name,
   FormatDescriptor desc;
   desc.format_name = format_name;
   desc.primary_extension = std::move(extension);
-  desc.capabilities = 0;
   desc.factory = [name = format_name](std::shared_ptr<ITileCache> /*cache*/,
                                       std::string_view filename)
       -> aifocore::Result<std::unique_ptr<SlideReader>> {

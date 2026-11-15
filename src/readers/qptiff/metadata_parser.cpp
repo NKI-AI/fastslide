@@ -15,8 +15,12 @@
 #include "fastslide/readers/qptiff/metadata_parser.h"
 
 #include <array>
+#include <charconv>
 #include <cmath>
+#include <cstdint>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <vector>
 
 #include <pugixml.hpp>
@@ -27,6 +31,27 @@
 namespace fastslide {
 namespace formats {
 namespace qptiff {
+
+namespace {
+
+/// @brief Parse an unsigned integer from untrusted XML text.
+///
+/// `std::stoull` throws on both malformed and out-of-range input, which would
+/// escape this translation unit and, through the C API, cross an `extern "C"`
+/// boundary. Returns 0 for anything that is not a clean in-range integer,
+/// matching the treatment of an absent element.
+uint64_t ParseUInt64OrZero(std::string_view text) {
+  uint64_t value = 0;
+  const char* begin = text.data();
+  const char* end = begin + text.size();
+  const std::from_chars_result result = std::from_chars(begin, end, value);
+  if (result.ec != std::errc() || result.ptr != end) {
+    return 0;
+  }
+  return value;
+}
+
+}  // namespace
 
 aifocore::Status QpTiffMetadataParser::ParseSlideMetadata(
     const std::string& xml_content, QpTiffSlideMetadata& metadata) {
@@ -81,12 +106,11 @@ aifocore::Result<QpTiffChannelInfo> QpTiffMetadataParser::ParseChannelInfo(
 
   // Extract exposure time
   std::string exposure_str = GetText(&root, "ExposureTime");
-  channel.exposure_time = exposure_str.empty() ? 0 : std::stoull(exposure_str);
+  channel.exposure_time = ParseUInt64OrZero(exposure_str);
 
   // Extract signal units
   std::string signal_units_str = GetText(&root, "SignalUnits");
-  channel.signal_units =
-      signal_units_str.empty() ? 0 : std::stoull(signal_units_str);
+  channel.signal_units = ParseUInt64OrZero(signal_units_str);
 
   // Extract and parse color
   std::string color_str = GetText(&root, "Color");

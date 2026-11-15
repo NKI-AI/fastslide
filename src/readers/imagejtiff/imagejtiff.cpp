@@ -172,6 +172,20 @@ ImageDimensions ImageJTiffReader::GetTileSize() const {
   return pyramid_[0].size;
 }
 
+aifocore::Result<readers::tiff_quickhash::Spec>
+ImageJTiffReader::GetQuickHashSpec() const {
+  if (!tiff_index_ || pyramid_.empty() || pyramid_.back().pages.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "No pyramid levels to hash");
+  }
+  const auto& pages = pyramid_.back().pages;
+  return readers::tiff_quickhash::Spec{
+      .index = tiff_index_.get(),
+      .level_pages = std::vector<uint32_t>(pages.begin(), pages.end()),
+      .property_page = 0,
+  };
+}
+
 aifocore::Result<core::TilePlan> ImageJTiffReader::PrepareRequest(
     const core::TileRequest& request) const {
   const ImageJTiffPlanContext context{

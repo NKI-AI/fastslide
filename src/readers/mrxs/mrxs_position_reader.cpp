@@ -207,7 +207,7 @@ void ParsePositionBuffer(const std::vector<uint8_t>& position_data,
 ///
 /// Returns 1 when `zoom_levels` is empty (defensive; the INI parser already
 /// guarantees a non-empty list on success).
-constexpr int LevelZeroConcatFactor(const SlideDataInfo& slide_info) {
+int LevelZeroConcatFactor(const SlideDataInfo& slide_info) {
   if (slide_info.zoom_levels.empty()) {
     return 1;
   }

@@ -59,16 +59,9 @@ aifocore::Result<std::unique_ptr<SlideReader>> CreateMrxsReader(
 
 /// @brief Create a format descriptor for MRXS files
 ///
-/// Constructs a FormatDescriptor that describes the MRXS format's capabilities,
-/// requirements, and factory function. This descriptor is used by the reader
+/// Constructs a FormatDescriptor that describes the MRXS format's name,
+/// extension, and factory function. This descriptor is used by the reader
 /// registry to identify and handle MRXS files.
-///
-/// Capabilities:
-/// - Tiled: Images are stored as tiles
-/// - Pyramidal: Multiple resolution levels
-/// - AssociatedImages: Label, macro, thumbnail images
-/// - Compressed: JPEG/PNG/BMP compression
-/// - RandomAccess: Efficient random tile access
 ///
 /// @return Complete FormatDescriptor for MRXS format
 FormatDescriptor CreateMrxsFormatDescriptor() {
@@ -77,21 +70,6 @@ FormatDescriptor CreateMrxsFormatDescriptor() {
   desc.primary_extension = ".mrxs";
   desc.format_name = "MRXS";
   desc.version = "1.0.0";
-
-  // MRXS capabilities
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kTiled);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kPyramidal);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kAssociatedImages);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kCompressed);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kRandomAccess);
-
-  // Required capabilities (codecs, etc.)
-  desc.required_capabilities.push_back("jpeg");
 
   // Factory function
   desc.factory = CreateMrxsReader;

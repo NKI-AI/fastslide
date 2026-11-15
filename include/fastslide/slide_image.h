@@ -16,6 +16,7 @@
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_SLIDE_IMAGE_H_
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -31,6 +32,8 @@ namespace fastslide {
 namespace runtime {
 class Canvas;
 }  // namespace runtime
+
+class IccTransform;
 
 /// @brief One navigable pyramid inside a slide file ("series" / "scene").
 ///
@@ -115,31 +118,34 @@ class SlideImage {
   /// `GetLevelInfo` fails for every level.
   [[nodiscard]] int GetBestLevelForDownsample(double downsample) const;
 
-  /// @brief Restrict which channels `ReadRegion` returns (empty = all).
-  /// Per-image: setting this on image i does not affect image j.
-  void SetVisibleChannels(std::vector<size_t> channel_indices) {
-    visible_channels_ = std::move(channel_indices);
+  /// @brief Inject the ICC color transform to apply during `ReadRegion`.
+  ///
+  /// Set by the owning `SlideReader::SetColorTransform` so per-image reads
+  /// produce the same color-managed output as the container's `ReadRegion`.
+  /// Passing `nullptr` disables color management for this image. Treated as an
+  /// injected service (like a cache), hence const with a mutable backing field.
+  void SetColorTransform(std::shared_ptr<const IccTransform> transform) const {
+    color_transform_ = std::move(transform);
   }
-
-  /// @brief Currently-visible channel indices (empty = all visible).
-  [[nodiscard]] const std::vector<size_t>& GetVisibleChannels() const {
-    return visible_channels_;
-  }
-
-  /// @brief Reset to "show all channels".
-  void ShowAllChannels() { visible_channels_.clear(); }
 
  protected:
   SlideImage() = default;
 
   /// @brief Convert a `RegionSpec` into a `TileRequest` populated with the
-  /// per-image visible channels and fractional region bounds. Pure (no
-  /// I/O), shared with both `ReadRegion` and external callers that want
-  /// to drive the plan/execute pipeline manually.
+  /// fractional region bounds. Pure (no I/O), shared with both `ReadRegion`
+  /// and external callers that want to drive the plan/execute pipeline
+  /// manually.
   [[nodiscard]] aifocore::Result<core::TileRequest> RegionToTileRequest(
       const RegionSpec& region) const;
 
-  std::vector<size_t> visible_channels_;
+  /// @brief Apply the injected ICC color transform to a region in place.
+  /// No-op (returns OK) when no transform is set or the layout is not
+  /// color-managed. Called by `ReadRegion` before returning.
+  [[nodiscard]] aifocore::Status MaybeApplyColorTransform(Image& image) const;
+
+ private:
+  /// @brief Optional ICC color transform injected by the owning reader.
+  mutable std::shared_ptr<const IccTransform> color_transform_;
 };
 
 }  // namespace fastslide

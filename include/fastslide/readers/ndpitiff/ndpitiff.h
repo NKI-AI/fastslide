@@ -54,6 +54,12 @@ class NdpiTiffReader : public TiffBasedReader,
 
   [[nodiscard]] Metadata GetMetadata() const override;
 
+  /// @brief Embedded ICC profile (TIFF tag 0x8773), if present.
+  [[nodiscard]] aifocore::Result<std::vector<uint8_t>> GetIccProfile()
+      const override {
+    return tiff::ExtractIccProfile(GetTiffIndex());
+  }
+
   [[nodiscard]] std::string GetFormatName() const override { return "NDPI"; }
 
   [[nodiscard]] ImageFormat GetImageFormat() const override {
@@ -90,6 +96,11 @@ class NdpiTiffReader : public TiffBasedReader,
   aifocore::Status BuildPatchedJpegHeader(uint16_t tile_width,
                                           uint16_t tile_height,
                                           std::vector<uint8_t>& out) const;
+
+ protected:
+  /// @brief Hash the smallest level of the default focal plane.
+  [[nodiscard]] aifocore::Result<readers::tiff_quickhash::Spec>
+  GetQuickHashSpec() const override;
 
  private:
   friend class TiffReaderFactory<NdpiTiffReader>;

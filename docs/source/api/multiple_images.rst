@@ -82,9 +82,9 @@ is in ``slide.associated_images``.
 Threading and lifetimes
 -----------------------
 
-``SlideImage`` / ``SlideImageView`` are **stateless** apart from their
-``visible_channels`` selection. They do not own the reader; the reader owns
-them. Multiple threads may call ``read_region`` on the same or different
+``SlideImage`` / ``SlideImageView`` are **stateless**. They do not own the
+reader; the reader owns them. Multiple threads may call ``read_region`` on
+the same or different
 images concurrently. In Python, ``SlideImageView.read_region`` releases the
 GIL for the duration of the read so Python threads can perform overlapping
 reads in parallel.

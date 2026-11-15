@@ -18,12 +18,16 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "fastslide/core/tile_request.h"
 #include "fastslide/image.h"
 #include "fastslide/readers/dicom/dicom.h"
+#include "fastslide/slide_options.h"
 
 namespace fastslide {
 namespace {
@@ -82,6 +86,15 @@ class DicomConcatenationTest : public ::testing::Test {
         << "Missing test fixture directory: " << testdata_dir_;
     ASSERT_TRUE(fs::exists(testdata_dir_ / "part_1.dcm"));
     ASSERT_TRUE(fs::exists(testdata_dir_ / "part_2.dcm"));
+    ASSERT_TRUE(fs::exists(testdata_dir_ / "icc_profile.bin"));
+  }
+
+  // Read the committed sRGB profile that generate_concatenation.py embedded
+  // into part_1.dcm's Optical Path Sequence.
+  std::vector<uint8_t> ReadExpectedIccProfile() const {
+    std::ifstream in(testdata_dir_ / "icc_profile.bin", std::ios::binary);
+    return std::vector<uint8_t>(std::istreambuf_iterator<char>(in),
+                                std::istreambuf_iterator<char>());
   }
 
   fs::path testdata_dir_;
@@ -138,6 +151,52 @@ TEST_F(DicomConcatenationTest, MergesBothPartsIntoOneLevel) {
   EXPECT_EQ(level.parts[0].frame_offset + level.parts[0].frame_count,
             level.parts[1].frame_offset);
   EXPECT_EQ(level.parts[1].frame_offset + level.parts[1].frame_count, 8u);
+}
+
+TEST_F(DicomConcatenationTest, ExtractsEmbeddedIccProfile) {
+  auto reader_or = DicomReader::Create(testdata_dir_.string());
+  ASSERT_TRUE(reader_or.ok()) << reader_or.status().ToString();
+  auto reader = std::move(*reader_or);
+
+  // The profile lives in part_1's Optical Path Sequence (0048,0105 ->
+  // 0028,2000); part_1 is the primary file of the merged level. The reader
+  // must return it verbatim.
+  auto icc_or = reader->GetIccProfile();
+  ASSERT_TRUE(icc_or.ok()) << icc_or.status().ToString();
+
+  const std::vector<uint8_t> expected = ReadExpectedIccProfile();
+  ASSERT_FALSE(expected.empty());
+  EXPECT_EQ(icc_or.value(), expected);
+
+  // Sanity check: a real ICC profile carries the 'acsp' signature at byte 36.
+  ASSERT_GE(icc_or.value().size(), 40u);
+  EXPECT_EQ(icc_or.value()[36], 'a');
+  EXPECT_EQ(icc_or.value()[37], 'c');
+  EXPECT_EQ(icc_or.value()[38], 's');
+  EXPECT_EQ(icc_or.value()[39], 'p');
+}
+
+TEST_F(DicomConcatenationTest, EnableIccColorTransformSucceeds) {
+  auto reader_or = DicomReader::Create(testdata_dir_.string());
+  ASSERT_TRUE(reader_or.ok()) << reader_or.status().ToString();
+  auto reader = std::move(*reader_or);
+
+  // With a valid embedded sRGB profile, building the transform must succeed
+  // and colour-managed reads must still return correctly shaped RGB tiles.
+  auto status = reader->SetColorTransform(ColorSpace::kSRGB,
+                                          RenderingIntent::kPerceptual);
+  ASSERT_TRUE(status.ok()) << status.ToString();
+
+  core::RegionSpec region;
+  region.top_left = {0, 0};
+  region.size = {16, 16};
+  region.level = 0;
+
+  auto image_or = reader->ReadRegion(region);
+  ASSERT_TRUE(image_or.ok()) << image_or.status().ToString();
+  EXPECT_EQ(image_or->GetChannels(), 3u);
+  EXPECT_EQ(image_or->GetDimensions()[0], 16u);
+  EXPECT_EQ(image_or->GetDimensions()[1], 16u);
 }
 
 TEST_F(DicomConcatenationTest, FindPartForFrameSpansAllFrames) {

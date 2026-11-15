@@ -33,6 +33,7 @@
 #include "fastslide/readers/isyntax/third_party/isyntax_types.h"
 
 #ifdef __cplusplus
+#include <condition_variable>
 #include <mutex>
 #include "aifocore/status/result.h"
 
@@ -46,8 +47,10 @@ struct isyntax_tile_list_t {
 struct isyntax_cache_t {
   isyntax_tile_list_t cache_list{};
   std::mutex mutex{};
-  // TODO(avirodov): int refcount;
-  int target_cache_size = 0;
+  // Notified when a read finishes decoding or transforming tiles.
+  std::condition_variable tile_ready{};
+  // Bytes of coefficients the cache keeps for tiles no read uses.
+  size_t capacity_bytes = 0;
   block_allocator_t* ll_coeff_block_allocator = nullptr;
   block_allocator_t* h_coeff_block_allocator = nullptr;
   bool is_block_allocator_owned = false;
@@ -93,6 +96,10 @@ inline void Remove(isyntax_tile_list_t* list, isyntax_tile_t* tile) {
 }
 
 }  // namespace tilelist
+
+// Evicts the least recently used tiles until the coefficients fit in the
+// capacity of the cache. Called with the cache mutex held.
+void TrimCache(isyntax_cache_t* cache);
 
 // C++ tile read entry point: returns Status instead of printing/logging.
 aifocore::Status TileRead(isyntax_t* isyntax, isyntax_cache_t* cache, int scale,

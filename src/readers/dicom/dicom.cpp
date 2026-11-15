@@ -62,7 +62,9 @@ extern "C" {
 #include "fastslide/readers/dicom/dicom_plan_builder.h"
 #include "fastslide/readers/dicom/dicom_plan_context.h"
 #include "fastslide/readers/dicom/dicom_tile_executor.h"
+#include "fastslide/runtime/io/filesystem_utils.h"
 #include "fastslide/runtime/tile_writer.h"
+#include "fastslide/utilities/hash.h"
 
 namespace fastslide {
 
@@ -693,28 +695,51 @@ void DicomReader::ExtractObjectiveLensPower(const DcmDataSet* metadata,
   }
 }
 
+aifocore::Result<std::vector<uint8_t>> DicomReader::ExtractIccProfile(
+    const DcmDataSet* metadata) {
+  // In DICOM WSI the ICC Profile (0028,2000, VR OB) lives inside the first
+  // item of the Optical Path Sequence (0048,0105); see PS3.3 C.8.12.5.
+  DcmDataSet* optical_path =
+      GetSequenceItem(metadata, "OpticalPathSequence", 0);
+  if (!optical_path) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "DICOM slide has no OpticalPathSequence");
+  }
+  DcmElement* element = FindElement(optical_path, "ICCProfile");
+  const void* data = nullptr;
+  if (element == nullptr ||
+      !dcm_element_get_value_binary(nullptr, element, &data) ||
+      data == nullptr) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "DICOM slide has no embedded ICC profile");
+  }
+  const uint32_t length = dcm_element_get_length(element);
+  if (length == 0) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "DICOM ICC profile is empty");
+  }
+  const auto* bytes = static_cast<const uint8_t*>(data);
+  return std::vector<uint8_t>(bytes, bytes + length);
+}
+
 aifocore::Status DicomReader::Initialize() {
   // If the user pointed us at a directory, find the first DICOM file
   // inside and use that as the starting point. The sibling scan below will
   // then pick up the rest of the series.
-  std::error_code ec;
-  if (fs::is_directory(filename_, ec)) {
+  if (runtime::io::IsDirectoryOrFalse(filename_)) {
     fs::path chosen;
-    for (const auto& entry : fs::directory_iterator(filename_, ec)) {
-      if (ec) {
-        return AIFOCORE_MAKE_STATUS(
-            aifocore::StatusCode::kInternal,
-            aifocore::fmt::format("Failed to scan directory '{}': {}",
-                                  filename_, ec.message()));
-      }
-      if (!entry.is_regular_file(ec) || ec) {
+    AIFOCORE_ASSIGN_OR_RETURN(const auto entries,
+                              runtime::io::ListDirectory(filename_));
+    for (const fs::path& entry : entries) {
+      std::error_code ec;
+      if (!fs::is_regular_file(entry, ec) || ec) {
         continue;
       }
       // Prefer a `.dcm` file if present, otherwise any file with the magic.
-      auto ext = entry.path().extension().string();
+      auto ext = entry.extension().string();
       std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
-      if (ext == ".dcm" || ::fastslide::dicom::HasDicomMagic(entry.path())) {
-        chosen = entry.path();
+      if (ext == ".dcm" || ::fastslide::dicom::HasDicomMagic(entry)) {
+        chosen = entry;
         if (ext == ".dcm") {
           break;  // Strong signal — stop searching.
         }
@@ -741,22 +766,27 @@ aifocore::Status DicomReader::Initialize() {
   fs::path parent = fs::path(filename_).parent_path();
   std::string start_basename = fs::path(filename_).filename().string();
 
-  if (fs::is_directory(parent)) {
-    for (const auto& entry : fs::directory_iterator(parent)) {
-      if (!entry.is_regular_file())
+  if (runtime::io::IsDirectoryOrFalse(parent)) {
+    // A directory we cannot enumerate is reported rather than skipped: the
+    // series would silently lose the levels stored in its sibling files.
+    AIFOCORE_ASSIGN_OR_RETURN(const auto entries,
+                              runtime::io::ListDirectory(parent));
+    for (const fs::path& entry : entries) {
+      std::error_code ec;
+      if (!fs::is_regular_file(entry, ec) || ec)
         continue;
-      std::string name = entry.path().filename().string();
+      std::string name = entry.filename().string();
       if (name == start_basename)
         continue;
 
-      auto ext = entry.path().extension().string();
+      auto ext = entry.extension().string();
       std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
       const bool has_dcm_ext = (ext == ".dcm");
-      if (!has_dcm_ext && !::fastslide::dicom::HasDicomMagic(entry.path())) {
+      if (!has_dcm_ext && !::fastslide::dicom::HasDicomMagic(entry)) {
         continue;
       }
 
-      auto sibling_or = OpenDicomFile(entry.path().string(), true);
+      auto sibling_or = OpenDicomFile(entry.string(), true);
       if (!sibling_or.ok())
         continue;
 
@@ -812,6 +842,23 @@ aifocore::Status DicomReader::Initialize() {
   }
   if (l0.objective_lens_power) {
     properties_.objective_magnification = *l0.objective_lens_power;
+  }
+
+  // Cache the embedded ICC profile (if any) from the primary level so
+  // GetIccProfile()/SetColorTransform() can serve it without re-reading. The
+  // OpticalPathSequence that carries it is part of the fast metadata subset
+  // (the same one ExtractObjectiveLensPower reads above).
+  if (!l0.parts.empty()) {
+    DcmError* dcm_error = nullptr;
+    const DcmDataSet* metadata = dcm_filehandle_get_metadata_subset(
+        &dcm_error, l0.PrimaryFile().filehandle.get());
+    if (metadata != nullptr) {
+      if (auto icc_or = ExtractIccProfile(metadata); icc_or.ok()) {
+        icc_profile_ = icc_or.value();
+      }
+    } else if (dcm_error != nullptr) {
+      dcm_error_clear(&dcm_error);
+    }
   }
 
   return aifocore::Status::OkStatus();
@@ -946,10 +993,37 @@ Metadata DicomReader::GetMetadata() const {
   return meta;
 }
 
+aifocore::Result<std::vector<uint8_t>> DicomReader::GetIccProfile() const {
+  if (icc_profile_.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kNotFound,
+                                "DICOM slide has no embedded ICC profile");
+  }
+  return icc_profile_;
+}
+
 ImageDimensions DicomReader::GetTileSize() const {
   if (levels_.empty())
     return {0, 0};
   return {levels_[0].tile_w, levels_[0].tile_h};
+}
+
+aifocore::Result<std::string> DicomReader::GetQuickHash() const {
+  if (levels_.empty() || levels_[0].parts.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "No DICOM levels to identify the slide");
+  }
+  const std::string& slide_id = levels_[0].PrimaryFile().slide_id;
+  if (slide_id.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "Slide has an empty SeriesInstanceUID");
+  }
+
+  // OpenSlide hashes the UID as a NUL-terminated string
+  // (_openslide_hash_string), so the terminator is part of the digest.
+  QuickHashBuilder hasher;
+  AIFOCORE_RETURN_IF_ERROR(hasher.HashData(
+      reinterpret_cast<const uint8_t*>(slide_id.c_str()), slide_id.size() + 1));
+  return hasher.Finalize();
 }
 
 aifocore::Result<core::TilePlan> DicomReader::PrepareRequest(

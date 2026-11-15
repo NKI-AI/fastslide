@@ -118,6 +118,8 @@ cc_library(
         ":core_tile_request",
         ":image",
         "@aifocore-cpp//:concepts",
+        "@aifocore-cpp//:result",
+        "@simpletiff//:simpletiff_lib",
     ],
 )
 
@@ -131,6 +133,29 @@ cc_library(
     deps = [
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
+    name = "color_transform",
+    srcs = [
+        "src/utilities/color_lut_hwy.cpp",
+        "src/utilities/color_transform.cpp",
+    ],
+    hdrs = [
+        "include/fastslide/utilities/color_lut_hwy.h",
+        "include/fastslide/utilities/color_transform.h",
+    ],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":image",
+        ":slide_options",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+        "@hwy",
+        "@lcms2",
     ],
 )
 
@@ -173,6 +198,7 @@ cc_library(
     hdrs = [
         "include/fastslide/python/cache.h",
         "include/fastslide/python/reader.h",
+        "include/fastslide/python/status_error.h",
     ],
     includes = ["include"],
     visibility = ["//src/python:__pkg__"],
@@ -276,6 +302,9 @@ cc_library(
     hdrs = ["include/fastslide/slide_options.h"],
     includes = ["include"],
     visibility = ["//visibility:public"],
+    deps = [
+        ":colors",
+    ],
 )
 
 cc_library(
@@ -471,6 +500,7 @@ cc_library(
         ":runtime_cache_interface",
         ":runtime_format_descriptor",
         ":runtime_lru_tile_cache",
+        ":runtime_path_utils",
         ":runtime_reader_registry",
         ":runtime_tile_writer",
     ],
@@ -493,6 +523,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":cache",
+        ":color_transform",
         ":colors",
         ":core_slide_descriptor",
         ":core_tile_plan",
@@ -514,6 +545,7 @@ cc_library(
     ],
     hdrs = [
         "include/fastslide/readers/cached_tile_executor.h",
+        "include/fastslide/readers/inflight_decodes.h",
         "include/fastslide/readers/reader_factory.h",
         "include/fastslide/readers/simpletiff_decode_utils.h",
         "include/fastslide/readers/simpletiff_tile_executor_utils.h",
@@ -532,6 +564,7 @@ cc_library(
         ":runtime",
         ":runtime_binary_utils",
         ":slide_reader",
+        ":tiff_quickhash",
         ":tiff_utilities",
         "@aifocore-cpp//:concepts",
         "@aifocore-cpp//:result",
@@ -614,9 +647,12 @@ cc_library(
         ":cache",
         ":colors",
         ":core",
+        ":hash",
         ":image",
         ":readers",
         ":runtime",
+        ":runtime_filesystem_utils",
+        ":runtime_path_utils",
         ":simpletiff_plan_builder_utils",
         ":slide_reader",
         "@aifocore-cpp//:concepts",
@@ -655,14 +691,17 @@ cc_library(
         ":cache",
         ":colors",
         ":core",
+        ":hash",
         ":image",
         ":readers",
         ":runtime",
         ":runtime_file_reader",
+        ":runtime_filesystem_utils",
         ":runtime_j2k_decoder",
         ":runtime_jpeg_decoder",
         ":simpletiff_plan_builder_utils",
         ":slide_reader",
+        ":tiff_quickhash",
         "@aifocore-cpp//:concepts",
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
@@ -825,9 +864,11 @@ cc_library(
     deps = [
         ":cache",
         ":core",
+        ":hash",
         ":image",
         ":readers",
         ":runtime",
+        ":runtime_filesystem_utils",
         ":runtime_j2k_decoder",
         ":runtime_jpeg_decoder",
         ":slide_reader",
@@ -873,11 +914,13 @@ cc_library(
         ":cache",
         ":colors",
         ":core",
+        ":hash",
         ":image",
         ":readers",
         ":runtime",
         ":runtime_binary_utils",
         ":runtime_file_reader",
+        ":runtime_filesystem_utils",
         ":runtime_jpeg_decoder",
         ":runtime_jpeg_xr_decoder",
         ":slide_reader",
@@ -958,10 +1001,12 @@ cc_library(
     deps = [
         ":colors",
         ":core",
+        ":hash",
         ":image",
         ":libisyntax",
         ":readers",
         ":runtime",
+        ":runtime_filesystem_utils",
         ":slide_reader",
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
@@ -1121,8 +1166,10 @@ cc_library(
         ":runtime_binary_utils",
         ":runtime_bmp_decoder",
         ":runtime_file_reader",
+        ":runtime_filesystem_utils",
         ":runtime_jpeg_decoder",
         ":runtime_jpeg_xr_decoder",
+        ":runtime_path_utils",
         ":runtime_png_decoder",
         ":slide_reader",
         ":spatial_index",
@@ -1386,6 +1433,18 @@ cc_library(
 )
 
 cc_library(
+    name = "runtime_path_utils",
+    hdrs = ["include/fastslide/runtime/io/path_utils.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+cc_library(
     name = "runtime_file_reader",
     srcs = ["src/runtime/io/file_reader.cpp"],
     hdrs = ["include/fastslide/runtime/io/file_reader.h"],
@@ -1393,6 +1452,22 @@ cc_library(
     includes = ["include"],
     deps = [
         "@aifocore-cpp//:portability",
+        "@aifocore-cpp//:result",
+        "@aifocore-cpp//:utilities-core",
+    ],
+)
+
+# Non-throwing `std::filesystem` probes. Readers must use these instead of the
+# path-taking standard overloads, which throw on an unreadable parent directory
+# or a stale mount and would unwind out of the C ABI.
+cc_library(
+    name = "runtime_filesystem_utils",
+    srcs = ["src/runtime/io/filesystem_utils.cpp"],
+    hdrs = ["include/fastslide/runtime/io/filesystem_utils.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [
         "@aifocore-cpp//:result",
         "@aifocore-cpp//:utilities-core",
     ],
@@ -1423,6 +1498,7 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":cache",
+        ":color_transform",
         ":colors",
         ":core",
         ":formats",
@@ -1537,7 +1613,24 @@ cc_library(
     visibility = ["//visibility:public"],
     deps = [
         ":fastslide_lib",
+        ":runtime_global_cache_manager",
         ":runtime_png_decoder",
+    ],
+)
+
+# C API tile-cache tests. Require a real slide via FASTSLIDE_BENCHMARK_FILE;
+# skipped otherwise. Run with:
+#   FASTSLIDE_BENCHMARK_FILE=/abs/path/CMU-3.ndpi \
+#       bazelisk test //:cache_c_api_test --test_output=all
+cc_test(
+    name = "cache_c_api_test",
+    size = "small",
+    srcs = ["src/c/cache_c_api_test.cpp"],
+    deps = [
+        ":fastslide_c",
+        ":formats_ndpitiff",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
     ],
 )
 
@@ -1574,6 +1667,7 @@ cc_library(
     hdrs = ["src/testing/minimal_slide_reader.h"],
     strip_include_prefix = "src",
     deps = [
+        ":hash",
         ":image",
         ":metadata",
         ":slide_reader",
@@ -1585,18 +1679,6 @@ cc_test(
     name = "slide_reader_test",
     size = "small",
     srcs = ["src/slide_reader_test.cpp"],
-    deps = [
-        ":minimal_slide_reader_testing",
-        ":slide_reader",
-        "@googletest//:gtest",
-        "@googletest//:gtest_main",
-    ],
-)
-
-cc_test(
-    name = "channel_selection_test",
-    size = "small",
-    srcs = ["src/channel_selection_test.cpp"],
     deps = [
         ":minimal_slide_reader_testing",
         ":slide_reader",
@@ -1631,6 +1713,21 @@ cc_test(
     ],
 )
 
+# ICC color-management transform test
+cc_test(
+    name = "color_transform_test",
+    size = "small",
+    srcs = ["tests/color_transform_test.cpp"],
+    deps = [
+        ":color_transform",
+        ":image",
+        ":slide_options",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@lcms2",
+    ],
+)
+
 # iSyntax C++ conversion tests
 cc_test(
     name = "isyntax_math_utils_test",
@@ -1649,6 +1746,29 @@ cc_test(
     srcs = ["tests/isyntax_cpp_test.cpp"],
     deps = [
         ":libisyntax",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "isyntax_color_cpp_test",
+    size = "small",
+    srcs = ["tests/isyntax_color_cpp_test.cpp"],
+    deps = [
+        ":libisyntax",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "isyntax_plan_builder_test",
+    size = "small",
+    srcs = ["src/readers/isyntax/isyntax_plan_builder_test.cpp"],
+    deps = [
+        ":core",
+        ":formats_isyntax",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],
@@ -1680,6 +1800,17 @@ cc_test(
     name = "isyntax_open_cpp_test",
     size = "small",
     srcs = ["tests/isyntax_open_cpp_test.cpp"],
+    deps = [
+        ":libisyntax",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "isyntax_concurrent_read_cpp_test",
+    size = "small",
+    srcs = ["tests/isyntax_concurrent_read_cpp_test.cpp"],
     deps = [
         ":libisyntax",
         "@googletest//:gtest",
@@ -1733,6 +1864,41 @@ cc_test(
     deps = [
         ":formats_mrxs",
         ":mrxs_internal_types",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "mrxs_determinism_test",
+    size = "small",
+    srcs = ["src/readers/mrxs/mrxs_determinism_test.cpp"],
+    deps = [
+        ":formats_mrxs",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "mrxs_open_errors_test",
+    size = "small",
+    srcs = ["src/readers/mrxs/mrxs_open_errors_test.cpp"],
+    deps = [
+        ":formats_mrxs",
+        "@aifocore-cpp//:result",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "runtime_filesystem_utils_test",
+    size = "small",
+    srcs = ["src/runtime/io/filesystem_utils_test.cpp"],
+    deps = [
+        ":runtime_filesystem_utils",
+        "@aifocore-cpp//:result",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],
@@ -1813,6 +1979,7 @@ cc_test(
     size = "small",
     srcs = ["src/readers/dicom/dicom_concatenation_test.cpp"],
     data = [
+        "src/readers/dicom/testdata/icc_profile.bin",
         "src/readers/dicom/testdata/part_1.dcm",
         "src/readers/dicom/testdata/part_2.dcm",
     ],
@@ -1826,6 +1993,42 @@ cc_test(
         # (standalone build, value `""`) or loaded as an external dep
         # (value `"fastslide+"` under the monorepo `local_path_override`).
         "@rules_cc//cc/runfiles",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "cached_tile_executor_test",
+    size = "small",
+    srcs = ["src/readers/cached_tile_executor_test.cpp"],
+    deps = [
+        ":readers",
+        ":runtime_lru_tile_cache",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "j2k_decoder_test",
+    size = "small",
+    srcs = ["src/runtime/decoders/j2k_decoder_test.cpp"],
+    deps = [
+        ":runtime_j2k_decoder",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@openjp2",
+    ],
+)
+
+cc_test(
+    name = "inflight_decodes_test",
+    size = "small",
+    srcs = ["src/readers/inflight_decodes_test.cpp"],
+    deps = [
+        ":readers",
+        ":runtime_lru_tile_cache",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],
@@ -1855,11 +2058,60 @@ cc_test(
 )
 
 cc_test(
+    name = "hash_test",
+    size = "small",
+    srcs = ["src/utilities/hash_test.cpp"],
+    deps = [
+        ":hash",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "tiff_quickhash_test",
+    size = "small",
+    srcs = ["src/readers/tiff_quickhash_test.cpp"],
+    deps = [
+        ":hash",
+        ":tiff_quickhash",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+cc_test(
+    name = "tiff_tile_utilities_test",
+    size = "small",
+    srcs = ["src/utilities/tiff/tile_utilities_test.cpp"],
+    deps = [
+        ":tiff_utilities",
+        "@aifocore-cpp//:portability",
+        "@aifocore-cpp//:result",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@simpletiff//:simpletiff_lib",
+    ],
+)
+
+cc_test(
     name = "binary_utils_test",
     size = "small",
     srcs = ["src/runtime/io/binary_utils_test.cpp"],
     deps = [
         ":runtime_binary_utils",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "path_utils_test",
+    size = "small",
+    srcs = ["src/runtime/io/path_utils_test.cpp"],
+    deps = [
+        ":runtime_path_utils",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],

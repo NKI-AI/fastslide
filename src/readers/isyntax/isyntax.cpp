@@ -14,6 +14,7 @@
 
 #include "fastslide/readers/isyntax/isyntax.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -30,7 +31,9 @@
 #include "fastslide/readers/isyntax/isyntax_tile_executor.h"
 #include "fastslide/readers/isyntax/third_party/file.h"
 #include "fastslide/readers/isyntax/third_party/isyntax.h"
+#include "fastslide/runtime/io/filesystem_utils.h"
 #include "fastslide/runtime/tile_writer.h"
+#include "fastslide/utilities/hash.h"
 
 namespace fastslide {
 
@@ -47,20 +50,17 @@ IsyntaxReader::~IsyntaxReader() {}
 
 aifocore::Status IsyntaxReader::ValidateInput(
     const std::filesystem::path& filename) {
-  // Check extension
+  // Accept both iSyntax v1 (".isyntax") and v2 (".i2syntax"), case-insensitive.
   std::string ext = filename.extension().string();
-  // case insensitive check?
-  // For now simple check
-  if (ext != ".isyntax") {
+  std::transform(ext.begin(), ext.end(), ext.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+  if (ext != ".isyntax" && ext != ".i2syntax") {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Invalid extension for iSyntax: {}", ext));
   }
-  if (!std::filesystem::exists(filename)) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kNotFound,
-        aifocore::fmt::format("File not found: {}", filename.string()));
-  }
+  AIFOCORE_RETURN_IF_ERROR(
+      runtime::io::RequireExists(filename, "iSyntax slide file"));
   return aifocore::Status::OkStatus();
 }
 
@@ -256,6 +256,62 @@ aifocore::Result<RGBImage> IsyntaxReader::ReadAssociatedImage(
   return image;
 }
 
+aifocore::Result<std::string> IsyntaxReader::GetQuickHash() const {
+  const isyntax_t* handle = GetIsyntaxFile().handle();
+  if (handle == nullptr) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "iSyntax file is not open");
+  }
+  const int32_t wsi_index = handle->wsi_image_index;
+  if (wsi_index < 0 || wsi_index >= handle->image_count) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "iSyntax file has no WSI image to hash");
+  }
+  const isyntax_image_t& wsi = handle->images[wsi_index];
+  if (wsi.codeblocks == nullptr || wsi.codeblock_count <= 0) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kFailedPrecondition,
+        "iSyntax WSI image has no codeblocks to identify the slide");
+  }
+
+  QuickHashBuilder hasher;
+  if (handle->is_barcode_read) {
+    // NUL-terminated, matching how OpenSlide folds identifier strings in.
+    const std::string_view barcode(handle->barcode);
+    AIFOCORE_RETURN_IF_ERROR(hasher.HashData(
+        reinterpret_cast<const uint8_t*>(barcode.data()), barcode.size() + 1));
+  }
+
+  // The coarsest scale is the top of the wavelet pyramid: a handful of
+  // codeblocks, hashed in file order so the digest does not depend on how the
+  // header happened to enumerate them.
+  std::vector<const isyntax_codeblock_t*> coarsest;
+  for (int32_t i = 0; i < wsi.codeblock_count; ++i) {
+    const isyntax_codeblock_t& block = wsi.codeblocks[i];
+    if (static_cast<int32_t>(block.scale) == wsi.max_scale &&
+        block.block_size > 0) {
+      coarsest.push_back(&block);
+    }
+  }
+  if (coarsest.empty()) {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kFailedPrecondition,
+        aifocore::fmt::format(
+            "iSyntax WSI image has no codeblock data at its coarsest scale {}",
+            wsi.max_scale));
+  }
+  std::sort(coarsest.begin(), coarsest.end(),
+            [](const isyntax_codeblock_t* lhs, const isyntax_codeblock_t* rhs) {
+              return lhs->block_data_offset < rhs->block_data_offset;
+            });
+  for (const isyntax_codeblock_t* block : coarsest) {
+    AIFOCORE_RETURN_IF_ERROR(hasher.HashFilePart(
+        filename_, static_cast<int64_t>(block->block_data_offset),
+        static_cast<int64_t>(block->block_size)));
+  }
+  return hasher.Finalize();
+}
+
 Metadata IsyntaxReader::GetMetadata() const {
   Metadata meta;
   meta[std::string(MetadataKeys::kFormat)] = std::string("iSyntax");
@@ -273,6 +329,17 @@ Metadata IsyntaxReader::GetMetadata() const {
   return meta;
 }
 
+aifocore::Result<std::vector<uint8_t>> IsyntaxReader::GetIccProfile() const {
+  if (!isyntax_file_) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "iSyntax file is not open");
+  }
+  std::lock_guard<std::mutex> lock(mutex_);
+  isyntax::IccProfile profile;
+  AIFOCORE_ASSIGN_OR_RETURN(profile, isyntax_file_->ReadIccProfileForWsi());
+  return std::move(profile.bytes);
+}
+
 ImageDimensions IsyntaxReader::GetTileSize() const {
   return ImageDimensions{
       static_cast<uint32_t>(isyntax_file_ ? isyntax_file_->tile_width() : 0),
@@ -282,16 +349,24 @@ ImageDimensions IsyntaxReader::GetTileSize() const {
 aifocore::Result<core::TilePlan> IsyntaxReader::PrepareRequest(
     const core::TileRequest& request) const {
   AIFOCORE_ASSIGN_OR_RETURN(const auto level_info, GetLevelInfo(request.level));
+  const isyntax_t* isx = isyntax_file_->handle();
+  const isyntax_image_t* wsi = isx->images + isx->wsi_image_index;
+  const isyntax_level_t* level = wsi->levels + request.level;
   const IsyntaxPlanContext context{
       .tile_size = GetTileSize(),
       .level_info = level_info,
+      .level0_padding = wsi->level0_padding,
+      .origin_offset_in_pixels =
+          request.level == 0 ? 0 : level->origin_offset_in_pixels,
+      .grid_width_in_tiles = level->width_in_tiles,
+      .grid_height_in_tiles = level->height_in_tiles,
   };
   return IsyntaxPlanBuilder::BuildPlan(request, context);
 }
 
 aifocore::Status IsyntaxReader::ExecutePlan(const core::TilePlan& plan,
                                             runtime::Canvas& writer) const {
-  const IsyntaxExecContext context(GetFilename(), GetIsyntaxFile(), GetMutex(),
+  const IsyntaxExecContext context(GetFilename(), GetIsyntaxFile(),
                                    GetTileSize(), GetCache());
   return IsyntaxTileExecutor::ExecutePlan(plan, context, writer);
 }

@@ -17,8 +17,9 @@
 
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
+#include "fastslide/readers/cached_tile_executor.h"
 #include "fastslide/readers/philipstiff/philipstiff_exec_context.h"
-#include "fastslide/readers/tiff_based_tile_executor.h"
+#include "fastslide/runtime/cache_interface.h"
 
 namespace fastslide {
 
@@ -28,11 +29,19 @@ class Canvas;
 
 /// @brief Tile executor for Philips TIFF plans
 class PhilipsTiffTileExecutor
-    : public TiffBasedTileExecutor<PhilipsTiffTileExecutor> {
+    : public CachedTileExecutor<PhilipsTiffTileExecutor> {
  public:
   static aifocore::Status ExecutePlan(const core::TilePlan& plan,
                                       const PhilipsTiffExecContext& context,
                                       runtime::Canvas& writer);
+
+  /// @brief Cache key of a stored tile or strip: (page, tile/strip index).
+  static runtime::TileKey MakeCacheKey(const core::TileReadOp& operation,
+                                       const PhilipsTiffExecContext& context);
+
+  /// @brief Decode a stored tile or strip into the thread-local buffer.
+  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
+      const core::TileReadOp& operation, const PhilipsTiffExecContext& context);
 };
 
 }  // namespace fastslide

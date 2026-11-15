@@ -34,6 +34,22 @@ typedef enum {
   FASTSLIDE_PROPERTY_TYPE_DOUBLE
 } FastSlidePropertyType;
 
+/// @brief Target color space for ICC color management
+typedef enum {
+  FASTSLIDE_COLOR_SPACE_RGB,       ///< Standard RGB
+  FASTSLIDE_COLOR_SPACE_LINEAR,    ///< Linear-light RGB
+  FASTSLIDE_COLOR_SPACE_SRGB,      ///< sRGB (OpenSlide-compatible)
+  FASTSLIDE_COLOR_SPACE_AUTOMATIC  ///< Determine automatically (defaults sRGB)
+} FastSlideColorSpace;
+
+/// @brief ICC rendering intent for color management
+typedef enum {
+  FASTSLIDE_RENDERING_INTENT_PERCEPTUAL,             ///< Perceptual (default)
+  FASTSLIDE_RENDERING_INTENT_RELATIVE_COLORIMETRIC,  ///< Relative colorimetric
+  FASTSLIDE_RENDERING_INTENT_SATURATION,             ///< Saturation
+  FASTSLIDE_RENDERING_INTENT_ABSOLUTE_COLORIMETRIC   ///< Absolute colorimetric
+} FastSlideRenderingIntent;
+
 /// @brief Property value union
 typedef struct {
   FastSlidePropertyType type;
@@ -220,38 +236,6 @@ FASTSLIDE_API int fastslide_slide_reader_get_channel_metadata(
 FASTSLIDE_API void fastslide_slide_reader_free_channel_metadata(
     FastSlideChannelMetadata* metadata, int num_channels);
 
-// Channel visibility controls
-
-/// @brief Set visible channels
-/// @param reader Slide reader handle
-/// @param channel_indices Array of channel indices (NULL for all channels)
-/// @param num_channels Number of channels (0 for all channels)
-/// @return 1 on success, 0 on failure
-FASTSLIDE_API int fastslide_slide_reader_set_visible_channels(
-    FastSlideSlideReader* reader, const size_t* channel_indices,
-    int num_channels);
-
-/// @brief Get visible channels
-/// @param reader Slide reader handle
-/// @param channel_indices Output array of channel indices
-/// (allocated by function)
-/// @param num_channels Output number of channels
-/// @return 1 on success, 0 on failure
-FASTSLIDE_API int fastslide_slide_reader_get_visible_channels(
-    const FastSlideSlideReader* reader, size_t** channel_indices,
-    int* num_channels);
-
-/// @brief Show all channels
-/// @param reader Slide reader handle
-/// @return 1 on success, 0 on failure
-FASTSLIDE_API int fastslide_slide_reader_show_all_channels(
-    FastSlideSlideReader* reader);
-
-/// @brief Free visible channels array
-/// @param channel_indices Channel indices array
-FASTSLIDE_API void fastslide_slide_reader_free_visible_channels(
-    size_t* channel_indices);
-
 // Region reading
 
 /// @brief Read region from slide
@@ -408,6 +392,99 @@ FASTSLIDE_API int fastslide_slide_reader_is_region_valid(
 FASTSLIDE_API int fastslide_slide_reader_clamp_region(
     const FastSlideSlideReader* reader, const FastSlideRegionSpec* region,
     FastSlideRegionSpec* clamped_region);
+
+// ICC color management
+
+/// @brief Size in bytes of the slide's embedded ICC profile.
+/// @param reader Slide reader handle
+/// @return Profile size in bytes, or 0 if the slide has no embedded profile.
+FASTSLIDE_API size_t
+fastslide_slide_reader_get_icc_profile_size(const FastSlideSlideReader* reader);
+
+/// @brief Copy the slide's embedded ICC profile into a caller-owned buffer.
+/// @param reader Slide reader handle
+/// @param buffer Destination buffer (must be at least `buffer_size` bytes)
+/// @param buffer_size Size of `buffer` in bytes
+/// @return Number of bytes written, or 0 on failure (no profile, null buffer,
+///         or `buffer_size` smaller than the profile). Use
+///         `fastslide_slide_reader_get_icc_profile_size` to size the buffer.
+FASTSLIDE_API size_t fastslide_slide_reader_read_icc_profile(
+    const FastSlideSlideReader* reader, uint8_t* buffer, size_t buffer_size);
+
+/// @brief Enable in-library ICC color management for subsequent reads.
+///
+/// Builds a transform from the slide's embedded ICC profile to `target_space`
+/// and applies it in place during `read_region`. Enabling on a slide with no
+/// embedded profile is a no-op that still returns success (reads stay native).
+///
+/// @param reader Slide reader handle
+/// @param target_space Target color space (sRGB recommended)
+/// @param intent ICC rendering intent
+/// @param use_lut Non-zero to build the 256^3 8-bit LUT fast path (48 MiB,
+///        ~200 ms one-time cost) so 8-bit RGB(A) regions are color-managed
+///        with an O(1) table gather instead of an lcms2 pass.
+/// @return 1 on success (including the no-profile no-op), 0 on failure.
+FASTSLIDE_API int fastslide_slide_reader_enable_icc_transform(
+    FastSlideSlideReader* reader, FastSlideColorSpace target_space,
+    FastSlideRenderingIntent intent, int use_lut);
+
+// Tile caching
+
+/// @brief Snapshot of an internal tile cache's statistics.
+///
+/// Mirrors the C++ `fastslide::runtime::ITileCache::Stats` type. `hit_ratio`
+/// is in [0, 1]; it is 0 when no lookups have happened yet.
+typedef struct {
+  size_t capacity_bytes;      ///< Configured cache capacity in bytes.
+  size_t size;                ///< Number of tiles currently cached.
+  size_t hits;                ///< Cumulative cache hits.
+  size_t misses;              ///< Cumulative cache misses.
+  double hit_ratio;           ///< hits / (hits + misses), or 0 if none.
+  size_t memory_usage_bytes;  ///< Approximate bytes of decoded tile data held.
+} FastSlideCacheStats;
+
+/// @brief Attach a per-reader LRU tile cache (decode reuse) to the reader.
+///
+/// The reader caches decoded native tiles so overlapping or repeated
+/// `read_region` calls that map to the same tile-grid cell avoid re-decoding.
+/// Caching is opt-in: readers created via `fastslide_create_reader` have no
+/// cache until this is called.
+///
+/// @param reader Slide reader handle
+/// @param capacity_bytes Cache capacity in bytes; 0 disables and detaches any
+///        existing cache.
+/// @return 1 on success, 0 on failure (e.g. allocation failure).
+FASTSLIDE_API int fastslide_slide_reader_set_cache(FastSlideSlideReader* reader,
+                                                   size_t capacity_bytes);
+
+/// @brief Attach the process-wide global tile cache to the reader.
+///
+/// All readers that call this share one cache instance (see
+/// `fastslide_global_cache_set_capacity_bytes`). Prefer this when opening many
+/// slides that should share a single memory budget.
+///
+/// @param reader Slide reader handle
+/// @return 1 on success, 0 on failure.
+FASTSLIDE_API int fastslide_slide_reader_use_global_cache(
+    FastSlideSlideReader* reader);
+
+/// @brief Whether the reader currently has a tile cache attached.
+/// @param reader Slide reader handle
+/// @return 1 if a cache is attached, 0 otherwise (including null reader).
+FASTSLIDE_API int fastslide_slide_reader_is_cache_enabled(
+    const FastSlideSlideReader* reader);
+
+/// @brief Clear all tiles from the reader's cache (no-op if none attached).
+/// @param reader Slide reader handle
+FASTSLIDE_API void fastslide_slide_reader_clear_cache(
+    FastSlideSlideReader* reader);
+
+/// @brief Read the reader cache's statistics.
+/// @param reader Slide reader handle
+/// @param out_stats Output statistics (must be non-null)
+/// @return 1 on success, 0 if no cache is attached or on invalid arguments.
+FASTSLIDE_API int fastslide_slide_reader_get_cache_stats(
+    const FastSlideSlideReader* reader, FastSlideCacheStats* out_stats);
 
 // Memory management
 

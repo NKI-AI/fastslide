@@ -13,6 +13,9 @@
 #include <string>
 #include <utility>
 
+#include "fastslide/readers/isyntax/third_party/cache.h"
+#include "fastslide/runtime/cache_interface.h"
+#include "fastslide/runtime/global_cache_manager.h"
 #include "fastslide/runtime/plugin_loader.h"
 #include "fastslide/runtime/reader_registry.h"
 #include "fastslide/slide_reader.h"
@@ -67,10 +70,8 @@ int fastslide_registry_initialize(void) {
   // This ensures formats are registered even if static initialization
   // doesn't work properly (e.g. when loaded as a shared library from Go).
   auto& registry = fastslide::runtime::GetGlobalRegistry();
-  auto context = fastslide::runtime::PluginLoadContext::CreateDefault();
   const auto status =
-      fastslide::runtime::BuiltInPluginsInitializer::RegisterAll(registry,
-                                                                 context);
+      fastslide::runtime::BuiltInPluginsInitializer::RegisterAll(registry);
 
   if (!status.ok()) {
     FASTSLIDE_DEBUG_PRINT(
@@ -153,6 +154,100 @@ FastSlideSlideReader* fastslide_create_reader(const char* file_path) {
     return nullptr;
   }
   return fastslide_registry_create_reader(registry, file_path);
+}
+
+FastSlideSlideReader* fastslide_create_reader_with_options(
+    const char* file_path, const FastSlideOpenOptions* options) {
+  FastSlideSlideReader* reader = fastslide_create_reader(file_path);
+  if (reader == nullptr) {
+    return nullptr;
+  }
+
+  if (options != nullptr && options->apply_icc) {
+    if (!fastslide_slide_reader_enable_icc_transform(
+            reader, options->target_color_space, options->rendering_intent,
+            options->icc_use_lut)) {
+      // Building the transform failed (a profile was present but unusable).
+      // Surface the error and do not hand back a half-configured reader.
+      fastslide_slide_reader_free(reader);
+      return nullptr;
+    }
+  }
+
+  return reader;
+}
+
+FastSlideSlideReader* fastslide_create_reader_with_cache(
+    const char* file_path, size_t cache_capacity_bytes) {
+  FastSlideSlideReader* reader = fastslide_create_reader(file_path);
+  if (reader == nullptr) {
+    return nullptr;
+  }
+
+  if (cache_capacity_bytes != 0) {
+    if (!fastslide_slide_reader_set_cache(reader, cache_capacity_bytes)) {
+      // Cache allocation failed; do not hand back a reader without the
+      // caching the caller explicitly requested.
+      fastslide_slide_reader_free(reader);
+      return nullptr;
+    }
+  }
+
+  return reader;
+}
+
+// Global tile cache
+
+namespace {
+
+FastSlideCacheStats GlobalCacheStatsToC(
+    const fastslide::runtime::ITileCache::Stats& stats) {
+  FastSlideCacheStats out;
+  out.capacity_bytes = stats.capacity_bytes;
+  out.size = stats.size;
+  out.hits = stats.hits;
+  out.misses = stats.misses;
+  out.hit_ratio = stats.hit_ratio;
+  out.memory_usage_bytes = stats.memory_usage_bytes;
+  return out;
+}
+
+}  // namespace
+
+int fastslide_global_cache_set_capacity_bytes(size_t capacity_bytes) {
+  fastslide_clear_last_error();
+  const auto status =
+      fastslide::runtime::GlobalCacheManager::Instance().SetCapacityBytes(
+          capacity_bytes);
+  if (!status.ok()) {
+    fastslide_set_last_error(std::string(status.message()).c_str());
+    return 0;
+  }
+  return 1;
+}
+
+int fastslide_isyntax_cache_set_capacity_bytes(size_t capacity_bytes) {
+  fastslide_clear_last_error();
+  if (capacity_bytes == 0) {
+    fastslide_set_last_error("capacity_bytes must be > 0");
+    return 0;
+  }
+  isyntax::IsyntaxCache::SetSharedCapacityBytes(capacity_bytes);
+  return 1;
+}
+
+int fastslide_global_cache_get_stats(FastSlideCacheStats* out_stats) {
+  if (out_stats == nullptr) {
+    fastslide_set_last_error("out_stats cannot be null");
+    return 0;
+  }
+  *out_stats = GlobalCacheStatsToC(
+      fastslide::runtime::GlobalCacheManager::Instance().GetStats());
+  return 1;
+}
+
+void fastslide_global_cache_clear(void) {
+  fastslide::runtime::GlobalCacheManager::Instance().Clear();
 }
 
 // Utility functions
@@ -257,5 +352,5 @@ int fastslide_is_supported(const char* file_path) {
 // Version information
 
 const char* fastslide_get_version(void) {
-  return "0.7.4";
+  return "0.8.3";
 }

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -51,7 +51,9 @@
       #sidebar {
         scrollbar-width: thin;
         scrollbar-color: #4b5563 transparent;
-        transition: width 0.2s ease, opacity 0.2s ease;
+        transition:
+          width 0.2s ease,
+          opacity 0.2s ease;
       }
       #sidebar.collapsed {
         width: 0 !important;
@@ -253,7 +255,7 @@
       // passed as a ?slide=<relpath> query param that must be forwarded to the
       // /info and /tiles endpoints. The single-slide server ignores it.
       const slideParam = new URLSearchParams(window.location.search).get(
-        "slide"
+        "slide",
       );
 
       function withSlide(url) {
@@ -323,7 +325,7 @@
       function createMap(image, ext) {
         const { source, projection, resolutions, extent } = buildSource(
           image,
-          ext
+          ext,
         );
 
         layer = new ol.layer.Tile({ source });
@@ -406,12 +408,10 @@
           ? ((image.mpp[0] + image.mpp[1]) / 2).toFixed(4)
           : "N/A";
         document.getElementById("info-levels").textContent = image.level_count;
-        document.getElementById(
-          "info-zoom"
-        ).textContent = `${image.min_zoom} – ${image.max_zoom}`;
-        document.getElementById(
-          "info-tile"
-        ).textContent = `${image.tile_size} px`;
+        document.getElementById("info-zoom").textContent =
+          `${image.min_zoom} – ${image.max_zoom}`;
+        document.getElementById("info-tile").textContent =
+          `${image.tile_size} px`;
       }
 
       function selectImage(index) {
@@ -419,7 +419,7 @@
         populateSidebar();
         createMap(
           currentImage(),
-          document.getElementById("format-select").value
+          document.getElementById("format-select").value,
         );
       }
 

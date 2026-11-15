@@ -52,31 +52,6 @@ uint64_t DecodeChunkX(uint64_t encoded) {
   return encoded & 0xFFFFFFFFULL;
 }
 
-/// @brief Build the on-disk relative chunk path for a Zarr V3 default
-/// chunk-key encoding ("c" prefix + per-axis indices).
-std::string BuildChunkRelativePath(const OmeZarrLevelInfo& level,
-                                   uint64_t chunk_y, uint64_t chunk_x,
-                                   uint64_t chunk_c) {
-  const char sep = level.array_metadata.chunk_key_separator;
-  std::string path = "c";
-  const auto rank = level.array_metadata.shape.size();
-  for (size_t i = 0; i < rank; ++i) {
-    uint64_t idx = 0;
-    if (i == level.y_axis) {
-      idx = chunk_y;
-    } else if (i == level.x_axis) {
-      idx = chunk_x;
-    } else if (i == level.c_axis) {
-      idx = chunk_c;
-    } else {
-      idx = 0;
-    }
-    path.push_back(sep);
-    path += std::to_string(idx);
-  }
-  return path;
-}
-
 aifocore::Result<std::vector<uint8_t>> ReadFileBytes(const fs::path& path) {
   std::ifstream stream(path, std::ios::binary | std::ios::ate);
   if (!stream.is_open()) {

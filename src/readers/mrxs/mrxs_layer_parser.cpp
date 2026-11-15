@@ -218,9 +218,10 @@ aifocore::Status ParseTiledLayers(const IniFile& ini,
     AIFOCORE_ASSIGN_OR_RETURN(format_str,
                               ini.GetString(section, kKeyImageFormat));
     AIFOCORE_ASSIGN_OR_RETURN(level.image_format, ParseImageFormat(format_str));
+    // Swapped to RGB as OpenSlide's mirax driver does.
     auto fill_color = ini.GetInt(section, kKeyImageFillColorBgr);
-    level.background_color_rgb =
-        fill_color.ok() ? static_cast<uint32_t>(*fill_color) : 0xFFFFFFFF;
+    level.background_color_rgb = BgrToRgb24(
+        fill_color.ok() ? static_cast<uint32_t>(*fill_color) : 0xFFFFFF);
 
     AIFOCORE_ASSIGN_OR_RETURN(level.image_width,
                               ini.GetInt(section, kKeyDigitizerWidth));

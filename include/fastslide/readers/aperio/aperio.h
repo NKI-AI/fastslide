@@ -104,6 +104,12 @@ class AperioReader : public TiffBasedReader,
 
   [[nodiscard]] Metadata GetMetadata() const override;
 
+  /// @brief Embedded ICC profile (TIFF tag 0x8773), if present.
+  [[nodiscard]] aifocore::Result<std::vector<uint8_t>> GetIccProfile()
+      const override {
+    return tiff::ExtractIccProfile(GetTiffIndex());
+  }
+
   [[nodiscard]] std::string GetFormatName() const override { return "Aperio"; }
 
   [[nodiscard]] ImageFormat GetImageFormat() const override {
@@ -115,8 +121,6 @@ class AperioReader : public TiffBasedReader,
   }
 
   [[nodiscard]] ImageDimensions GetTileSize() const override;
-
-  [[nodiscard]] aifocore::Result<std::string> GetQuickHash() const override;
 
   // Two-stage pipeline implementation
   [[nodiscard]] aifocore::Result<core::TilePlan> PrepareRequest(
@@ -150,6 +154,11 @@ class AperioReader : public TiffBasedReader,
   [[nodiscard]] const simpletiff::TiffIndex& GetTiffIndex() const {
     return *tiff_index_;
   }
+
+ protected:
+  /// @brief Hash the smallest level, with properties from directory 0.
+  [[nodiscard]] aifocore::Result<readers::tiff_quickhash::Spec>
+  GetQuickHashSpec() const override;
 
  private:
   /// @brief Allow factory access to private constructor and methods

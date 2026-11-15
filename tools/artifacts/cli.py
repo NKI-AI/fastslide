@@ -1,11 +1,11 @@
-"""CLI for building FastSlide artifacts (wheels + packages + JARs)."""
+"""CLI for building FastSlide artifacts (wheels + JARs)."""
 
 from __future__ import annotations
 
 import argparse
 
-from . import jars, packages, wheels
-from .specs import PLATFORMS, PY_TAG_TO_VERSION
+from . import jars, wheels
+from .specs import PLATFORMS
 
 
 def main() -> None:
@@ -23,13 +23,6 @@ def main() -> None:
         help="Platform(s) to build. Defaults to all supported platforms.",
     )
     parser.add_argument(
-        "--python",
-        action="append",
-        dest="python_tags",
-        choices=sorted(PY_TAG_TO_VERSION.keys()),
-        help="Python tag(s) to build (e.g. cp311). Defaults to all supported tags.",
-    )
-    parser.add_argument(
         "--keep-going",
         action="store_true",
         help="Continue building other artifacts after a failure.",
@@ -38,11 +31,6 @@ def main() -> None:
         "--skip-wheels",
         action="store_true",
         help="Skip building wheels.",
-    )
-    parser.add_argument(
-        "--skip-packages",
-        action="store_true",
-        help="Skip building .tar.xz packages.",
     )
     parser.add_argument(
         "--skip-jars",
@@ -59,7 +47,6 @@ def main() -> None:
     args = parser.parse_args()
 
     platforms = args.platforms or list(PLATFORMS.keys())
-    python_tags = args.python_tags or list(PY_TAG_TO_VERSION.keys())
 
     exit_code = 0
 
@@ -67,22 +54,10 @@ def main() -> None:
         wheels_rc = wheels.build_wheels(
             bazel_cmd=args.bazel,
             platforms=platforms,
-            python_tags=python_tags,
             keep_going=args.keep_going,
             extra_bazel_args=args.bazel_args,
         )
         if wheels_rc != 0:
-            exit_code = 1
-            if not args.keep_going:
-                raise SystemExit(exit_code)
-
-    if not args.skip_packages:
-        packages_rc = packages.build_packages_keep_going(
-            args.bazel,
-            platforms,
-            keep_going=args.keep_going,
-        )
-        if packages_rc != 0:
             exit_code = 1
             if not args.keep_going:
                 raise SystemExit(exit_code)

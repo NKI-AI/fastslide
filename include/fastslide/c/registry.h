@@ -46,6 +46,79 @@ FASTSLIDE_API FastSlideSlideReader* fastslide_registry_create_reader(
 FASTSLIDE_API FastSlideSlideReader* fastslide_create_reader(
     const char* file_path);
 
+/// @brief Options controlling how a slide is opened.
+///
+/// Zero-initialize (e.g. `FastSlideOpenOptions options = {0};`) for defaults:
+/// no ICC color management. When `apply_icc` is non-zero and the slide carries
+/// an embedded ICC profile, `read_region` returns pixels already converted to
+/// `target_color_space` using `rendering_intent`.
+typedef struct {
+  int apply_icc;  ///< Non-zero to apply the embedded ICC profile on read.
+  FastSlideColorSpace target_color_space;     ///< Target space (sRGB default).
+  FastSlideRenderingIntent rendering_intent;  ///< Rendering intent.
+  int icc_use_lut;  ///< Non-zero to build the 256^3 8-bit LUT fast path.
+} FastSlideOpenOptions;
+
+/// @brief Create a slide reader with open options (e.g. ICC color management).
+///
+/// Equivalent to `fastslide_create_reader` plus, when `options->apply_icc` is
+/// set, enabling the ICC transform (see
+/// `fastslide_slide_reader_enable_icc_transform`). A null `options` behaves
+/// like `fastslide_create_reader`.
+///
+/// @param file_path Path to slide file
+/// @param options Open options, or NULL for defaults
+/// @return Slide reader handle or NULL on failure
+FASTSLIDE_API FastSlideSlideReader* fastslide_create_reader_with_options(
+    const char* file_path, const FastSlideOpenOptions* options);
+
+/// @brief Create a slide reader with a per-reader LRU tile cache attached.
+///
+/// Equivalent to `fastslide_create_reader` followed by
+/// `fastslide_slide_reader_set_cache(reader, cache_capacity_bytes)`. A
+/// `cache_capacity_bytes` of 0 behaves like `fastslide_create_reader` (no
+/// cache).
+///
+/// @param file_path Path to slide file
+/// @param cache_capacity_bytes Cache capacity in bytes (0 = no cache)
+/// @return Slide reader handle or NULL on failure
+FASTSLIDE_API FastSlideSlideReader* fastslide_create_reader_with_cache(
+    const char* file_path, size_t cache_capacity_bytes);
+
+// Global tile cache
+
+/// @brief Resize the process-wide global tile cache.
+///
+/// Replaces the global cache with a new LRU cache of the requested capacity,
+/// dropping any currently cached tiles. Readers attached via
+/// `fastslide_slide_reader_use_global_cache` share this cache.
+///
+/// @param capacity_bytes New global cache capacity in bytes (must be > 0)
+/// @return 1 on success, 0 on failure.
+FASTSLIDE_API int fastslide_global_cache_set_capacity_bytes(
+    size_t capacity_bytes);
+
+/// @brief Read the global tile cache's statistics.
+/// @param out_stats Output statistics (must be non-null)
+/// @return 1 on success, 0 on invalid arguments.
+FASTSLIDE_API int fastslide_global_cache_get_stats(
+    FastSlideCacheStats* out_stats);
+
+/// @brief Clear all tiles from the process-wide global tile cache.
+FASTSLIDE_API void fastslide_global_cache_clear(void);
+
+/// @brief Set the memory budget of the iSyntax coefficient cache.
+///
+/// Every open iSyntax slide shares the cache: it keeps the decoded wavelet
+/// coefficients of recently read tiles, so that neighbouring reads do not
+/// decode them again. Caches over the budget evict tiles on their next read.
+/// The default is 1 GiB.
+///
+/// @param capacity_bytes Budget in bytes (must be > 0)
+/// @return 1 on success, 0 on failure.
+FASTSLIDE_API int fastslide_isyntax_cache_set_capacity_bytes(
+    size_t capacity_bytes);
+
 // Utility functions
 
 /// @brief Get supported file extensions

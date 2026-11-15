@@ -62,6 +62,12 @@ class BifReader : public TiffBasedReader, public TiffReaderFactory<BifReader> {
 
   [[nodiscard]] Metadata GetMetadata() const override;
 
+  /// @brief Embedded ICC profile (TIFF tag 0x8773), if present.
+  [[nodiscard]] aifocore::Result<std::vector<uint8_t>> GetIccProfile()
+      const override {
+    return tiff::ExtractIccProfile(GetTiffIndex());
+  }
+
   [[nodiscard]] std::string GetFormatName() const override { return "BIF"; }
 
   [[nodiscard]] ImageFormat GetImageFormat() const override {
@@ -82,6 +88,11 @@ class BifReader : public TiffBasedReader, public TiffReaderFactory<BifReader> {
   [[nodiscard]] const simpletiff::TiffIndex& GetTiffIndex() const {
     return *tiff_index_;
   }
+
+ protected:
+  /// @brief Hash the smallest level, with properties from directory 0.
+  [[nodiscard]] aifocore::Result<readers::tiff_quickhash::Spec>
+  GetQuickHashSpec() const override;
 
  private:
   friend class TiffReaderFactory<BifReader>;

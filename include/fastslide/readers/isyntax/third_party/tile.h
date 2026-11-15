@@ -52,7 +52,9 @@ aifocore::Result<uint32_t> IdwtTileForColorChannel(
     int32_t tile_y, int32_t color, icoeff_t* dest_buffer);
 
 // Distribute the decoded LL region from an IDWT buffer into the 4 child tiles
-// at scale-1 for a single color channel.
+// at scale-1 for a single color channel. Children keep the LL blocks they
+// already have: concurrent reads may be using them, and they hold the same
+// coefficients.
 aifocore::Status DistributeLlToChildrenFromIdwt(
     isyntax_image_t* wsi, int32_t scale, int32_t tile_x, int32_t tile_y,
     int32_t color, const icoeff_t* idwt, int32_t idwt_stride,
@@ -60,6 +62,8 @@ aifocore::Status DistributeLlToChildrenFromIdwt(
     block_allocator_t* ll_coeff_block_allocator);
 
 // Load a tile (decode coefficients -> IDWT -> optional YCoCg->RGB conversion).
+// Safe for concurrent reads (see TileRead): it writes no field other reads
+// check, so the caller sets has_ll of the children.
 aifocore::Status LoadTile(isyntax_t* isyntax, isyntax_image_t* wsi,
                           int32_t scale, int32_t tile_x, int32_t tile_y,
                           block_allocator_t* ll_coeff_block_allocator,

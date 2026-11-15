@@ -60,6 +60,10 @@ class IsyntaxReader : public SlideReader, public ReaderFactory<IsyntaxReader> {
 
   [[nodiscard]] Metadata GetMetadata() const override;
 
+  /// @brief Embedded DICOM ICC profile for the WSI image, if present.
+  [[nodiscard]] aifocore::Result<std::vector<uint8_t>> GetIccProfile()
+      const override;
+
   [[nodiscard]] std::string GetFormatName() const override { return "iSyntax"; }
 
   [[nodiscard]] ImageFormat GetImageFormat() const override {
@@ -79,10 +83,20 @@ class IsyntaxReader : public SlideReader, public ReaderFactory<IsyntaxReader> {
   [[nodiscard]] aifocore::Status ExecutePlan(
       const core::TilePlan& plan, runtime::Canvas& writer) const override;
 
+  /// @brief SHA-256 of the slide barcode plus the coarsest wavelet level.
+  ///
+  /// This follows the shape it uses in other readers: identifying metadata plus
+  /// the smallest level's compressed bytes. The barcode alone would be wrong --
+  /// it names the physical slide, so two scans of one slide would collide --
+  /// hence the codeblock data at `max_scale`, which is the top of the wavelet
+  /// pyramid and therefore small. The iSyntax XML header is streamed and
+  /// discarded during parsing, so it is not available to hash the way CZI's
+  /// metadata XML is.
+  /// @return Lowercase 64-character hex digest, never empty.
+  [[nodiscard]] aifocore::Result<std::string> GetQuickHash() const override;
+
   // Internal accessors
   const isyntax::IsyntaxFile& GetIsyntaxFile() const { return *isyntax_file_; }
-
-  std::mutex& GetMutex() const { return mutex_; }
 
   std::string_view GetFilename() const { return filename_; }
 
@@ -105,7 +119,7 @@ class IsyntaxReader : public SlideReader, public ReaderFactory<IsyntaxReader> {
   // Cache channel metadata
   std::vector<ChannelMetadata> channels_;
 
-  // Mutex for thread safety if needed (libisyntax usage)
+  // Serialises ICC profile reads.
   mutable std::mutex mutex_;
 };
 

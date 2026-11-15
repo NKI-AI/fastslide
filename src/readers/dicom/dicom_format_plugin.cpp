@@ -89,17 +89,6 @@ FormatDescriptor CreateDicomFormatDescriptor() {
   desc.format_name = "DICOM";
   desc.version = "1.0.0";
 
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kTiled);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kPyramidal);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kAssociatedImages);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kCompressed);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kRandomAccess);
-
   desc.factory = CreateDicomReader;
   desc.matches_content = MatchesDicomContent;
   return desc;

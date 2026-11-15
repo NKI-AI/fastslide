@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -100,15 +101,13 @@ aifocore::Status BifTileExecutor::ExecutePlan(const core::TilePlan& plan,
 
   const auto& tiff = context.Tiff();
 
-  // Phase 1: decode each unique physical tile once, in parallel, into an owned
-  // buffer. Decoding is the expensive step (JPEG/YCbCr) and is embarrassingly
-  // parallel; painting (phase 2) must stay serial and ordered, so the decoded
-  // pixels are copied out of the thread-local/cached decode buffers here.
+  // Phase 1: decode each unique physical tile once, in parallel. Decoding is
+  // the expensive step (JPEG/YCbCr) and is embarrassingly parallel; painting
+  // (phase 2) must stay serial and ordered, so each decoded tile is held by an
+  // owning handle until then. A cache hit shares the cached tile (BIF tiles are
+  // 1024x1360, ~4 MB decoded, so copying them per read was not free).
   struct OwnedTile {
-    std::vector<uint8_t> data;
-    uint32_t width = 0;
-    uint32_t height = 0;
-    uint32_t channels = 0;
+    std::shared_ptr<const CachedTileData> tile;
     bool paintable = false;  // decoded and non-empty (not unscanned)
   };
 
@@ -144,18 +143,14 @@ aifocore::Status BifTileExecutor::ExecutePlan(const core::TilePlan& plan,
       return;
     }
 
-    auto decoded_or = ReadWithCacheDecoded(first, context);
-    if (!decoded_or.ok()) {
-      record_error(decoded_or.status());
+    auto tile_or = ReadWithCacheShared(first, context);
+    if (!tile_or.ok()) {
+      record_error(tile_or.status());
       return;
     }
-    const DecodedTileData& src = *decoded_or;
     OwnedTile& dst = decoded[gi];
-    dst.width = src.width;
-    dst.height = src.height;
-    dst.channels = src.channels;
-    dst.data.assign(src.data.begin(), src.data.end());
-    dst.paintable = !dst.data.empty();
+    dst.tile = *std::move(tile_or);
+    dst.paintable = !dst.tile->data.empty();
   });
   futures.wait();
   if (first_error.has_value()) {
@@ -192,10 +187,10 @@ aifocore::Status BifTileExecutor::ExecutePlan(const core::TilePlan& plan,
       continue;
     }
     const DecodedTileData view{
-        .data = std::span<const uint8_t>(tile.data),
-        .width = tile.width,
-        .height = tile.height,
-        .channels = tile.channels,
+        .data = std::span<const uint8_t>(tile.tile->data),
+        .width = tile.tile->size[0],
+        .height = tile.tile->size[1],
+        .channels = tile.tile->channels,
     };
     AIFOCORE_RETURN_IF_ERROR(
         PaintOp(plan.operations[op_idx], view, writer, writer_mutex));

@@ -47,17 +47,6 @@ FormatDescriptor CreateOmetiffFormatDescriptor() {
   desc.format_name = "OME-TIFF";
   desc.version = "1.0.0";
 
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kTiled);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kPyramidal);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kSpectral);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kCompressed);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kRandomAccess);
-
   desc.factory = CreateOmetiffReader;
   return desc;
 }

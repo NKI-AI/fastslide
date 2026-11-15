@@ -69,6 +69,12 @@ class ImageJTiffReader : public TiffBasedReader,
 
   [[nodiscard]] Metadata GetMetadata() const override;
 
+  /// @brief Embedded ICC profile (TIFF tag 0x8773), if present.
+  [[nodiscard]] aifocore::Result<std::vector<uint8_t>> GetIccProfile()
+      const override {
+    return tiff::ExtractIccProfile(GetTiffIndex());
+  }
+
   [[nodiscard]] std::string GetFormatName() const override {
     return "ImageJ TIFF";
   }
@@ -100,6 +106,11 @@ class ImageJTiffReader : public TiffBasedReader,
   ///        page-0 ImageDescription. Used by the shared .tif factory to route
   ///        between readers without opening the file twice on the hot path.
   [[nodiscard]] static bool IsImageJTiff(const simpletiff::TiffIndex& index);
+
+ protected:
+  /// @brief Hash every channel page of the smallest level.
+  [[nodiscard]] aifocore::Result<readers::tiff_quickhash::Spec>
+  GetQuickHashSpec() const override;
 
  private:
   friend class TiffReaderFactory<ImageJTiffReader>;

@@ -13,11 +13,19 @@ tile size of 16x16 px, giving a 64x32 total pixel matrix using
 TILED_FULL layout (raster order). Each frame is a uniform colour so a
 test can assert the right tile is delivered for the right (col, row).
 
+Part 1 additionally carries an embedded ICC colour profile in its Optical
+Path Sequence (0048,0105 -> 0028,2000), so tests can exercise ICC profile
+extraction (DicomReader::GetIccProfile). The exact profile bytes are written
+to `icc_profile.bin` alongside the .dcm files so the test can assert a verbatim
+round-trip without hard-coding the profile contents.
+
 The script is committed for reproducibility; the resulting .dcm files
 are committed alongside it so tests do not require running Python.
 
 Usage:
     python3 generate_concatenation.py [--output-dir DIR]
+
+Requires: pydicom, numpy, Pillow (Pillow only for the sRGB ICC profile).
 """
 
 from __future__ import annotations
@@ -27,6 +35,7 @@ import pathlib
 
 import numpy as np
 import pydicom
+from PIL import ImageCms
 from pydicom.dataset import Dataset, FileDataset
 from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 
@@ -42,6 +51,12 @@ TOTAL_FRAMES = TILES_ACROSS * TILES_DOWN  # 8
 
 # Concatenation split: 4 frames in part 1, 4 frames in part 2.
 PART_FRAME_COUNTS = (4, 4)
+
+
+def _srgb_icc_bytes() -> bytes:
+    """Return the bytes of a standard sRGB ICC profile."""
+    profile = ImageCms.createProfile("sRGB")
+    return ImageCms.ImageCmsProfile(profile).tobytes()
 
 
 def _make_pixel_payload(start_frame: int, num_frames: int) -> bytes:
@@ -71,6 +86,7 @@ def _build_part(
     in_concatenation_number: int,
     frame_offset: int,
     num_frames: int,
+    icc_profile: bytes | None = None,
 ) -> None:
     """Write one concatenation part as a DICOM Part 10 file."""
     file_meta = Dataset()
@@ -117,6 +133,15 @@ def _build_part(
     ds.InConcatenationNumber = in_concatenation_number
     ds.ConcatenationFrameOffsetNumber = frame_offset
 
+    # Optical Path Sequence (PS3.3 C.8.12.5). When an ICC profile is supplied
+    # it is embedded here (0048,0105 -> 0028,2000), which is where DICOM WSI
+    # carries colour management data and where DicomReader looks for it.
+    if icc_profile is not None:
+        optical_path = Dataset()
+        optical_path.OpticalPathIdentifier = "1"
+        optical_path.ICCProfile = icc_profile
+        ds.OpticalPathSequence = [optical_path]
+
     # Pixel data.
     ds.PixelData = _make_pixel_payload(frame_offset, num_frames)
 
@@ -143,6 +168,14 @@ def main() -> None:
     study_uid = generate_uid()
     concatenation_uid = generate_uid()
 
+    # Embed the ICC profile on part 1 only (frame_offset 0), which is the
+    # primary file for the merged level. Persist the exact bytes so the test
+    # can assert a verbatim round-trip.
+    icc_bytes = _srgb_icc_bytes()
+    icc_path = args.output_dir / "icc_profile.bin"
+    icc_path.write_bytes(icc_bytes)
+    print(f"wrote {icc_path} ({len(icc_bytes)} bytes)")
+
     frame_cursor = 0
     for idx, frame_count in enumerate(PART_FRAME_COUNTS, start=1):
         out = args.output_dir / f"part_{idx}.dcm"
@@ -154,6 +187,7 @@ def main() -> None:
             in_concatenation_number=idx,
             frame_offset=frame_cursor,
             num_frames=frame_count,
+            icc_profile=icc_bytes if idx == 1 else None,
         )
         print(f"wrote {out} (frames {frame_cursor}..{frame_cursor + frame_count - 1})")
         frame_cursor += frame_count

@@ -83,7 +83,7 @@ export interface FastSlideReader {
     y: number,
     width: number,
     height: number,
-    level: number
+    level: number,
   ): FsResult<FastSlideImage>;
 }
 
@@ -120,7 +120,7 @@ export interface EmscriptenFileSystem {
   writeFile(
     path: string,
     data: string | Uint8Array,
-    opts?: { encoding?: string }
+    opts?: { encoding?: string },
   ): void;
   unlink(path: string): void;
 }

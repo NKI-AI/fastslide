@@ -15,6 +15,9 @@
 #include <vector>
 
 #include "fastslide/c/image.h"
+#include "fastslide/runtime/cache_interface.h"
+#include "fastslide/runtime/global_cache_manager.h"
+#include "fastslide/runtime/lru_tile_cache.h"
 #include "fastslide/slide_reader.h"
 #include "internal/debug.h"
 #include "internal/error.h"
@@ -64,6 +67,37 @@ FastSlidePropertyType PropertyTypeToCEnum(
     return FASTSLIDE_PROPERTY_TYPE_DOUBLE;
   }
   return FASTSLIDE_PROPERTY_TYPE_STRING;  // Default fallback
+}
+
+// Map the C color-space enum to the C++ ColorSpace.
+fastslide::ColorSpace ColorSpaceFromCEnum(FastSlideColorSpace space) {
+  switch (space) {
+    case FASTSLIDE_COLOR_SPACE_RGB:
+      return fastslide::ColorSpace::kRGB;
+    case FASTSLIDE_COLOR_SPACE_LINEAR:
+      return fastslide::ColorSpace::kLinear;
+    case FASTSLIDE_COLOR_SPACE_SRGB:
+      return fastslide::ColorSpace::kSRGB;
+    case FASTSLIDE_COLOR_SPACE_AUTOMATIC:
+    default:
+      return fastslide::ColorSpace::kSRGB;
+  }
+}
+
+// Map the C rendering-intent enum to the C++ RenderingIntent.
+fastslide::RenderingIntent RenderingIntentFromCEnum(
+    FastSlideRenderingIntent intent) {
+  switch (intent) {
+    case FASTSLIDE_RENDERING_INTENT_RELATIVE_COLORIMETRIC:
+      return fastslide::RenderingIntent::kRelativeColorimetric;
+    case FASTSLIDE_RENDERING_INTENT_SATURATION:
+      return fastslide::RenderingIntent::kSaturation;
+    case FASTSLIDE_RENDERING_INTENT_ABSOLUTE_COLORIMETRIC:
+      return fastslide::RenderingIntent::kAbsoluteColorimetric;
+    case FASTSLIDE_RENDERING_INTENT_PERCEPTUAL:
+    default:
+      return fastslide::RenderingIntent::kPerceptual;
+  }
 }
 
 }  // namespace
@@ -384,75 +418,6 @@ void fastslide_slide_reader_free_channel_metadata(
     free(metadata[i].biomarker);
   }
   free(metadata);
-}
-
-// Channel visibility controls
-
-int fastslide_slide_reader_set_visible_channels(FastSlideSlideReader* reader,
-                                                const size_t* channel_indices,
-                                                int num_channels) {
-  FASTSLIDE_REQUIRE_READER(reader, 0);
-
-  if (num_channels < 0) {
-    SetLastError("num_channels cannot be negative");
-    return 0;
-  }
-
-  if (num_channels > 0 && !channel_indices) {
-    SetLastError("channel_indices cannot be null when num_channels > 0");
-    return 0;
-  }
-
-  std::vector<size_t> channels;
-  if (num_channels > 0) {
-    channels.assign(channel_indices, channel_indices + num_channels);
-  }
-
-  reader->reader->SetVisibleChannels(channels);
-  return 1;
-}
-
-int fastslide_slide_reader_get_visible_channels(
-    const FastSlideSlideReader* reader, size_t** channel_indices,
-    int* num_channels) {
-  FASTSLIDE_REQUIRE_READER(reader, 0);
-
-  if (!channel_indices || !num_channels) {
-    SetLastError("channel_indices and num_channels cannot be null");
-    return 0;
-  }
-
-  const auto& visible_channels = reader->reader->GetVisibleChannels();
-  *num_channels = static_cast<int>(visible_channels.size());
-
-  if (*num_channels == 0) {
-    *channel_indices = nullptr;
-    return 1;
-  }
-
-  *channel_indices =
-      static_cast<size_t*>(malloc(*num_channels * sizeof(size_t)));
-  if (!*channel_indices) {
-    SetLastError("failed to allocate memory for channel indices");
-    return 0;
-  }
-
-  for (int i = 0; i < *num_channels; ++i) {
-    (*channel_indices)[i] = visible_channels[i];
-  }
-
-  return 1;
-}
-
-int fastslide_slide_reader_show_all_channels(FastSlideSlideReader* reader) {
-  FASTSLIDE_REQUIRE_READER(reader, 0);
-
-  reader->reader->ShowAllChannels();
-  return 1;
-}
-
-void fastslide_slide_reader_free_visible_channels(size_t* channel_indices) {
-  free(channel_indices);
 }
 
 // Region reading
@@ -929,6 +894,124 @@ int fastslide_slide_reader_clamp_region(const FastSlideSlideReader* reader,
 }
 
 // Memory management
+
+// ICC color management
+
+size_t fastslide_slide_reader_get_icc_profile_size(
+    const FastSlideSlideReader* reader) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+  auto profile_or = reader->reader->GetIccProfile();
+  if (!profile_or.ok()) {
+    return 0;
+  }
+  return profile_or.value().size();
+}
+
+size_t fastslide_slide_reader_read_icc_profile(
+    const FastSlideSlideReader* reader, uint8_t* buffer, size_t buffer_size) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+  if (buffer == nullptr) {
+    SetLastError("buffer cannot be null");
+    return 0;
+  }
+  auto profile_or = reader->reader->GetIccProfile();
+  if (!profile_or.ok()) {
+    SetLastError(std::string(profile_or.status().message()).c_str());
+    return 0;
+  }
+  const std::vector<uint8_t>& profile = profile_or.value();
+  if (buffer_size < profile.size()) {
+    SetLastError("buffer too small for ICC profile");
+    return 0;
+  }
+  std::memcpy(buffer, profile.data(), profile.size());
+  return profile.size();
+}
+
+int fastslide_slide_reader_enable_icc_transform(
+    FastSlideSlideReader* reader, FastSlideColorSpace target_space,
+    FastSlideRenderingIntent intent, int use_lut) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+  const auto status = reader->reader->SetColorTransform(
+      ColorSpaceFromCEnum(target_space), RenderingIntentFromCEnum(intent),
+      use_lut != 0);
+  if (!status.ok()) {
+    SetLastError(std::string(status.message()).c_str());
+    return 0;
+  }
+  return 1;
+}
+
+namespace {
+
+FastSlideCacheStats CacheStatsToC(
+    const fastslide::runtime::ITileCache::Stats& stats) {
+  FastSlideCacheStats out;
+  out.capacity_bytes = stats.capacity_bytes;
+  out.size = stats.size;
+  out.hits = stats.hits;
+  out.misses = stats.misses;
+  out.hit_ratio = stats.hit_ratio;
+  out.memory_usage_bytes = stats.memory_usage_bytes;
+  return out;
+}
+
+}  // namespace
+
+int fastslide_slide_reader_set_cache(FastSlideSlideReader* reader,
+                                     size_t capacity_bytes) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+
+  if (capacity_bytes == 0) {
+    reader->reader->SetCache(nullptr);
+    return 1;
+  }
+
+  auto cache_or = fastslide::runtime::LRUTileCache::Create(capacity_bytes);
+  if (!cache_or.ok()) {
+    SetLastError(std::string(cache_or.status().message()).c_str());
+    return 0;
+  }
+  reader->reader->SetCache(std::move(cache_or.value()));
+  return 1;
+}
+
+int fastslide_slide_reader_use_global_cache(FastSlideSlideReader* reader) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+  reader->reader->SetCache(
+      fastslide::runtime::GlobalCacheManager::Instance().GetCache());
+  return 1;
+}
+
+int fastslide_slide_reader_is_cache_enabled(
+    const FastSlideSlideReader* reader) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+  return reader->reader->IsCacheEnabled() ? 1 : 0;
+}
+
+void fastslide_slide_reader_clear_cache(FastSlideSlideReader* reader) {
+  if (!reader || !reader->reader) {
+    return;
+  }
+  auto cache = reader->reader->GetCache();
+  if (cache) {
+    cache->Clear();
+  }
+}
+
+int fastslide_slide_reader_get_cache_stats(const FastSlideSlideReader* reader,
+                                           FastSlideCacheStats* out_stats) {
+  FASTSLIDE_REQUIRE_READER(reader, 0);
+  FASTSLIDE_REQUIRE_NOT_NULL(out_stats, "out_stats", 0);
+
+  auto cache = reader->reader->GetCache();
+  if (!cache) {
+    SetLastError("reader has no cache attached");
+    return 0;
+  }
+  *out_stats = CacheStatsToC(cache->GetStats());
+  return 1;
+}
 
 void fastslide_slide_reader_free(FastSlideSlideReader* reader) {
   delete reader;

@@ -38,6 +38,8 @@
 #include "fastslide/image.h"
 #include "fastslide/python/cache.h"
 #include "fastslide/python/reader.h"
+#include "fastslide/python/status_error.h"
+#include "fastslide/readers/isyntax/third_party/cache.h"
 #include "fastslide/runtime/global_cache_manager.h"
 #include "fastslide/runtime/reader_registry.h"
 #include "fastslide/slide_reader.h"
@@ -51,16 +53,34 @@ using fastslide::python::AssociatedImages;
 using fastslide::python::FastSlide;
 using fastslide::python::SlideImages;
 using fastslide::python::SlideImageView;
+using fastslide::python::ThrowPyErrorFromStatus;
 
 namespace {
 
-/// @brief Convert aifocore::Status to Python exception
-void ThrowPyErrorFromStatus(const aifocore::Status& status) {
-  if (status.code() == aifocore::StatusCode::kInvalidArgument) {
-    throw nb::value_error(status.ToString().c_str());
+/// @brief Resolve a Python cache argument into an ITileCache.
+///
+/// Accepts `None` (no cache), an `int` byte capacity (a new per-slide
+/// `LRUTileCache`), a `CacheManager`, or a `TileCache`. Raises on an invalid
+/// capacity or unsupported type.
+std::shared_ptr<fastslide::runtime::ITileCache> ResolveCacheObject(
+    const nb::object& cache) {
+  if (cache.is_none()) {
+    return nullptr;
   }
-  // Raise generic runtime error for all other cases
-  throw std::runtime_error(status.ToString());
+  if (nb::isinstance<nb::int_>(cache)) {
+    const auto capacity_bytes = nb::cast<size_t>(cache);
+    auto cache_or = fastslide::runtime::LRUTileCache::Create(capacity_bytes);
+    if (!cache_or.ok()) {
+      ThrowPyErrorFromStatus(cache_or.status());
+    }
+    return std::move(cache_or.value());
+  }
+  if (nb::isinstance<fastslide::python::CacheManager>(cache)) {
+    auto manager =
+        nb::cast<std::shared_ptr<fastslide::python::CacheManager>>(cache);
+    return manager ? manager->GetCache() : nullptr;
+  }
+  return nb::cast<std::shared_ptr<fastslide::runtime::ITileCache>>(cache);
 }
 
 /// @brief Build a zero-copy numpy view of an Image's pixel buffer.
@@ -103,6 +123,8 @@ nb::object MakeNumpyView(const fastslide::Image& image,
 NB_MODULE(_fastslide, m) {
   m.doc() =
       "FastSlide: High-performance, thread-safe digital pathology slide reader";
+
+  fastslide::python::RegisterPythonExceptionTranslators();
 
   using fastslide::python::CacheInspectionStats;
   using fastslide::python::CacheManager;
@@ -271,6 +293,26 @@ NB_MODULE(_fastslide, m) {
            nb::call_guard<nb::gil_scoped_release>(),
            "Drop all entries from the global cache (capacity is preserved).");
 
+  // iSyntax coefficient cache, shared by every open iSyntax slide
+  m.def(
+      "set_isyntax_cache_capacity",
+      [](size_t capacity_bytes) {
+        if (capacity_bytes == 0) {
+          throw nb::value_error("capacity_bytes must be > 0");
+        }
+        isyntax::IsyntaxCache::SetSharedCapacityBytes(capacity_bytes);
+      },
+      nb::arg("capacity_bytes"),
+      "Set the memory budget of the iSyntax coefficient cache (default "
+      "1 GiB). Every open iSyntax slide shares the cache: it keeps the "
+      "decoded wavelet coefficients of recently read tiles, so that "
+      "neighbouring reads do not decode them again. Caches over the budget "
+      "evict tiles on their next read.");
+  m.def(
+      "get_isyntax_cache_capacity",
+      []() { return isyntax::IsyntaxCache::SharedCapacityBytes(); },
+      "Get the memory budget of the iSyntax coefficient cache, in bytes.");
+
   // Associated images accessor
   nb::class_<AssociatedImages>(m, "AssociatedImages")
       .def("__getitem__", &AssociatedImages::GetItem,
@@ -418,7 +460,8 @@ NB_MODULE(_fastslide, m) {
   nb::class_<FastSlide>(m, "FastSlide")
       .def_static(
           "from_file_path",
-          [](const nb::object& file_path) {
+          [](const nb::object& file_path, bool apply_icc,
+             const nb::object& cache) {
             std::string path_str;
             if (nb::isinstance<nb::str>(file_path)) {
               path_str = nb::cast<std::string>(file_path);
@@ -429,10 +472,24 @@ NB_MODULE(_fastslide, m) {
             } else {
               path_str = nb::cast<std::string>(file_path);
             }
-            return FastSlide::FromFilePath(path_str);
+            auto slide = FastSlide::FromFilePath(path_str, apply_icc);
+            if (slide && !cache.is_none()) {
+              slide->SetCache(ResolveCacheObject(cache));
+            }
+            return slide;
           },
-          "Create FastSlide from file path (accepts str or pathlib.Path)",
-          nb::arg("file_path"))
+          "Create FastSlide from file path (accepts str or pathlib.Path)\n\n"
+          "Args:\n"
+          "    file_path: Path to the slide (str or pathlib.Path).\n"
+          "    apply_icc: When True and the slide has an embedded ICC\n"
+          "        profile, read_region returns sRGB-corrected pixels\n"
+          "        (perceptual intent). Slides without a profile are\n"
+          "        returned unchanged.\n"
+          "    cache: Optional tile cache to attach. Accepts an int byte\n"
+          "        capacity (a new per-slide LRU cache), a CacheManager, a\n"
+          "        TileCache, or None to disable caching.",
+          nb::arg("file_path"), nb::arg("apply_icc") = false,
+          nb::arg("cache").none() = nb::none())
       .def_static("from_uri", &FastSlide::FromUri,
                   "Create FastSlide from URI (future)", nb::arg("uri"))
 
@@ -542,6 +599,12 @@ NB_MODULE(_fastslide, m) {
       .def_prop_ro("format", &FastSlide::GetFormat, "File format name")
       .def_prop_ro("dtype", &FastSlide::GetDtype,
                    "Pixel data type (e.g. 'uint8', 'uint16')")
+      .def_prop_ro("icc_profile", &FastSlide::GetIccProfile,
+                   "Embedded ICC profile as bytes, or None if the slide has "
+                   "no color profile.")
+      .def_prop_ro("apply_icc", &FastSlide::GetApplyIcc,
+                   "True if ICC color management is applied on read_region "
+                   "(see from_file_path(apply_icc=True)).")
       .def_prop_ro(
           "quickhash", &FastSlide::GetQuickHash,
           "SHA-256 quickhash (unique identifier, OpenSlide-compatible)")
@@ -581,107 +644,51 @@ NB_MODULE(_fastslide, m) {
 
       // Cache management.
       //
-      // `set_cache` accepts either a `TileCache` or a `CacheManager`. The
-      // single Python entrypoint dispatches on argument type so callers do
-      // not need to unwrap the manager themselves.
+      // `set_cache` accepts an int byte capacity (a new per-slide LRU cache),
+      // a `TileCache`, a `CacheManager`, or None. A single entrypoint
+      // dispatches on argument type so callers do not need to unwrap the
+      // manager themselves.
       .def(
           "set_cache",
           [](FastSlide& self, const nb::object& cache) {
-            if (cache.is_none()) {
-              self.SetCache(nullptr);
-              return;
-            }
-            if (nb::isinstance<CacheManager>(cache)) {
-              auto manager = nb::cast<std::shared_ptr<CacheManager>>(cache);
-              self.SetCache(manager ? manager->GetCache() : nullptr);
-              return;
-            }
-            self.SetCache(
-                nb::cast<std::shared_ptr<fastslide::runtime::ITileCache>>(
-                    cache));
+            self.SetCache(ResolveCacheObject(cache));
           },
-          "Set cache (accepts TileCache, CacheManager, or None to disable).",
+          "Set cache (accepts int bytes, TileCache, CacheManager, or None to "
+          "disable).",
           nb::arg("cache").none())
       .def("get_cache", &FastSlide::GetCache, "Get current cache")
       .def_prop_ro("cache_enabled", &FastSlide::IsCacheEnabled,
                    "True if caching is enabled")
+      .def(
+          "use_global_cache",
+          [](FastSlide& self) {
+            self.SetCache(
+                fastslide::runtime::GlobalCacheManager::Instance().GetCache());
+          },
+          "Attach the process-wide global tile cache to this slide.")
+      .def(
+          "clear_cache",
+          [](FastSlide& self) {
+            if (auto cache = self.GetCache()) {
+              cache->Clear();
+            }
+          },
+          "Clear all tiles from this slide's cache (no-op if none attached).")
+      .def_prop_ro(
+          "cache_stats",
+          [](FastSlide& self) -> nb::object {
+            auto cache = self.GetCache();
+            if (!cache) {
+              return nb::none();
+            }
+            return nb::cast(cache->GetStats());
+          },
+          "Cache statistics (RuntimeCacheStats), or None if no cache is "
+          "attached.")
 
       // Resource management
       .def("close", &FastSlide::Close,
            "Close the slide reader and release resources")
-
-      // Channel visibility controls
-      .def(
-          "set_visible_channels",
-          [](FastSlide& self, const nb::object& channels) {
-            std::vector<size_t> channel_indices;
-
-            // Handle None - show all channels
-            if (channels.is_none()) {
-              self.ShowAllChannels();
-              return;
-            }
-
-            // Handle single integer
-            if (nb::isinstance<nb::int_>(channels)) {
-              int channel = nb::cast<int>(channels);
-              if (channel < 0) {
-                throw nb::value_error("Channel index cannot be negative");
-              }
-              channel_indices.push_back(static_cast<size_t>(channel));
-            } else if (nb::isinstance<nb::sequence>(channels) &&
-                       !nb::isinstance<nb::str>(channels)) {
-              // Handle sequence (list, tuple, etc.)
-              nb::sequence seq = nb::cast<nb::sequence>(channels);
-              const size_t seq_len = nb::len(seq);
-              channel_indices.reserve(seq_len);
-
-              for (size_t i = 0; i < seq_len; ++i) {
-                nb::object item = seq[i];
-                if (!nb::isinstance<nb::int_>(item)) {
-                  throw nb::type_error("All channel indices must be integers");
-                }
-                int channel = nb::cast<int>(item);
-                if (channel < 0) {
-                  throw nb::value_error("Channel indices cannot be negative");
-                }
-                channel_indices.push_back(static_cast<size_t>(channel));
-              }
-
-              // Remove duplicates and sort
-              std::sort(channel_indices.begin(), channel_indices.end());
-              channel_indices.erase(
-                  std::unique(channel_indices.begin(), channel_indices.end()),
-                  channel_indices.end());
-            } else {
-              throw nb::type_error(
-                  "channels must be an integer, list/tuple of integers, or "
-                  "None");
-            }
-
-            self.SetVisibleChannels(channel_indices);
-          },
-          "Set which channels are visible during read operations\n\n"
-          "Args:\n"
-          "    channels: Channel index (int), list/tuple of channel indices,\n"
-          "              or None to show all channels\n\n"
-          "Examples:\n"
-          "    slide.set_visible_channels(0)        # Show only channel 0\n"
-          "    slide.set_visible_channels([0, 2])   # Show channels 0 and 2\n"
-          "    slide.set_visible_channels(None)     # Show all channels\n\n"
-          "Note: Channel indices are 0-based. Invalid indices will be ignored\n"
-          "during read operations.",
-          nb::arg("channels"))
-
-      .def("get_visible_channels", &FastSlide::GetVisibleChannels,
-           "Get currently visible channel indices\n\n"
-           "Returns:\n"
-           "    list: List of visible channel indices (empty = all visible)",
-           nb::rv_policy::copy)
-
-      .def("show_all_channels", &FastSlide::ShowAllChannels,
-           "Reset to show all channels\n\n"
-           "Equivalent to set_visible_channels(None)")
 
       // Context manager support
       .def("__enter__", &FastSlide::__enter__,
@@ -710,5 +717,5 @@ NB_MODULE(_fastslide, m) {
       "Check if file format is supported", nb::arg("filename"));
 
   // Version and constants
-  m.attr("__version__") = "0.7.4";
+  m.attr("__version__") = "0.8.3";
 }

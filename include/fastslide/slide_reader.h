@@ -35,6 +35,7 @@
 #include "fastslide/image.h"
 #include "fastslide/metadata.h"
 #include "fastslide/runtime/cache_interface.h"
+#include "fastslide/slide_options.h"
 #include "fastslide/utilities/colors.h"
 
 // Forward declarations to avoid circular dependencies
@@ -44,6 +45,7 @@ class Canvas;
 }
 class SlideImage;
 class SelfImageView;
+class IccTransform;
 }  // namespace fastslide
 
 namespace fastslide {
@@ -256,6 +258,31 @@ class SlideReader {
   /// @return Metadata map
   [[nodiscard]] virtual Metadata GetMetadata() const = 0;
 
+  /// @brief Get the slide's embedded ICC color profile, if any.
+  ///
+  /// Returns the raw ICC profile bytes embedded in the slide (e.g. the level-0
+  /// TIFF ICC tag, or the DICOM ICC profile in iSyntax and DICOM WSI).
+  /// Consumers can use these bytes to run their own color management, or enable
+  /// in-library conversion via `SetColorTransform`.
+  ///
+  /// Two failure modes are distinguished so callers can tell "this format does
+  /// not support colour management yet" from "this particular slide has no
+  /// profile":
+  ///   - The default implementation returns `kUnimplemented`: the reader does
+  ///     not extract ICC profiles for this format.
+  ///   - Readers that do support extraction return `kNotFound` when the slide
+  ///     simply carries no embedded profile.
+  ///
+  /// @return Raw ICC profile bytes; `kNotFound` when the format supports ICC
+  ///         extraction but the slide has none; `kUnimplemented` when the
+  ///         format does not support ICC extraction at all.
+  [[nodiscard]] virtual aifocore::Result<std::vector<uint8_t>> GetIccProfile()
+      const {
+    return AIFOCORE_MAKE_STATUS(
+        aifocore::StatusCode::kUnimplemented,
+        "ICC profile extraction is not implemented for this format");
+  }
+
   /// @brief Get file format name
   /// @return Format name (e.g., "QPTIFF", "SVS", "NDPI")
   [[nodiscard]] virtual std::string GetFormatName() const = 0;
@@ -279,16 +306,22 @@ class SlideReader {
   /// 2D formats.
   [[nodiscard]] virtual StackInfo GetStackInfo() const;
 
-  /// @brief Get QuickHash (unique identifier for slide data)
-  /// @return SHA-256 hash string (compatible with OpenSlide), or empty string
-  /// if unavailable
-  /// @details The quickhash is a unique identifier computed from:
-  ///   - For MRXS: Slidedat.ini + all lowest resolution tile data
-  ///   - For SVS/TIFF: TIFF header/metadata + lowest resolution tile data
-  [[nodiscard]] virtual aifocore::Result<std::string> GetQuickHash() const {
-    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kUnimplemented,
-                                "GetQuickHash not implemented for this reader");
-  }
+  /// @brief SHA-256 fingerprint identifying this slide's image data.
+  ///
+  /// Every reader must define one. There is deliberately no default: a
+  /// fallback returning "unimplemented" is how most of these readers silently
+  /// shipped without a digest, so a new format cannot compile until it decides
+  /// what identifies its slides.
+  ///
+  /// The recipe is per format, following OpenSlide: where the format already
+  /// carries a reliable unique identifier (DICOM's SeriesInstanceUID, CZI's
+  /// file GUIDs) that is hashed on its own; otherwise it is the identifying
+  /// metadata plus the raw bytes of the lowest-resolution level.
+  ///
+  /// @return Lowercase 64-character hex digest. Never empty and never
+  ///         OK-but-blank: a reader that cannot produce a digest returns a
+  ///         failed Status instead.
+  [[nodiscard]] virtual aifocore::Result<std::string> GetQuickHash() const = 0;
 
   /// @brief Set tile cache for caching decoded internal tiles
   /// @param cache Shared pointer to tile cache (nullptr to disable caching)
@@ -308,24 +341,33 @@ class SlideReader {
     return cache_ != nullptr;
   }
 
-  /// @brief Set which channels are visible during ReadRegion operations
-  /// @param channel_indices Vector of channel indices to load
-  /// (empty = all channels)
-  /// @details Only the specified channels will be loaded and combined in
-  /// ReadRegion. This can significantly improve performance for multichannel
-  /// formats when only a subset of channels is needed for visualization.
-  virtual void SetVisibleChannels(const std::vector<size_t>& channel_indices) {
-    visible_channels_ = channel_indices;
-  }
+  /// @brief Enable in-library ICC color management for `ReadRegion`.
+  ///
+  /// Builds a color transform from the slide's embedded ICC profile (see
+  /// `GetIccProfile`) to the given target color space and caches it on the
+  /// reader. Once enabled, `ReadRegion` returns pixels already converted to the
+  /// target space; the transform is applied in place on the decoded region
+  /// buffer, so no extra allocation or copy is performed.
+  ///
+  /// Calling this on a slide without an embedded profile is a no-op (the reader
+  /// keeps returning native pixels) and returns OK.
+  ///
+  /// @param target Target color space (sRGB by default via `kAutomatic`).
+  /// @param intent ICC rendering intent.
+  /// @param use_lut When true, build the 256^3 8-bit LUT fast path (48 MiB,
+  ///        ~200 ms one-time cost) so 8-bit RGB(A) regions are color-managed
+  ///        with an O(1) table gather instead of an lcms2 pass.
+  /// @return OK on success or when the slide has no profile; an error only if
+  ///         a profile is present but the transform could not be built.
+  aifocore::Status SetColorTransform(
+      ColorSpace target = ColorSpace::kSRGB,
+      RenderingIntent intent = RenderingIntent::kPerceptual,
+      bool use_lut = false);
 
-  /// @brief Get currently visible channel indices
-  /// @return Vector of visible channel indices (empty = all channels visible)
-  [[nodiscard]] virtual const std::vector<size_t>& GetVisibleChannels() const {
-    return visible_channels_;
+  /// @brief Whether an ICC color transform is currently active.
+  [[nodiscard]] bool IsColorTransformEnabled() const {
+    return color_transform_ != nullptr;
   }
-
-  /// @brief Reset to show all channels
-  virtual void ShowAllChannels() { visible_channels_.clear(); }
 
   /// @brief Utility function to clamp region to image bounds
   /// @param region Input region specification
@@ -354,14 +396,24 @@ class SlideReader {
   [[nodiscard]] aifocore::Result<core::TileRequest> RegionToTileRequest(
       const RegionSpec& region) const;
 
-  /// @brief Channel indices to load (empty = all channels)
-  /// @details Protected so derived classes can access for implementing
-  /// selective loading
-  std::vector<size_t> visible_channels_;
+  /// @brief Apply the active ICC color transform to a region in place.
+  ///
+  /// No-op (returns OK) when no transform is enabled or when the image is not a
+  /// color-managed layout (see `IccTransform::ApplyInPlace`). Called by
+  /// `ReadRegion` implementations just before returning the decoded image.
+  ///
+  /// @param image Decoded region image, transformed in place.
+  /// @return OK on success or when skipped; error only on transform failure.
+  [[nodiscard]] aifocore::Status MaybeApplyColorTransform(Image& image) const;
 
  private:
   /// @brief Optional tile cache for decoded internal tiles
   std::shared_ptr<ITileCache> cache_;
+
+  /// @brief Optional ICC color transform applied during `ReadRegion`.
+  /// Built by `SetColorTransform`; null when color management is disabled.
+  /// Shared with this reader's `SlideImage`s so per-image reads apply it too.
+  std::shared_ptr<IccTransform> color_transform_;
 
   /// @brief Lazily constructed default adapter returned by `GetImage(0)`
   /// when a reader does not override the multi-image API.

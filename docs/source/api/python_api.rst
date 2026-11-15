@@ -205,22 +205,6 @@ Cache Performance Optimization
    print(f"Cache hit ratio: {stats.hit_ratio:.3f}")
    print(f"Memory usage: {stats.memory_usage_mb:.1f} MB")
 
-Channel Selection
-~~~~~~~~~~~~~~~~~
-
-.. code-block:: python
-
-   # Multi-channel slides (e.g., fluorescence)
-   slide = fastslide.FastSlide.from_file_path("fluorescence.qptiff")
-   
-   # Show only specific channels
-   slide.set_visible_channels([0, 2])  # Red and Blue channels
-   region = slide.read_region((0, 0), 0, (1024, 1024)).numpy()
-   
-   # Reset to show all channels
-   slide.show_all_channels()
-   full_region = slide.read_region((0, 0), 0, (1024, 1024)).numpy()
-
 Error Handling
 ~~~~~~~~~~~~~~
 

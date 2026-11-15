@@ -47,13 +47,12 @@ namespace runtime {
 /// @brief Reader registry for format plugins
 ///
 /// The ReaderRegistry manages format descriptors and creates readers based
-/// on file extensions and capabilities.
+/// on file extensions.
 /// This registry can be owned by applications or test fixtures, allowing
 /// proper dependency injection.
 ///
 /// Key features:
 /// - Format registration via FormatDescriptor
-/// - Capability queries (what formats support what features)
 /// - Extension-based reader creation
 /// - Thread-safe operations
 /// - Testable (non-singleton by default)
@@ -65,10 +64,8 @@ namespace runtime {
 /// registry.RegisterFormat(CreateMrxsFormatDescriptor());
 /// registry.RegisterFormat(CreateQptiffFormatDescriptor());
 ///
-/// // Query capabilities
+/// // List registered formats
 /// auto formats = registry.ListFormats();
-/// bool supports_spectral = registry.SupportsCapability(
-///     ".qptiff", FormatCapability::kSpectral);
 ///
 /// // Create reader with cache
 /// auto reader = registry.CreateReader("slide.mrxs", my_cache);
@@ -123,21 +120,6 @@ class ReaderRegistry {
   /// @return True if supported
   /// @note Thread-safe
   [[nodiscard]] bool SupportsExtension(std::string_view extension) const;
-
-  /// @brief Check if format supports a capability
-  /// @param extension File extension
-  /// @param capability Capability to check
-  /// @return True if supported, false if not or format not found
-  /// @note Thread-safe
-  [[nodiscard]] bool SupportsCapability(std::string_view extension,
-                                        FormatCapability capability) const;
-
-  /// @brief List formats that support a specific capability
-  /// @param capability Capability to filter by
-  /// @return Vector of format names that support the capability
-  /// @note Thread-safe
-  [[nodiscard]] std::vector<std::string> ListFormatsByCapability(
-      FormatCapability capability) const;
 
   /// @brief Get all supported extensions
   /// @return Vector of extensions (sorted)

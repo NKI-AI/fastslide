@@ -19,7 +19,7 @@ import createFastSlideModule from "./fastslide_multiplex.js";
 // emitted by the loader's `worker.onerror` handler.
 const FASTSLIDE_MODULE_URL = new URL(
   "./fastslide_multiplex.js",
-  import.meta.url
+  import.meta.url,
 ).href;
 
 let module = null;
@@ -164,7 +164,7 @@ async function handleLoadFile(data) {
 
   reader = unwrap(
     module.FastSlideReader.fromFilePath(virtualPath),
-    "fromFilePath"
+    "fromFilePath",
   );
 
   const parseTime = performance.now() - startTime;
@@ -250,7 +250,7 @@ async function handleReadTile(data) {
           fromCache: true,
         },
       },
-      [cached.data.buffer]
+      [cached.data.buffer],
     );
     return;
   }
@@ -259,7 +259,7 @@ async function handleReadTile(data) {
 
   const image = unwrap(
     reader.readRegion(x, y, width, height, level),
-    `readRegion(level=${level}, ${x},${y} ${width}x${height})`
+    `readRegion(level=${level}, ${x},${y} ${width}x${height})`,
   );
 
   const readTime = performance.now() - startTime;
@@ -308,7 +308,7 @@ async function handleReadTile(data) {
       type: "tileData",
       data: result,
     },
-    [dataArray.buffer]
+    [dataArray.buffer],
   );
 }
 
@@ -323,7 +323,7 @@ async function handleReadRegion(data) {
 
   const image = unwrap(
     reader.readRegion(x, y, width, height, level),
-    `readRegion(level=${level}, ${x},${y} ${width}x${height})`
+    `readRegion(level=${level}, ${x},${y} ${width}x${height})`,
   );
 
   const readTime = performance.now() - startTime;
@@ -352,7 +352,7 @@ async function handleReadRegion(data) {
         readTime,
       },
     },
-    [dataArray.buffer]
+    [dataArray.buffer],
   );
 }
 

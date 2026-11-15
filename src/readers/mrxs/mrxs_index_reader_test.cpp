@@ -604,6 +604,16 @@ TEST(MrxsIndexReaderTest, SkipsLeadingNonImageHierarchiesForExtraGroups) {
   std::remove(path.c_str());
 }
 
+TEST(MrxsBackgroundColorTest, FillColorBgrIsSwappedToRgb) {
+  EXPECT_EQ(BgrToRgb24(0x0000FF), 0xFF0000u);
+  EXPECT_EQ(BgrToRgb24(0x123456), 0x563412u);
+  EXPECT_EQ(BgrToRgb24(0xFFFFFF), 0xFFFFFFu);
+  const auto rgb = UnpackRgb24(BgrToRgb24(0x0000FF));
+  EXPECT_EQ(rgb[0], 0xFF);
+  EXPECT_EQ(rgb[1], 0);
+  EXPECT_EQ(rgb[2], 0);
+}
+
 }  // namespace
 }  // namespace mrxs
 }  // namespace fastslide

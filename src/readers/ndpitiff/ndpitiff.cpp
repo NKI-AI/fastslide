@@ -696,6 +696,19 @@ ImageDimensions NdpiTiffReader::GetTileSize() const {
   return ImageDimensions{256, 256};
 }
 
+aifocore::Result<readers::tiff_quickhash::Spec>
+NdpiTiffReader::GetQuickHashSpec() const {
+  if (!tiff_index_ || pyramid_levels_.empty()) {
+    return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kFailedPrecondition,
+                                "No pyramid levels to hash");
+  }
+  return readers::tiff_quickhash::Spec{
+      .index = tiff_index_.get(),
+      .level_pages = {pyramid_levels_.back().page},
+      .property_page = 0,
+  };
+}
+
 aifocore::Result<core::TilePlan> NdpiTiffReader::PrepareRequest(
     const core::TileRequest& request) const {
   // Select the focal (Z) plane. `plane.z` is a zero-based index into the

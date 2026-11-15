@@ -70,12 +70,13 @@ inline std::vector<FormatDescriptor> GetBuiltinFormats() {
       formats::olympusvsi::CreateOlympusVsiFormatDescriptor(),
   };
 
-  // iSyntax format
+  // iSyntax format. The ".i2syntax" alias covers Philips iSyntax v2 files,
+  // which use the same container and are handled by the v2 decode path.
   FormatDescriptor isyntax_desc;
   isyntax_desc.format_name = "iSyntax";
   isyntax_desc.primary_extension = ".isyntax";
+  isyntax_desc.aliases = {".i2syntax"};
   isyntax_desc.version = "1.0.0";
-  isyntax_desc.capabilities = SetCapability(0, FormatCapability::kTiled);
   isyntax_desc.factory = [](std::shared_ptr<ITileCache> cache,
                             std::string_view filename)
       -> aifocore::Result<std::unique_ptr<SlideReader>> {

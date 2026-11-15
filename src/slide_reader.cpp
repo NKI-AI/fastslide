@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iostream>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -25,11 +26,60 @@
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/runtime/tile_writer.h"
 #include "fastslide/self_image_view.h"
+#include "fastslide/utilities/color_transform.h"
 
 namespace fastslide {
 
 SlideReader::SlideReader() = default;
 SlideReader::~SlideReader() = default;
+
+aifocore::Status SlideReader::SetColorTransform(ColorSpace target,
+                                                RenderingIntent intent,
+                                                bool use_lut) {
+  auto profile_or = GetIccProfile();
+  if (!profile_or.ok()) {
+    // Leave color management disabled and keep returning native pixels. Two
+    // outcomes are non-fatal here:
+    //   - kNotFound: the format supports ICC extraction but this slide has no
+    //     embedded profile. Expected and silent.
+    //   - kUnimplemented: the format has no ICC support at all. The caller
+    //     explicitly asked for color management, so warn that it was skipped.
+    color_transform_.reset();
+    if (profile_or.status().code() == aifocore::StatusCode::kUnimplemented) {
+      std::cerr << "[FastSlide] ICC color management was requested but is not "
+                   "implemented for the '"
+                << GetFormatName()
+                << "' format; returning native (unmanaged) pixels.\n";
+    }
+    return aifocore::Status::OkStatus();
+  }
+
+  const std::vector<uint8_t>& profile = profile_or.value();
+  std::unique_ptr<IccTransform> transform;
+  AIFOCORE_ASSIGN_OR_RETURN(
+      transform, IccTransform::Create(profile, target, intent, use_lut));
+  color_transform_ = std::move(transform);
+
+  // Propagate to every navigable image so per-image `ReadRegion` (used by the
+  // multi-image API and the Python per-image reads) applies the same
+  // transform. Images that fail to resolve are skipped.
+  std::shared_ptr<const IccTransform> shared = color_transform_;
+  const int image_count = GetImageCount();
+  for (int i = 0; i < image_count; ++i) {
+    auto image_or = GetImage(i);
+    if (image_or.ok() && image_or.value() != nullptr) {
+      image_or.value()->SetColorTransform(shared);
+    }
+  }
+  return aifocore::Status::OkStatus();
+}
+
+aifocore::Status SlideReader::MaybeApplyColorTransform(Image& image) const {
+  if (color_transform_ == nullptr) {
+    return aifocore::Status::OkStatus();
+  }
+  return color_transform_->ApplyInPlace(image);
+}
 
 std::vector<std::string> SlideReader::GetImageNames() const {
   std::vector<std::string> names;
@@ -174,9 +224,6 @@ aifocore::Result<core::TileRequest> SlideReader::RegionToTileRequest(
   // PrepareRequest implementations should use region_bounds instead
   request.tile_coord = {0, 0};
 
-  // Include visible channel indices if set
-  request.channel_indices = visible_channels_;
-
   // Forward the focal/time plane selector to the format's PrepareRequest.
   request.plane = region.plane;
 
@@ -214,6 +261,8 @@ aifocore::Result<Image> SlideReader::ReadRegion(
 
   Image output;
   AIFOCORE_ASSIGN_OR_RETURN(output, canvas.GetOutput());
+
+  AIFOCORE_RETURN_IF_ERROR(MaybeApplyColorTransform(output));
 
   return output;
 }

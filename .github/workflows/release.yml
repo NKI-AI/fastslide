@@ -21,6 +21,10 @@
 #         nanobind + cibuildwheel (build-wheels job, method: meson). All deps are
 #         compiled from source through subprojects/*.wrap and linked statically,
 #         sidestepping the missing Windows Bazel rules.
+#   - build-deb / smoke-deb: build the Linux-only Debian packages (runtime .so +
+#     CLI, and a -dev headers package) with the NATIVE host toolchain, then
+#     install them in a clean ubuntu:24.04 container and compile+run a standalone
+#     C++ smoke against the installed SDK (plus the shipped fastslidetool CLI).
 #   - smoke-java: run the shipped JARs through fastslidetool on the REAL target
 #     runner (incl. native Windows), needing only a JDK -- no Bazel.
 #   - publish-pypi: upload wheels + to PyPI via Trusted Publishing (full release
@@ -78,10 +82,10 @@ jobs:
           # the Intel runner is far slower, and the artifact is still validated
           # on a real Intel host in the smoke phase below.
           - platform: darwin_x86_64
-            builder: macos-14
+            builder: macos-15
             method: bazel
           - platform: darwin_aarch64
-            builder: macos-14
+            builder: macos-15
             method: bazel
           - platform: windows_x86_64
             builder: windows-2022
@@ -220,11 +224,11 @@ jobs:
           # No bootable Intel macOS runner; validate the x86_64 dylib under
           # Rosetta on the arm64 runner with an x86_64 JDK.
           - platform: darwin_x86_64
-            runner: macos-14
+            runner: macos-15
             java_arch: x64
             rosetta: true
           - platform: darwin_aarch64
-            runner: macos-14
+            runner: macos-15
             java_arch: aarch64
           - platform: windows_x86_64
             runner: windows-2022
@@ -289,10 +293,10 @@ jobs:
             builder: ubuntu-24.04-arm
             method: bazel
           - platform: darwin_x86_64
-            builder: macos-14
+            builder: macos-15
             method: bazel
           - platform: darwin_aarch64
-            builder: macos-14
+            builder: macos-15
             method: bazel
           - platform: windows_x86_64
             builder: windows-2022
@@ -347,25 +351,45 @@ jobs:
       # setup args from pyproject.toml, so every dependency (aifocore/simpletiff
       # via git wraps, codecs via WrapDB) is built from source and linked
       # statically into the self-contained _fastslide.pyd. No DLLs to bundle.
-      - name: Build wheels (${{ matrix.platform }})
+      # Two cibuildwheel invocations, because the stable-ABI and version-specific
+      # wheels need different Meson setup args and cibuildwheel applies
+      # config-settings uniformly across one run. Both write to the same
+      # output-dir. `--vsenv` forces MSVC: the windows-2022/windows-11-arm images
+      # ship MinGW GCC (C:\mingw64\bin) on PATH and Meson's auto-detection picks
+      # that `cc` over MSVC, producing a GCC build (which also hits the
+      # MinGW-only jpeglib.h/<cstdio> FILE error). It makes Meson activate the
+      # Visual Studio environment even when another compiler is already on PATH,
+      # matching the MSVC toolchain used by the Java native build.
+      - name: Build cp311 wheel (${{ matrix.platform }})
         if: steps.gate.outputs.run == 'true' && matrix.method == 'meson'
         uses: pypa/cibuildwheel@v3.2.0
         with:
           package-dir: .
           output-dir: artifacts/wheels
         env:
-          # cp310 has no official Windows ARM64 CPython; cibuildwheel skips it
-          # there automatically, so the same build set is safe for both arches.
-          CIBW_BUILD: "cp310-* cp311-* cp312-* cp313-* cp314-*"
+          # 3.11 predates nanobind's stable-ABI floor, so this is a conventional
+          # version-specific build. `python.allow_limited_api` defaults to false
+          # in meson.build, which is what keeps meson-python from trying to tag
+          # the result abi3 (it errors out rather than mislabel the wheel).
+          CIBW_BUILD: "cp311-*"
           CIBW_ARCHS_WINDOWS: ${{ matrix.cibw_arch }}
           CIBW_BUILD_VERBOSITY: "1"
-          # Force MSVC. The windows-2022/windows-11-arm images ship MinGW GCC
-          # (C:\mingw64\bin) on PATH, and Meson's auto-detection picks that `cc`
-          # over MSVC, producing a GCC build (which also hits the MinGW-only
-          # jpeglib.h/<cstdio> FILE error). `--vsenv` makes Meson activate the
-          # Visual Studio environment even when another compiler is already on
-          # PATH, matching the MSVC toolchain used by the Java native build.
           CIBW_CONFIG_SETTINGS_WINDOWS: "setup-args=--vsenv"
+      - name: Build cp312-abi3 wheel (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true' && matrix.method == 'meson'
+        uses: pypa/cibuildwheel@v3.2.0
+        with:
+          package-dir: .
+          output-dir: artifacts/wheels
+        env:
+          # Opting in to the limited API here is what makes meson-python stamp
+          # the wheel `cp312-abi3` instead of `cp312-cp312`; the pyproject.toml
+          # `limited-api = true` key alone is inert while the Meson option is
+          # off. The result installs on every CPython >= 3.12.
+          CIBW_BUILD: "cp312-*"
+          CIBW_ARCHS_WINDOWS: ${{ matrix.cibw_arch }}
+          CIBW_BUILD_VERBOSITY: "1"
+          CIBW_CONFIG_SETTINGS_WINDOWS: "setup-args=--vsenv setup-args=-Dpython.allow_limited_api=true"
       - name: Upload wheels
         if: steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v6
@@ -401,6 +425,139 @@ jobs:
           path: artifacts/sdist/*.tar.gz
           if-no-files-found: error
           retention-days: 7
+  build-deb:
+    # Debian packages are Linux-only and built with the NATIVE host toolchain
+    # (system gcc/libstdc++) so the shipped .so matches the distribution it is
+    # installed on. Each leg builds its own arch runtime deb plus the
+    # arch-independent -dev deb (headers), so the per-platform smoke can install
+    # both without pulling a cross-arch runtime.
+    name: Build deb ${{ matrix.platform }}
+    runs-on: ${{ matrix.builder }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux_x86_64
+            builder: ubuntu-24.04
+            deb_arch: amd64
+          - platform: linux_arm64
+            builder: ubuntu-24.04-arm
+            deb_arch: arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Decide whether to build this platform
+        id: gate
+        shell: bash
+        run: |
+          selected=",${{ inputs.platforms }},"
+          selected="${selected// /}"
+          if [[ "${selected}" == *",${{ matrix.platform }},"* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false (not in inputs.platforms)"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Free disk space (Linux)
+        if: steps.gate.outputs.run == 'true'
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+      - name: Pin Bazel version
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: echo "USE_BAZEL_VERSION=$(tr -d '[:space:]' < .bazelversion)" >> "$GITHUB_ENV"
+      - name: Set up Bazel
+        if: steps.gate.outputs.run == 'true'
+        uses: bazel-contrib/setup-bazel@0.19.0
+        with:
+          bazelisk-cache: true
+          repository-cache: true
+          disk-cache: deb-${{ matrix.platform }}
+      - name: Build Debian packages (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bazel build \
+            //package:libfastslide_${{ matrix.deb_arch }} \
+            //package:libfastslide_dev
+          mkdir -p artifacts/debs
+          # pkg_deb emits the canonical, versioned filename (via
+          # package_file_name) AND a symlink named after the Bazel target
+          # (e.g. libfastslide_amd64.deb -> libfastslide_0.8.0_amd64.deb).
+          # Copy only the canonical files so releases don't carry byte-identical
+          # duplicates. -L dereferences in case the canonical file itself is a
+          # bazel-out symlink.
+          bin="$(bazel info bazel-bin)/package"
+          cp -L "${bin}"/libfastslide_*_*.deb artifacts/debs/
+          cp -L "${bin}"/libfastslide-dev_*_all.deb artifacts/debs/
+          ls -l artifacts/debs
+      - name: Upload debs
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: debs-${{ matrix.platform }}
+          path: artifacts/debs/*.deb
+          if-no-files-found: error
+          retention-days: 7
+  smoke-deb:
+    # TEMPORARILY DISABLED: the GitHub-hosted runners (late 2026) cannot
+    # resolve archive.ubuntu.com or ports.ubuntu.com at all, not even from the
+    # runner itself ("curl: (6) Could not resolve host"). So neither apt nor
+    # package/smoke_deb.sh can fetch libfmt-dev, which libfastslide-dev depends
+    # on. The debs are still built and published. Re-enable by deleting the
+    # `if: false` below once the runners resolve the Ubuntu archive again;
+    # github-release treats the skipped job as passed.
+    if: false
+    # Prove the built packages install and are usable: package/smoke_deb.sh
+    # installs the runtime + dev debs with dpkg on the runner (the same
+    # ubuntu-24.04 image that built them, so the ABI lines up), checks the .so
+    # has no unresolved libraries, compiles package/deb_smoke.cpp with the
+    # SYSTEM compiler against ONLY the installed SDK and runs it, and runs the
+    # shipped fastslidetool CLI. No Docker and no apt: on the hosted runners of
+    # late 2026 containers cannot resolve DNS and `apt-get update` hangs, so
+    # the only extra packages (fmt) come over HTTPS, pinned in
+    # package/deb_smoke_deps.txt. Runs natively per arch.
+    name: Smoke deb ${{ matrix.platform }}
+    needs: build-deb
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux_x86_64
+            runner: ubuntu-24.04
+          - platform: linux_arm64
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Decide whether to smoke this platform
+        id: gate
+        shell: bash
+        run: |
+          selected=",${{ inputs.platforms }},"
+          selected="${selected// /}"
+          if [[ "${selected}" == *",${{ matrix.platform }},"* ]]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Download debs (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/download-artifact@v6
+        with:
+          name: debs-${{ matrix.platform }}
+          path: debs
+      - name: Smoke debs (${{ matrix.platform }})
+        if: steps.gate.outputs.run == 'true'
+        shell: bash
+        timeout-minutes: 15
+        run: package/smoke_deb.sh debs/*.deb
   # TEMPORARILY DISABLED: the source build pulls simpletiff from its pinned git
   # wrap (subprojects/simpletiff.wrap @ 3886522), which predates the
   # <cstdio>-before-<jpeglib.h> fix and so fails to compile under GCC. Re-enable
@@ -430,8 +587,8 @@ jobs:
   #       shell: bash
   #       run: |
   #         set -euo pipefail
-  #         uv python install 3.11
-  #         uv venv --python 3.11 .venv
+  #         uv python install 3.12
+  #         uv venv --python 3.12 .venv
   #         uv pip install --python .venv/bin/python --no-binary fastslide dist/*.tar.gz
   #         .venv/bin/python tools/smoke_test_python.py
   smoke-wheels:
@@ -441,7 +598,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        # Two wheels per platform: a cp311 one, and a cp312-abi3 one imported on
+        # every CPython >= 3.12 to prove the stable-ABI tag really does load
+        # across versions. uv resolves each interpreter to its matching wheel.
+        python: ["3.11", "3.12", "3.13", "3.14"]
         target:
           - platform: linux_x86_64
             runner: ubuntu-24.04
@@ -450,20 +610,14 @@ jobs:
           # x86_64 wheel runs under Rosetta on the arm64 mac with an x86_64
           # CPython (uv downloads the matching build).
           - platform: darwin_x86_64
-            runner: macos-14
+            runner: macos-15
             rosetta: true
           - platform: darwin_aarch64
-            runner: macos-14
+            runner: macos-15
           - platform: windows_x86_64
             runner: windows-2022
           - platform: windows_arm64
             runner: windows-11-arm
-        # No official CPython 3.10 for Windows ARM64, so no cp310 win_arm64 wheel
-        # is built; drop that smoke combination.
-        exclude:
-          - python: "3.10"
-            target:
-              platform: windows_arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -494,11 +648,14 @@ jobs:
       # Build a venv on the right interpreter (x86_64 CPython for the Rosetta
       # leg), install the local wheel under test (uv picks the dist wheel whose
       # tags match the venv's Python/arch), and run the import + open-sample
-      # smoke. --find-links dist makes the local wheel the source for fastslide,
-      # while the index supplies its runtime dep (numpy>=1.20), which is NOT
-      # vendored in dist. Do NOT add --no-index here: that made the install fail
-      # to resolve numpy on a cold uv cache (it only "worked" elsewhere by
-      # accident, off a warm cache that already had numpy).
+      # smoke.
+      #
+      # numpy (the only runtime dep, and NOT vendored in dist) is installed from
+      # the index in a separate step so that fastslide itself can be installed
+      # with --no-index. That pin matters: pip/uv prefer an exact cpXY tag over
+      # an abi3 one, so with the index enabled a same-version wheel already on
+      # PyPI would outrank the local cp312-abi3 wheel on 3.13/3.14 and the job
+      # would silently smoke-test the published artifact instead of this build.
       - name: Import + open-sample smoke (${{ matrix.target.platform }} py${{ matrix.python }})
         if: steps.gate.outputs.run == 'true'
         shell: bash
@@ -515,7 +672,8 @@ jobs:
           else
             py=".venv/bin/python"
           fi
-          uv pip install --python "$py" --find-links dist fastslide
+          uv pip install --python "$py" numpy
+          uv pip install --python "$py" --no-index --find-links dist fastslide
           "$py" tools/smoke_test_python.py
   publish-pypi:
     name: Publish wheels + sdist to PyPI
@@ -572,7 +730,7 @@ jobs:
           skip-existing: true
   github-release:
     name: Publish GitHub Release
-    needs: [smoke-java, smoke-wheels, build-wheels, build-sdist, publish-pypi, publish-testpypi]
+    needs: [smoke-java, smoke-wheels, build-wheels, build-sdist, build-deb, smoke-deb, publish-pypi, publish-testpypi]
     # publish-pypi / publish-testpypi are mutually exclusive, so one is always
     # skipped. A skipped need is not success(), which would skip this job too;
     # gate on "nothing failed/cancelled" instead so the skipped sibling is OK.
@@ -602,12 +760,19 @@ jobs:
         with:
           name: sdist
           path: artifacts/sdist
+      - name: Download debs
+        uses: actions/download-artifact@v6
+        with:
+          path: artifacts/debs
+          pattern: "debs-*"
+          merge-multiple: true
       - name: List collected artifacts
         shell: bash
         run: |
           echo "JARs:"; ls -l artifacts/jars
           echo "Wheels:"; ls -l artifacts/wheels
           echo "Sdist:"; ls -l artifacts/sdist
+          echo "Debs:"; ls -l artifacts/debs || echo "(no debs)"
       - name: Generate build provenance attestation
         uses: actions/attest-build-provenance@v3
         with:
@@ -615,6 +780,7 @@ jobs:
             artifacts/jars/*.jar
             artifacts/wheels/*.whl
             artifacts/sdist/*.tar.gz
+            artifacts/debs/*.deb
       - name: Publish
         shell: bash
         env:
@@ -630,4 +796,5 @@ jobs:
             --dest github ${channel} ${require} \
             --wheels-dir artifacts/wheels \
             --sdist-dir artifacts/sdist \
+            --debs-dir artifacts/debs \
             --generate-notes

@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -70,14 +71,23 @@ class QuickHashBuilder {
   /// @return Status indicating success or failure
   aifocore::Status HashData(const std::vector<uint8_t>& data);
 
-  /// @brief Finalize hash and get result as hex string
-  /// @return Hex-encoded hash string (64 characters for SHA-256)
-  std::string Finalize();
+  /// @brief Total bytes fed into the digest so far.
+  [[nodiscard]] int64_t BytesHashed() const;
+
+  /// @brief Finalize the digest.
+  ///
+  /// @return Lowercase 64-character hex digest.
+  /// @retval kFailedPrecondition if called twice, or if nothing was ever
+  ///         hashed. The latter would otherwise yield the SHA-256 of the empty
+  ///         input, a fixed value that silently collides across every slide
+  ///         the caller failed to read.
+  [[nodiscard]] aifocore::Result<std::string> Finalize();
 
  private:
-  void* ctx_;  // SHA-256 context (opaque pointer to avoid header dependency)
-  std::vector<uint8_t> hash_buffer_;  // Buffer for final hash result
-  bool finalized_;
+  /// @brief Holds the SHA-256 context, kept out of line so this header does
+  ///        not pull in the codec.
+  struct Impl;
+  std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace fastslide

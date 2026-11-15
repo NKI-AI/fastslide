@@ -56,4 +56,22 @@ public final class FastSlide {
     var reader = FastSlideNative.createReader(Arena.global(), path);
     return new SlideReader(reader);
   }
+
+  /**
+   * Opens a slide with the given options.
+   *
+   * <p>When {@link OpenOptions#applyIcc()} is set and the slide carries an embedded ICC profile,
+   * subsequent {@link SlideReader#readRegion} calls return color-managed pixels.
+   */
+  public static SlideReader open(String path, OpenOptions options) {
+    ensureInitialized();
+    var reader =
+        FastSlideNative.createReaderWithOptions(
+            Arena.global(),
+            path,
+            options.applyIcc(),
+            options.targetColorSpace().nativeValue(),
+            options.renderingIntent().nativeValue());
+    return new SlideReader(reader);
+  }
 }

@@ -15,6 +15,9 @@
 #ifndef AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_ISYNTAX_ISYNTAX_PLAN_CONTEXT_H_
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_ISYNTAX_ISYNTAX_PLAN_CONTEXT_H_
 
+#include <cstdint>
+#include <optional>
+
 #include "fastslide/image.h"
 #include "fastslide/slide_reader.h"
 
@@ -24,6 +27,19 @@ namespace fastslide {
 struct IsyntaxPlanContext {
   ImageDimensions tile_size = {0, 0};
   LevelInfo level_info;
+  /// Padding of the wavelet pyramid on each side of level 0, in level 0
+  /// pixels.
+  int32_t level0_padding = 0;
+  /// Start of this level's tile grid in the padded level 0, in level 0 pixels
+  /// (libisyntax's `origin_offset_in_pixels`; 0 for level 0).
+  int32_t origin_offset_in_pixels = 0;
+  /// Size of this level's tile grid, in tiles.
+  int64_t grid_width_in_tiles = 0;
+  int64_t grid_height_in_tiles = 0;
+  /// Whether to apply the sub-pixel correction to levels above 0. Unset:
+  /// read from FASTSLIDE_ISYNTAX_SUBPIXEL_CORRECTION; see
+  /// IsyntaxPlanBuilder::SubpixelCorrectionFromEnv.
+  std::optional<bool> subpixel_correction;
 };
 
 }  // namespace fastslide

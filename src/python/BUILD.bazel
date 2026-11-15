@@ -15,6 +15,7 @@ nanobind_extension(
         "cache.cpp",
         "fastslide.cpp",
         "reader.cpp",
+        "status_error.cpp",
     ],
     copts = select({
         "@platforms//os:windows": [],
@@ -24,6 +25,7 @@ nanobind_extension(
     deps = [
         "//:cache",
         "//:fastslide_lib",
+        "//:libisyntax",
         "//:python_binding_headers",
         "//:runtime_global_cache_manager",
         "//:runtime_plugin_loader",

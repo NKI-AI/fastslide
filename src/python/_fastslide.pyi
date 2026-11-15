@@ -45,8 +45,33 @@ class Image:
     def dtype(self) -> str: ...
     @property
     def planar_config(self) -> PlanarConfig: ...
+    @property
+    def is_interleaved(self) -> bool:
+        """True if the image is stored interleaved (HWC)."""
+
+    @property
+    def is_separate(self) -> bool:
+        """True if the image is stored band-separate / planar (CHW)."""
+
     def numpy(self) -> object:
         """Get a numpy array view of the image data (zero-copy)"""
+
+    def to_interleaved(self) -> Image:
+        """Return an interleaved (HWC) view of this image.
+
+        If the image is already interleaved, returns ``self`` unchanged (no
+        copy). Otherwise allocates a new Image with the same pixels in
+        interleaved layout. Peak extra memory during conversion equals the
+        image size.
+        """
+
+    def to_separate(self) -> Image:
+        """Return a band-separate (CHW) view of this image.
+
+        If the image is already band-separate, returns ``self`` unchanged (no
+        copy). Otherwise allocates a new Image with the same pixels in planar
+        layout.
+        """
 
 class CacheInspectionStats:
     @property
@@ -278,8 +303,22 @@ class SlideImages:
 
 class FastSlide:
     @staticmethod
-    def from_file_path(file_path: object) -> FastSlide:
-        """Create FastSlide from file path (accepts str or pathlib.Path)"""
+    def from_file_path(
+        file_path: object,
+        apply_icc: bool = False,
+        cache: object | None = None,
+    ) -> FastSlide:
+        """Create FastSlide from file path (accepts str or pathlib.Path)
+
+        Args:
+            file_path: Path to the slide (str or pathlib.Path).
+            apply_icc: When True and the slide has an embedded ICC profile,
+                read_region returns sRGB-corrected pixels (perceptual intent).
+                Slides without a profile are returned unchanged.
+            cache: Optional tile cache to attach. Accepts an int byte capacity
+                (a new per-slide LRU cache), a CacheManager, a TileCache, or
+                None to disable caching.
+        """
 
     @staticmethod
     def from_uri(uri: str) -> FastSlide:
@@ -398,6 +437,14 @@ class FastSlide:
         """Pixel data type (e.g. 'uint8', 'uint16')"""
 
     @property
+    def icc_profile(self) -> bytes | None:
+        """Embedded ICC profile as bytes, or None if the slide has no color profile."""
+
+    @property
+    def apply_icc(self) -> bool:
+        """True if ICC color management is applied on read_region."""
+
+    @property
     def quickhash(self) -> str:
         """SHA-256 quickhash (unique identifier, OpenSlide-compatible)"""
 
@@ -449,7 +496,7 @@ class FastSlide:
         """Get the best level for a given downsample factor"""
 
     def set_cache(self, cache: object) -> None:
-        """Set cache (accepts TileCache, CacheManager, or None to disable)."""
+        """Set cache (accepts int bytes, TileCache, CacheManager, or None to disable)."""
 
     def get_cache(self) -> TileCache:
         """Get current cache"""
@@ -458,40 +505,18 @@ class FastSlide:
     def cache_enabled(self) -> bool:
         """True if caching is enabled"""
 
+    def use_global_cache(self) -> None:
+        """Attach the process-wide global tile cache to this slide."""
+
+    def clear_cache(self) -> None:
+        """Clear all tiles from this slide's cache (no-op if none attached)."""
+
+    @property
+    def cache_stats(self) -> RuntimeCacheStats | None:
+        """Cache statistics, or None if no cache is attached."""
+
     def close(self) -> None:
         """Close the slide reader and release resources"""
-
-    def set_visible_channels(self, channels: object) -> None:
-        """
-        Set which channels are visible during read operations
-
-        Args:
-            channels: Channel index (int), list/tuple of channel indices,
-                      or None to show all channels
-
-        Examples:
-            slide.set_visible_channels(0)        # Show only channel 0
-            slide.set_visible_channels([0, 2])   # Show channels 0 and 2
-            slide.set_visible_channels(None)     # Show all channels
-
-        Note: Channel indices are 0-based. Invalid indices will be ignored
-        during read operations.
-        """
-
-    def get_visible_channels(self) -> list[int]:
-        """
-        Get currently visible channel indices
-
-        Returns:
-            list: List of visible channel indices (empty = all visible)
-        """
-
-    def show_all_channels(self) -> None:
-        """
-        Reset to show all channels
-
-        Equivalent to set_visible_channels(None)
-        """
 
     def __enter__(self) -> FastSlide: ...
     def __exit__(
@@ -507,3 +532,11 @@ def get_supported_extensions() -> list[str]:
 
 def is_supported(filename: str) -> bool:
     """Check if file format is supported"""
+
+def set_isyntax_cache_capacity(capacity_bytes: int) -> None:
+    """
+    Set the memory budget of the iSyntax coefficient cache (default 1 GiB). Every open iSyntax slide shares the cache: it keeps the decoded wavelet coefficients of recently read tiles, so that neighbouring reads do not decode them again. Caches over the budget evict tiles on their next read.
+    """
+
+def get_isyntax_cache_capacity() -> int:
+    """Get the memory budget of the iSyntax coefficient cache, in bytes."""

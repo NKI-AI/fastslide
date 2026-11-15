@@ -127,7 +127,13 @@ aifocore::Result<EncodeInfo> ParseEncodeInfo(std::string_view xmp_packet) {
 
   // Each <ImageInfo> (under <SlideStitchInfo>) describes one AOI's stitch grid
   // and carries the <TileJointInfo> overlap records.
+  // Without an AOIIndex attribute (e.g. OpenSlide's OS-2.bif) the n-th
+  // <ImageInfo> pairs with <AOIn> by document order, counting unscanned AOIs,
+  // as OpenSlide's ventana driver pairs them.
+  int ordinal = 0;
   ForEachNamed(doc, "ImageInfo", [&](const pugi::xml_node& image_info) {
+    const int aoi_index = image_info.attribute("AOIIndex").as_int(ordinal);
+    ++ordinal;
     // Skip AOIs that failed to scan: their tiles are not present on disk, so
     // placing them would emit phantom geometry. The attribute defaults to 1
     // (scanned) when absent so files that omit it are not silently dropped.
@@ -136,7 +142,7 @@ aifocore::Result<EncodeInfo> ParseEncodeInfo(std::string_view xmp_packet) {
     }
 
     AoiInfo aoi;
-    aoi.aoi_index = image_info.attribute("AOIIndex").as_int(0);
+    aoi.aoi_index = aoi_index;
     aoi.num_rows = image_info.attribute("NumRows").as_int(0);
     aoi.num_cols = image_info.attribute("NumCols").as_int(0);
     aoi.tile_width = image_info.attribute("Width").as_double(0.0);

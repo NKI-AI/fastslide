@@ -95,6 +95,24 @@ pub enum FastSlidePropertyType {
     Double = 2,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FastSlideColorSpace {
+    Rgb = 0,
+    Linear = 1,
+    Srgb = 2,
+    Automatic = 3,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FastSlideRenderingIntent {
+    Perceptual = 0,
+    RelativeColorimetric = 1,
+    Saturation = 2,
+    AbsoluteColorimetric = 3,
+}
+
 // ===========================================================================
 // POD structs
 // ===========================================================================
@@ -210,6 +228,29 @@ pub struct FastSlidePropertyValue {
     pub value: FastSlidePropertyValueUnion,
 }
 
+/// Open options mirroring `FastSlideOpenOptions` in `registry.h`. Zero-fill
+/// (`Default`) for no color management.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct FastSlideOpenOptions {
+    pub apply_icc: c_int,
+    pub target_color_space: FastSlideColorSpace,
+    pub rendering_intent: FastSlideRenderingIntent,
+    pub icc_use_lut: c_int,
+}
+
+/// Tile cache statistics mirroring `FastSlideCacheStats` in `slide_reader.h`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct FastSlideCacheStats {
+    pub capacity_bytes: usize,
+    pub size: usize,
+    pub hits: usize,
+    pub misses: usize,
+    pub hit_ratio: c_double,
+    pub memory_usage_bytes: usize,
+}
+
 // ===========================================================================
 // C API
 // ===========================================================================
@@ -228,6 +269,18 @@ unsafe extern "C" {
         file_path: *const c_char,
     ) -> *mut FastSlideSlideReader;
     pub fn fastslide_create_reader(file_path: *const c_char) -> *mut FastSlideSlideReader;
+    pub fn fastslide_create_reader_with_options(
+        file_path: *const c_char,
+        options: *const FastSlideOpenOptions,
+    ) -> *mut FastSlideSlideReader;
+    pub fn fastslide_create_reader_with_cache(
+        file_path: *const c_char,
+        cache_capacity_bytes: usize,
+    ) -> *mut FastSlideSlideReader;
+    pub fn fastslide_global_cache_set_capacity_bytes(capacity_bytes: usize) -> c_int;
+    pub fn fastslide_isyntax_cache_set_capacity_bytes(capacity_bytes: usize) -> c_int;
+    pub fn fastslide_global_cache_get_stats(out_stats: *mut FastSlideCacheStats) -> c_int;
+    pub fn fastslide_global_cache_clear();
     pub fn fastslide_registry_get_supported_extensions(
         registry: *mut FastSlideRegistry,
         extensions: *mut *mut *mut c_char,
@@ -306,20 +359,6 @@ unsafe extern "C" {
         metadata: *mut FastSlideChannelMetadata,
         num_channels: c_int,
     );
-
-    // ---- slide_reader.h: channel visibility ----
-    pub fn fastslide_slide_reader_set_visible_channels(
-        reader: *mut FastSlideSlideReader,
-        channel_indices: *const usize,
-        num_channels: c_int,
-    ) -> c_int;
-    pub fn fastslide_slide_reader_get_visible_channels(
-        reader: *const FastSlideSlideReader,
-        channel_indices: *mut *mut usize,
-        num_channels: *mut c_int,
-    ) -> c_int;
-    pub fn fastslide_slide_reader_show_all_channels(reader: *mut FastSlideSlideReader) -> c_int;
-    pub fn fastslide_slide_reader_free_visible_channels(channel_indices: *mut usize);
 
     // ---- slide_reader.h: region reading ----
     pub fn fastslide_slide_reader_read_region(
@@ -405,6 +444,35 @@ unsafe extern "C" {
         clamped_region: *mut FastSlideRegionSpec,
     ) -> c_int;
     pub fn fastslide_slide_reader_free(reader: *mut FastSlideSlideReader);
+
+    // ---- slide_reader.h: ICC color management ----
+    pub fn fastslide_slide_reader_get_icc_profile_size(
+        reader: *const FastSlideSlideReader,
+    ) -> usize;
+    pub fn fastslide_slide_reader_read_icc_profile(
+        reader: *const FastSlideSlideReader,
+        buffer: *mut u8,
+        buffer_size: usize,
+    ) -> usize;
+    pub fn fastslide_slide_reader_enable_icc_transform(
+        reader: *mut FastSlideSlideReader,
+        target_space: FastSlideColorSpace,
+        intent: FastSlideRenderingIntent,
+        use_lut: c_int,
+    ) -> c_int;
+
+    // ---- slide_reader.h: tile caching ----
+    pub fn fastslide_slide_reader_set_cache(
+        reader: *mut FastSlideSlideReader,
+        capacity_bytes: usize,
+    ) -> c_int;
+    pub fn fastslide_slide_reader_use_global_cache(reader: *mut FastSlideSlideReader) -> c_int;
+    pub fn fastslide_slide_reader_is_cache_enabled(reader: *const FastSlideSlideReader) -> c_int;
+    pub fn fastslide_slide_reader_clear_cache(reader: *mut FastSlideSlideReader);
+    pub fn fastslide_slide_reader_get_cache_stats(
+        reader: *const FastSlideSlideReader,
+        out_stats: *mut FastSlideCacheStats,
+    ) -> c_int;
 
     // ---- slide_image.h: per-image (per-series) API ----
     pub fn fastslide_slide_image_free(image: *mut FastSlideSlideImage);

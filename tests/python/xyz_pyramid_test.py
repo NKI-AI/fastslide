@@ -181,6 +181,21 @@ def test_get_tile_reads_coarsest_native_level() -> None:
     assert slide.last_call["size"] == (64, 64)
 
 
+def test_get_tile_location_is_level_native() -> None:
+    pytest.importorskip("PIL")
+    # Level 0 is 1024x1024, level 1 is 256x256. With a 128 px tile the coarse
+    # zoom has a 2x2 grid, so a non-(0, 0) tile pins down the coordinate space.
+    slide = _FakeSlide(1024, 1024, downsamples=(1.0, 4.0))
+    pyramid = XYZPyramid(slide, tile_size=128)
+    pyramid.get_tile(0, 1, 1)  # z=0 -> coarsest native level 1 (256x256)
+    assert slide.last_call is not None
+    assert slide.last_call["level"] == 1
+    # Locations are level-native pixels: (1*128, 1*128), not level-0 scaled
+    # (which would be (512, 512) if downsamples were applied here).
+    assert slide.last_call["location"] == (128, 128)
+    assert slide.last_call["size"] == (128, 128)
+
+
 def test_get_tile_edge_size() -> None:
     pytest.importorskip("PIL")
     slide = _FakeSlide(1000, 1000)  # single level
@@ -271,7 +286,6 @@ def test_info_payload() -> None:
     assert info["num_zoom_levels"] == 2
     assert info["resolutions"] == [4.0, 1.0]
     assert info["level_count"] == 2
-    assert info["format"] == "svs"
     assert info["mpp"] == [0.25, 0.25]
     assert info["level_dimensions"] == [[1000, 800], [250, 200]]
     assert info["level_downsamples"] == [1.0, 4.0]

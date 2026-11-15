@@ -104,6 +104,15 @@ uv build
 self-contained: all codecs are statically linked into the `_fastslide`
 extension, so the resulting wheel has no native runtime dependencies.
 
+A source build targets the interpreter running it, producing a `cp3XX` wheel.
+That is the right default locally, where a stable-ABI build buys nothing. To
+reproduce the redistributable `cp312-abi3` wheel instead, opt in explicitly (on
+CPython >= 3.12; 3.11 cannot use the limited API):
+
+```bash
+uv build --wheel -Csetup-args=-Dpython.allow_limited_api=true
+```
+
 #### Option 3: Build from source with Bazel
 
 FastSlide is a [Bazel module](https://bazel.build/external/module). Builds are
@@ -125,27 +134,35 @@ bazelisk test //...
 
 ##### Building Python wheels with Bazel
 
-Wheels are platform-specific because they bundle the native C++ extension. Each
-Python version has its own Bazel target: `//python:fastslide_wheel_cp310` through
-`//python:fastslide_wheel_cp314` (Python 3.10–3.14). Unlike the Meson path,
-Bazel can also cross-compile wheels for other platforms.
+Wheels are platform-specific because they bundle the native C++ extension. Two
+are built per platform:
+
+| Target                           | Tag          | Installable on  |
+| -------------------------------- | ------------ | --------------- |
+| `//python:fastslide_wheel`       | `cp312-abi3` | CPython >= 3.12 |
+| `//python:fastslide_wheel_cp311` | `cp311`      | CPython 3.11    |
+
+The first targets CPython's stable ABI, so one build serves every CPython from
+3.12 onwards. 3.11 predates that floor and therefore needs a conventional
+version-specific build. `//python:all_wheels` builds both. Unlike the Meson
+path, Bazel can also cross-compile wheels for other platforms.
 
 **Current platform** — build on the host OS/arch without cross-compilation:
 
 ```bash
-# Example: Python 3.11 wheel for the machine you are on.
-bazelisk build //python:fastslide_wheel_cp311
+# Both wheels for the machine you are on.
+bazelisk build //python:all_wheels
 ```
 
-The `.whl` file appears under `bazel-bin/python/`.
+The `.whl` files appear under `bazel-bin/python/`.
 
 **Cross-compilation** — build wheels for other platforms using the Zig-backed
 hermetic toolchains (`--config=hermetic` in `.bazelrc`):
 
 ```bash
-# Example: Linux x86_64 wheel for Python 3.11, e.g. from macOS.
+# Example: Linux x86_64 wheels, e.g. from macOS.
 bazelisk build --config=hermetic --platforms=//platforms:linux_x86_64 \
-  //python:fastslide_wheel_cp311
+  //python:all_wheels
 ```
 
 Supported platform keys: `linux_x86_64`, `linux_arm64`, `darwin_x86_64`,
@@ -153,14 +170,14 @@ Supported platform keys: `linux_x86_64`, `linux_arm64`, `darwin_x86_64`,
 architecture from macOS, the native toolchain is used instead of hermetic Zig.
 
 **Batch builds** — `tools/build_wheels.py` drives Bazel for multiple platforms
-and Python versions and copies wheels into `artifacts/wheels/`:
+and copies wheels into `artifacts/wheels/`:
 
 ```bash
-# All supported platforms and Python versions.
+# All supported platforms.
 python tools/build_wheels.py
 
-# Subset, e.g. one platform and one Python tag.
-python tools/build_wheels.py --platform linux_x86_64 --python cp311
+# Subset, e.g. one platform.
+python tools/build_wheels.py --platform linux_x86_64
 
 # Continue after individual failures.
 python tools/build_wheels.py --keep-going
@@ -520,47 +537,38 @@ to discuss what you would like to change, or jump straight into a pull request.
 FastSlide incorporates the following third-party software into its source:
 
 - **SHA-256 implementation** from [sha-2](https://github.com/amosnier/sha-2) by Alain Mosnier
-
   - Licensed under: The Unlicense or Zero Clause BSD license
   - Used for: Quick hash computation compatible with OpenSlide
 
 - **unordered_dense** from [martinus/unordered_dense](https://github.com/martinus/unordered_dense) by Martin Leitner-Ankerl
-
   - Licensed under: MIT License
   - Used for: Fast hashmap/hashset for spatial lookup in the Mirax format
 
 - **lodepng** from [vandeve/lodepng](https://github.com/lvandeve/lodepng) by Lode Vandevenne
-
   - Licensed under: Zlib License
   - Used for: Decoding PNG in file formats and to write png in examples.
 
 - **pugixml**: from [pugixml.org](https://pugixml.org/)
-
   - Licensed under: MIT License
   - Used for: Parsing of XML headers
 
 - **yxml**: from [https://dev.yorhel.nl/yxml](https://dev.yorhel.nl/yxml)
-
   - Licensed under: MIT License
   - Used for: Parsing of XML headers
 
 - **tifffile**: from [cgohlke/tifffile/](https://github.com/cgohlke/tifffile/) by Christoph Gohlke
-
   - Licensed under: BSD-3-Clause
   - Used for: Test data files
 
 - **jpeg-compressor**: from [richgel999/jpeg-compressor](https://github.com/richgel999/jpeg-compressor) by richgel999
-
   - Licensed under: Public domain
   - Used for: Alternative JPEG decompression, required in WASM builds.
 
 - **thread-pool**: from [bshoshany/thread-pool](https://github.com/bshoshany/thread-pool) by Barak Shoshany
-
   - Licensed under: MIT License
   - Used for: Creating thread pool for decoding, etc.
 
 - **libisyntax**: from [amspath/libisyntax](https://github.com/pvalkema/libisyntax) by Pieter Valkema
-
   - Licensed under: BSD-2 License
   - Used for: iSyntax decoding
   - Modifications: Library has been stripped to the minimal requirements.

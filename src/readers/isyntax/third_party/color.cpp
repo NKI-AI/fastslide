@@ -98,28 +98,32 @@ uint32_t WaveletCoefficientToColorValue(int16_t coefficient) {
 #endif
 }
 
+// The halving steps use an arithmetic shift (floor division), not `/ 2`
+// (truncation toward zero): this matches the SSE2/NEON paths below (`srai` /
+// `vshrq_n_s16`) and is bit-exact with the Philips SDK. Results are clamped to
+// 0..255 on both ends, as the SIMD paths do with their saturating packs.
 rgba_t YCoCgToRgb(int16_t Y, int16_t Co, int16_t Cg) {
-  int16_t tmp = Y - Cg / 2;
-  int16_t G = tmp + Cg;
-  int16_t B = tmp - Co / 2;
-  int16_t R = B + Co;
+  const int32_t tmp = Y - (Cg >> 1);
+  const int32_t G = tmp + Cg;
+  const int32_t B = tmp - (Co >> 1);
+  const int32_t R = B + Co;
   rgba_t result;
-  result.r = ATMOST(255, R);
-  result.g = ATMOST(255, G);
-  result.b = ATMOST(255, B);
+  result.r = static_cast<uint8_t>(CLAMP(R, 0, 255));
+  result.g = static_cast<uint8_t>(CLAMP(G, 0, 255));
+  result.b = static_cast<uint8_t>(CLAMP(B, 0, 255));
   result.a = 255;
   return result;
 }
 
 rgba_t YCoCgToBgr(int16_t Y, int16_t Co, int16_t Cg) {
-  int16_t tmp = Y - Cg / 2;
-  int16_t G = tmp + Cg;
-  int16_t B = tmp - Co / 2;
-  int16_t R = B + Co;
+  const int32_t tmp = Y - (Cg >> 1);
+  const int32_t G = tmp + Cg;
+  const int32_t B = tmp - (Co >> 1);
+  const int32_t R = B + Co;
   rgba_t result;
-  result.r = ATMOST(255, B);  // Note: BGR order
-  result.g = ATMOST(255, G);
-  result.b = ATMOST(255, R);
+  result.r = static_cast<uint8_t>(CLAMP(B, 0, 255));  // Note: BGR order
+  result.g = static_cast<uint8_t>(CLAMP(G, 0, 255));
+  result.b = static_cast<uint8_t>(CLAMP(R, 0, 255));
   result.a = 255;
   return result;
 }

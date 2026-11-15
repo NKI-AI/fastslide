@@ -60,10 +60,18 @@ PLATFORMS: dict[str, PlatformSpec] = {
 }
 
 
-PY_TAG_TO_VERSION: dict[str, str] = {
-    "cp310": "3.10",
-    "cp311": "3.11",
-    "cp312": "3.12",
-    "cp313": "3.13",
-    "cp314": "3.14",
-}
+@dataclass(frozen=True)
+class WheelSpec:
+    """One wheel flavour: a Bazel target and the PEP 425 tag it stamps."""
+
+    target: str
+    tag: str
+
+
+# Two wheels are built per platform: a stable-ABI (abi3) one floored at CPython
+# 3.12, installable on every CPython >= 3.12, and a version-specific one for
+# 3.11, which predates the stable-ABI floor.
+WHEELS: tuple[WheelSpec, ...] = (
+    WheelSpec(target="//python:fastslide_wheel", tag="cp312-abi3"),
+    WheelSpec(target="//python:fastslide_wheel_cp311", tag="cp311"),
+)

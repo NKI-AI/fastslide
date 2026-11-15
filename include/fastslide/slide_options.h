@@ -16,16 +16,11 @@
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_SLIDE_OPTIONS_H_
 
 #include <cstdint>
-#include <memory>
 #include <optional>
-#include <string>
 
 #include "fastslide/utilities/colors.h"
 
 namespace fastslide {
-
-// Forward declarations
-class TileCache;
 
 /// @brief Color space for image data
 enum class ColorSpace {
@@ -33,6 +28,18 @@ enum class ColorSpace {
   kLinear,    ///< Linear color space (no gamma correction)
   kSRGB,      ///< sRGB color space
   kAutomatic  ///< Automatically determine from metadata
+};
+
+/// @brief ICC rendering intent used when applying color transforms
+///
+/// Mirrors the four ICC rendering intents. Perceptual is the default and
+/// matches OpenSlide's behaviour when converting through an embedded slide
+/// profile to sRGB.
+enum class RenderingIntent {
+  kPerceptual,            ///< Perceptual (default, OpenSlide-compatible)
+  kRelativeColorimetric,  ///< Relative colorimetric
+  kSaturation,            ///< Saturation
+  kAbsoluteColorimetric   ///< Absolute colorimetric
 };
 
 /// @brief Bundle of optional dependencies that can be injected into readers
@@ -44,7 +51,6 @@ enum class ColorSpace {
 /// Example usage:
 /// @code
 /// DependencyBundle deps;
-/// deps.tile_cache = std::make_shared<TileCache>(1024 * 1024 * 1024); // 1GB
 /// deps.background_color = ColorRGB{255, 255, 255};  // White background
 ///
 /// SlideOpenOptions options;
@@ -53,12 +59,6 @@ enum class ColorSpace {
 /// auto reader = registry.CreateReader("slide.mrxs", options);
 /// @endcode
 struct DependencyBundle {
-  /// @brief Optional tile cache for decoded tiles
-  ///
-  /// Readers can use this cache to store decoded tiles for faster access.
-  /// If nullptr, readers should manage their own caching or disable caching.
-  std::shared_ptr<TileCache> tile_cache;
-
   /// @brief Background color for empty regions
   ///
   /// Used when filling regions that don't have tile data (e.g., sparse MRXS
@@ -89,26 +89,16 @@ struct DependencyBundle {
 /// Example usage:
 /// @code
 /// SlideOpenOptions options;
-/// options.enable_caching = true;
-/// options.cache_size_mb = 512;
 /// options.dependencies.max_threads = 4;
 ///
 /// auto reader = SlideReaderRegistry::GetInstance().CreateReader(
 ///     "slide.svs", options);
 /// @endcode
+///
+/// @note Tile caching is configured separately via the reader's `SetCache`
+///       (see `fastslide::runtime::LRUTileCache` /
+///       `fastslide::runtime::GlobalCacheManager`), not through this struct.
 struct SlideOpenOptions {
-  /// @brief Enable internal tile caching
-  ///
-  /// If true and no external cache is provided via dependencies, the reader
-  /// should create its own internal cache.
-  bool enable_caching = true;
-
-  /// @brief Cache size in megabytes
-  ///
-  /// Hint for cache size if the reader creates its own cache. Ignored if
-  /// an external cache is provided via dependencies.
-  uint32_t cache_size_mb = 256;
-
   /// @brief Read-only mode
   ///
   /// If true, the reader should open files in read-only mode and not attempt
@@ -120,6 +110,27 @@ struct SlideOpenOptions {
   /// Readers should attempt to provide image data in this color space.
   /// If conversion is not possible, readers should use their native format.
   ColorSpace color_space = ColorSpace::kAutomatic;
+
+  /// @brief Apply the slide's embedded ICC profile during region decode
+  ///
+  /// When true and the slide carries an embedded ICC profile, `ReadRegion`
+  /// returns pixels already converted to `color_space` (sRGB by default) using
+  /// the embedded profile. The transform is built once per reader and applied
+  /// in place on the decoded region buffer, so there is no extra copy. Slides
+  /// without an embedded profile, or non-RGB(A)/8-16-bit outputs, are returned
+  /// unchanged.
+  bool apply_icc = false;
+
+  /// @brief Rendering intent used when `apply_icc` is enabled
+  RenderingIntent rendering_intent = RenderingIntent::kPerceptual;
+
+  /// @brief Use the precomputed 8-bit LUT fast path when `apply_icc` is enabled
+  ///
+  /// When true, a 256^3 RGB->RGB table (48 MiB, ~200 ms one-time build) is
+  /// materialized so 8-bit RGB(A) regions are color-managed with an O(1) table
+  /// gather instead of an lcms2 pass. Output is byte-identical to the lcms2
+  /// path. Ignored when `apply_icc` is false or the slide has no profile.
+  bool icc_use_lut = false;
 
   /// @brief Optional dependency bundle for shared services
   ///

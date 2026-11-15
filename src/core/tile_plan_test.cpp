@@ -553,5 +553,38 @@ TEST(BatchTilePlanTest, DeduplicatedOperations) {
   EXPECT_EQ(batch.GetUniqueOperations(), 1);  // Only one unique tile
 }
 
+/// @brief The output format must never be wider than the source data type.
+///
+/// The tile sinks copy raw samples out of a decoded tile using the canvas's
+/// sample width.
+TEST(OutputPixelFormatTest, PreservesSampleWidth) {
+  const auto width_of = [](OutputSpec::PixelFormat format) -> size_t {
+    switch (format) {
+      case OutputSpec::PixelFormat::kUInt8:
+        return 1;
+      case OutputSpec::PixelFormat::kUInt16:
+        return 2;
+      case OutputSpec::PixelFormat::kUInt32:
+      case OutputSpec::PixelFormat::kFloat32:
+        return 4;
+    }
+    return 0;
+  };
+
+  for (const auto dtype :
+       {DataType::kUInt8, DataType::kUInt16, DataType::kInt16,
+        DataType::kUInt32, DataType::kInt32, DataType::kFloat32,
+        DataType::kFloat64}) {
+    EXPECT_LE(width_of(ToOutputPixelFormat(dtype)), GetDataTypeSize(dtype))
+        << "output format wider than source for DataType "
+        << static_cast<int>(dtype);
+  }
+
+  EXPECT_EQ(ToOutputPixelFormat(DataType::kInt16),
+            OutputSpec::PixelFormat::kUInt16);
+  EXPECT_EQ(ToOutputPixelFormat(DataType::kInt32),
+            OutputSpec::PixelFormat::kUInt32);
+}
+
 }  // namespace core
 }  // namespace fastslide

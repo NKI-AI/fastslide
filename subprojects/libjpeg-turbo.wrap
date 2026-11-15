@@ -9,6 +9,10 @@ patch_url = https://wrapdb.mesonbuild.com/v2/libjpeg-turbo_3.1.4.1-2/get_patch
 patch_fallback_url = https://github.com/mesonbuild/wrapdb/releases/download/libjpeg-turbo_3.1.4.1-2/libjpeg-turbo_3.1.4.1-2_patch.zip
 patch_hash = a91f949bd46c322af33053b2c86bb75ce72d3edc765e65b08313647997e7e3de
 wrapdb_version = 3.1.4.1-2
+# The SIMD objects are built with pic: false when default_library=static, which
+# cannot be linked into a shared object (the Python extension). Let
+# b_staticpic (default true) apply, as for the rest of libjpeg-turbo.
+diff_files = libjpeg-turbo-simd-pic.patch
 
 [provide]
 dependency_names = libjpeg, libturbojpeg

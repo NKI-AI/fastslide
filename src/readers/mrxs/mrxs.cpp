@@ -76,6 +76,7 @@
 #include "fastslide/readers/mrxs/mrxs_metadata_loader.h"
 #include "fastslide/readers/mrxs/mrxs_pipeline.h"
 #include "fastslide/readers/mrxs/spatial_index.h"
+#include "fastslide/runtime/io/filesystem_utils.h"
 #include "fastslide/runtime/tile_writer.h"
 #include "fastslide/utilities/hash.h"
 
@@ -128,24 +129,14 @@ aifocore::Status MrxsReader::ValidateInput(const fs::path& filename) {
         aifocore::fmt::format("File does not have {} extension", kMrxsExt));
   }
 
-  // Check file exists
-  if (!fs::exists(filename)) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kNotFound,
-        aifocore::fmt::format("File does not exist: {}", filename.string()));
-  }
+  AIFOCORE_RETURN_IF_ERROR(
+      runtime::io::RequireExists(filename, "MRXS slide file"));
 
   // Get directory name (remove .mrxs extension)
   fs::path dirname = filename.parent_path() / filename.stem();
 
-  // Check if Slidedat.ini exists
-  fs::path slidedat_path = dirname / kSlidedatIni;
-  if (!fs::exists(slidedat_path)) {
-    return AIFOCORE_MAKE_STATUS(
-        aifocore::StatusCode::kNotFound,
-        aifocore::fmt::format("{} does not exist: {}", kSlidedatIni,
-                              slidedat_path.string()));
-  }
+  AIFOCORE_RETURN_IF_ERROR(
+      runtime::io::RequireExists(dirname / kSlidedatIni, kSlidedatIni));
 
   return aifocore::Status::OkStatus();
 }
@@ -563,6 +554,10 @@ Metadata MrxsReader::GetMetadata() const {
     const auto& level0 = slide_info_.zoom_levels[0];
     meta[std::string(MetadataKeys::kMppX)] = level0.mpp_x;
     meta[std::string(MetadataKeys::kMppY)] = level0.mpp_y;
+    // Fill of unscanned areas, as openslide.background-color.
+    const auto rgb = mrxs::UnpackRgb24(level0.background_color_rgb);
+    meta[std::string(MetadataKeys::kBackgroundColor)] =
+        aifocore::fmt::format("{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]);
   }
 
   meta[std::string(MetadataKeys::kMagnification)] =
@@ -700,7 +695,6 @@ aifocore::Result<RGBImage> MrxsReader::ReadRegionFractional(
   core::TileRequest request;
   request.level = level;
   request.tile_coord = {0, 0};  // Not meaningful for region requests
-  request.channel_indices = visible_channels_;
 
   // Populate fractional bounds (preserves fractional coordinates!)
   core::FractionalRegionBounds bounds;

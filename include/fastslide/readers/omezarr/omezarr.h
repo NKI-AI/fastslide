@@ -87,8 +87,25 @@ class OmeZarrReader : public SlideReader {
 
   [[nodiscard]] const std::string& GetFilename() const { return filename_; }
 
+  /// @brief SHA-256 of the store's metadata plus its coarsest level.
+  ///
+  /// OME-Zarr is a directory rather than a file and carries no UUID, so this
+  /// follows OpenSlide's MIRAX recipe: the raw bytes of the group `zarr.json`,
+  /// then the coarsest level's array `zarr.json`, then that level's chunk
+  /// files in row-major order. The metadata JSON is re-read from disk because
+  /// the reader keeps only the parsed form.
+  ///
+  /// @return Lowercase 64-character hex digest, never empty.
+  [[nodiscard]] aifocore::Result<std::string> GetQuickHash() const override;
+
  private:
   explicit OmeZarrReader(std::string path);
+
+  /// @brief Index into `pyramid_` of the level with the fewest pixels.
+  ///
+  /// The reader preserves OME-NGFF document order without sorting, so
+  /// `pyramid_.back()` is only conventionally the coarsest level.
+  [[nodiscard]] size_t CoarsestLevelIndex() const;
 
   aifocore::Status LoadMetadata();
   void PopulateSlideProperties();

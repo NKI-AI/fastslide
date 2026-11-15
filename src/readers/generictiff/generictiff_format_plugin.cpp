@@ -39,17 +39,6 @@ namespace generictiff {
 
 namespace {
 
-[[nodiscard]] bool IsFastSlideDebugEnabled() {
-  static bool checked = false;
-  static bool enabled = false;
-  if (!checked) {
-    const char* env = std::getenv("FASTSLIDE_DEBUG");
-    enabled = (env != nullptr && std::strcmp(env, "1") == 0);
-    checked = true;
-  }
-  return enabled;
-}
-
 /// @brief Sniff the page-0 Software and ImageDescription tags so the .tif
 ///        factory can route to the matching specialized reader.
 struct TiffVariant {
@@ -79,13 +68,6 @@ TiffVariant SniffTiffVariant(std::string_view filename) {
 aifocore::Result<std::unique_ptr<SlideReader>> CreateGenericTiffReader(
     std::shared_ptr<ITileCache> cache, std::string_view filename) {
   const TiffVariant variant = SniffTiffVariant(filename);
-  if (IsFastSlideDebugEnabled()) {
-    const char* chosen = variant.is_philips  ? "PhilipsTIFF"
-                         : variant.is_imagej ? "ImageJTIFF"
-                                             : "GenericTIFF";
-    std::cerr << "[TIFF] Open '" << filename << "' Software='"
-              << variant.software << "' -> " << chosen << "\n";
-  }
 
   if (variant.is_philips) {
     AIFOCORE_ASSIGN_OR_RETURN(auto reader,
@@ -121,19 +103,6 @@ FormatDescriptor CreateGenericTiffFormatDescriptor() {
   desc.aliases = {".tiff"};
   desc.format_name = "GenericTIFF";
   desc.version = "1.0.0";
-
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kTiled);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kPyramidal);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kAssociatedImages);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kCompressed);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kRandomAccess);
-
-  desc.required_capabilities.push_back("jpeg");
 
   desc.factory = CreateGenericTiffReader;
   return desc;

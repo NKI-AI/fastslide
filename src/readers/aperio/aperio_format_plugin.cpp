@@ -57,23 +57,6 @@ FormatDescriptor CreateAperioFormatDescriptor() {
   desc.format_name = "Aperio";
   desc.version = "1.0.0";
 
-  // Aperio capabilities
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kTiled);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kPyramidal);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kAssociatedImages);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kCompressed);
-  desc.capabilities =
-      SetCapability(desc.capabilities, FormatCapability::kRandomAccess);
-
-  // Required capabilities (codecs)
-  desc.required_capabilities.push_back("jpeg");
-  // Note: Aperio may also use JPEG2000, but it's optional depending on the file
-  // For full compatibility, JPEG2000 support is recommended
-
   // Factory function
   desc.factory = CreateAperioReader;
 

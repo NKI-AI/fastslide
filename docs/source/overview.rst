@@ -22,7 +22,7 @@ Key Features
 🔒 **Memory Safety**
    - Modern C++20 with RAII patterns
    - No raw pointers or manual memory management
-   - ``absl::StatusOr`` for error handling (no exceptions)
+   - ``aifocore::Result`` for error handling (no exceptions)
    - Bounds-checked array access
 
 🌐 **Multi-Platform**

@@ -13,24 +13,37 @@ if gtest_dep.found()
   fastslide_tests = {
     'image_test' : '../src/image_test.cpp',
     'slide_reader_test' : '../src/slide_reader_test.cpp',
-    'channel_selection_test' : '../src/channel_selection_test.cpp',
     'tile_request_test' : '../src/core/tile_request_test.cpp',
     'tile_plan_test' : '../src/core/tile_plan_test.cpp',
     'region_conversion_test' : '../src/core/region_conversion_test.cpp',
+    'color_transform_test' : 'color_transform_test.cpp',
     'isyntax_math_utils_test' : 'isyntax_math_utils_test.cpp',
     'isyntax_cpp_test' : 'isyntax_cpp_test.cpp',
+    'isyntax_color_cpp_test' : 'isyntax_color_cpp_test.cpp',
+    'isyntax_plan_builder_test' : '../src/readers/isyntax/isyntax_plan_builder_test.cpp',
     'isyntax_jpeg_cpp_test' : 'isyntax_jpeg_cpp_test.cpp',
     'isyntax_cache_cpp_test' : 'isyntax_cache_cpp_test.cpp',
     'isyntax_open_cpp_test' : 'isyntax_open_cpp_test.cpp',
+    'isyntax_concurrent_read_cpp_test' : 'isyntax_concurrent_read_cpp_test.cpp',
     'tile_writer_test' : '../src/runtime/tile_writer_test.cpp',
     'tile_writer_uint16_test' : '../src/runtime/tile_writer_uint16_test.cpp',
     'reader_registry_test' : '../src/runtime/reader_registry_test.cpp',
     'lru_tile_cache_test' : '../src/runtime/lru_tile_cache_test.cpp',
+    'inflight_decodes_test' : '../src/readers/inflight_decodes_test.cpp',
+    'cached_tile_executor_test' : '../src/readers/cached_tile_executor_test.cpp',
+    'j2k_decoder_test' : '../src/runtime/decoders/j2k_decoder_test.cpp',
     'cache_interface_test' : '../src/runtime/cache_interface_test.cpp',
+    'hash_test' : '../src/utilities/hash_test.cpp',
+    'tiff_quickhash_test' : '../src/readers/tiff_quickhash_test.cpp',
+    'tiff_tile_utilities_test' : '../src/utilities/tiff/tile_utilities_test.cpp',
     'binary_utils_test' : '../src/runtime/io/binary_utils_test.cpp',
+    'runtime_filesystem_utils_test' : '../src/runtime/io/filesystem_utils_test.cpp',
+    'path_utils_test' : '../src/runtime/io/path_utils_test.cpp',
     'png_decoder_test' : '../src/runtime/decoders/png_decoder_test.cpp',
     'bmp_decoder_test' : '../src/runtime/decoders/bmp_decoder_test.cpp',
     'mrxs_index_reader_test' : '../src/readers/mrxs/mrxs_index_reader_test.cpp',
+    'mrxs_open_errors_test' : '../src/readers/mrxs/mrxs_open_errors_test.cpp',
+    'mrxs_determinism_test' : '../src/readers/mrxs/mrxs_determinism_test.cpp',
     'czi_spatial_index_test' : '../src/readers/czi/czi_spatial_index_test.cpp',
     'czi_parse_test' : '../src/readers/czi/czi_parse_test.cpp',
     'czi_scene_plane_test' : '../src/readers/czi/czi_scene_plane_test.cpp',
@@ -68,4 +81,16 @@ if gtest_dep.found()
       'FASTSLIDE_DICOM_TESTDATA_DIR' :
         meson.current_source_dir() / '../src/readers/dicom/testdata',
     })
+
+  # C API tile-cache test. Links the C API library; the test itself skips
+  # unless FASTSLIDE_BENCHMARK_FILE points at a supported slide.
+  if get_option('build_c_api')
+    cache_c_api = executable('cache_c_api_test',
+      '../src/c/cache_c_api_test.cpp',
+      include_directories : test_inc,
+      dependencies : [fastslide_c_dep, gtest_dep],
+      cpp_args : ['-D__ANSI__'])
+    test('cache_c_api_test', cache_c_api,
+      env : {'TEST_TMPDIR' : meson.current_build_dir()})
+  endif
 endif

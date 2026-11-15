@@ -104,6 +104,37 @@ def write_checksums(jars: list[Path], out_path: Path) -> Path:
     return out_path
 
 
+def dedup_by_content(paths: list[Path], *, prefer_substring: str) -> list[Path]:
+    """Collapse byte-identical files down to one canonical path per digest.
+
+    Bazel's ``pkg_deb`` emits both the canonical versioned file
+    (e.g. ``libfastslide_0.8.0_amd64.deb``) and a symlink named after the Bazel
+    target (e.g. ``libfastslide_amd64.deb``) pointing at the same bytes. If both
+    reach the release directory they are byte-identical duplicates; attach only
+    one, preferring the path whose name contains ``prefer_substring`` (the
+    version) so releases carry the canonical versioned filename.
+
+    Args:
+        paths: Candidate files to deduplicate.
+        prefer_substring: When two paths share content, keep the one whose name
+            contains this substring (falling back to the lexicographically
+            smaller name for a stable, deterministic choice).
+
+    Returns:
+        The kept paths, sorted by filename.
+    """
+    chosen: dict[str, Path] = {}
+    for path in sorted(paths, key=lambda p: p.name):
+        digest = _sha256(path)
+        current = chosen.get(digest)
+        if current is None:
+            chosen[digest] = path
+            continue
+        if prefer_substring in path.name and prefer_substring not in current.name:
+            chosen[digest] = path
+    return sorted(chosen.values(), key=lambda p: p.name)
+
+
 def stage_local(jars: list[Path], out_dir: Path, version: str) -> Path:
     """Copy JARs into ``<out_dir>/<version>/`` (Gradle ivy/url layout)."""
     dest = out_dir / version
