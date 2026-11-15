@@ -1,14 +1,12 @@
 ---
-title: 'FastSlide: A high-performance, multi-format whole slide image reader for digital pathology'
+title: 'FastSlide: a multi-format whole slide image reader in C++ with Python bindings'
 tags:
   - C++
   - Python
   - digital pathology
   - whole slide imaging
   - computational pathology
-  - medical imaging
-  - histopathology
-  - deep learning
+  - multiplex immunofluorescence
 authors:
   - name: George Yiasemis
     orcid: 0000-0002-1348-8987
@@ -23,168 +21,196 @@ authors:
 affiliations:
   - name: Netherlands Cancer Institute, Amsterdam, The Netherlands
     index: 1
-date: 11 June 2026
+date: 15 November 2026
 bibliography: paper.bib
 ---
 
 # Summary
 
-`FastSlide` is a high-performance, open-source library for reading whole slide
-images (WSIs) in digital and computational pathology. It is written in modern
-C++20 with first-class Python bindings, so the same engine powers interactive
-viewers and large-scale machine-learning pipelines alike. A single uniform API
-reads twelve brightfield and fluorescence formats produced by the major scanner
-vendors and by open imaging standards (Aperio SVS, 3DHISTECH MRXS,
-Akoya/PerkinElmer QPTIFF, Hamamatsu NDPI, Philips iSyntax, Ventana BIF, Zeiss
-CZI, Olympus VSI, OME-TIFF, OME-Zarr, DICOM, and generic TIFF (including
-Philips TIFF)), and returns
-pixels through one `Image` type regardless of source. Beyond conventional
-two-dimensional RGB slides, `FastSlide` treats each acquisition as a
-`C·X·Y·Z·T` hyper-volume: it exposes fluorescence channels (C), focal planes
-(Z), and time points (T), and files that contain several images or scenes, such
-as Zeiss CZI scenes and Olympus VSI navigator/region images, are surfaced as an
-indexable sequence of independently navigable pyramids. This spans routine
-brightfield histology (\autoref{fig:he}) through high-plex fluorescence
-(\autoref{fig:multiplex}).
+A whole slide image (WSI) is a scan of a glass microscope slide, stored as a
+multi-resolution pyramid of compressed tiles that at full resolution
+can exceed 100,000 pixels per side. Software that works with these images asks a
+reader library for rectangular regions at a chosen resolution.
 
-![A region of a brightfield hematoxylin-and-eosin (H\&E) slide read with `FastSlide` and returned as a zero-copy RGB array.\label{fig:he}](figures/he_region.png){ width=62% }
+`FastSlide` is such a reader: a C++20 library with Python bindings that
+opens twelve file formats through one interface: Aperio SVS, 3DHISTECH MRXS,
+Hamamatsu NDPI, Ventana BIF, Olympus VSI, Zeiss CZI, Philips iSyntax,
+Akoya QPTIFF, OME-TIFF, OME-Zarr, DICOM, and generic tiled TIFF. A region is
+returned in the pixel type of the file, for example 8-bit or 16-bit, and is
+exposed to NumPy [@harris2020numpy] without copying. Besides brightfield RGB
+slides, `FastSlide` reads multi-channel fluorescence images, focal planes (Z),
+time points (T), and files that hold several images, such as the overview and
+high-resolution scans in an Olympus VSI file (\autoref{fig:regions}). A single
+open slide can be read from many threads at once. `FastSlide` is released under
+the Apache License 2.0, and wheels for CPython 3.11 and later are published on
+PyPI for Linux, macOS, and Windows on x86-64 and ARM64.
 
-`FastSlide` is engineered for the throughput and concurrency demanded by AI/ML
-workflows. Thread-safe region reads, positional I/O on TIFF-based formats,
-thread-local decode contexts, and an optional shared, instrumented
-least-recently-used (LRU) tile cache allow many threads or PyTorch
-[@paszkePyTorchImperativeStyle2019] data-loader workers to stream tiles from a
-single slide, returning zero-copy NumPy views of decoded buffers
-[@harrisArrayProgrammingNumPy2020]. Every
-reader is built on a two-stage planning/execution pipeline that separates tile
-selection from decoding, yielding deterministic, inspectable, and unit-testable
-scheduling. The same C++ core is reached from Python (PyPI), a C API, and Java
-(for QuPath); Rust, Go, and WebAssembly bindings are also available in the
-repository. It ships a command-line tool and powers a QuPath
-[@bankheadQuPathOpenSource2017] extension distributed separately.
-`FastSlide` is released under the Apache License 2.0, distributed as prebuilt
-wheels (CPython 3.10–3.14) on PyPI for Linux, macOS, and Windows on both x86\_64
-and ARM64, and builds from source with either Meson or Bazel.
-
-![A region of a multiplex immunofluorescence slide read with `FastSlide` and composited from three of its channels, selected directly through the reader's channel API: cell nuclei (DAPI, blue), B cells (CD20, green), and cytotoxic T cells (CD8, red).\label{fig:multiplex}](figures/multiplex_composite.png){ width=70% }
+![Regions read with `FastSlide` from two public slides. Left: a brightfield H&E slide in Aperio SVS format (CMU-1 from the OpenSlide test data). Right: a five-channel fluorescence slide in QPTIFF format (LuCa-7color_Scan1 from the OME sample images), showing the DAPI (blue), FITC (green), and CY5 (red) channels, each scaled to its 99.8th percentile.\label{fig:regions}](figures/regions.png)
 
 # Statement of need
 
-Computational pathology increasingly depends on analysing WSIs that routinely
-exceed gigapixel resolution and produce terabytes of data per study
-[@litjensSurveyDeepLearning2017; @campanellaClinicalgradeComputationalPathology2019].
-Models trained on these images are deployed inside viewers and quality-control
-pipelines, all of which require fast, deterministic, and thread-safe access to
-slide pixels. These workloads now span RGB brightfield
-and high-plex immunofluorescence imaging and run across heterogeneous
-environments, from interactive notebooks to distributed multi-GPU training loops.
-A practical obstacle is *format fragmentation*: each scanner vendor writes its
-own proprietary container, and groups commonly stitch together several readers
-with inconsistent coordinate conventions and pixel layouts, an arrangement that
-is error-prone, hard to maintain, and detrimental to reproducibility.
+Deep learning models in computational pathology are trained on large collections of
+WSIs [@campanella2019clinical]. Training and inference read many small
+regions, usually from several data-loading threads or processes. Two practical
+problems follow. First, each scanner vendor writes its own container, and a cohort
+collected across hospitals or over several years mixes formats; a pipeline then
+depends on several readers that differ in coordinate conventions and in the
+array layout they return. Second, multiplex immunofluorescence slides store more than three
+channels, often at 16 bits, which readers designed for 8-bit RGB cannot return
+unchanged.
 
-`OpenSlide` [@goodeOpenSlideVendorneutralSoftware2013] is the de facto
-open-source foundation for WSI reading and has served the community well, but
-its design predates many of these requirements: it is written in C, expresses
-all coordinates relative to the full-resolution level, and has limited support
-for multi-channel and multi-dimensional (C/Z/T) data. Established complementary
-tools cover other parts of the space: `Bio-Formats`
-[@linkertMetadataMattersAccess2010] is the de facto standard for microscopy
-and pathology image I/O on the JVM; `cuCIM` [@leeCuCIMGPUImage2021] targets
-GPU-accelerated loading; and several Python-only libraries wrap existing C
-backends. `OpenSlide` also provides Java bindings through
-[openslide-java](https://github.com/openslide/openslide-java). Yet, to our
-knowledge, none combines broad coverage of both vendor
-and standards-based pathology formats, native multi-dimensional access across
-brightfield and multiplex imaging, a concurrency model purpose-built for
-high-throughput patch sampling, and bindings spanning the languages and
-ecosystems used in pathology (Python, the JVM via QuPath, Rust, Go, and the
-browser via WebAssembly).
-`FastSlide` consolidates these capabilities behind one tested, memory-safe
-interface, reducing the number of moving parts a study must trust and maintain
-(Table 1).
+`FastSlide` is written for researchers who build data pipelines and viewers
+on top of WSIs and want one dependency for the formats in their cohorts. It reports pyramid levels, pixel spacing, channel names,
+associated images (label, macro, thumbnail), and the embedded ICC profile in
+the same way for every format, and it reads brightfield and fluorescence slides
+through the same call.
 
-: Capability comparison with widely used open-source WSI readers.
+# State of the field
 
-| Capability | FastSlide | OpenSlide | cuCIM | Bio-Formats |
-|---|---|---|---|---|
-| Core language | C++20 | C | C++/CUDA | Java |
-| Vendor pathology formats | 12 | ~11 | SVS/TIFF | many (microscopy) |
-| DICOM / OME standards | yes | yes (since 4.0) | no (TIFF WSI only) | yes |
-| Multi-channel (C) | yes | no | RGB only | yes |
-| Focal planes / time (Z/T) | yes | no | no | yes |
-| Multiple scenes per file | yes | no | no | yes |
-| Thread-safe concurrent reads | yes | yes (since 4.0) | yes | limited |
-| Built-in shared tile cache | yes (LRU, opt-in) | yes (shareable since 4.0) | no | no |
-| Zero-copy NumPy / PyTorch | yes (views) | via ctypes | yes (CuPy) | no |
-| Language bindings | Py, C, Java (+ exp.) | C/Py/Java | C++/Py | Java/Py |
+`OpenSlide` [@goode2013openslide] is the established open-source WSI
+reader. It is a C library under the LGPL 2.1; version 4.0.1 lists thirteen
+formats, has been safe for concurrent reads on one handle since version 3.3.1,
+and lets several slides share a tile cache since version 4.0.0. Its read
+function copies premultiplied 8-bit ARGB into a caller-provided buffer and
+takes a position, a level, and a size. There is no argument to select a
+channel, a focal plane, or a time point, so fluorescence channels beyond three
+and 16-bit data cannot be returned, and its format list does not include
+Philips iSyntax, Olympus VSI, QPTIFF, or OME-Zarr. `Bio-Formats`
+[@linkert2010bioformats] reads 165 microscopy formats with full five-dimensional
+access, but it is a Java library whose readers are documented as not
+thread-safe, and its maintainers provide no Python implementation. `cuCIM`
+[@lee2021cucim] targets GPU pipelines and documents support for Aperio SVS,
+Philips TIFF, and generic tiled TIFF. `TiffSlide` [@poehlmann2022tiffslide] is
+a pure-Python replacement for the OpenSlide Python API built on `tifffile`,
+and is limited to TIFF-based formats.
 
-# Key capabilities
+We wrote a new library instead of extending `OpenSlide` because the features we
+needed, pixel data in its stored type with any number of channels and selection
+of a Z/T plane, do not fit an interface whose output is a `w × h × 4` byte ARGB
+buffer. To keep existing datasets usable, `FastSlide` computes the same
+"quickhash" slide identifier as `OpenSlide`: the two agreed on all seven public
+OpenSlide test slides we compared (Aperio JPEG and JPEG 2000, NDPI, MRXS,
+Philips TIFF, generic TIFF, DICOM).
 
-- **Unified multi-format access.** Twelve registered readers behind one API and
-  `Image` type, with automatic format detection through a pluggable registry, so
-  applications are written once and run across vendors and standards.
-- **Multi-dimensional and multiplex imaging.** Per-`(z, t)` plane reads where
-  the source format supports them, full channel selection with biomarker metadata
-  for multiplex stacks, multiple images/scenes per file, and common pathology
-  pixel types (`uint8`, `uint16`, and `float32` where supported) in both
-  interleaved and band-separate layouts.
-- **Concurrency and caching.** Slides are opened once and read with thread-local
-  decode buffers; an optional LRU cache with hit/miss statistics can be shared
-  across workers.
-- **Two-stage planning/execution pipeline.** A pure planning stage enumerates
-  tiles and computes coordinate transforms before any I/O, enabling deterministic
-  scheduling, plan caching for viewers, and testing without disk access.
-- **Faithful, high-quality reconstruction.** An in-tree TIFF engine indexes
-  directories in memory for fast random access; overlapping MRXS camera fields
-  are blended with bilinear resampling and per-tile gain correction; and
-  resampling and pixel-processing routines are vectorised with the portable
-  Highway SIMD library [@highway], which dispatches to the best available SIMD
-  instruction set at runtime.
-- **Ergonomics and interoperability.** Level-native coordinates with
-  level-0 conversion helpers, associated images (label, macro, thumbnail),
-  OpenSlide-compatible quick hashes, a `fastslidetool` CLI, multi-language
-  bindings, and a QuPath extension.
+# Software design
 
-Together these features make `FastSlide` a practical, sustainable building block
-for both research data pipelines and pathology applications; it is used in the
-authors' own deep-learning workflows for digital pathology.
+**Readers plan before they read.** Each format is a reader class registered
+with a central registry, which selects the reader from the file name. A reader
+implements two steps. `PrepareRequest` turns a region request into a `TilePlan`,
+a list of the tiles to fetch and where each lands in the output; it performs no
+I/O. `ExecutePlan` reads, decodes, and paints those tiles. This costs more code
+per format than a single read function, but the geometry of a format (level
+selection, tile overlap, clipping at slide borders) can be unit-tested without
+slide files, and the TIFF-based readers share their plan-building and decoding
+code.
 
-# Example usage
+**Coordinates are level-native.** A region at pyramid level $k$ is addressed in
+the pixels of level $k$, whereas `OpenSlide` addresses every level in level-0
+pixels. This breaks drop-in compatibility with the OpenSlide API, but location and
+size are then in the same unit; helper functions convert in both directions.
 
-The Python API mirrors familiar WSI readers while returning arrays that drop
-straight into a PyTorch `DataLoader`. Because reads are thread-safe, the dataset
-below works unchanged with multiple worker processes:
+**Images keep their stored layout.** `read_region` returns an `Image` that
+records its data type, channel count, and whether channels are interleaved or
+stored as separate planes, and can convert between the two layouts. The NumPy
+array is a view of the image buffer.
+
+**Concurrency and caching.** The Python binding releases the global interpreter
+lock while a region is read, and one slide handle can be shared between
+threads. In our tests, 200 random regions read by 32 threads from one handle
+were bit-identical to the same regions read serially for SVS, NDPI, MRXS, BIF,
+VSI, QPTIFF, DICOM, and generic TIFF files. The tiles of one region are decoded
+in parallel on a process-wide thread pool, so a single calling thread already
+uses several cores. Decoded tiles are not cached unless the
+user asks: a least-recently-used cache can be attached to one slide or shared
+by all slides in the process, and it reports hits and misses. When several
+threads miss on the same tile, it is decoded once.
+
+**Distribution.** All codecs are compiled into the Python extension, so on
+Linux the extension links only against the C and C++ runtime libraries. The same core is exposed
+through a C API and Java bindings, and the repository also contains Rust, Go,
+and WebAssembly bindings and a command-line tool. Pixel resampling and color
+conversion use Highway [@highway] for SIMD with run-time dispatch.
+
+**Throughput.** \autoref{tab:bench} compares `FastSlide` 0.8.3 with `OpenSlide`
+4.0.1 (openslide-python 1.4.7) on five public OpenSlide test slides. With one
+calling thread, `FastSlide` read 1.9 to 5.7 times as many regions per second.
+This is not a single-core comparison: because of its thread pool, `FastSlide`
+used 3.3 (JPEG) to 4.3 (JPEG 2000) CPU-seconds per second of wall-clock time on
+the two SVS slides, where `OpenSlide` used one. With eight calling threads the
+throughput of `FastSlide` changed little, and `OpenSlide` was faster on the
+NDPI and JPEG 2000 slides and comparable on MRXS. `FastSlide` is therefore the
+faster of the two for a single caller, but not for every format when many
+threads share a process.
+
+: Regions per second (median of five runs) for 1,000 random 512 × 512
+level-0 regions, read from one open slide by one or eight Python threads and
+converted to NumPy arrays. Both libraries ran with default settings and the
+files were in the page cache. Measured on a shared server with two 64-core AMD
+EPYC 7763 processors; the script is in `paper/scripts/benchmark.py`.
+\label{tab:bench}
+
+| Slide (compression)       | FastSlide, 1 | OpenSlide, 1 | FastSlide, 8 | OpenSlide, 8 |
+|:--------------------------|-------------:|-------------:|-------------:|-------------:|
+| Aperio SVS (JPEG)         |          839 |          172 |          967 |          482 |
+| Aperio SVS (JPEG 2000)    |          140 |           56 |          167 |          189 |
+| Hamamatsu NDPI (JPEG)     |          344 |          186 |          307 |          611 |
+| 3DHISTECH MRXS (JPEG)     |        3,576 |        1,689 |        3,348 |        3,551 |
+| Generic tiled TIFF (JPEG) |        1,018 |          178 |        1,169 |          516 |
+
+# Example
+
+Reading a grid of tiles from one slide with a thread pool:
 
 ```python
-import fastslide
-import torch
-from torch.utils.data import Dataset, DataLoader
+from concurrent.futures import ThreadPoolExecutor
 
-class TileDataset(Dataset):
-    def __init__(self, path, coords, level=0, size=256):
-        self.slide = fastslide.FastSlide.from_file_path(path)
-        self.coords, self.level, self.size = coords, level, size
+import numpy as np
+from fastslide import FastSlide
 
-    def __len__(self):
-        return len(self.coords)
+with FastSlide.from_file_path("CMU-1.svs") as slide:
+    level = slide.get_best_level_for_downsample(4.0)
+    width, height = slide.level_dimensions[level]
+    # Locations are in the pixel coordinates of the level being read.
+    grid = [(x, y) for y in range(0, height - 512, 512)
+            for x in range(0, width - 512, 512)]
 
-    def __getitem__(self, i):
-        x, y = self.coords[i]
-        tile = self.slide.read_region((x, y), self.level,
-                                      (self.size, self.size)).numpy()
-        return torch.from_numpy(tile)  # zero-copy HWC uint8 tensor
+    def read(location):
+        return slide.read_region(location, level, (512, 512)).numpy()
 
-loader = DataLoader(TileDataset("slide.svs", coords),
-                    batch_size=32, num_workers=8)
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        tiles = np.stack(list(pool.map(read, grid)))
+
+print(tiles.shape, tiles.dtype)  # (352, 512, 512, 3) uint8
 ```
+
+# Research impact statement
+
+`FastSlide` has been available on PyPI since May 2026. It is a dependency and
+slide backend of `DLUP` [@dlup], our library of deep learning utilities for
+pathology, and the default slide reader of
+[`dlux`](https://github.com/NKI-AI/dlux), our pipeline for slide-level
+classification from WSIs. Through a separate
+[extension](https://github.com/NKI-AI/qupath-extension-fastslide) it is
+an image reader for QuPath [@bankhead2017qupath], which makes its formats
+available to users who do not program. On 15 November 2026, pypistats.org
+reported 2,272 downloads from PyPI over the preceding 30 days, and the issue
+tracker held 31 issues opened by seven GitHub accounts. We are not aware of
+published studies that used `FastSlide` yet.
+
+# AI usage disclosure
+
+\textcolor{red}{Generative AI tools were used during development of the
+software for code clean-up and, where relevant, to improve individual
+functions. All such changes were reviewed by the authors. [TO CONFIRM WITH
+J.T.: tool names and versions, and whether this statement is complete; JOSS
+asks that the disclosure cover the software, its documentation, and the
+paper.]}
 
 # Acknowledgements
 
-We thank the `OpenSlide` project and the broader digital pathology community for
-their pioneering work and format documentation, on which `FastSlide` builds.
-`FastSlide` also relies on a number of open-source components, including Highway,
-libjpeg-turbo, nanobind, pugixml, and `libisyntax`, whose authors we gratefully
-acknowledge.
+We thank the `OpenSlide` project for its format documentation and public test
+slides. `FastSlide` builds on open-source components including libjpeg-turbo,
+OpenJPEG, libdicom, Little CMS, Highway, nanobind, pugixml, and `libisyntax`.
+\textcolor{red}{[TO ADD: funding statement.]}
 
 # References
