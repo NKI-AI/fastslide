@@ -20,12 +20,14 @@
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
+#include <string>
 #include <vector>
 
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/readers/czi/czi.h"
 #include "fastslide/readers/czi/czi_exec_context.h"
 #include "fastslide/readers/czi/czi_level_info.h"
+#include "fastslide/runtime/tile_writer.h"
 
 namespace fastslide {
 namespace {
@@ -105,6 +107,32 @@ TEST(CziPaintOrderTest, OrderDoesNotDependOnPlanOrder) {
     EXPECT_EQ(Painted(subblocks, {0, 1, 2, 3}, first_writer_wins),
               Painted(subblocks, {3, 1, 2, 0}, first_writer_wins));
   }
+}
+
+// A subblock that cannot be read fails the read instead of quietly leaving
+// background where its pixels belong.
+TEST(CziExecutePlanTest, ASubblockThatFailsToDecodeFailsTheRead) {
+  const std::vector<CziSubblockInfo> subblocks = {
+      Subblock(0, kCziNoMosaicIndex), Subblock(1, kCziNoMosaicIndex)};
+  const CziExecContext context("/nonexistent/fastslide-missing.czi", subblocks,
+                               nullptr);
+  core::TilePlan plan = PlanOver({0, 1});
+  for (auto& op : plan.operations) {
+    op.transform.source = {0.0, 0.0, 256, 256};
+    op.transform.dest = {0.0, 0.0, 256, 256};
+  }
+  runtime::Canvas::Config config;
+  config.dimensions = {256, 256};
+  config.channels = 3;
+  config.data_type = DataType::kUInt8;
+  config.background = runtime::Canvas::BackgroundColor(255, 255, 255);
+  runtime::Canvas canvas(config);
+
+  const auto status = CziTileExecutor::ExecutePlan(plan, context, canvas);
+
+  EXPECT_FALSE(status.ok());
+  EXPECT_NE(status.message().find("CZI subblock"), std::string::npos)
+      << status.message();
 }
 
 // Guarded end-to-end test. Set FASTSLIDE_CZI_TEST_FILE to the path of a real
