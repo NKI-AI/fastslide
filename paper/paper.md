@@ -130,10 +130,11 @@ threads miss on the same tile, it is decoded once.
 `FastSlide` paints them in a fixed order, so a region does not depend on thread
 timing. On three slides of the public SurGen dataset [@myles2025surgen], all
 180 level-0 regions of 1024 × 1024 pixels that we compared were bit-identical
-to the output of libCZI (through pylibCZIrw 6.1.0). An OME-Zarr image written
-with lossless compression was returned unchanged at every level. The OME-Zarr
-reader is the narrowest: it reads version 0.5 images with a single Z and T
-plane, and not yet sharded or Blosc-compressed arrays.
+to the output of libCZI (through pylibCZIrw 6.1.0). Two public OME-Zarr
+images, a five-channel 16-bit image from the Image Data Resource (idr0033) and
+an H&E slide from the SpatialData sample data, were identical at every level
+to the arrays read by zarr-python 3.1.5. The OME-Zarr reader takes version 0.5
+images with one Z and T plane, and not yet sharded or Blosc-compressed arrays.
 
 **Distribution.** All codecs are compiled into the Python extension, so on
 Linux the extension links only against the C and C++ runtime libraries. The same core is exposed
@@ -148,9 +149,7 @@ This is not a single-core comparison: because of its thread pool, `FastSlide`
 used 3.9 (JPEG) to 4.5 (JPEG 2000) CPU-seconds per second of wall-clock time on
 the two SVS slides, where `OpenSlide` used one. With eight calling threads the
 throughput of `FastSlide` changed little, and `OpenSlide` was faster on the
-NDPI and JPEG 2000 slides and comparable on MRXS. `FastSlide` is therefore the
-faster of the two for a single caller, but not for every format when many
-threads share a process.
+NDPI and JPEG 2000 slides and comparable on MRXS.
 
 : Regions read per second when one
 Python thread, or eight Python threads sharing one open slide, read 1,000
