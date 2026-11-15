@@ -139,6 +139,16 @@ class Canvas {
   /// @brief Check if canvas uses blended composition.
   [[nodiscard]] bool IsBlendingEnabled() const;
 
+  /// @brief How overlapping tiles resolve: true if the first tile painted on a
+  /// pixel keeps it (3-channel contiguous RGB, which tracks coverage), false
+  /// if each tile overwrites what was painted before (every other layout).
+  ///
+  /// Executors of formats with overlapping tiles paint in a fixed order and
+  /// use this to put the tile that belongs on top first or last.
+  [[nodiscard]] bool FirstWriterWins() const {
+    return use_rgb8_blending_ || use_rgb16_copy_blending_;
+  }
+
  private:
   void InitOutputImage();
   Config AnalyzePlan(const core::TilePlan& plan);

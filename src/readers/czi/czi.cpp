@@ -280,9 +280,12 @@ aifocore::Status CziReader::ParseSubblockDirectory(FileReader& file) {
           case 'C':
             sb.c = dim.start;
             break;
+          case 'M':
+            // Decides which mosaic tile is visible where tiles overlap.
+            sb.m = dim.start;
+            break;
           default:
-            // Other dimensions (M, ...) do not affect tile layout or channel
-            // selection.
+            // Other dimensions do not affect tile layout or channel selection.
             break;
         }
       }
