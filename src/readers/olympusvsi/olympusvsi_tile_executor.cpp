@@ -109,14 +109,12 @@ aifocore::Status OlympusVsiTileExecutor::ExecutePlan(
         aifocore::StatusCode::kInvalidArgument,
         aifocore::fmt::format("Olympus VSI: invalid level {}", level_index));
   }
-  const std::string ets_path_str(context.ets_path);
-  const auto cache = context.cache;
-  const bool is_16bit = context.pixel_type == TilePixelType::kUInt16;
   // Stacked grayscale fluorescence (more than one plane) paints into a
   // separate-planar Canvas; each tile is one mono plane routed to the
   // op's destination channel. Single-plane stacks (brightfield RGB or
   // single-band fluorescence) paint straight through.
-  const bool separate_planar = is_16bit && context.n_channels > 1U;
+  const bool separate_planar =
+      context.pixel_type == TilePixelType::kUInt16 && context.n_channels > 1U;
 
   return readers::simpletiff_exec::ExecuteOpsWithThreadPoolStopOnError(
       plan, canvas,
@@ -132,108 +130,12 @@ aifocore::Status OlympusVsiTileExecutor::ExecutePlan(
           paint_op.tile_coord = {op.channel_group_offset, 0U};
         }
 
-        // Cache key is the physical tile byte offset, which is unique
-        // per (channel, x, y) plane — so different channels sharing an
-        // (x, y) grid cell never collide.
-        runtime::TileKey key(
-            ets_path_str, static_cast<uint16_t>(level_index),
-            static_cast<uint32_t>(op.byte_offset & 0xFFFFFFFFU),
-            static_cast<uint32_t>(op.byte_offset >> 32));
-        std::shared_ptr<runtime::CachedTileData> cached;
-        if (cache) {
-          cached = cache->Get(key);
-        }
-        if (cached) {
-          return readers::simpletiff_exec::PaintTileMaybeLocked(
-              writer, paint_op,
-              std::span<const uint8_t>(cached->data.data(),
-                                       cached->data.size()),
-              cached->size[0], cached->size[1], cached->channels, writer_mutex);
-        }
-
-        // Read compressed tile bytes from disk. A fresh FILE* per worker
-        // avoids seek-pointer contention between concurrent decodes.
-        thread_local std::vector<uint8_t> compressed;
-        FileReader file;
-        AIFOCORE_ASSIGN_OR_RETURN(file, FileReader::Open(ets_path_str, "rb"));
-        AIFOCORE_RETURN_IF_ERROR(
-            PreadBytes(file, op.byte_offset, op.byte_size, &compressed));
-        const std::span<const uint8_t> compressed_span(compressed.data(),
-                                                       compressed.size());
-
-        // Dispatch on declared pixel type:
-        //   * uint8 → DecodeJpegToRgb / DecodeJ2kToRgb → 3-channel RGB8
-        //     (the classic brightfield path).
-        //   * uint16 → DecodeJ2k16 → 1 (grayscale plane) or 3 (16-bit
-        //     colour) interleaved uint16 samples.
-        // The Canvas is already configured by the plan builder to match
-        // (kUInt8/kUInt16, contiguous or separate planar), so we pass the
-        // raw decoded bytes through.
-        uint32_t tile_w = 0;
-        uint32_t tile_h = 0;
-        uint32_t tile_channels = 0;
-        std::vector<uint8_t> tile_bytes;
-        if (context.declared_codec == TileCodec::kRaw) {
-          // RAW: the payload is uncompressed pixel data laid out as
-          // ``tile_w x tile_h x components`` in the declared pixel type
-          // (little-endian on disk, consumed in host endianness like the
-          // decoder outputs). Geometry comes from the level header; the
-          // tile carries no self-describing dimensions.
-          const auto& lvl = context.pyramid[static_cast<size_t>(level_index)];
-          tile_w = lvl.tile_w;
-          tile_h = lvl.tile_h;
-          const uint32_t bytes_per_sample = is_16bit ? 2U : 1U;
-          // Each separate-planar fluorescence tile holds one component; all
-          // other layouts interleave ``n_channels`` components per pixel.
-          tile_channels =
-              separate_planar ? 1U : std::max(1U, context.n_channels);
-          const size_t expected = static_cast<size_t>(tile_w) * tile_h *
-                                  tile_channels * bytes_per_sample;
-          if (compressed.size() < expected) {
-            return AIFOCORE_MAKE_STATUS(
-                aifocore::StatusCode::kInvalidArgument,
-                aifocore::fmt::format(
-                    "Olympus VSI: RAW tile too small: {} bytes < expected {} "
-                    "({}x{}x{} @ {} B/sample)",
-                    compressed.size(), expected, tile_w, tile_h, tile_channels,
-                    bytes_per_sample));
-          }
-          tile_bytes.assign(
-              compressed.begin(),
-              compressed.begin() + static_cast<std::ptrdiff_t>(expected));
-        } else if (!is_16bit) {
-          AIFOCORE_ASSIGN_OR_RETURN(
-              auto decoded,
-              DecodeTileBytes(compressed_span, context.declared_codec));
-          tile_w = decoded.width;
-          tile_h = decoded.height;
-          tile_channels = 3U;
-          tile_bytes = std::move(decoded.rgb);
-        } else {
-          AIFOCORE_ASSIGN_OR_RETURN(
-              auto decoded,
-              DecodeTileBytes16(compressed_span, context.declared_codec));
-          if (separate_planar && decoded.channels != 1U) {
-            return AIFOCORE_MAKE_STATUS(
-                aifocore::StatusCode::kUnimplemented,
-                aifocore::fmt::format(
-                    "Olympus VSI: stacked 16-bit fluorescence expects "
-                    "single-component tiles, decoded {} components",
-                    decoded.channels));
-          }
-          tile_w = decoded.width;
-          tile_h = decoded.height;
-          tile_channels = decoded.channels;
-          // ``DecodedRgb16::rgb`` is a ``std::vector<uint16_t>``; rebind
-          // to a flat byte buffer for the Canvas paint path. The Canvas
-          // is configured for ``kUInt16`` so it consumes 2 bytes per
-          // sample in host endianness, matching the decoder output.
-          const size_t byte_count = decoded.rgb.size() * sizeof(uint16_t);
-          tile_bytes.resize(byte_count);
-          if (byte_count > 0) {
-            std::memcpy(tile_bytes.data(), decoded.rgb.data(), byte_count);
-          }
-        }
+        // The full decoded tile, from the cache or decoded now (and then
+        // cached, so reads of other crops of it do not decode it again).
+        // The span stays valid until this thread reads the next tile.
+        AIFOCORE_ASSIGN_OR_RETURN(
+            const DecodedTileData tile,
+            ReadWithCacheDecoded(op, context, level_index));
 
         // Sanity check: the decoded tile must match the level's declared
         // tile geometry. Border tiles legitimately come back as
@@ -242,32 +144,132 @@ aifocore::Status OlympusVsiTileExecutor::ExecutePlan(
         // equal.
         const uint32_t src_w = op.transform.source.width;
         const uint32_t src_h = op.transform.source.height;
-        if (tile_w < op.transform.source.x + src_w ||
-            tile_h < op.transform.source.y + src_h) {
+        if (tile.width < op.transform.source.x + src_w ||
+            tile.height < op.transform.source.y + src_h) {
           return AIFOCORE_MAKE_STATUS(
               aifocore::StatusCode::kInternal,
               aifocore::fmt::format(
                   "Olympus VSI: decoded tile {}x{} too small for crop "
                   "({},{},{}x{})",
-                  tile_w, tile_h, static_cast<int>(op.transform.source.x),
+                  tile.width, tile.height,
+                  static_cast<int>(op.transform.source.x),
                   static_cast<int>(op.transform.source.y), src_w, src_h));
         }
 
-        // Store the FULL decoded tile (not just the crop) in the cache
-        // so future reads that overlap with this tile can paint a
-        // different crop without re-decoding.
-        if (cache) {
-          auto entry = std::make_shared<runtime::CachedTileData>(
-              tile_bytes, aifocore::Size<uint32_t, 2>{tile_w, tile_h},
-              tile_channels);
-          cache->Put(key, std::move(entry));
-        }
-
         return readers::simpletiff_exec::PaintTileMaybeLocked(
-            writer, paint_op,
-            std::span<const uint8_t>(tile_bytes.data(), tile_bytes.size()),
-            tile_w, tile_h, tile_channels, writer_mutex);
+            writer, paint_op, tile.data, tile.width, tile.height, tile.channels,
+            writer_mutex);
       });
+}
+
+runtime::TileKey OlympusVsiTileExecutor::MakeCacheKey(
+    const core::TileReadOp& op, const OlympusVsiExecContext& context,
+    int level_index) {
+  // Keyed by the physical tile byte offset, which is unique per
+  // (channel, x, y) plane — so different channels sharing an (x, y) grid
+  // cell never collide. The path is the per-stack .ets file, so the images
+  // of one .vsi cache independently.
+  return runtime::TileKey(std::string(context.ets_path),
+                          static_cast<uint16_t>(level_index),
+                          static_cast<uint32_t>(op.byte_offset & 0xFFFFFFFFU),
+                          static_cast<uint32_t>(op.byte_offset >> 32));
+}
+
+aifocore::Result<DecodedTileData> OlympusVsiTileExecutor::ReadTileFromDisk(
+    const core::TileReadOp& op, const OlympusVsiExecContext& context,
+    int level_index) {
+  const bool is_16bit = context.pixel_type == TilePixelType::kUInt16;
+  const bool separate_planar = is_16bit && context.n_channels > 1U;
+
+  // Read compressed tile bytes from disk. A fresh FILE* per worker
+  // avoids seek-pointer contention between concurrent decodes.
+  thread_local std::vector<uint8_t> compressed;
+  FileReader file;
+  AIFOCORE_ASSIGN_OR_RETURN(
+      file, FileReader::Open(std::string(context.ets_path), "rb"));
+  AIFOCORE_RETURN_IF_ERROR(
+      PreadBytes(file, op.byte_offset, op.byte_size, &compressed));
+  const std::span<const uint8_t> compressed_span(compressed.data(),
+                                                 compressed.size());
+
+  // Dispatch on declared pixel type:
+  //   * uint8 → DecodeJpegToRgb / DecodeJ2kToRgb → 3-channel RGB8
+  //     (the classic brightfield path).
+  //   * uint16 → DecodeJ2k16 → 1 (grayscale plane) or 3 (16-bit
+  //     colour) interleaved uint16 samples.
+  // The Canvas is already configured by the plan builder to match
+  // (kUInt8/kUInt16, contiguous or separate planar), so we pass the
+  // raw decoded bytes through.
+  auto& tile_bytes = GetBuffers().tile_buffer;
+  uint32_t tile_w = 0;
+  uint32_t tile_h = 0;
+  uint32_t tile_channels = 0;
+  if (context.declared_codec == TileCodec::kRaw) {
+    // RAW: the payload is uncompressed pixel data laid out as
+    // ``tile_w x tile_h x components`` in the declared pixel type
+    // (little-endian on disk, consumed in host endianness like the
+    // decoder outputs). Geometry comes from the level header; the
+    // tile carries no self-describing dimensions.
+    const auto& lvl = context.pyramid[static_cast<size_t>(level_index)];
+    tile_w = lvl.tile_w;
+    tile_h = lvl.tile_h;
+    const uint32_t bytes_per_sample = is_16bit ? 2U : 1U;
+    // Each separate-planar fluorescence tile holds one component; all
+    // other layouts interleave ``n_channels`` components per pixel.
+    tile_channels = separate_planar ? 1U : std::max(1U, context.n_channels);
+    const size_t expected =
+        static_cast<size_t>(tile_w) * tile_h * tile_channels * bytes_per_sample;
+    if (compressed.size() < expected) {
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kInvalidArgument,
+          aifocore::fmt::format(
+              "Olympus VSI: RAW tile too small: {} bytes < expected {} "
+              "({}x{}x{} @ {} B/sample)",
+              compressed.size(), expected, tile_w, tile_h, tile_channels,
+              bytes_per_sample));
+    }
+    tile_bytes.assign(
+        compressed.begin(),
+        compressed.begin() + static_cast<std::ptrdiff_t>(expected));
+  } else if (!is_16bit) {
+    AIFOCORE_ASSIGN_OR_RETURN(
+        auto decoded, DecodeTileBytes(compressed_span, context.declared_codec));
+    tile_w = decoded.width;
+    tile_h = decoded.height;
+    tile_channels = 3U;
+    tile_bytes = std::move(decoded.rgb);
+  } else {
+    AIFOCORE_ASSIGN_OR_RETURN(
+        auto decoded,
+        DecodeTileBytes16(compressed_span, context.declared_codec));
+    if (separate_planar && decoded.channels != 1U) {
+      return AIFOCORE_MAKE_STATUS(
+          aifocore::StatusCode::kUnimplemented,
+          aifocore::fmt::format(
+              "Olympus VSI: stacked 16-bit fluorescence expects "
+              "single-component tiles, decoded {} components",
+              decoded.channels));
+    }
+    tile_w = decoded.width;
+    tile_h = decoded.height;
+    tile_channels = decoded.channels;
+    // ``DecodedRgb16::rgb`` is a ``std::vector<uint16_t>``; rebind to a
+    // flat byte buffer for the Canvas paint path. The Canvas is
+    // configured for ``kUInt16`` so it consumes 2 bytes per sample in
+    // host endianness, matching the decoder output.
+    const size_t byte_count = decoded.rgb.size() * sizeof(uint16_t);
+    tile_bytes.resize(byte_count);
+    if (byte_count > 0) {
+      std::memcpy(tile_bytes.data(), decoded.rgb.data(), byte_count);
+    }
+  }
+
+  return DecodedTileData{
+      .data = std::span<const uint8_t>(tile_bytes.data(), tile_bytes.size()),
+      .width = tile_w,
+      .height = tile_h,
+      .channels = tile_channels,
+  };
 }
 
 }  // namespace fastslide::formats::olympusvsi
