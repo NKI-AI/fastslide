@@ -17,11 +17,15 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <memory>
+#include <mutex>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "aifocore/status/result.h"
 #include "fastslide/readers/mrxs/mrxs_internal.h"
+#include "fastslide/runtime/io/file_reader.h"
 
 /// @file mrxs_data_reader.h
 /// @brief MRXS data file reader and validation utilities
@@ -62,33 +66,45 @@ class TileDataValidator {
                                              size_t num_datafiles);
 };
 
-/// @brief Helper for reading MRXS data files
+/// @brief The open Data files of one slide
 ///
-/// Provides methods to read compressed tile data from MRXS data files
-/// with automatic validation and error handling. Uses RAII for file
-/// handle management.
-///
-/// Note: This class intentionally doesn't cache file handles. File handle
-/// pooling should be implemented at a higher level if needed for performance.
+/// Each Data file is opened on first use and kept open until this object is
+/// destroyed, so reading a tile costs one positional read instead of an
+/// open/close round trip (which dominates on network file systems). Owned by
+/// the reader, so handles are released with the slide. Reads are thread-safe.
+class MrxsDataFiles {
+ public:
+  /// @param dirname Directory containing MRXS files
+  /// @param datafile_paths Data file names, relative to @p dirname
+  MrxsDataFiles(fs::path dirname, std::vector<std::string> datafile_paths)
+      : dirname_(std::move(dirname)),
+        datafile_paths_(std::move(datafile_paths)),
+        files_(datafile_paths_.size()) {}
+
+  /// @brief Read raw tile data, validating tile parameters and file bounds
+  /// @retval InvalidArgument if tile params are invalid or out of bounds
+  /// @retval NotFound if the data file cannot be opened
+  /// @retval Internal if the read fails
+  aifocore::Result<std::vector<uint8_t>> ReadTile(
+      const MiraxTileRecord& tile) const;
+
+ private:
+  struct OpenFile {
+    FileReader reader;
+    int64_t size;
+  };
+
+  aifocore::Result<const OpenFile*> Get(size_t file_number) const;
+
+  fs::path dirname_;
+  std::vector<std::string> datafile_paths_;
+  mutable std::mutex mutex_;
+  mutable std::vector<std::unique_ptr<OpenFile>> files_;  ///< guarded by mutex_
+};
+
+/// @brief Helper for one-off reads from MRXS data files
 class MrxsDataReader {
  public:
-  /// @brief Read raw tile data from a data file
-  ///
-  /// Opens the appropriate data file, seeks to the tile's offset, and reads
-  /// the compressed image data. Validates tile parameters and file bounds
-  /// before reading.
-  ///
-  /// @param dirname Directory containing MRXS files
-  /// @param tile Tile metadata (offset, length, file number)
-  /// @param datafile_paths Paths to data files
-  /// @return Raw compressed data or error
-  /// @retval InvalidArgument if tile params are invalid
-  /// @retval NotFound if data file cannot be opened
-  /// @retval Internal if seek or read fails
-  static aifocore::Result<std::vector<uint8_t>> ReadTileData(
-      const fs::path& dirname, const MiraxTileRecord& tile,
-      const std::vector<std::string>& datafile_paths);
-
   /// @brief Read data from a specific offset in a data file
   ///
   /// Generic method for reading arbitrary data from MRXS data files.
