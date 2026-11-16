@@ -145,8 +145,7 @@ lossy JPEG and JPEG 2000 data, where decoders round differently, SVS regions
 differed from `OpenSlide` and DICOM tiles from an OpenJPEG decode by at most
 one grey level. VSI regions differed from Bio-Formats 8.1.1 by at most two grey levels. A
 BIF slide was aligned with `OpenSlide`, with 99.8% of pixels within five grey
-levels; on a second BIF slide, which `OpenSlide` could not open, regions were
-shifted horizontally by up to 17 pixels relative to Bio-Formats. We had no
+levels. We had no
 independent reader for iSyntax.
 
 \autoref{tab:bench} compares `FastSlide` 0.8.4 with `OpenSlide`
