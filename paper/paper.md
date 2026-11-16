@@ -85,9 +85,7 @@ and is limited to TIFF-based formats.
 We wrote a new library instead of extending `OpenSlide` because the features we
 needed, pixel data in its stored type with any number of channels and selection
 of a Z/T plane, do not fit an interface whose output is a `w × h × 4` byte ARGB
-buffer. To keep existing datasets usable, `FastSlide` computes the same
-"quickhash" slide identifier as `OpenSlide`: the two agreed on seven of the eight public
-OpenSlide test slides we compared, the exception being a Ventana BIF slide.
+buffer.
 
 # Software design
 
