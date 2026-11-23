@@ -42,10 +42,10 @@ def restore_settings() -> Iterator[None]:
 
 @pytest.fixture
 def sample_slide_path() -> str:
-    for candidate in SAMPLE_SLIDE_CANDIDATES:
-        if os.path.exists(candidate):
-            return candidate
-    pytest.skip("CMU-1-Small-Region.svs not available")
+    path = next((c for c in SAMPLE_SLIDE_CANDIDATES if os.path.exists(c)), None)
+    if path is None:
+        pytest.skip("CMU-1-Small-Region.svs not available")
+    return path
 
 
 def read_rgb(slide: fastslide.FastSlide, x: int, y: int, size: int) -> np.ndarray:
@@ -102,13 +102,13 @@ class TestReadsAcrossSettings:
         with fastslide.FastSlide.from_file_path(sample_slide_path) as slide:
             expected = read_rgb(slide, 0, 0, 800)
             stop = threading.Event()
-            errors: list[BaseException] = []
+            errors: list[Exception] = []
 
             def reader() -> None:
                 try:
                     while not stop.is_set():
                         np.testing.assert_array_equal(read_rgb(slide, 0, 0, 800), expected)
-                except BaseException as e:  # noqa: BLE001
+                except Exception as e:
                     errors.append(e)
 
             threads = [threading.Thread(target=reader) for _ in range(4)]
