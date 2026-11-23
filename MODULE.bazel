@@ -59,8 +59,8 @@ git_override(
 bazel_dep(name = "simpletiff", version = "0.0.1")
 git_override(
     module_name = "simpletiff",
-    commit = "58846c281f820ba7de49d5240eb8a753a77f876d",
-    remote = "https://github.com/wouterzwerink/simpletiff.git",
+    commit = "c9d63f5bfb91982ffddc0441bdb703c930b0ca40",
+    remote = "https://github.com/NKI-AI/simpletiff.git",
 )
 
 # jxrlib is available on github, but does not have a Bazel entry,
