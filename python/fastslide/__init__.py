@@ -11,7 +11,7 @@ Example:
     >>> print(slide.dimensions)
 """
 
-__version__ = "0.8.4"
+__version__ = "0.8.5"
 from fastslide._fastslide import *
 
 from fastslide.xyz_pyramid import XYZPyramid
