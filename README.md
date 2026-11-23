@@ -521,13 +521,28 @@ runs directly on the calling thread. Two process-wide settings control this:
   512 px regions was about 3× slower.
 - **Containers with a CPU limit:** the default pool size is the host's thread
   count, not your quota. Set the number of threads to the quota.
-- **PyTorch `DataLoader` workers:** every worker process has its own pool, so
-  `num_workers` pools of all hardware threads compete for the cores. A worker
-  reads one sample at a time; with `num_workers` near the number of cores or
-  more, use `CALLING_THREAD` in `worker_init_fn` (with fewer workers, cap each
-  pool at about `cores // num_workers` threads instead). Workers can be forked
-  after the main process has read slides: a forked worker starts a fresh pool
-  with the parent's number of threads.
+- **PyTorch `DataLoader` workers:** every worker is a process with its own
+  pool of all hardware threads, so with many workers the pools oversubscribe
+  the cores. Cap each worker's pool at `cores // num_workers` threads in
+  `worker_init_fn` (example below). In our measurements this was within 12 %
+  of the best setting at every worker count: with few workers it is about as
+  fast as the default, and with more workers than cores the default is a
+  quarter to a third slower than the cap. `CALLING_THREAD` matches the cap
+  once there are about as many workers as cores, but with fewer workers it is
+  much slower (up to 3× with one worker). Random 224 px tiles from six slides
+  on a 12-core machine, in samples/s:
+
+  | workers                           | 1   | 4    | 8    | 12   | 24   |
+  | --------------------------------- | --- | ---- | ---- | ---- | ---- |
+  | default                           | 465 | 1406 | 1634 | 1565 | 837  |
+  | pool capped at `cores // workers` | 465 | 1333 | 1436 | 1702 | 1222 |
+  | `CALLING_THREAD`                  | 272 | 899  | 1444 | 1748 | 1268 |
+
+  Reading alone, fastslide used all cores with a third to half as many
+  workers as cores (fewer for larger reads); more workers pay off when the
+  dataset does other CPU work, such as augmentation. Workers can be forked
+  after the main process has read slides: a forked worker starts a fresh
+  pool.
 
 Both settings are process-wide and apply to reads that start after the call.
 Resizing the pool waits for the tile operations that are running.
@@ -547,13 +562,19 @@ fastslide.get_num_threads()  # 4
 ```
 
 ```python
+import os
+
 from torch.utils.data import DataLoader
 
+NUM_WORKERS = 8
+
 def worker_init_fn(worker_id):
-    fastslide.set_read_parallelism(fastslide.ReadParallelism.CALLING_THREAD)
+    # Every worker has its own pool: share the cores between them. In a
+    # container, use the CPU quota instead of os.cpu_count().
+    fastslide.set_num_threads(max(1, os.cpu_count() // NUM_WORKERS))
 
 # Each worker opens its own slides.
-dataloader = DataLoader(dataset, batch_size=32, num_workers=8,
+dataloader = DataLoader(dataset, batch_size=32, num_workers=NUM_WORKERS,
                         worker_init_fn=worker_init_fn, shuffle=True)
 ```
 
