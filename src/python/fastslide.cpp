@@ -43,6 +43,7 @@
 #include "fastslide/runtime/global_cache_manager.h"
 #include "fastslide/runtime/reader_registry.h"
 #include "fastslide/slide_reader.h"
+#include "fastslide/threading.h"
 
 namespace nb = nanobind;
 
@@ -316,6 +317,36 @@ NB_MODULE(_fastslide, m) {
       "get_isyntax_cache_capacity",
       []() { return isyntax::IsyntaxCache::SharedCapacityBytes(); },
       "Get the memory budget of the iSyntax coefficient cache, in bytes.");
+
+  // Threading: where a read's tile operations run, and the shared pool size
+  nb::enum_<fastslide::ReadParallelism>(
+      m, "ReadParallelism",
+      "Where the tile operations of a read run (see set_read_parallelism).")
+      .value("THREAD_POOL", fastslide::ReadParallelism::kThreadPool,
+             "Spread over the shared thread pool; the calling thread waits "
+             "(default). Lowest latency when few reads run at once.")
+      .value("CALLING_THREAD", fastslide::ReadParallelism::kCallingThread,
+             "Run on the thread that called read_region. Best throughput "
+             "when about as many reads run at once as there are cores.");
+
+  m.def("set_read_parallelism", &fastslide::SetReadParallelism, nb::arg("mode"),
+        "Set where the tile operations of each read run (process-wide). "
+        "THREAD_POOL (default) spreads a read over the shared pool; "
+        "CALLING_THREAD runs it on the calling thread, which gives more "
+        "throughput and less CPU per read when many reads run at once, but "
+        "makes a single read slower. Also settable at startup with "
+        "FASTSLIDE_READ_PARALLELISM=calling_thread.");
+  m.def("get_read_parallelism", &fastslide::GetReadParallelism,
+        "Get the current ReadParallelism.");
+  m.def("set_num_threads", &fastslide::SetThreadPoolSize,
+        nb::arg("num_threads"), nb::call_guard<nb::gil_scoped_release>(),
+        "Resize fastslide's shared thread pool (process-wide), used in "
+        "THREAD_POOL mode. 0 means the number of hardware threads. The "
+        "default is the NUM_THREADS environment variable or the number of "
+        "hardware threads, which in a container is the host's, not the CPU "
+        "quota. Waits for running tasks, then replaces the pool's threads.");
+  m.def("get_num_threads", &fastslide::GetThreadPoolSize,
+        "Get the number of threads in fastslide's shared thread pool.");
 
   // Associated images accessor
   nb::class_<AssociatedImages>(m, "AssociatedImages")

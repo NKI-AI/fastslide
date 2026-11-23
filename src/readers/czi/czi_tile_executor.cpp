@@ -36,8 +36,8 @@
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
-#include "aifocore/utilities/thread_pool_singleton.h"
 #include "fastslide/readers/czi/czi_parse.h"
+#include "fastslide/readers/read_parallelism.h"
 #include "fastslide/runtime/decoders/jpeg_decoder.h"
 #include "fastslide/runtime/decoders/jpeg_xr_decoder.h"
 #include "fastslide/runtime/io/ascii_utils.h"
@@ -238,28 +238,25 @@ aifocore::Status CziTileExecutor::ExecutePlan(const core::TilePlan& plan,
   std::mutex error_mutex;
   std::optional<aifocore::Status> first_error;
   std::atomic<bool> has_error{false};
-  auto& pool = aifocore::ThreadPoolManager::GetInstance();
-  auto futures =
-      pool.submit_sequence(size_t{0}, plan.operations.size(), [&](size_t i) {
-        if (has_error.load(std::memory_order_relaxed)) {
-          return;
-        }
-        const core::TileReadOp& op = plan.operations[i];
-        auto tile_or = ReadWithCacheShared(op, context);
-        if (!tile_or.ok()) {
-          has_error.store(true, std::memory_order_relaxed);
-          std::lock_guard<std::mutex> lock(error_mutex);
-          if (!first_error.has_value()) {
-            first_error = AIFOCORE_MAKE_STATUS(
-                tile_or.status().code(),
-                aifocore::fmt::format("CZI subblock {}: {}", op.source_id,
-                                      tile_or.status().message()));
-          }
-          return;
-        }
-        decoded[i] = *std::move(tile_or);
-      });
-  futures.wait();
+  readers::ForEachTileOp(plan.operations.size(), [&](size_t i) {
+    if (has_error.load(std::memory_order_relaxed)) {
+      return;
+    }
+    const core::TileReadOp& op = plan.operations[i];
+    auto tile_or = ReadWithCacheShared(op, context);
+    if (!tile_or.ok()) {
+      has_error.store(true, std::memory_order_relaxed);
+      std::lock_guard<std::mutex> lock(error_mutex);
+      if (!first_error.has_value()) {
+        first_error = AIFOCORE_MAKE_STATUS(
+            tile_or.status().code(),
+            aifocore::fmt::format("CZI subblock {}: {}", op.source_id,
+                                  tile_or.status().message()));
+      }
+      return;
+    }
+    decoded[i] = *std::move(tile_or);
+  });
   if (first_error.has_value()) {
     return *first_error;
   }

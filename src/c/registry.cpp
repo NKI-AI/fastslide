@@ -19,6 +19,7 @@
 #include "fastslide/runtime/plugin_loader.h"
 #include "fastslide/runtime/reader_registry.h"
 #include "fastslide/slide_reader.h"
+#include "fastslide/threading.h"
 #include "internal/debug.h"
 
 // Forward declaration for slide reader wrapper creation
@@ -248,6 +249,39 @@ int fastslide_global_cache_get_stats(FastSlideCacheStats* out_stats) {
 
 void fastslide_global_cache_clear(void) {
   fastslide::runtime::GlobalCacheManager::Instance().Clear();
+}
+
+// Read parallelism
+
+int fastslide_set_read_parallelism(FastSlideReadParallelism mode) {
+  fastslide_clear_last_error();
+  switch (mode) {
+    case FASTSLIDE_READ_PARALLELISM_THREAD_POOL:
+      fastslide::SetReadParallelism(fastslide::ReadParallelism::kThreadPool);
+      return 1;
+    case FASTSLIDE_READ_PARALLELISM_CALLING_THREAD:
+      fastslide::SetReadParallelism(fastslide::ReadParallelism::kCallingThread);
+      return 1;
+  }
+  fastslide_set_last_error("Unknown read parallelism mode");
+  return 0;
+}
+
+FastSlideReadParallelism fastslide_get_read_parallelism(void) {
+  return fastslide::GetReadParallelism() ==
+                 fastslide::ReadParallelism::kCallingThread
+             ? FASTSLIDE_READ_PARALLELISM_CALLING_THREAD
+             : FASTSLIDE_READ_PARALLELISM_THREAD_POOL;
+}
+
+int fastslide_set_thread_pool_size(size_t num_threads) {
+  fastslide_clear_last_error();
+  fastslide::SetThreadPoolSize(num_threads);
+  return 1;
+}
+
+size_t fastslide_get_thread_pool_size(void) {
+  return fastslide::GetThreadPoolSize();
 }
 
 // Utility functions

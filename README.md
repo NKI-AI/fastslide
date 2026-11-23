@@ -491,18 +491,126 @@ for (int i = 0; i < count; ++i) {
 
 ## Key Features
 
-### Thread-Safe Multi-Processing
+### Threading and Concurrency
+
+Slides are thread-safe: any number of threads can call `read_region` on the
+same slide at once.
+
+**How a read uses threads.** A read is split into tile operations, one per
+stored tile it touches (decode the tile, copy the part inside the region). By
+default the operations of a read are spread over a shared, process-wide thread
+pool, and the calling thread waits for them. A read that touches a single tile
+runs directly on the calling thread. Two process-wide settings control this:
+
+| Setting           | Default                                  | Controls                                                                                                                                   |
+| ----------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Read parallelism  | `THREAD_POOL`                            | Where the tile operations of a read run: on the shared pool (`THREAD_POOL`) or on the thread that called `read_region` (`CALLING_THREAD`). |
+| Number of threads | `NUM_THREADS`, else all hardware threads | Size of the shared pool, used in `THREAD_POOL` mode.                                                                                       |
+
+**Which to use.**
+
+- **Few reads at a time** (a script, a notebook, a viewer, one data-loading
+  thread): keep the defaults. A large read uses all cores.
+- **About as many reads in flight as there are cores** (a tile server with a
+  thread per request, a threaded data loader): use `CALLING_THREAD`. Each read
+  stays on its own thread, so there is no hand-off to the pool, less CPU per
+  read, and the pool size no longer caps how many reads progress at once.
+  With few readers it is slower, because one read no longer spreads over
+  several cores. On a 12-core machine, 24 threads reading 224 px tiles were
+  about 30 % faster per read with `CALLING_THREAD`; a single thread reading
+  512 px regions was about 3× slower.
+- **Containers with a CPU limit:** the default pool size is the host's thread
+  count, not your quota. Set the number of threads to the quota.
+- **PyTorch `DataLoader` workers:** every worker is a process with its own
+  pool of all hardware threads, so with many workers the pools oversubscribe
+  the cores. Cap each worker's pool at `cores // num_workers` threads in
+  `worker_init_fn` (example below). In our measurements this was within 12 %
+  of the best setting at every worker count: with few workers it is about as
+  fast as the default, and with more workers than cores the default is a
+  quarter to a third slower than the cap. `CALLING_THREAD` matches the cap
+  once there are about as many workers as cores, but with fewer workers it is
+  much slower (up to 3× with one worker). Random 224 px tiles from six slides
+  on a 12-core machine, in samples/s:
+
+  | workers                           | 1   | 4    | 8    | 12   | 24   |
+  | --------------------------------- | --- | ---- | ---- | ---- | ---- |
+  | default                           | 465 | 1406 | 1634 | 1565 | 837  |
+  | pool capped at `cores // workers` | 465 | 1333 | 1436 | 1702 | 1222 |
+  | `CALLING_THREAD`                  | 272 | 899  | 1444 | 1748 | 1268 |
+
+  Reading alone, fastslide used all cores with a third to half as many
+  workers as cores (fewer for larger reads); more workers pay off when the
+  dataset does other CPU work, such as augmentation. Workers can be forked
+  after the main process has read slides: a forked worker starts a fresh
+  pool.
+
+Both settings are process-wide and apply to reads that start after the call.
+Resizing the pool waits for the tile operations that are running.
+
+**Python**
 
 ```python
+import fastslide
+
+# Where the tile operations of a read run.
+fastslide.set_read_parallelism(fastslide.ReadParallelism.CALLING_THREAD)
+fastslide.get_read_parallelism()  # ReadParallelism.CALLING_THREAD
+
+# Threads in the shared pool (THREAD_POOL mode); 0 = all hardware threads.
+fastslide.set_num_threads(4)
+fastslide.get_num_threads()  # 4
+```
+
+```python
+import os
+
 from torch.utils.data import DataLoader
 
-# Each worker gets its own slide reader
-dataloader = DataLoader(
-    dataset,
-    batch_size=32,
-    num_workers=8,  # Safe for multi-worker loading
-    shuffle=True
-)
+NUM_WORKERS = 8
+
+def worker_init_fn(worker_id):
+    # Every worker has its own pool: share the cores between them. In a
+    # container, use the CPU quota instead of os.cpu_count().
+    fastslide.set_num_threads(max(1, os.cpu_count() // NUM_WORKERS))
+
+# Each worker opens its own slides.
+dataloader = DataLoader(dataset, batch_size=32, num_workers=NUM_WORKERS,
+                        worker_init_fn=worker_init_fn, shuffle=True)
+```
+
+**C++**
+
+```cpp
+#include "fastslide/threading.h"
+
+fastslide::SetReadParallelism(fastslide::ReadParallelism::kCallingThread);
+fastslide::SetThreadPoolSize(4);  // 0 = all hardware threads
+const std::size_t threads = fastslide::GetThreadPoolSize();
+```
+
+**C**
+
+```c
+#include "fastslide/c/fastslide.h"
+
+fastslide_set_read_parallelism(FASTSLIDE_READ_PARALLELISM_CALLING_THREAD);
+fastslide_set_thread_pool_size(4); /* 0 = all hardware threads */
+size_t threads = fastslide_get_thread_pool_size();
+```
+
+**Rust**
+
+```rust
+fastslide::set_read_parallelism(fastslide::ReadParallelism::CallingThread);
+fastslide::set_thread_pool_size(4); // 0 = all hardware threads
+let threads = fastslide::thread_pool_size();
+```
+
+**Environment variables** (read once, the first time a read needs them):
+
+```sh
+FASTSLIDE_READ_PARALLELISM=calling_thread  # or thread_pool (default)
+NUM_THREADS=4                              # pool size
 ```
 
 ### Level-Native Coordinates

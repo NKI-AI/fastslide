@@ -28,6 +28,16 @@ aspect_py_test(
 )
 
 aspect_py_test(
+    name = "threading_test",
+    srcs = [
+        "_pytest_main.py",
+        "threading_test.py",
+    ],
+    main = "_pytest_main.py",
+    deps = PYTEST_DEPS,
+)
+
+aspect_py_test(
     name = "slide_reader_test",
     srcs = [
         "_pytest_main.py",

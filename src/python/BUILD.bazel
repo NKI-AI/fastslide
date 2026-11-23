@@ -30,6 +30,7 @@ nanobind_extension(
         "//:runtime_global_cache_manager",
         "//:runtime_plugin_loader",
         "//:runtime_reader_registry",
+        "//:threading",
     ],
 )
 
