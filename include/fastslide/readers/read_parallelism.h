@@ -15,62 +15,23 @@
 #ifndef AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_READ_PARALLELISM_H_
 #define AIFO_FASTSLIDE_INCLUDE_FASTSLIDE_READERS_READ_PARALLELISM_H_
 
-#include <atomic>
 #include <cstddef>
-#include <cstdint>
-#include <cstdlib>
-#include <cstring>
+#include <utility>
 
 #include "aifocore/utilities/thread_pool_singleton.h"
+#include "fastslide/threading.h"
 
 namespace fastslide {
 namespace readers {
 
-/// @brief Where the tile operations of a single read run.
-enum class ReadParallelism : std::uint8_t {
-  /// Spread the operations over the shared `aifocore::ThreadPoolManager`
-  /// pool; the calling thread waits. Lowest latency for one read at a time.
-  kThreadPool = 0,
-  /// Run the operations one after the other on the calling thread. Best
-  /// throughput when the caller already runs many reads concurrently (one per
-  /// request or worker): no hand-off to the pool, and the pool size no longer
-  /// caps how many reads progress at once.
-  kCallingThread = 1,
-};
-
-namespace detail {
-
-/// Process-wide mode. Initialised from `FASTSLIDE_READ_PARALLELISM`
-/// (`calling_thread` or `thread_pool`, default `thread_pool`).
-inline std::atomic<ReadParallelism>& ReadParallelismSetting() {
-  static std::atomic<ReadParallelism> setting{[] {
-    const char* env = std::getenv("FASTSLIDE_READ_PARALLELISM");
-    if (env != nullptr && std::strcmp(env, "calling_thread") == 0) {
-      return ReadParallelism::kCallingThread;
-    }
-    return ReadParallelism::kThreadPool;
-  }()};
-  return setting;
-}
-
-}  // namespace detail
-
-/// @brief Set where the tile operations of each read run (process-wide).
-inline void SetReadParallelism(ReadParallelism mode) {
-  detail::ReadParallelismSetting().store(mode, std::memory_order_relaxed);
-}
-
-/// @brief Current read parallelism mode.
-[[nodiscard]] inline ReadParallelism GetReadParallelism() {
-  return detail::ReadParallelismSetting().load(std::memory_order_relaxed);
-}
-
 /// @brief Run `fn(i)` for every `i` in `[0, count)` and wait for all of them.
 ///
-/// Uses the shared thread pool in `ReadParallelism::kThreadPool` mode, except
-/// for a single operation, which always runs on the calling thread (a pool
-/// hand-off only adds latency there). `fn` must be thread-safe and must not
-/// throw.
+/// The executors run the tile operations of a read through this. In
+/// `ReadParallelism::kThreadPool` mode (see fastslide/threading.h) the
+/// operations go to the shared thread pool, except a single operation, which
+/// runs on the calling thread (a pool hand-off only adds latency there). In
+/// `kCallingThread` mode they all run on the calling thread. `fn` must be
+/// thread-safe and must not throw.
 template <typename Fn>
 void ForEachTileOp(std::size_t count, Fn&& fn) {
   if (count == 0) {

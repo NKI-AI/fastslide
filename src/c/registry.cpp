@@ -13,14 +13,13 @@
 #include <string>
 #include <utility>
 
-#include "aifocore/utilities/thread_pool_singleton.h"
 #include "fastslide/readers/isyntax/third_party/cache.h"
-#include "fastslide/readers/read_parallelism.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/global_cache_manager.h"
 #include "fastslide/runtime/plugin_loader.h"
 #include "fastslide/runtime/reader_registry.h"
 #include "fastslide/slide_reader.h"
+#include "fastslide/threading.h"
 #include "internal/debug.h"
 
 // Forward declaration for slide reader wrapper creation
@@ -258,12 +257,10 @@ int fastslide_set_read_parallelism(FastSlideReadParallelism mode) {
   fastslide_clear_last_error();
   switch (mode) {
     case FASTSLIDE_READ_PARALLELISM_THREAD_POOL:
-      fastslide::readers::SetReadParallelism(
-          fastslide::readers::ReadParallelism::kThreadPool);
+      fastslide::SetReadParallelism(fastslide::ReadParallelism::kThreadPool);
       return 1;
     case FASTSLIDE_READ_PARALLELISM_CALLING_THREAD:
-      fastslide::readers::SetReadParallelism(
-          fastslide::readers::ReadParallelism::kCallingThread);
+      fastslide::SetReadParallelism(fastslide::ReadParallelism::kCallingThread);
       return 1;
   }
   fastslide_set_last_error("Unknown read parallelism mode");
@@ -271,16 +268,20 @@ int fastslide_set_read_parallelism(FastSlideReadParallelism mode) {
 }
 
 FastSlideReadParallelism fastslide_get_read_parallelism(void) {
-  return fastslide::readers::GetReadParallelism() ==
-                 fastslide::readers::ReadParallelism::kCallingThread
+  return fastslide::GetReadParallelism() ==
+                 fastslide::ReadParallelism::kCallingThread
              ? FASTSLIDE_READ_PARALLELISM_CALLING_THREAD
              : FASTSLIDE_READ_PARALLELISM_THREAD_POOL;
 }
 
 int fastslide_set_thread_pool_size(size_t num_threads) {
   fastslide_clear_last_error();
-  aifocore::ThreadPoolManager::SetThreadCount(num_threads);
+  fastslide::SetThreadPoolSize(num_threads);
   return 1;
+}
+
+size_t fastslide_get_thread_pool_size(void) {
+  return fastslide::GetThreadPoolSize();
 }
 
 // Utility functions

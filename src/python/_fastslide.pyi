@@ -542,3 +542,32 @@ def set_isyntax_cache_capacity(capacity_bytes: int) -> None:
 
 def get_isyntax_cache_capacity() -> int:
     """Get the memory budget of the iSyntax coefficient cache, in bytes."""
+
+class ReadParallelism(enum.Enum):
+    """Where the tile operations of a read run (see set_read_parallelism)."""
+
+    THREAD_POOL = 0
+    """
+    Spread over the shared thread pool; the calling thread waits (default). Lowest latency when few reads run at once.
+    """
+
+    CALLING_THREAD = 1
+    """
+    Run on the thread that called read_region. Best throughput when about as many reads run at once as there are cores.
+    """
+
+def set_read_parallelism(mode: ReadParallelism) -> None:
+    """
+    Set where the tile operations of each read run (process-wide). THREAD_POOL (default) spreads a read over the shared pool; CALLING_THREAD runs it on the calling thread, which gives more throughput and less CPU per read when many reads run at once, but makes a single read slower. Also settable at startup with FASTSLIDE_READ_PARALLELISM=calling_thread.
+    """
+
+def get_read_parallelism() -> ReadParallelism:
+    """Get the current ReadParallelism."""
+
+def set_num_threads(num_threads: int) -> None:
+    """
+    Resize fastslide's shared thread pool (process-wide), used in THREAD_POOL mode. 0 means the number of hardware threads. The default is the NUM_THREADS environment variable or the number of hardware threads, which in a container is the host's, not the CPU quota. Waits for running tasks, then replaces the pool's threads.
+    """
+
+def get_num_threads() -> int:
+    """Get the number of threads in fastslide's shared thread pool."""

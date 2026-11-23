@@ -298,6 +298,16 @@ cc_library(
 )
 
 cc_library(
+    name = "threading",
+    srcs = ["src/threading.cpp"],
+    hdrs = ["include/fastslide/threading.h"],
+    copts = WASM_COPTS,
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = ["@aifocore-cpp//:thread_pool_singleton"],
+)
+
+cc_library(
     name = "slide_options",
     hdrs = ["include/fastslide/slide_options.h"],
     includes = ["include"],
@@ -566,6 +576,7 @@ cc_library(
         ":runtime",
         ":runtime_binary_utils",
         ":slide_reader",
+        ":threading",
         ":tiff_quickhash",
         ":tiff_utilities",
         "@aifocore-cpp//:concepts",
@@ -1514,6 +1525,7 @@ cc_library(
         ":runtime_register_builtin_formats",
         ":slide_reader",
         ":spatial_index",
+        ":threading",
         ":tiff_utilities",
         "@hwy",
     ],
@@ -1619,7 +1631,7 @@ cc_library(
         ":readers",
         ":runtime_global_cache_manager",
         ":runtime_png_decoder",
-        "@aifocore-cpp//:thread_pool_singleton",
+        ":threading",
     ],
 )
 
@@ -2074,6 +2086,7 @@ cc_test(
     srcs = ["src/readers/read_parallelism_test.cpp"],
     deps = [
         ":readers",
+        ":threading",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],

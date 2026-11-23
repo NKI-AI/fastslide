@@ -291,6 +291,7 @@ unsafe extern "C" {
     pub fn fastslide_set_read_parallelism(mode: FastSlideReadParallelism) -> c_int;
     pub fn fastslide_get_read_parallelism() -> FastSlideReadParallelism;
     pub fn fastslide_set_thread_pool_size(num_threads: usize) -> c_int;
+    pub fn fastslide_get_thread_pool_size() -> usize;
     pub fn fastslide_registry_get_supported_extensions(
         registry: *mut FastSlideRegistry,
         extensions: *mut *mut *mut c_char,

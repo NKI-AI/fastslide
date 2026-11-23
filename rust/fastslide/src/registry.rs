@@ -165,3 +165,9 @@ pub fn read_parallelism() -> ReadParallelism {
 pub fn set_thread_pool_size(num_threads: usize) {
     unsafe { sys::fastslide_set_thread_pool_size(num_threads) };
 }
+
+/// Number of threads in the shared thread pool.
+#[must_use]
+pub fn thread_pool_size() -> usize {
+    unsafe { sys::fastslide_get_thread_pool_size() }
+}

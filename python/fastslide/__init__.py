@@ -31,4 +31,9 @@ __all__ = [
     "XYZPyramid",
     "set_isyntax_cache_capacity",
     "get_isyntax_cache_capacity",
+    "ReadParallelism",
+    "set_read_parallelism",
+    "get_read_parallelism",
+    "set_num_threads",
+    "get_num_threads",
 ]

@@ -62,7 +62,7 @@ pub use reader::{CacheStats, ColorSpace, OpenOptions, RenderingIntent, SlideRead
 pub use registry::{
     c_api_version, clear_global_cache, global_cache_stats, is_supported, read_parallelism,
     set_global_cache_capacity, set_isyntax_cache_capacity, set_read_parallelism,
-    set_thread_pool_size, supported_extensions, version, ReadParallelism,
+    set_thread_pool_size, supported_extensions, thread_pool_size, version, ReadParallelism,
 };
 pub use slide_image::SlideImage;
 
@@ -77,6 +77,15 @@ mod tests {
         assert_eq!(read_parallelism(), ReadParallelism::CallingThread);
         set_read_parallelism(ReadParallelism::ThreadPool);
         assert_eq!(read_parallelism(), ReadParallelism::ThreadPool);
+    }
+
+    #[test]
+    fn thread_pool_size_round_trips() {
+        let before = thread_pool_size();
+        set_thread_pool_size(3);
+        assert_eq!(thread_pool_size(), 3);
+        set_thread_pool_size(before);
+        assert_eq!(thread_pool_size(), before);
     }
 
     #[test]

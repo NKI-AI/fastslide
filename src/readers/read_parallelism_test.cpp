@@ -75,6 +75,19 @@ TEST_F(ReadParallelismTest, SingleOpStaysOnTheCallerInThreadPoolMode) {
   EXPECT_EQ(ran_on, caller);
 }
 
+TEST_F(ReadParallelismTest, ThreadPoolSizeRoundTrips) {
+  const std::size_t before = GetThreadPoolSize();
+  ASSERT_GE(before, 1U);
+  SetThreadPoolSize(3);
+  EXPECT_EQ(GetThreadPoolSize(), 3U);
+  // Reads keep working on the resized pool.
+  std::atomic<int> calls{0};
+  ForEachTileOp(16, [&](std::size_t) { calls.fetch_add(1); });
+  EXPECT_EQ(calls.load(), 16);
+  SetThreadPoolSize(before);
+  EXPECT_EQ(GetThreadPoolSize(), before);
+}
+
 TEST_F(ReadParallelismTest, ZeroOpsIsANoOp) {
   int calls = 0;
   ForEachTileOp(0, [&](std::size_t) { ++calls; });

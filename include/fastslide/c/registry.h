@@ -145,10 +145,15 @@ FASTSLIDE_API FastSlideReadParallelism fastslide_get_read_parallelism(void);
 /// @brief Resize the shared thread pool used in thread-pool mode.
 ///
 /// Defaults to `NUM_THREADS` or the number of hardware threads, which in a
-/// container is the host's, not the CPU quota. Waits for queued tasks first.
+/// container is the host's, not the CPU quota. Waits for the tasks that are
+/// running, then replaces the threads; queued tasks run on the new threads.
+/// Do not call it from inside a read.
 /// @param num_threads Thread count (0 = hardware concurrency)
 /// @return 1 on success.
 FASTSLIDE_API int fastslide_set_thread_pool_size(size_t num_threads);
+
+/// @brief Number of threads in the shared thread pool.
+FASTSLIDE_API size_t fastslide_get_thread_pool_size(void);
 
 // Utility functions
 
