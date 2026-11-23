@@ -3,8 +3,8 @@
 # the monorepo this is overridden by a local symlink
 # subprojects/simpletiff -> ../../simpletiff.
 [wrap-git]
-url = https://github.com/NKI-AI/simpletiff.git
-revision = 4373a6ee458eb5abd6b517c5ff7dd3cbc9b40d2b
+url = https://github.com/wouterzwerink/simpletiff.git
+revision = 58846c281f820ba7de49d5240eb8a753a77f876d
 
 [provide]
 dependency_names = simpletiff

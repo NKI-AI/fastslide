@@ -72,6 +72,16 @@ if gtest_dep.found()
       env : {'TEST_TMPDIR' : meson.current_build_dir()})
   endforeach
 
+  # Compares against libjpeg directly, so only with that backend.
+  if get_option('jpeg_decoder') == 'libjpeg'
+    jpeg_libjpeg_defaults = executable('jpeg_libjpeg_defaults_test',
+      'jpeg_libjpeg_defaults_test.cpp',
+      include_directories : test_inc,
+      dependencies : [fastslide_dep, gtest_dep],
+      cpp_args : ['-D__ANSI__'])
+    test('jpeg_libjpeg_defaults_test', jpeg_libjpeg_defaults)
+  endif
+
   # DICOM concatenation test needs on-disk test fixtures.
   dicom_concat = executable('dicom_concatenation_test',
     '../src/readers/dicom/dicom_concatenation_test.cpp',
