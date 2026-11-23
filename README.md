@@ -525,11 +525,9 @@ runs directly on the calling thread. Two process-wide settings control this:
   `num_workers` pools of all hardware threads compete for the cores. A worker
   reads one sample at a time; with `num_workers` near the number of cores or
   more, use `CALLING_THREAD` in `worker_init_fn` (with fewer workers, cap each
-  pool at about `cores // num_workers` threads instead). Threads do not
-  survive `fork()`: if the main process has read a slide before the workers
-  start (the `fork` start method, the default on Linux before Python 3.14),
-  reads in `THREAD_POOL` mode can hang in the workers. `CALLING_THREAD` avoids
-  that.
+  pool at about `cores // num_workers` threads instead). Workers can be forked
+  after the main process has read slides: a forked worker starts a fresh pool
+  with the parent's number of threads.
 
 Both settings are process-wide and apply to reads that start after the call.
 Resizing the pool waits for the tile operations that are running.

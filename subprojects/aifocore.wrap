@@ -3,7 +3,7 @@
 # this is overridden by a local symlink subprojects/aifocore -> ../../aifocore-cpp.
 [wrap-git]
 url = https://github.com/NKI-AI/aifocore.git
-revision = e09db7a3b6ee6decb84b08e22080158012b15a46
+revision = 53206dbc21c4367134d1fa646c6f32c560c61bef
 
 [provide]
 dependency_names = aifocore
