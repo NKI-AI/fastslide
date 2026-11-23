@@ -1988,6 +1988,23 @@ cc_test(
 )
 
 cc_test(
+    name = "jpeg_libjpeg_defaults_test",
+    size = "small",
+    srcs = ["tests/jpeg_libjpeg_defaults_test.cpp"],
+    # Compares against libjpeg directly, so only with that backend.
+    target_compatible_with = select({
+        ":use_jpgd": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":runtime_jpeg_decoder",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+        "@libjpeg_turbo//:jpeg",
+    ],
+)
+
+cc_test(
     name = "dicom_concatenation_test",
     size = "small",
     srcs = ["src/readers/dicom/dicom_concatenation_test.cpp"],

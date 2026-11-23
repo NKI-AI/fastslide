@@ -90,9 +90,9 @@ aifocore::Result<DecodedRgb> DecodeJpegToRgb(
                                 "Failed to read JPEG header");
   }
 
-  c->dct_method = JDCT_IFAST;
-  c->do_fancy_upsampling = FALSE;
-  c->do_block_smoothing = FALSE;
+  // The IDCT, upsampling and smoothing settings are left at libjpeg's
+  // defaults (JDCT_ISLOW, fancy upsampling), which jpeg_read_header resets on
+  // every call: the output then matches libtiff, OpenSlide and Pillow.
   c->quantize_colors = FALSE;
   c->dither_mode = JDITHER_NONE;
 
