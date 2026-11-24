@@ -40,7 +40,7 @@ class CziTileExecutor : public CachedTileExecutor<CziTileExecutor> {
   static runtime::TileKey MakeCacheKey(const core::TileReadOp& op,
                                        const CziExecContext& context);
 
-  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
+  static aifocore::Result<CachedTileData> DecodeTile(
       const core::TileReadOp& op, const CziExecContext& context);
 
   /// @brief Order in which `ExecutePlan` paints `plan.operations` (indices).

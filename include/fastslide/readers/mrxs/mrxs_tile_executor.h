@@ -65,7 +65,7 @@ class MrxsTileExecutor : public CachedTileExecutor<MrxsTileExecutor> {
   /// @param context MRXS execution context
   /// @param zoom_level Zoom level metadata
   /// @return Decoded RGB image or error status
-  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
+  static aifocore::Result<CachedTileData> DecodeTile(
       const core::TileReadOp& op, const MrxsExecContext& context,
       const mrxs::SlideZoomLevel& zoom_level);
 };

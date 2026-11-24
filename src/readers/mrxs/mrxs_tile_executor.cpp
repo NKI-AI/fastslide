@@ -42,6 +42,16 @@
 namespace fastslide {
 
 namespace {
+
+// Moves a decoded RGB image's pixels into a tile, without copying them.
+CachedTileData TakePixels(Image image, size_t bytes_per_sample) {
+  const uint32_t width = image.GetWidth();
+  const uint32_t height = image.GetHeight();
+  std::vector<uint8_t> pixels = std::move(image.GetDataVector());
+  pixels.resize(static_cast<size_t>(width) * height * 3 * bytes_per_sample);
+  return CachedTileData(std::move(pixels), {width, height}, 3);
+}
+
 // Helper to convert status if needed
 template <typename T>
 aifocore::Status ToAifoStatus(const T& status) {
@@ -98,25 +108,19 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
     op_group[i] = it->second;
   }
 
-  // Phase 1: decode in parallel. The span from ReadWithCache points into
-  // thread-local storage, so keep an owned copy for phase 2.
-  struct DecodedImage {
-    std::vector<uint8_t> data;
-    bool decoded = false;
-  };
-
-  std::vector<DecodedImage> decoded(rep_op.size());
+  // Phase 1: decode in parallel, keeping each stored image for phase 2 (a
+  // failed image stays null).
+  std::vector<TileHandle> decoded(rep_op.size());
 
   readers::ForEachTileOp(rep_op.size(), [&](size_t g) {
     const auto& op = plan.operations[rep_op[g]];
-    auto image_or = ReadWithCache(op, context, zoom_level);
+    auto image_or = ReadTile(op, context, zoom_level);
     if (!image_or.ok()) {
       std::cerr << "Failed to read/decode tile at (" << op.tile_coord.x << ", "
                 << op.tile_coord.y << "): " << image_or.status().ToString();
       return;  // Continue processing other tiles
     }
-    decoded[g].data.assign(image_or->begin(), image_or->end());
-    decoded[g].decoded = true;
+    decoded[g] = *std::move(image_or);
   });
 
   // Phase 2: paint serially, bottom row first and right to left within a row,
@@ -139,12 +143,12 @@ aifocore::Status MrxsTileExecutor::ExecutePlan(const core::TilePlan& plan,
   std::mutex accumulator_mutex;
   int error_count = 0;
   for (const uint32_t i : paint_order) {
-    const DecodedImage& image = decoded[op_group[i]];
-    if (!image.decoded) {
+    const TileHandle& image = decoded[op_group[i]];
+    if (!image) {
       continue;
     }
     const auto& op = plan.operations[i];
-    auto status = PaintTileOperation(op, image.data, context, zoom_level,
+    auto status = PaintTileOperation(op, image->data, context, zoom_level,
                                      writer, accumulator_mutex);
     if (!status.ok()) {
       error_count++;
@@ -276,7 +280,7 @@ runtime::TileKey MrxsTileExecutor::MakeCacheKey(
   );
 }
 
-aifocore::Result<DecodedTileData> MrxsTileExecutor::ReadTileFromDisk(
+aifocore::Result<CachedTileData> MrxsTileExecutor::DecodeTile(
     const core::TileReadOp& op, const MrxsExecContext& context,
     const mrxs::SlideZoomLevel& zoom_level) {
 
@@ -309,13 +313,7 @@ aifocore::Result<DecodedTileData> MrxsTileExecutor::ReadTileFromDisk(
     if (!image_or.ok()) {
       return ToAifoStatus(image_or.status());
     }
-    const auto& image = *image_or;
-    const size_t data_size = static_cast<size_t>(image.GetWidth()) *
-                             image.GetHeight() * 3 * sizeof(uint16_t);
-    uint8_t* buffer = GetBuffers().GetTileBuffer(data_size);
-    std::memcpy(buffer, image.GetData(), data_size);
-    return DecodedTileData{std::span<const uint8_t>(buffer, data_size),
-                           image.GetWidth(), image.GetHeight(), 3};
+    return TakePixels(*std::move(image_or), sizeof(uint16_t));
   }
 
   // 8-bit path
@@ -325,18 +323,7 @@ aifocore::Result<DecodedTileData> MrxsTileExecutor::ReadTileFromDisk(
     return ToAifoStatus(image_or.status());
   }
 
-  const auto& image = *image_or;
-
-  const size_t data_size =
-      static_cast<size_t>(image.GetWidth()) * image.GetHeight() * 3;
-  uint8_t* buffer = GetBuffers().GetTileBuffer(data_size);
-  std::memcpy(buffer, image.GetData(), data_size);
-
-  return DecodedTileData{
-      std::span<const uint8_t>(buffer, data_size), image.GetWidth(),
-      image.GetHeight(),
-      3  // RGB
-  };
+  return TakePixels(*std::move(image_or), sizeof(uint8_t));
 }
 
 }  // namespace fastslide

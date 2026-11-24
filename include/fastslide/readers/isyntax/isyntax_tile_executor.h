@@ -59,7 +59,7 @@ class IsyntaxTileExecutor : public CachedTileExecutor<IsyntaxTileExecutor> {
   /// @param op The tile operation
   /// @param context The execution context
   /// @return Decoded RGB tile data or error status
-  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
+  static aifocore::Result<CachedTileData> DecodeTile(
       const core::TileReadOp& op, const IsyntaxExecContext& context);
 };
 

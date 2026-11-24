@@ -310,7 +310,7 @@ runtime::TileKey CziTileExecutor::MakeCacheKey(const core::TileReadOp& op,
                           op.tile_coord.x);
 }
 
-aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
+aifocore::Result<CachedTileData> CziTileExecutor::DecodeTile(
     const core::TileReadOp& op, const CziExecContext& context) {
   const uint32_t subblock_index = op.source_id;
   const bool spectral = context.IsSpectral();
@@ -391,7 +391,6 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
   } else if (comp == Compression::kJxr) {
     const auto expected = runtime::decoders::ExpectedDimensions{sb.w, sb.h};
     const size_t npx = static_cast<size_t>(sb.w) * sb.h;
-    auto& tile_buf = GetBuffers().tile_buffer;
     if (spectral) {
       // One channel plane per subblock, at native bit depth. The JPEG-XR
       // decoders broadcast a grayscale source across the three RGB planes, so
@@ -400,38 +399,25 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
         AIFOCORE_ASSIGN_OR_RETURN(
             auto decoded,
             runtime::decoders::DecodeJpegXrToRgb16(payload, expected));
-        tile_buf = ExtractPlane16(decoded.rgb, npx);
-      } else {
-        AIFOCORE_ASSIGN_OR_RETURN(
-            auto decoded,
-            runtime::decoders::DecodeJpegXrToRgb(payload, expected));
-        tile_buf = ExtractPlane8(decoded.rgb, npx);
+        return CachedTileData(ExtractPlane16(decoded.rgb, npx), {sb.w, sb.h},
+                              1);
       }
-      return DecodedTileData{
-          std::span<const uint8_t>(tile_buf.data(), tile_buf.size()), sb.w,
-          sb.h, 1};
+      AIFOCORE_ASSIGN_OR_RETURN(
+          auto decoded,
+          runtime::decoders::DecodeJpegXrToRgb(payload, expected));
+      return CachedTileData(ExtractPlane8(decoded.rgb, npx), {sb.w, sb.h}, 1);
     }
     AIFOCORE_ASSIGN_OR_RETURN(
         auto decoded, runtime::decoders::DecodeJpegXrToRgb(payload, expected));
-    tile_buf = std::move(decoded.rgb);
-    return DecodedTileData{
-        std::span<const uint8_t>(tile_buf.data(), tile_buf.size()), sb.w, sb.h,
-        3};
+    return CachedTileData(std::move(decoded.rgb), {sb.w, sb.h}, 3);
   } else if (comp == Compression::kJpeg) {
     AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
                               runtime::decoders::DecodeJpegToRgb(payload));
-    auto& tile_buf = GetBuffers().tile_buffer;
     if (spectral) {
       const size_t npx = static_cast<size_t>(sb.w) * sb.h;
-      tile_buf = ExtractPlane8(decoded.rgb, npx);
-      return DecodedTileData{
-          std::span<const uint8_t>(tile_buf.data(), tile_buf.size()), sb.w,
-          sb.h, 1};
+      return CachedTileData(ExtractPlane8(decoded.rgb, npx), {sb.w, sb.h}, 1);
     }
-    tile_buf = std::move(decoded.rgb);
-    return DecodedTileData{
-        std::span<const uint8_t>(tile_buf.data(), tile_buf.size()), sb.w, sb.h,
-        3};
+    return CachedTileData(std::move(decoded.rgb), {sb.w, sb.h}, 3);
   } else {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kUnimplemented,
@@ -439,24 +425,17 @@ aifocore::Result<DecodedTileData> CziTileExecutor::ReadTileFromDisk(
                               sb.compression));
   }
 
-  auto& tile_buf = GetBuffers().tile_buffer;
   if (spectral) {
     // Spectral scenes paint one channel plane per subblock at native depth.
     AIFOCORE_ASSIGN_OR_RETURN(auto plane,
                               ConvertRawToPlane(pt, sb.w, sb.h, raw));
-    tile_buf = std::move(plane);
-    return DecodedTileData{
-        std::span<const uint8_t>(tile_buf.data(), tile_buf.size()), sb.w, sb.h,
-        1};
+    return CachedTileData(std::move(plane), {sb.w, sb.h}, 1);
   }
 
   // Convert raw pixel bytes to packed RGB, preserving the native bit depth
   // (8-bit types stay 8-bit, 16-bit types stay 16-bit; see ConvertRawToRgb).
   AIFOCORE_ASSIGN_OR_RETURN(auto rgb, ConvertRawToRgb(pt, sb.w, sb.h, raw));
-  tile_buf = std::move(rgb);
-  return DecodedTileData{
-      std::span<const uint8_t>(tile_buf.data(), tile_buf.size()), sb.w, sb.h,
-      3};
+  return CachedTileData(std::move(rgb), {sb.w, sb.h}, 3);
 }
 
 }  // namespace fastslide

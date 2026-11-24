@@ -27,6 +27,7 @@
 #include "fastslide/readers/cached_tile_executor.h"
 #include "fastslide/readers/isyntax/third_party/file.h"
 #include "fastslide/readers/read_parallelism.h"
+#include "fastslide/readers/tile_buffer_pool.h"
 #include "fastslide/runtime/cache_interface.h"
 
 namespace fastslide {
@@ -97,19 +98,17 @@ aifocore::Status IsyntaxTileExecutor::ExecuteTileOperation(
   const uint32_t tile_w = static_cast<uint32_t>(tile_dims[0]);
   const uint32_t tile_h = static_cast<uint32_t>(tile_dims[1]);
 
-  // Read and decode the tile (returns span view of thread-local buffer)
-  auto tile_data_or = ReadWithCache(op, context);
-  if (!tile_data_or.ok()) {
+  auto tile_or = ReadTile(op, context);
+  if (!tile_or.ok()) {
     std::cerr << "Failed to read/decode tile at (" << op.tile_coord.x << ", "
-              << op.tile_coord.y << "): " << tile_data_or.status().ToString();
+              << op.tile_coord.y << "): " << tile_or.status().ToString();
     return aifocore::Status::OkStatus();  // Continue processing other tiles
   }
-
-  const auto& rgb_span = *tile_data_or;
+  const TileHandle& tile = *tile_or;
 
   // Write to output using Canvas with mutex for thread-safe accumulation
   auto write_status =
-      writer.PaintTile(op, rgb_span, tile_w, tile_h, 3, accumulator_mutex);
+      writer.PaintTile(op, tile->data, tile_w, tile_h, 3, accumulator_mutex);
 
   if (!write_status.ok()) {
     std::cerr << "Failed to write tile: " << write_status.ToString() << "\n";
@@ -127,7 +126,7 @@ runtime::TileKey IsyntaxTileExecutor::MakeCacheKey(
                           static_cast<uint32_t>(op.tile_coord.y));
 }
 
-aifocore::Result<DecodedTileData> IsyntaxTileExecutor::ReadTileFromDisk(
+aifocore::Result<CachedTileData> IsyntaxTileExecutor::DecodeTile(
     const core::TileReadOp& op, const IsyntaxExecContext& context) {
   // CRITICAL: Ensure thread-local memory is initialized for this worker thread
   // The iSyntax decode pipeline uses thread-local storage that must be
@@ -140,31 +139,24 @@ aifocore::Result<DecodedTileData> IsyntaxTileExecutor::ReadTileFromDisk(
   const int32_t tile_w = static_cast<int32_t>(tile_dims[0]);
   const int32_t tile_h = static_cast<int32_t>(tile_dims[1]);
 
-  // Get thread-local buffers
-  auto& buffers = GetBuffers();
-
-  // RGBA decode buffer (reused across tiles in this thread)
-  const size_t rgba_size = tile_w * tile_h * sizeof(uint32_t);
-  uint32_t* rgba_buffer =
-      reinterpret_cast<uint32_t*>(buffers.GetTileBuffer(rgba_size));
-
-  // RGB output buffer (reused across tiles in this thread)
-  const size_t rgb_size = tile_w * tile_h * 3;
-  uint8_t* rgb_buffer = buffers.GetCropBuffer(rgb_size);
+  // RGBA decode scratch, reused across tiles in this thread.
+  static thread_local std::vector<uint32_t> rgba;
+  rgba.resize(static_cast<size_t>(tile_w) * tile_h);
 
   // Reads of the same file run in parallel: the iSyntax decoder locks its
   // cache only while it bookkeeps.
   AIFOCORE_RETURN_IF_ERROR(context.GetIsyntaxFile().ReadTile(
-      op.level, op.tile_coord.x, op.tile_coord.y,
-      std::span<uint32_t>(rgba_buffer, tile_w * tile_h),
+      op.level, op.tile_coord.x, op.tile_coord.y, std::span<uint32_t>(rgba),
       isyntax::PixelFormat::kRgba));
 
-  // Convert RGBA to RGB in pooled buffer
-  CopyRgbaToRgb(rgba_buffer, rgb_buffer, tile_w, tile_h);
+  // The tile's RGB pixels, in a recycled buffer.
+  std::vector<uint8_t> rgb = readers::TileBufferPool::Take();
+  rgb.resize(static_cast<size_t>(tile_w) * tile_h * 3);
+  CopyRgbaToRgb(rgba.data(), rgb.data(), tile_w, tile_h);
 
-  return DecodedTileData{std::span<const uint8_t>(rgb_buffer, rgb_size),
-                         static_cast<uint32_t>(tile_w),
-                         static_cast<uint32_t>(tile_h), 3};
+  return CachedTileData(
+      std::move(rgb),
+      {static_cast<uint32_t>(tile_w), static_cast<uint32_t>(tile_h)}, 3);
 }
 
 }  // namespace fastslide
