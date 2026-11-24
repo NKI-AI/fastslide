@@ -23,6 +23,7 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "aifocore/status/result.h"
 #include "fastslide/runtime/cache_interface.h"
@@ -102,8 +103,14 @@ class LRUTileCache : public ITileCache {
     std::list<TileKey>::iterator lru_it;
   };
 
-  /// @brief Evict least recently used tile
-  void EvictLru();
+  /// Tiles removed while `mutex_` is held. Callers declare it before taking
+  /// the lock, so the tiles are destroyed after the lock is released: freeing
+  /// a large tile can take a while, and other threads should not wait for it.
+  using Released = std::vector<std::shared_ptr<CachedTileData>>;
+
+  /// @brief Evict least recently used tiles until at most `target_bytes` are
+  /// held. Requires `mutex_`; the evicted tiles go to `released`.
+  void EvictToLocked(size_t target_bytes, Released& released);
 
   size_t capacity_bytes_;
   size_t current_size_bytes_;
