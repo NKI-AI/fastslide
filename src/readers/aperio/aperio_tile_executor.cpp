@@ -106,41 +106,29 @@ aifocore::Status AperioTileExecutor::ExecuteTileOperation(
     const core::TileReadOp& operation, const AperioExecContext& context,
     const TiffAccessParams& params, runtime::Canvas& writer,
     std::mutex& writer_mutex) {
-  auto decoded_or = ReadWithCacheDecoded(operation, context, params);
+  auto tile_or = ReadTile(operation, context, params);
 
-  std::span<const uint8_t> pixel_data;
-  uint32_t paint_w = params.tile_width;
-  uint32_t paint_h = params.tile_height;
-  uint32_t paint_channels = static_cast<uint32_t>(params.samples_per_pixel);
-
-  if (!decoded_or.ok()) {
-    if (decoded_or.status().code() == aifocore::StatusCode::kDataLoss) {
-      const size_t full_tile_bytes = static_cast<size_t>(params.tile_width) *
+  aifocore::Status write_status;
+  if (tile_or.ok()) {
+    const TileHandle& tile = *tile_or;
+    write_status = readers::simpletiff_exec::PaintTileMaybeLocked(
+        writer, operation, tile->data, tile->size[0], tile->size[1],
+        tile->channels, writer_mutex);
+  } else if (tile_or.status().code() == aifocore::StatusCode::kDataLoss) {
+    // A tile with lost data reads as black.
+    const std::vector<uint8_t> zeros(static_cast<size_t>(params.tile_width) *
                                      params.tile_height *
-                                     params.samples_per_pixel;
-      uint8_t* zeros =
-          TiffBasedTileExecutor<AperioTileExecutor>::GetBuffers().GetCropBuffer(
-              full_tile_bytes);
-      std::memset(zeros, 0, full_tile_bytes);
-      pixel_data = std::span<const uint8_t>(zeros, full_tile_bytes);
-    } else {
-      std::cerr << aifocore::fmt::format(
-          "Failed to read/decode tile at ({}, {}) in {}: {}\n",
-          operation.tile_coord.x, operation.tile_coord.y, context.GetFilename(),
-          decoded_or.status().ToString());
-      return aifocore::Status::OkStatus();  // Continue processing other tiles
-    }
+                                     params.samples_per_pixel);
+    write_status = readers::simpletiff_exec::PaintTileMaybeLocked(
+        writer, operation, zeros, params.tile_width, params.tile_height,
+        static_cast<uint32_t>(params.samples_per_pixel), writer_mutex);
   } else {
-    const DecodedTileData& decoded = *decoded_or;
-    pixel_data = decoded.data;
-    paint_w = decoded.width;
-    paint_h = decoded.height;
-    paint_channels = decoded.channels;
+    std::cerr << aifocore::fmt::format(
+        "Failed to read/decode tile at ({}, {}) in {}: {}\n",
+        operation.tile_coord.x, operation.tile_coord.y, context.GetFilename(),
+        tile_or.status().ToString());
+    return aifocore::Status::OkStatus();  // Continue processing other tiles
   }
-
-  auto write_status = readers::simpletiff_exec::PaintTileMaybeLocked(
-      writer, operation, pixel_data, paint_w, paint_h, paint_channels,
-      writer_mutex);
 
   if (!write_status.ok()) {
     std::cerr << "Failed to write tile: " << write_status.ToString();
@@ -160,13 +148,12 @@ runtime::TileKey AperioTileExecutor::MakeCacheKey(
                           operation.tile_coord.x, operation.tile_coord.y);
 }
 
-aifocore::Result<DecodedTileData> AperioTileExecutor::ReadTileFromDisk(
+aifocore::Result<CachedTileData> AperioTileExecutor::DecodeTile(
     const core::TileReadOp& operation, const AperioExecContext& context,
     const TiffAccessParams& params) {
   // Each worker thread uses its own DecodeContext for decompression. This is
   // thread-safe and avoids per-tile allocations.
   static thread_local simpletiff::DecodeContext decode_ctx;
-  auto& tile_buffer = GetBuffers().tile_buffer;
 
   const auto& tiff_index = context.GetTiffIndex();
   // operation.byte_offset is the linear tile index for tiled TIFFs and the
@@ -177,21 +164,19 @@ aifocore::Result<DecodedTileData> AperioTileExecutor::ReadTileFromDisk(
       static_cast<uint32_t>(operation.byte_offset);
 
   AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
-                            readers::simpletiff_decode::ReadTileOrStrip(
+                            readers::simpletiff_decode::DecodeTileOrStrip(
                                 tiff_index, static_cast<uint32_t>(params.page),
-                                tile_or_strip_index, decode_ctx, tile_buffer));
+                                tile_or_strip_index, decode_ctx));
 
   // For tiled storage we expect the decoded tile to match the planned tile
   // geometry. Strip storage produces strip-shaped buffers, so don't compare.
-  if (params.is_tiled && (decoded.width != params.tile_width ||
-                          decoded.height != params.tile_height)) {
+  if (params.is_tiled && (decoded.size[0] != params.tile_width ||
+                          decoded.size[1] != params.tile_height)) {
     std::cerr << "Tile dimension mismatch: expected " << params.tile_width
-              << "x" << params.tile_height << ", got " << decoded.width << "x"
-              << decoded.height << "\n";
+              << "x" << params.tile_height << ", got " << decoded.size[0] << "x"
+              << decoded.size[1] << "\n";
   }
-
-  return DecodedTileData{decoded.data, decoded.width, decoded.height,
-                         decoded.channels};
+  return decoded;
 }
 
 }  // namespace fastslide

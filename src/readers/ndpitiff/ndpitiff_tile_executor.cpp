@@ -135,23 +135,18 @@ aifocore::Result<CachedTileData> NdpiTiffTileExecutor::DecodeTile(
                           {decoded.width, decoded.height}, 3);
   }
 
-  // The decoded pixels; they become the tile. A recycled buffer (see
-  // TileBufferPool) already has the right size for this level's tiles.
-  std::vector<uint8_t> pixels = readers::TileBufferPool::Take();
-
   const bool maybe_headerless_ndpi_jpeg =
       (page_header.storage == simpletiff::Storage::kTiles) &&
       (page_header.compression == kCompressionJpeg);
 
   if (!maybe_headerless_ndpi_jpeg) {
-    // The view covers all of `pixels`.
-    AIFOCORE_ASSIGN_OR_RETURN(
-        const auto view,
-        readers::simpletiff_decode::ReadTileOrStrip(
-            tiff_index, op.source_id, tile_index, decode_ctx, pixels));
-    return CachedTileData(std::move(pixels), {view.width, view.height},
-                          view.channels);
+    return readers::simpletiff_decode::DecodeTileOrStrip(
+        tiff_index, op.source_id, tile_index, decode_ctx);
   }
+
+  // The decoded pixels; they become the tile. A recycled buffer (see
+  // TileBufferPool) already has the right size for this level's tiles.
+  std::vector<uint8_t> pixels = readers::TileBufferPool::Take();
 
   // Headerless NDPI JPEG path: each tile stores raw entropy-coded scan data
   // sharing a JPEG header template with the rest of the level.

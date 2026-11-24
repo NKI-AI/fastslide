@@ -43,14 +43,14 @@ class BifTileExecutor : public CachedTileExecutor<BifTileExecutor> {
  private:
   // Paints a single sub-rect operation from an already-decoded physical tile.
   static aifocore::Status PaintOp(const core::TileReadOp& op,
-                                  const DecodedTileData& decoded,
+                                  const CachedTileData& tile,
                                   runtime::Canvas& writer,
                                   std::mutex& writer_mutex);
 
   static TileKey MakeCacheKey(const core::TileReadOp& op,
                               const BifExecContext& context);
 
-  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
+  static aifocore::Result<CachedTileData> DecodeTile(
       const core::TileReadOp& op, const BifExecContext& context);
 };
 

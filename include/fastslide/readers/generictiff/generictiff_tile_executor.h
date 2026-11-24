@@ -25,7 +25,7 @@ class GenericTiffTileExecutor
                                        const GenericTiffExecContext& context);
 
   /// @brief Decode a stored tile or strip into the thread-local buffer.
-  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
+  static aifocore::Result<CachedTileData> DecodeTile(
       const core::TileReadOp& operation, const GenericTiffExecContext& context);
 };
 }  // namespace fastslide

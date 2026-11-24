@@ -125,23 +125,14 @@ class MultiChannelTiffTileExecutor
                             static_cast<uint32_t>(operation.byte_offset), 0);
   }
 
-  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
+  static aifocore::Result<CachedTileData> DecodeTile(
       const core::TileReadOp& operation, const ExecContext& context,
       const simpletiff::TiffIndex& tiff_index, const PageState& page_state) {
     (void)context;
-    auto& tile_buffer = Base::GetBuffers().tile_buffer;
     static thread_local simpletiff::DecodeContext decode_ctx;
-
-    const uint32_t page_index = page_state.current_page;
-    const uint32_t tile_or_strip_index =
-        static_cast<uint32_t>(operation.byte_offset);
-
-    AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
-                              readers::simpletiff_decode::ReadTileOrStrip(
-                                  tiff_index, page_index, tile_or_strip_index,
-                                  decode_ctx, tile_buffer));
-    return DecodedTileData{decoded.data, decoded.width, decoded.height,
-                           decoded.channels};
+    return readers::simpletiff_decode::DecodeTileOrStrip(
+        tiff_index, page_state.current_page,
+        static_cast<uint32_t>(operation.byte_offset), decode_ctx);
   }
 
  private:
@@ -156,11 +147,11 @@ class MultiChannelTiffTileExecutor
         UpdatePageState(page, level_info, tiff_index, page_state));
 
     AIFOCORE_ASSIGN_OR_RETURN(
-        const auto decoded_tile,
-        Base::ReadWithCacheDecoded(operation, context, tiff_index, page_state));
+        const TileHandle tile,
+        Base::ReadTile(operation, context, tiff_index, page_state));
     return readers::simpletiff_exec::PaintTileMaybeLocked(
-        writer, operation, decoded_tile.data, decoded_tile.width,
-        decoded_tile.height, decoded_tile.channels, writer_mutex);
+        writer, operation, tile->data, tile->size[0], tile->size[1],
+        tile->channels, writer_mutex);
   }
 
   static aifocore::Status UpdatePageState(
