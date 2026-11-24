@@ -132,7 +132,7 @@ std::vector<uint8_t> MakeFillValueChunk(const OmeZarrLevelInfo& level) {
 /// Layout matches the original Zarr chunk_shape with axes in the array's
 /// declared order. For trivially-transposed chunks (the only form we accept)
 /// the `(c, y, x)` slicing is row-major along the last two axes. `data` points
-/// into the tile cache or the executor's thread-local decode buffer.
+/// into a decoded chunk, which the caller keeps alive.
 struct DecodedChunk {
   std::span<const uint8_t> data;
   uint64_t chunk_y = 0;
@@ -251,16 +251,6 @@ aifocore::Status OmeZarrTileExecutor::ExecutePlan(
     }
   }
 
-  // A chunk can be 100+ MB, and every decode allocates a new buffer anyway, so
-  // do not keep one alive per pool thread after its read is painted.
-  const auto release_decode_buffer = [] {
-    constexpr size_t kKeepBytes = static_cast<size_t>(16) << 20;
-    auto& buffer = GetBuffers().tile_buffer;
-    if (buffer.capacity() > kKeepBytes) {
-      std::vector<uint8_t>().swap(buffer);
-    }
-  };
-
   return readers::simpletiff_exec::ExecuteOpsWithThreadPoolStopOnError(
       plan, canvas,
       [&](const core::TileReadOp& operation, runtime::Canvas& writer,
@@ -270,13 +260,13 @@ aifocore::Status OmeZarrTileExecutor::ExecutePlan(
         const uint64_t cc = operation.source_id;
 
         // The whole decoded chunk (every channel in it), from the cache or
-        // decoded now and cached. The view stays valid until this thread
-        // reads the next chunk.
+        // decoded now and cached. A chunk can be 100+ MB; without a cache it
+        // is freed when `tile` goes out of scope.
         AIFOCORE_ASSIGN_OR_RETURN(
-            const DecodedTileData decoded,
-            ReadWithCacheDecoded(operation, context, level_index, level));
+            const TileHandle tile,
+            ReadTile(operation, context, level_index, level));
         DecodedChunk chunk;
-        chunk.data = decoded.data;
+        chunk.data = tile->data;
         chunk.chunk_y = cy;
         chunk.chunk_x = cx;
         ComputeStrides(level, &chunk);
@@ -303,7 +293,6 @@ aifocore::Status OmeZarrTileExecutor::ExecutePlan(
 
         if (cc >= slots_by_cc.size()) {
           // Defensive: plan referenced a cc with no requested output slots.
-          release_decode_buffer();
           return aifocore::Status::OkStatus();
         }
 
@@ -328,7 +317,6 @@ aifocore::Status OmeZarrTileExecutor::ExecutePlan(
                                            window_buffer.size()),
                   window_w, window_h, /*tile_channels=*/1, writer_mutex));
         }
-        release_decode_buffer();
         return aifocore::Status::OkStatus();
       });
 }
@@ -350,7 +338,7 @@ runtime::TileKey OmeZarrTileExecutor::MakeCacheKey(
                           static_cast<uint32_t>(cx), encoded_y);
 }
 
-aifocore::Result<DecodedTileData> OmeZarrTileExecutor::ReadTileFromDisk(
+aifocore::Result<CachedTileData> OmeZarrTileExecutor::DecodeTile(
     const core::TileReadOp& operation, const OmeZarrExecContext& context,
     int level_index, const OmeZarrLevelInfo& level) {
   (void)context;
@@ -363,23 +351,20 @@ aifocore::Result<DecodedTileData> OmeZarrTileExecutor::ReadTileFromDisk(
 
   // A chunk missing on disk reads as the array's `fill_value` (Zarr V3
   // spec). Other I/O or decode errors propagate as failures.
-  auto& buffer = GetBuffers().tile_buffer;
+  std::vector<uint8_t> chunk;
   std::error_code ec;
   if (!fs::exists(chunk_path, ec) || ec) {
-    buffer = MakeFillValueChunk(level);
+    chunk = MakeFillValueChunk(level);
   } else {
     AIFOCORE_ASSIGN_OR_RETURN(const auto compressed, ReadFileBytes(chunk_path));
-    AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
+    AIFOCORE_ASSIGN_OR_RETURN(chunk,
                               level.codec_chain.Decode(std::span<const uint8_t>(
                                   compressed.data(), compressed.size())));
-    buffer = std::move(decoded);
   }
-  return DecodedTileData{
-      .data = std::span<const uint8_t>(buffer.data(), buffer.size()),
-      .width = static_cast<uint32_t>(level.chunk_x),
-      .height = static_cast<uint32_t>(level.chunk_y),
-      .channels = static_cast<uint32_t>(level.chunk_c),
-  };
+  return CachedTileData(std::move(chunk),
+                        {static_cast<uint32_t>(level.chunk_x),
+                         static_cast<uint32_t>(level.chunk_y)},
+                        static_cast<uint32_t>(level.chunk_c));
 }
 
 }  // namespace fastslide

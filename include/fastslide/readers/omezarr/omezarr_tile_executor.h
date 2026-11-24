@@ -43,7 +43,7 @@ class OmeZarrTileExecutor : public CachedTileExecutor<OmeZarrTileExecutor> {
                                        int level_index,
                                        const OmeZarrLevelInfo& level);
 
-  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
+  static aifocore::Result<CachedTileData> DecodeTile(
       const core::TileReadOp& operation, const OmeZarrExecContext& context,
       int level_index, const OmeZarrLevelInfo& level);
 };

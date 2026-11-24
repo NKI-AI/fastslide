@@ -51,7 +51,7 @@ class OlympusVsiTileExecutor
                                        const OlympusVsiExecContext& context,
                                        int level_index);
 
-  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
+  static aifocore::Result<CachedTileData> DecodeTile(
       const core::TileReadOp& op, const OlympusVsiExecContext& context,
       int level_index);
 };
