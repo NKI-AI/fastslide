@@ -28,6 +28,7 @@
 #include "fastslide/readers/ndpitiff/ndpitiff_jpeg_header.h"
 #include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/readers/simpletiff_tile_executor_utils.h"
+#include "fastslide/readers/tile_buffer_pool.h"
 #include "fastslide/runtime/decoders/jpeg_xr_decoder.h"
 #include "simpletiff/index.h"
 #include "simpletiff/io_utils.h"
@@ -75,14 +76,9 @@ aifocore::Status NdpiTiffTileExecutor::ExecutePlan(
 aifocore::Status NdpiTiffTileExecutor::ExecuteTileOperation(
     const core::TileReadOp& op, const NdpiTiffExecContext& context,
     runtime::Canvas& writer, std::mutex& writer_mutex) {
-  auto decoded_or = ReadWithCacheDecoded(op, context);
-  if (!decoded_or.ok()) {
-    return decoded_or.status();
-  }
-  const DecodedTileData& decoded = *decoded_or;
-
+  AIFOCORE_ASSIGN_OR_RETURN(const TileHandle tile, ReadTile(op, context));
   return readers::simpletiff_exec::PaintTileMaybeLocked(
-      writer, op, decoded.data, decoded.width, decoded.height, decoded.channels,
+      writer, op, tile->data, tile->size[0], tile->size[1], tile->channels,
       writer_mutex);
 }
 
@@ -97,7 +93,7 @@ TileKey NdpiTiffTileExecutor::MakeCacheKey(const core::TileReadOp& op,
                           op.tile_coord.y);
 }
 
-aifocore::Result<DecodedTileData> NdpiTiffTileExecutor::ReadTileFromDisk(
+aifocore::Result<CachedTileData> NdpiTiffTileExecutor::DecodeTile(
     const core::TileReadOp& op, const NdpiTiffExecContext& context) {
   const auto& tiff_index = context.GetTiffIndex();
   if (op.source_id >= tiff_index.NumPages()) {
@@ -113,9 +109,6 @@ aifocore::Result<DecodedTileData> NdpiTiffTileExecutor::ReadTileFromDisk(
   static thread_local simpletiff::DecodeContext decode_ctx;
   static thread_local std::vector<uint8_t> raw_compressed;
   static thread_local std::vector<uint8_t> patched_header;
-
-  auto& buffers = GetBuffers();
-  auto& decoded_buffer = buffers.tile_buffer;
 
   const uint32_t tile_index = static_cast<uint32_t>(op.byte_offset);
 
@@ -138,14 +131,8 @@ aifocore::Result<DecodedTileData> NdpiTiffTileExecutor::ReadTileFromDisk(
     AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
                               runtime::decoders::DecodeJpegXrToRgb(raw_span));
 
-    decoded_buffer.assign(decoded.rgb.begin(), decoded.rgb.end());
-    return DecodedTileData{
-        .data = std::span<const uint8_t>(decoded_buffer.data(),
-                                         decoded_buffer.size()),
-        .width = decoded.width,
-        .height = decoded.height,
-        .channels = 3,
-    };
+    return CachedTileData(std::move(decoded.rgb),
+                          {decoded.width, decoded.height}, 3);
   }
 
   const bool maybe_headerless_ndpi_jpeg =
@@ -153,17 +140,13 @@ aifocore::Result<DecodedTileData> NdpiTiffTileExecutor::ReadTileFromDisk(
       (page_header.compression == kCompressionJpeg);
 
   if (!maybe_headerless_ndpi_jpeg) {
-    AIFOCORE_ASSIGN_OR_RETURN(
-        auto decoded_view,
-        readers::simpletiff_decode::ReadTileOrStrip(
-            tiff_index, op.source_id, tile_index, decode_ctx, decoded_buffer));
-    return DecodedTileData{
-        .data = decoded_view.data,
-        .width = decoded_view.width,
-        .height = decoded_view.height,
-        .channels = decoded_view.channels,
-    };
+    return readers::simpletiff_decode::DecodeTileOrStrip(
+        tiff_index, op.source_id, tile_index, decode_ctx);
   }
+
+  // The decoded pixels; they become the tile. A recycled buffer (see
+  // TileBufferPool) already has the right size for this level's tiles.
+  std::vector<uint8_t> pixels = readers::TileBufferPool::Take();
 
   // Headerless NDPI JPEG path: each tile stores raw entropy-coded scan data
   // sharing a JPEG header template with the rest of the level.
@@ -236,20 +219,17 @@ aifocore::Result<DecodedTileData> NdpiTiffTileExecutor::ReadTileFromDisk(
   int decoded_w = 0;
   int decoded_h = 0;
   if (!simpletiff::DecodeJpeg(decode_ctx, jpeg_stream_span, decoded_w,
-                              decoded_h, decoded_buffer, jpeg_options)) {
+                              decoded_h, pixels, jpeg_options)) {
     return AIFOCORE_MAKE_STATUS(
         aifocore::StatusCode::kInternal,
         aifocore::fmt::format("NDPI JPEG decode failed (page {} tile {})",
                               op.source_id, tile_index));
   }
 
-  return DecodedTileData{
-      .data = std::span<const uint8_t>(decoded_buffer.data(),
-                                       decoded_buffer.size()),
-      .width = static_cast<uint32_t>(decoded_w),
-      .height = static_cast<uint32_t>(decoded_h),
-      .channels = tile_channels,
-  };
+  return CachedTileData(
+      std::move(pixels),
+      {static_cast<uint32_t>(decoded_w), static_cast<uint32_t>(decoded_h)},
+      tile_channels);
 }
 
 }  // namespace fastslide

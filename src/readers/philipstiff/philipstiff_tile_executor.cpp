@@ -18,7 +18,6 @@
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/readers/simpletiff_tile_executor_utils.h"
-#include "fastslide/readers/tiff_based_tile_executor.h"
 #include "fastslide/runtime/tile_writer.h"
 #include "simpletiff/index.h"
 #include "simpletiff/reader.h"
@@ -51,11 +50,10 @@ aifocore::Status PhilipsTiffTileExecutor::ExecutePlan(
         const uint32_t tile_channels =
             static_cast<uint32_t>(page_header.samples_per_pixel);
 
-        AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
-                                  ReadWithCacheDecoded(operation, context));
-
+        AIFOCORE_ASSIGN_OR_RETURN(const TileHandle tile,
+                                  ReadTile(operation, context));
         return readers::simpletiff_exec::PaintTileMaybeLocked(
-            writer_ref, operation, decoded.data, decoded.width, decoded.height,
+            writer_ref, operation, tile->data, tile->size[0], tile->size[1],
             tile_channels, writer_mutex);
       });
 }
@@ -69,17 +67,12 @@ runtime::TileKey PhilipsTiffTileExecutor::MakeCacheKey(
                           static_cast<uint32_t>(operation.byte_offset), 0);
 }
 
-aifocore::Result<DecodedTileData> PhilipsTiffTileExecutor::ReadTileFromDisk(
+aifocore::Result<CachedTileData> PhilipsTiffTileExecutor::DecodeTile(
     const core::TileReadOp& operation, const PhilipsTiffExecContext& context) {
   static thread_local simpletiff::DecodeContext decode_ctx;
-  auto& decoded_buffer = GetBuffers().tile_buffer;
-  AIFOCORE_ASSIGN_OR_RETURN(auto decoded,
-                            readers::simpletiff_decode::ReadTileOrStrip(
-                                context.tiff_index, operation.source_id,
-                                static_cast<uint32_t>(operation.byte_offset),
-                                decode_ctx, decoded_buffer));
-  return DecodedTileData{decoded.data, decoded.width, decoded.height,
-                         decoded.channels};
+  return readers::simpletiff_decode::DecodeTileOrStrip(
+      context.tiff_index, operation.source_id,
+      static_cast<uint32_t>(operation.byte_offset), decode_ctx);
 }
 
 }  // namespace fastslide

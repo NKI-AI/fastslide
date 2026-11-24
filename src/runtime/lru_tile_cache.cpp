@@ -19,6 +19,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <utility>
 
 #include "aifocore/status/result.h"
 
@@ -67,17 +68,17 @@ void LRUTileCache::Put(const TileKey& key,
     return;  // Don't cache null tiles
   }
 
+  Released released;  // destroyed after the lock is released
   std::lock_guard<std::mutex> lock(mutex_);
+  const size_t tile_size = tile->GetMemoryUsage();
 
   // Check if already exists
   auto iter = cache_.find(key);
   if (iter != cache_.end()) {
     // Update existing entry
-    size_t old_size = iter->second.tile->GetMemoryUsage();
-    size_t new_size = tile->GetMemoryUsage();
-
-    iter->second.tile = tile;
-    current_size_bytes_ = current_size_bytes_ - old_size + new_size;
+    current_size_bytes_ =
+        current_size_bytes_ - iter->second.tile->GetMemoryUsage() + tile_size;
+    released.push_back(std::exchange(iter->second.tile, std::move(tile)));
 
     // Move to front of LRU list
     lru_list_.erase(iter->second.lru_it);
@@ -85,13 +86,9 @@ void LRUTileCache::Put(const TileKey& key,
     iter->second.lru_it = lru_list_.begin();
 
     // Evict if needed after update
-    while (current_size_bytes_ > capacity_bytes_ && !lru_list_.empty()) {
-      EvictLru();
-    }
+    EvictToLocked(capacity_bytes_, released);
     return;
   }
-
-  size_t tile_size = tile->GetMemoryUsage();
 
   // Don't cache if single tile is larger than capacity
   if (tile_size > capacity_bytes_) {
@@ -99,39 +96,37 @@ void LRUTileCache::Put(const TileKey& key,
   }
 
   // Evict if needed before adding
-  while (current_size_bytes_ + tile_size > capacity_bytes_ &&
-         !lru_list_.empty()) {
-    EvictLru();
-  }
+  EvictToLocked(capacity_bytes_ - tile_size, released);
 
   // Add new entry
   lru_list_.push_front(key);
-  cache_[key] =
-      CacheEntry{.key = key, .tile = tile, .lru_it = lru_list_.begin()};
+  cache_[key] = CacheEntry{
+      .key = key, .tile = std::move(tile), .lru_it = lru_list_.begin()};
   current_size_bytes_ += tile_size;
 }
 
 void LRUTileCache::Clear() {
+  // Swapped out under the lock and destroyed after it is released.
+  decltype(cache_) cleared;
+  decltype(lru_list_) cleared_lru;
   std::lock_guard<std::mutex> lock(mutex_);
-  cache_.clear();
-  lru_list_.clear();
+  cache_.swap(cleared);
+  lru_list_.swap(cleared_lru);
   current_size_bytes_ = 0;
   hits_ = 0;
   misses_ = 0;
 }
 
-void LRUTileCache::EvictLru() {
-  if (lru_list_.empty()) {
-    return;
+void LRUTileCache::EvictToLocked(size_t target_bytes, Released& released) {
+  while (current_size_bytes_ > target_bytes && !lru_list_.empty()) {
+    auto it = cache_.find(lru_list_.back());
+    if (it != cache_.end()) {
+      current_size_bytes_ -= it->second.tile->GetMemoryUsage();
+      released.push_back(std::move(it->second.tile));
+      cache_.erase(it);
+    }
+    lru_list_.pop_back();
   }
-
-  TileKey oldest_key = lru_list_.back();
-  auto it = cache_.find(oldest_key);
-  if (it != cache_.end()) {
-    current_size_bytes_ -= it->second.tile->GetMemoryUsage();
-    cache_.erase(it);
-  }
-  lru_list_.pop_back();
 }
 
 size_t LRUTileCache::GetSize() const {
@@ -172,14 +167,13 @@ aifocore::Status LRUTileCache::SetCapacityBytes(size_t capacity_bytes) {
                                 "Cache capacity must be greater than 0");
   }
 
+  Released released;  // destroyed after the lock is released
   std::lock_guard<std::mutex> lock(mutex_);
 
   capacity_bytes_ = capacity_bytes;
 
   // Evict if new capacity is smaller
-  while (current_size_bytes_ > capacity_bytes_ && !lru_list_.empty()) {
-    EvictLru();
-  }
+  EvictToLocked(capacity_bytes_, released);
 
   return aifocore::Status::OkStatus();
 }

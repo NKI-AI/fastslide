@@ -194,6 +194,7 @@ fastslide_sources = [
   # readers (shared)
   'src/readers/simpletiff_plan_builder_utils.cpp',
   'src/readers/tiff_based_reader.cpp',
+  'src/readers/tile_buffer_pool.cpp',
   'src/readers/tiff_quickhash.cpp',
   # runtime
   'src/runtime/decoders/bmp_decoder.cpp',

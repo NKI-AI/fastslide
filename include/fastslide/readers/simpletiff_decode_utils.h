@@ -21,11 +21,14 @@
 #include <limits>
 #include <span>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "aifocore/status/result.h"
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/image.h"
+#include "fastslide/readers/tile_buffer_pool.h"
+#include "fastslide/runtime/cache_interface.h"
 #include "simpletiff/index.h"
 #include "simpletiff/reader.h"
 
@@ -217,6 +220,23 @@ inline aifocore::Result<DecodedInterleavedView> ReadTileOrStrip(
       .height = static_cast<uint32_t>(decoded_h),
       .channels = static_cast<uint32_t>(page_header.samples_per_pixel),
   };
+}
+
+/// @brief Read and decode one tile or strip into a tile that owns its pixels.
+///
+/// Like `ReadTileOrStrip`, but decodes into a buffer from `TileBufferPool`
+/// that becomes the tile, so a tile cache can keep it without copying.
+inline aifocore::Result<runtime::CachedTileData> DecodeTileOrStrip(
+    const simpletiff::TiffIndex& tiff_index, uint32_t page_index,
+    uint32_t tile_or_strip_index, simpletiff::DecodeContext& decode_ctx) {
+  std::vector<uint8_t> pixels = TileBufferPool::Take();
+  AIFOCORE_ASSIGN_OR_RETURN(
+      const auto view,
+      ReadTileOrStrip(tiff_index, page_index, tile_or_strip_index, decode_ctx,
+                      pixels));
+  // The view covers all of `pixels`.
+  return runtime::CachedTileData(std::move(pixels), {view.width, view.height},
+                                 view.channels);
 }
 
 /// @brief Crop an interleaved ROI from a decoded tile/strip into `dst`.

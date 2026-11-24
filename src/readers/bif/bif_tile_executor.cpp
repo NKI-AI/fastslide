@@ -142,7 +142,7 @@ aifocore::Status BifTileExecutor::ExecutePlan(const core::TilePlan& plan,
       return;
     }
 
-    auto tile_or = ReadWithCacheShared(first, context);
+    auto tile_or = ReadTile(first, context);
     if (!tile_or.ok()) {
       record_error(tile_or.status());
       return;
@@ -184,21 +184,15 @@ aifocore::Status BifTileExecutor::ExecutePlan(const core::TilePlan& plan,
     if (!tile.paintable) {
       continue;
     }
-    const DecodedTileData view{
-        .data = std::span<const uint8_t>(tile.tile->data),
-        .width = tile.tile->size[0],
-        .height = tile.tile->size[1],
-        .channels = tile.tile->channels,
-    };
     AIFOCORE_RETURN_IF_ERROR(
-        PaintOp(plan.operations[op_idx], view, writer, writer_mutex));
+        PaintOp(plan.operations[op_idx], *tile.tile, writer, writer_mutex));
   }
 
   return aifocore::Status::OkStatus();
 }
 
 aifocore::Status BifTileExecutor::PaintOp(const core::TileReadOp& op,
-                                          const DecodedTileData& decoded,
+                                          const CachedTileData& tile,
                                           runtime::Canvas& writer,
                                           std::mutex& writer_mutex) {
   // Clamp the source sub-rectangle to the decoded tile (edge tiles in higher
@@ -207,11 +201,11 @@ aifocore::Status BifTileExecutor::PaintOp(const core::TileReadOp& op,
   core::TileReadOp clamped = op;
   const auto src_x = static_cast<uint32_t>(clamped.transform.source.x);
   const auto src_y = static_cast<uint32_t>(clamped.transform.source.y);
-  if (src_x >= decoded.width || src_y >= decoded.height) {
+  if (src_x >= tile.size[0] || src_y >= tile.size[1]) {
     return aifocore::Status::OkStatus();
   }
-  const uint32_t max_w = decoded.width - src_x;
-  const uint32_t max_h = decoded.height - src_y;
+  const uint32_t max_w = tile.size[0] - src_x;
+  const uint32_t max_h = tile.size[1] - src_y;
   const uint32_t clamped_w =
       std::min<uint32_t>(clamped.transform.source.width, max_w);
   const uint32_t clamped_h =
@@ -225,8 +219,8 @@ aifocore::Status BifTileExecutor::PaintOp(const core::TileReadOp& op,
   clamped.transform.dest.height = clamped_h;
 
   return readers::simpletiff_exec::PaintTileMaybeLocked(
-      writer, clamped, decoded.data, decoded.width, decoded.height,
-      decoded.channels, writer_mutex);
+      writer, clamped, tile.data, tile.size[0], tile.size[1], tile.channels,
+      writer_mutex);
 }
 
 TileKey BifTileExecutor::MakeCacheKey(const core::TileReadOp& op,
@@ -238,22 +232,12 @@ TileKey BifTileExecutor::MakeCacheKey(const core::TileReadOp& op,
                           static_cast<uint32_t>(op.byte_offset), 0U);
 }
 
-aifocore::Result<DecodedTileData> BifTileExecutor::ReadTileFromDisk(
+aifocore::Result<CachedTileData> BifTileExecutor::DecodeTile(
     const core::TileReadOp& op, const BifExecContext& context) {
-  const auto& tiff = context.Tiff();
   static thread_local simpletiff::DecodeContext decode_ctx;
-  auto& decoded_buffer = GetBuffers().tile_buffer;
-
-  AIFOCORE_ASSIGN_OR_RETURN(
-      auto view, readers::simpletiff_decode::ReadTileOrStrip(
-                     tiff, op.source_id, static_cast<uint32_t>(op.byte_offset),
-                     decode_ctx, decoded_buffer));
-  return DecodedTileData{
-      .data = view.data,
-      .width = view.width,
-      .height = view.height,
-      .channels = view.channels,
-  };
+  return readers::simpletiff_decode::DecodeTileOrStrip(
+      context.Tiff(), op.source_id, static_cast<uint32_t>(op.byte_offset),
+      decode_ctx);
 }
 
 }  // namespace fastslide

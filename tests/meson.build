@@ -32,6 +32,7 @@ if gtest_dep.found()
     'global_cache_manager_test' : '../src/runtime/global_cache_manager_test.cpp',
     'inflight_decodes_test' : '../src/readers/inflight_decodes_test.cpp',
     'cached_tile_executor_test' : '../src/readers/cached_tile_executor_test.cpp',
+    'tile_buffer_pool_test' : '../src/readers/tile_buffer_pool_test.cpp',
     'j2k_decoder_test' : '../src/runtime/decoders/j2k_decoder_test.cpp',
     'read_parallelism_test' : '../src/readers/read_parallelism_test.cpp',
     'cache_interface_test' : '../src/runtime/cache_interface_test.cpp',

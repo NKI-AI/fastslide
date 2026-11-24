@@ -40,7 +40,7 @@ class PhilipsTiffTileExecutor
                                        const PhilipsTiffExecContext& context);
 
   /// @brief Decode a stored tile or strip into the thread-local buffer.
-  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
+  static aifocore::Result<CachedTileData> DecodeTile(
       const core::TileReadOp& operation, const PhilipsTiffExecContext& context);
 };
 

@@ -28,6 +28,7 @@
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/olympusvsi/olympusvsi_ets.h"
 #include "fastslide/readers/simpletiff_tile_executor_utils.h"
+#include "fastslide/readers/tile_buffer_pool.h"
 #include "fastslide/runtime/cache_interface.h"
 #include "fastslide/runtime/decoders/j2k_decoder.h"
 #include "fastslide/runtime/decoders/jpeg_decoder.h"
@@ -132,10 +133,10 @@ aifocore::Status OlympusVsiTileExecutor::ExecutePlan(
 
         // The full decoded tile, from the cache or decoded now (and then
         // cached, so reads of other crops of it do not decode it again).
-        // The span stays valid until this thread reads the next tile.
-        AIFOCORE_ASSIGN_OR_RETURN(
-            const DecodedTileData tile,
-            ReadWithCacheDecoded(op, context, level_index));
+        AIFOCORE_ASSIGN_OR_RETURN(const TileHandle tile,
+                                  ReadTile(op, context, level_index));
+        const uint32_t tile_w = tile->size[0];
+        const uint32_t tile_h = tile->size[1];
 
         // Sanity check: the decoded tile must match the level's declared
         // tile geometry. Border tiles legitimately come back as
@@ -144,20 +145,19 @@ aifocore::Status OlympusVsiTileExecutor::ExecutePlan(
         // equal.
         const uint32_t src_w = op.transform.source.width;
         const uint32_t src_h = op.transform.source.height;
-        if (tile.width < op.transform.source.x + src_w ||
-            tile.height < op.transform.source.y + src_h) {
+        if (tile_w < op.transform.source.x + src_w ||
+            tile_h < op.transform.source.y + src_h) {
           return AIFOCORE_MAKE_STATUS(
               aifocore::StatusCode::kInternal,
               aifocore::fmt::format(
                   "Olympus VSI: decoded tile {}x{} too small for crop "
                   "({},{},{}x{})",
-                  tile.width, tile.height,
-                  static_cast<int>(op.transform.source.x),
+                  tile_w, tile_h, static_cast<int>(op.transform.source.x),
                   static_cast<int>(op.transform.source.y), src_w, src_h));
         }
 
         return readers::simpletiff_exec::PaintTileMaybeLocked(
-            writer, paint_op, tile.data, tile.width, tile.height, tile.channels,
+            writer, paint_op, tile->data, tile_w, tile_h, tile->channels,
             writer_mutex);
       });
 }
@@ -175,7 +175,7 @@ runtime::TileKey OlympusVsiTileExecutor::MakeCacheKey(
                           static_cast<uint32_t>(op.byte_offset >> 32));
 }
 
-aifocore::Result<DecodedTileData> OlympusVsiTileExecutor::ReadTileFromDisk(
+aifocore::Result<CachedTileData> OlympusVsiTileExecutor::DecodeTile(
     const core::TileReadOp& op, const OlympusVsiExecContext& context,
     int level_index) {
   const bool is_16bit = context.pixel_type == TilePixelType::kUInt16;
@@ -200,7 +200,9 @@ aifocore::Result<DecodedTileData> OlympusVsiTileExecutor::ReadTileFromDisk(
   // The Canvas is already configured by the plan builder to match
   // (kUInt8/kUInt16, contiguous or separate planar), so we pass the
   // raw decoded bytes through.
-  auto& tile_bytes = GetBuffers().tile_buffer;
+  // The tile's pixels: a pooled buffer for the copies below, or the decoder's
+  // own buffer.
+  std::vector<uint8_t> tile_bytes;
   uint32_t tile_w = 0;
   uint32_t tile_h = 0;
   uint32_t tile_channels = 0;
@@ -228,6 +230,7 @@ aifocore::Result<DecodedTileData> OlympusVsiTileExecutor::ReadTileFromDisk(
               compressed.size(), expected, tile_w, tile_h, tile_channels,
               bytes_per_sample));
     }
+    tile_bytes = readers::TileBufferPool::Take();
     tile_bytes.assign(
         compressed.begin(),
         compressed.begin() + static_cast<std::ptrdiff_t>(expected));
@@ -258,18 +261,14 @@ aifocore::Result<DecodedTileData> OlympusVsiTileExecutor::ReadTileFromDisk(
     // configured for ``kUInt16`` so it consumes 2 bytes per sample in
     // host endianness, matching the decoder output.
     const size_t byte_count = decoded.rgb.size() * sizeof(uint16_t);
+    tile_bytes = readers::TileBufferPool::Take();
     tile_bytes.resize(byte_count);
     if (byte_count > 0) {
       std::memcpy(tile_bytes.data(), decoded.rgb.data(), byte_count);
     }
   }
 
-  return DecodedTileData{
-      .data = std::span<const uint8_t>(tile_bytes.data(), tile_bytes.size()),
-      .width = tile_w,
-      .height = tile_h,
-      .channels = tile_channels,
-  };
+  return CachedTileData(std::move(tile_bytes), {tile_w, tile_h}, tile_channels);
 }
 
 }  // namespace fastslide::formats::olympusvsi

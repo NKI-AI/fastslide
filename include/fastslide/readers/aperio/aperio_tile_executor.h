@@ -99,7 +99,7 @@ class AperioTileExecutor : public CachedTileExecutor<AperioTileExecutor> {
                               const TiffAccessParams& params);
 
   /// @brief Read and decode a single TIFF tile/strip (called on cache miss)
-  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
+  static aifocore::Result<CachedTileData> DecodeTile(
       const core::TileReadOp& op, const AperioExecContext& context,
       const TiffAccessParams& params);
 };

@@ -81,8 +81,9 @@ struct CachedTileData {
                  aifocore::Size<uint32_t, 2> tile_size, uint32_t num_channels)
       : data(std::move(tile_data)), size(tile_size), channels(num_channels) {}
 
-  /// @brief Get memory usage in bytes
-  [[nodiscard]] size_t GetMemoryUsage() const { return data.size(); }
+  /// @brief Bytes the tile holds: the pixel buffer's capacity, which can
+  /// exceed its size when the buffer was allocated for a larger tile.
+  [[nodiscard]] size_t GetMemoryUsage() const { return data.capacity(); }
 };
 
 /// @brief Abstract tile cache interface

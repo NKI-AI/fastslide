@@ -41,7 +41,7 @@ struct FakeContext {
 // decodes.
 class FakeExecutor : public CachedTileExecutor<FakeExecutor> {
  public:
-  using CachedTileExecutor<FakeExecutor>::ReadWithCacheShared;
+  using CachedTileExecutor<FakeExecutor>::ReadTile;
 
   static inline int decodes = 0;
 
@@ -50,12 +50,34 @@ class FakeExecutor : public CachedTileExecutor<FakeExecutor> {
     return runtime::TileKey("fake", 0, op.tile_coord.x, op.tile_coord.y);
   }
 
-  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
-      const core::TileReadOp& op, const FakeContext&) {
+  static aifocore::Result<CachedTileData> DecodeTile(const core::TileReadOp& op,
+                                                     const FakeContext&) {
     ++decodes;
-    auto& buffer = GetBuffers().tile_buffer;
-    buffer.assign(2 * 2 * 3, static_cast<uint8_t>(op.tile_coord.x));
-    return DecodedTileData{buffer, 2, 2, 3};
+    return CachedTileData(
+        std::vector<uint8_t>(2 * 2 * 3, static_cast<uint8_t>(op.tile_coord.x)),
+        {2, 2}, 3);
+  }
+};
+
+// Decodes into a buffer it owns (`DecodeTile`), and remembers where its last
+// tile's pixels live.
+class OwningExecutor : public CachedTileExecutor<OwningExecutor> {
+ public:
+  using CachedTileExecutor<OwningExecutor>::ReadTile;
+
+  static inline const uint8_t* last_pixels = nullptr;
+
+  static runtime::TileKey MakeCacheKey(const core::TileReadOp& op,
+                                       const FakeContext&) {
+    return runtime::TileKey("owning", 0, op.tile_coord.x, op.tile_coord.y);
+  }
+
+  static aifocore::Result<CachedTileData> DecodeTile(const core::TileReadOp& op,
+                                                     const FakeContext&) {
+    std::vector<uint8_t> pixels(2 * 2 * 3,
+                                static_cast<uint8_t>(op.tile_coord.x));
+    last_pixels = pixels.data();
+    return CachedTileData(std::move(pixels), {2, 2}, 3);
   }
 };
 
@@ -66,13 +88,13 @@ core::TileReadOp OpAt(uint32_t x) {
   return op;
 }
 
-TEST(CachedTileExecutorTest, SharedReadHandsOutTheCachedTileOnAHit) {
+TEST(CachedTileExecutorTest, ReadTileHandsOutTheCachedTileOnAHit) {
   FakeExecutor::decodes = 0;
   const FakeContext context{std::make_shared<runtime::LRUTileCache>(1 << 20)};
 
-  auto first = FakeExecutor::ReadWithCacheShared(OpAt(7), context);
+  auto first = FakeExecutor::ReadTile(OpAt(7), context);
   ASSERT_TRUE(first.ok()) << first.status().ToString();
-  auto second = FakeExecutor::ReadWithCacheShared(OpAt(7), context);
+  auto second = FakeExecutor::ReadTile(OpAt(7), context);
   ASSERT_TRUE(second.ok()) << second.status().ToString();
 
   EXPECT_EQ(FakeExecutor::decodes, 1);
@@ -84,20 +106,41 @@ TEST(CachedTileExecutorTest, SharedReadHandsOutTheCachedTileOnAHit) {
   EXPECT_EQ((*first)->channels, 3u);
 }
 
-TEST(CachedTileExecutorTest, SharedReadOutlivesTheThreadLocalDecodeBuffer) {
+TEST(CachedTileExecutorTest, ReadTileWithoutACacheGivesIndependentTiles) {
   FakeExecutor::decodes = 0;
   const FakeContext context{nullptr};  // no cache: every read decodes
 
-  auto tile_a = FakeExecutor::ReadWithCacheShared(OpAt(1), context);
+  auto tile_a = FakeExecutor::ReadTile(OpAt(1), context);
   ASSERT_TRUE(tile_a.ok());
-  // Decoding another tile reuses the thread-local buffer; tile_a must not
-  // change.
-  auto tile_b = FakeExecutor::ReadWithCacheShared(OpAt(2), context);
+  // Reading another tile on this thread must not change tile_a.
+  auto tile_b = FakeExecutor::ReadTile(OpAt(2), context);
   ASSERT_TRUE(tile_b.ok());
 
   EXPECT_EQ(FakeExecutor::decodes, 2);
   EXPECT_EQ((*tile_a)->data, std::vector<uint8_t>(12, 1));
   EXPECT_EQ((*tile_b)->data, std::vector<uint8_t>(12, 2));
+}
+
+// A reader that decodes into its own buffer hands that buffer to the cache and
+// to the caller: the decoded pixels are never copied.
+TEST(CachedTileExecutorTest, OwnedDecodeIsCachedAndReturnedWithoutACopy) {
+  auto cache = std::make_shared<runtime::LRUTileCache>(1 << 20);
+  const FakeContext context{cache};
+
+  auto tile = OwningExecutor::ReadTile(OpAt(3), context);
+  ASSERT_TRUE(tile.ok()) << tile.status().ToString();
+  EXPECT_EQ((*tile)->data.data(), OwningExecutor::last_pixels);
+  EXPECT_EQ(cache->Get(OwningExecutor::MakeCacheKey(OpAt(3), context)).get(),
+            tile->get());
+  EXPECT_EQ((*tile)->data, std::vector<uint8_t>(12, 3));
+}
+
+TEST(CachedTileExecutorTest, OwnedDecodeWithoutACacheIsNotCopied) {
+  const FakeContext context{nullptr};
+  auto tile = OwningExecutor::ReadTile(OpAt(4), context);
+  ASSERT_TRUE(tile.ok());
+  EXPECT_EQ((*tile)->data.data(), OwningExecutor::last_pixels);
+  EXPECT_EQ((*tile)->data, std::vector<uint8_t>(12, 4));
 }
 
 }  // namespace

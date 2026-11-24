@@ -1136,5 +1136,52 @@ TEST(LRUTileCacheTest, EmptyTileData) {
   EXPECT_EQ(cache.GetMemoryUsage(), 0);
 }
 
+// Tiles that leave the cache are not kept alive by it: once nobody else holds
+// them, they are freed (after the cache has released its lock).
+TEST(LRUTileCacheTest, ReleasesEvictedReplacedAndClearedTiles) {
+  LRUTileCache cache(2 * kTileSize);
+  const TileKey a{"slide", 0, 0, 0};
+  const TileKey b{"slide", 0, 1, 0};
+  const TileKey c{"slide", 0, 2, 0};
+
+  std::weak_ptr<CachedTileData> evicted;
+  {
+    auto tile = CreateTestTile(256, 256, 3);
+    evicted = tile;
+    cache.Put(a, std::move(tile));
+  }
+  cache.Put(b, CreateTestTile(256, 256, 3));
+  cache.Put(c, CreateTestTile(256, 256, 3));  // evicts a
+  EXPECT_TRUE(evicted.expired());
+
+  std::weak_ptr<CachedTileData> replaced = cache.Get(b);
+  cache.Put(b, CreateTestTile(256, 256, 3));
+  EXPECT_TRUE(replaced.expired());
+
+  std::weak_ptr<CachedTileData> shrunk = cache.Get(b);
+  std::weak_ptr<CachedTileData> cleared = cache.Get(c);
+  ASSERT_TRUE(cache.SetCapacityBytes(kTileSize).ok());  // evicts b (LRU)
+  EXPECT_TRUE(shrunk.expired());
+  EXPECT_FALSE(cleared.expired());
+  cache.Clear();
+  EXPECT_TRUE(cleared.expired());
+  EXPECT_EQ(cache.GetMemoryUsage(), 0);
+}
+
+// The cache counts the memory a tile holds, not only its pixel count.
+TEST(LRUTileCacheTest, CountsTheBufferCapacity) {
+  std::vector<uint8_t> pixels(kTileSize, 7);
+  pixels.reserve(2 * kTileSize);
+  auto tile = std::make_shared<CachedTileData>(
+      std::move(pixels), aifocore::Size<uint32_t, 2>{256, 256}, 3);
+  const size_t held = tile->data.capacity();
+  ASSERT_GE(held, 2 * kTileSize);
+  EXPECT_EQ(tile->GetMemoryUsage(), held);
+
+  LRUTileCache cache(4 * kTileSize);
+  cache.Put(TileKey{"slide", 0, 0, 0}, tile);
+  EXPECT_EQ(cache.GetMemoryUsage(), held);
+}
+
 }  // namespace runtime
 }  // namespace fastslide

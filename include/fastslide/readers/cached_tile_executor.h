@@ -17,47 +17,41 @@
 
 #include <cstdlib>
 #include <memory>
-#include <span>
 #include <utility>
-#include <vector>
 
 #include "aifocore/status/result.h"
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/readers/inflight_decodes.h"
-#include "fastslide/readers/tiff_based_tile_executor.h"
+#include "fastslide/readers/tile_buffer_pool.h"
 #include "fastslide/runtime/cache_interface.h"
 
 namespace fastslide {
 
-/// @brief Structure to hold decoded tile data and metadata
-struct DecodedTileData {
-  std::span<const uint8_t> data;
-  uint32_t width;
-  uint32_t height;
-  uint32_t channels;
-};
+/// @brief A decoded tile shared read-only by the cache and the readers. It owns
+/// its pixels, which stay valid as long as the handle lives, on any thread.
+using TileHandle = std::shared_ptr<const CachedTileData>;
 
-/// @brief CRTP mixin for adding caching support to tile executors
+/// @brief CRTP mixin that reads tiles through the reader's tile cache.
 ///
-/// This class provides a generic ReadWithCache implementation that handles:
-/// 1. Checking the reader's cache for existing tiles
-/// 2. Keeping cached tiles alive via thread-local storage
-/// 3. Delegating to the derived class for reading from disk/decoding
-/// 4. Storing new tiles in the cache
-///
-/// It inherits from TiffBasedTileExecutor to also provide thread-local buffer
-/// management.
+/// Executors read tiles with `ReadTile`, which returns an owning handle: a
+/// cache hit shares the cached tile, a miss decodes it once (concurrent misses
+/// wait for one decode) and caches the decoded tile itself, without copying.
 ///
 /// Usage:
 /// ```cpp
 /// class MyTileExecutor : public CachedTileExecutor<MyTileExecutor> {
-///   // Implement MakeCacheKey
-///   // Implement ReadTileFromDisk returning DecodedTileData
-///   // Implement MakeCachedTileData taking DecodedTileData
+///  public:
+///   static TileKey MakeCacheKey(const core::TileReadOp& op,
+///                               const MyContext& context);
+///   // Decode one tile into a tile that owns its pixels. Decode into a
+///   // buffer from `readers::TileBufferPool::Take()` (recycled, so no
+///   // allocation per tile), or move in a buffer the decoder made.
+///   static aifocore::Result<CachedTileData> DecodeTile(
+///       const core::TileReadOp& op, const MyContext& context);
 /// };
 /// ```
 template <typename Derived>
-class CachedTileExecutor : public TiffBasedTileExecutor<Derived> {
+class CachedTileExecutor {
  protected:
   static bool IsCacheBypassEnabled() {
     // Debug escape hatch: allow disabling caching globally without changing
@@ -80,61 +74,28 @@ class CachedTileExecutor : public TiffBasedTileExecutor<Derived> {
     return kDisabled;
   }
 
-  /// @brief Read a tile, checking cache first, or reading from disk and caching
+  /// @brief Read one tile: from the reader's cache when it has one, otherwise
+  /// by decoding it.
   ///
-  /// @param op Tile operation info
-  /// @param reader Reader instance (provides cache and filename)
-  /// @param args Additional arguments to pass to ReadTileFromDisk
-  /// @return Span of tile data (valid until next call on this thread)
+  /// The handle owns the pixels. With a cache, a hit returns the cached tile
+  /// itself and concurrent misses on a tile decode it once (see
+  /// `readers::InflightDecodes`); the decoded tile is cached as is.
   template <typename Reader, typename... Args>
-  static aifocore::Result<std::span<const uint8_t>> ReadWithCache(
-      const core::TileReadOp& op, const Reader& reader, Args&&... args) {
-    // Thread-local storage to keep cached tile alive while span is in use
-    static thread_local std::shared_ptr<CachedTileData> kept_alive_tile;
-
-    // Reset kept alive tile to release reference to previous tile
-    kept_alive_tile.reset();
-
+  static aifocore::Result<TileHandle> ReadTile(const core::TileReadOp& op,
+                                               const Reader& reader,
+                                               Args&&... args) {
     if (!IsCacheBypassEnabled() && reader.IsCacheEnabled()) {
       AIFOCORE_ASSIGN_OR_RETURN(
-          kept_alive_tile,
-          ReadThroughCache(op, reader, std::forward<Args>(args)...));
-      return std::span<const uint8_t>(kept_alive_tile->data);
+          auto tile, ReadThroughCache(op, reader, std::forward<Args>(args)...));
+      return TileHandle(std::move(tile));
     }
-
-    // No cache: decode into TiffBasedTileExecutor's thread-local buffers.
     AIFOCORE_ASSIGN_OR_RETURN(
-        auto decoded_data,
-        Derived::ReadTileFromDisk(op, reader, std::forward<Args>(args)...));
-    return decoded_data.data;
+        auto tile,
+        Derived::DecodeTile(op, reader, std::forward<Args>(args)...));
+    return TileHandle(readers::NewPooledTile(std::move(tile)));
   }
 
-  /// @brief Read a tile, preserving decoded metadata (width/height/channels).
-  ///
-  /// This is required for formats where the decoded tile dimensions can differ
-  /// from the nominal metadata (e.g. edge tiles), or where decoders may return
-  /// padding that should be interpreted using the decoded dimensions.
-  template <typename Reader, typename... Args>
-  static aifocore::Result<DecodedTileData> ReadWithCacheDecoded(
-      const core::TileReadOp& op, const Reader& reader, Args&&... args) {
-    static thread_local std::shared_ptr<CachedTileData> kept_alive_tile;
-    kept_alive_tile.reset();
-
-    if (!IsCacheBypassEnabled() && reader.IsCacheEnabled()) {
-      AIFOCORE_ASSIGN_OR_RETURN(
-          kept_alive_tile,
-          ReadThroughCache(op, reader, std::forward<Args>(args)...));
-      return DecodedTileData{
-          .data = std::span<const uint8_t>(kept_alive_tile->data),
-          .width = kept_alive_tile->size[0],
-          .height = kept_alive_tile->size[1],
-          .channels = kept_alive_tile->channels,
-      };
-    }
-
-    return Derived::ReadTileFromDisk(op, reader, std::forward<Args>(args)...);
-  }
-
+ private:
   /// @brief Get a tile from the cache, or decode it once and cache it.
   ///
   /// Concurrent misses on the same tile decode it once: the first thread
@@ -176,47 +137,11 @@ class CachedTileExecutor : public TiffBasedTileExecutor<Derived> {
       const core::TileReadOp& op, const Reader& reader,
       runtime::ITileCache& cache, const TileKey& key, Args&&... args) {
     AIFOCORE_ASSIGN_OR_RETURN(
-        auto decoded_data,
-        Derived::ReadTileFromDisk(op, reader, std::forward<Args>(args)...));
-    auto cached_tile = Derived::MakeCachedTileData(decoded_data);
-    cache.Put(key, cached_tile);
-    return cached_tile;
-  }
-
-  /// @brief Read a tile through the cache and return an owning handle on it.
-  ///
-  /// Unlike `ReadWithCacheDecoded`, whose span lives only until the next call
-  /// on the same thread, the returned tile stays valid as long as the handle
-  /// does. A cache hit hands out the cached tile itself (no copy); a miss goes
-  /// through `ReadThroughCache`, so concurrent misses on a tile decode it once,
-  /// and copies the decoded pixels once, into the tile that is also cached.
-  /// Without a cache every call decodes and copies.
-  template <typename Reader, typename... Args>
-  static aifocore::Result<std::shared_ptr<const CachedTileData>>
-  ReadWithCacheShared(const core::TileReadOp& op, const Reader& reader,
-                      Args&&... args) {
-    if (!IsCacheBypassEnabled() && reader.IsCacheEnabled()) {
-      AIFOCORE_ASSIGN_OR_RETURN(
-          auto tile, ReadThroughCache(op, reader, std::forward<Args>(args)...));
-      return std::shared_ptr<const CachedTileData>(std::move(tile));
-    }
-
-    AIFOCORE_ASSIGN_OR_RETURN(
-        auto decoded_data,
-        Derived::ReadTileFromDisk(op, reader, std::forward<Args>(args)...));
-    return std::shared_ptr<const CachedTileData>(
-        Derived::MakeCachedTileData(decoded_data));
-  }
-
-  /// @brief Helper to create CachedTileData from DecodedTileData
-  static std::shared_ptr<CachedTileData> MakeCachedTileData(
-      const DecodedTileData& decoded) {
-    auto cached_tile = std::make_shared<CachedTileData>();
-    // Copy data to vector for cache ownership
-    cached_tile->data.assign(decoded.data.begin(), decoded.data.end());
-    cached_tile->size = {decoded.width, decoded.height};
-    cached_tile->channels = decoded.channels;
-    return cached_tile;
+        auto decoded,
+        Derived::DecodeTile(op, reader, std::forward<Args>(args)...));
+    auto tile = readers::NewPooledTile(std::move(decoded));
+    cache.Put(key, tile);
+    return tile;
   }
 };
 
