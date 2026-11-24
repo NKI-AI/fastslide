@@ -25,6 +25,7 @@
 #include "fastslide/core/tile_plan.h"
 #include "fastslide/readers/inflight_decodes.h"
 #include "fastslide/readers/tiff_based_tile_executor.h"
+#include "fastslide/readers/tile_buffer_pool.h"
 #include "fastslide/runtime/cache_interface.h"
 
 namespace fastslide {
@@ -99,15 +100,16 @@ class CachedTileExecutor : public TiffBasedTileExecutor<Derived> {
     AIFOCORE_ASSIGN_OR_RETURN(
         auto tile,
         Derived::DecodeTile(op, reader, std::forward<Args>(args)...));
-    return TileHandle(std::make_shared<CachedTileData>(std::move(tile)));
+    return TileHandle(readers::NewPooledTile(std::move(tile)));
   }
 
   /// @brief Decode one tile into a tile that owns its pixels.
   ///
-  /// Executors whose decoder produces an owned buffer define their own
-  /// `DecodeTile` and move the buffer into the result. This default wraps
-  /// `ReadTileFromDisk`, whose view points into this thread's reusable
-  /// buffers, and copies the pixels out.
+  /// Executors whose decoder writes into a buffer they own define their own
+  /// `DecodeTile`: start from `readers::TileBufferPool::Take()` (a recycled
+  /// buffer, so no allocation per tile) and move it into the result. This
+  /// default wraps `ReadTileFromDisk`, whose view points into this thread's
+  /// reusable buffers, and copies the pixels out once.
   template <typename Reader, typename... Args>
   static aifocore::Result<CachedTileData> DecodeTile(const core::TileReadOp& op,
                                                      const Reader& reader,
@@ -115,9 +117,10 @@ class CachedTileExecutor : public TiffBasedTileExecutor<Derived> {
     AIFOCORE_ASSIGN_OR_RETURN(
         auto decoded,
         Derived::ReadTileFromDisk(op, reader, std::forward<Args>(args)...));
-    return CachedTileData(
-        std::vector<uint8_t>(decoded.data.begin(), decoded.data.end()),
-        {decoded.width, decoded.height}, decoded.channels);
+    std::vector<uint8_t> pixels = readers::TileBufferPool::Take();
+    pixels.assign(decoded.data.begin(), decoded.data.end());
+    return CachedTileData(std::move(pixels), {decoded.width, decoded.height},
+                          decoded.channels);
   }
 
   /// @brief Read a tile as a view (older API, being replaced by `ReadTile`).
@@ -218,7 +221,7 @@ class CachedTileExecutor : public TiffBasedTileExecutor<Derived> {
     AIFOCORE_ASSIGN_OR_RETURN(
         auto decoded,
         Derived::DecodeTile(op, reader, std::forward<Args>(args)...));
-    auto tile = std::make_shared<CachedTileData>(std::move(decoded));
+    auto tile = readers::NewPooledTile(std::move(decoded));
     cache.Put(key, tile);
     return tile;
   }

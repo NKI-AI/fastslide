@@ -553,6 +553,7 @@ cc_library(
     name = "readers",
     srcs = [
         "src/readers/tiff_based_reader.cpp",
+        "src/readers/tile_buffer_pool.cpp",
     ],
     hdrs = [
         "include/fastslide/readers/cached_tile_executor.h",
@@ -564,6 +565,7 @@ cc_library(
         "include/fastslide/readers/tiff_based_reader.h",
         "include/fastslide/readers/tiff_based_tile_executor.h",
         "include/fastslide/readers/tiff_reader_factory.h",
+        "include/fastslide/readers/tile_buffer_pool.h",
     ],
     copts = WASM_COPTS,
     includes = ["include"],
@@ -2039,6 +2041,17 @@ cc_test(
         # (standalone build, value `""`) or loaded as an external dep
         # (value `"fastslide+"` under the monorepo `local_path_override`).
         "@rules_cc//cc/runfiles",
+        "@googletest//:gtest",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "tile_buffer_pool_test",
+    size = "small",
+    srcs = ["src/readers/tile_buffer_pool_test.cpp"],
+    deps = [
+        ":readers",
         "@googletest//:gtest",
         "@googletest//:gtest_main",
     ],

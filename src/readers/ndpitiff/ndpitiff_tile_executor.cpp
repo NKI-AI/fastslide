@@ -28,6 +28,7 @@
 #include "fastslide/readers/ndpitiff/ndpitiff_jpeg_header.h"
 #include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/readers/simpletiff_tile_executor_utils.h"
+#include "fastslide/readers/tile_buffer_pool.h"
 #include "fastslide/runtime/decoders/jpeg_xr_decoder.h"
 #include "simpletiff/index.h"
 #include "simpletiff/io_utils.h"
@@ -109,9 +110,6 @@ aifocore::Result<CachedTileData> NdpiTiffTileExecutor::DecodeTile(
   static thread_local std::vector<uint8_t> raw_compressed;
   static thread_local std::vector<uint8_t> patched_header;
 
-  // The decoded pixels; they become the tile.
-  std::vector<uint8_t> pixels;
-
   const uint32_t tile_index = static_cast<uint32_t>(op.byte_offset);
 
   // JPEG XR (NDPI compression 22610): each tile/strip is a complete,
@@ -136,6 +134,10 @@ aifocore::Result<CachedTileData> NdpiTiffTileExecutor::DecodeTile(
     return CachedTileData(std::move(decoded.rgb),
                           {decoded.width, decoded.height}, 3);
   }
+
+  // The decoded pixels; they become the tile. A recycled buffer (see
+  // TileBufferPool) already has the right size for this level's tiles.
+  std::vector<uint8_t> pixels = readers::TileBufferPool::Take();
 
   const bool maybe_headerless_ndpi_jpeg =
       (page_header.storage == simpletiff::Storage::kTiles) &&
