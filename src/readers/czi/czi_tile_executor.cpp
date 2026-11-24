@@ -243,7 +243,7 @@ aifocore::Status CziTileExecutor::ExecutePlan(const core::TilePlan& plan,
       return;
     }
     const core::TileReadOp& op = plan.operations[i];
-    auto tile_or = ReadWithCacheShared(op, context);
+    auto tile_or = ReadTile(op, context);
     if (!tile_or.ok()) {
       has_error.store(true, std::memory_order_relaxed);
       std::lock_guard<std::mutex> lock(error_mutex);

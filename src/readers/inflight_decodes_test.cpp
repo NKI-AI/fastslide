@@ -44,7 +44,7 @@ struct FakeContext {
 class SlowExecutor : public CachedTileExecutor<SlowExecutor> {
  public:
   using CachedTileExecutor<SlowExecutor>::ReadWithCacheDecoded;
-  using CachedTileExecutor<SlowExecutor>::ReadWithCacheShared;
+  using CachedTileExecutor<SlowExecutor>::ReadTile;
 
   static inline std::atomic<int> decodes{0};
   static inline std::atomic<bool> fail{false};
@@ -123,7 +123,7 @@ TEST(InflightDecodesTest, ConcurrentSharedReadsOfOneTileDecodeItOnce) {
   pool.reserve(kThreads);
   for (int i = 0; i < kThreads; ++i) {
     pool.emplace_back([&, i] {
-      auto tile = SlowExecutor::ReadWithCacheShared(OpAt(5), context);
+      auto tile = SlowExecutor::ReadTile(OpAt(5), context);
       if (tile.ok()) {
         tiles[i] = *std::move(tile);
       }

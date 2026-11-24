@@ -142,7 +142,7 @@ aifocore::Status BifTileExecutor::ExecutePlan(const core::TilePlan& plan,
       return;
     }
 
-    auto tile_or = ReadWithCacheShared(first, context);
+    auto tile_or = ReadTile(first, context);
     if (!tile_or.ok()) {
       record_error(tile_or.status());
       return;
