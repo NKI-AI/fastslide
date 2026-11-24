@@ -280,18 +280,22 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Linux/macOS wheels are built with Bazel (method: bazel). Windows wheels
-        # (both amd64 and arm64) are built NATIVELY on a matching Windows runner
-        # via Meson + nanobind + cibuildwheel (method: meson): many Bazel rules
-        # lack Windows host support, so the meson-python path (all deps static via
-        # wraps) is used instead. cibw_arch selects the cibuildwheel target arch.
+        # macOS wheels are built with Bazel (method: bazel). Linux and Windows
+        # wheels are built NATIVELY on a matching runner via Meson + nanobind +
+        # cibuildwheel (method: meson), all deps static via wraps. On Windows many
+        # Bazel rules lack host support; on Linux the Meson build is what links
+        # libjpeg-turbo with its SIMD kernels (the Bazel registry's libjpeg_turbo
+        # has none) and builds OpenJPEG the way upstream does. cibw_arch selects
+        # the cibuildwheel target arch.
         include:
           - platform: linux_x86_64
             builder: ubuntu-24.04
-            method: bazel
+            method: meson
+            cibw_arch: x86_64
           - platform: linux_arm64
             builder: ubuntu-24.04-arm
-            method: bazel
+            method: meson
+            cibw_arch: aarch64
           - platform: darwin_x86_64
             builder: macos-15
             method: bazel
@@ -345,7 +349,7 @@ jobs:
         if: steps.gate.outputs.run == 'true' && matrix.method == 'bazel'
         shell: bash
         run: python3 tools/build_wheels.py --platform ${{ matrix.platform }} --bazel bazel
-      # --- Native Meson path (windows) ---
+      # --- Native Meson path (linux, windows) ---
       # Windows wheels are compiled on a real Windows host with MSVC. cibuildwheel
       # drives meson-python once per CPython; meson-python reads the forcefallback
       # setup args from pyproject.toml, so every dependency (aifocore/simpletiff
@@ -375,6 +379,15 @@ jobs:
           CIBW_ARCHS_WINDOWS: ${{ matrix.cibw_arch }}
           CIBW_BUILD_VERBOSITY: "1"
           CIBW_CONFIG_SETTINGS_WINDOWS: "setup-args=--vsenv"
+          CIBW_ARCHS_LINUX: ${{ matrix.cibw_arch }}
+          CIBW_SKIP: "*-musllinux_*"
+          # NASM for libjpeg-turbo's x86_64 SIMD kernels; `simd=enabled` makes a
+          # missing assembler fail the build instead of silently dropping SIMD.
+          CIBW_BEFORE_ALL_LINUX: "if [ \"$(uname -m)\" = x86_64 ]; then dnf install -y nasm; fi"
+          # gcc 14 (manylinux_2_28) turns these into errors; the vendored jxrlib
+          # relies on them being warnings.
+          CIBW_ENVIRONMENT_LINUX: CFLAGS="-Wno-error=incompatible-pointer-types -Wno-error=int-conversion -Wno-error=implicit-function-declaration"
+          CIBW_CONFIG_SETTINGS_LINUX: "setup-args=-Dlibjpeg-turbo:simd=enabled"
       - name: Build cp312-abi3 wheel (${{ matrix.platform }})
         if: steps.gate.outputs.run == 'true' && matrix.method == 'meson'
         uses: pypa/cibuildwheel@v3.2.0
@@ -390,6 +403,13 @@ jobs:
           CIBW_ARCHS_WINDOWS: ${{ matrix.cibw_arch }}
           CIBW_BUILD_VERBOSITY: "1"
           CIBW_CONFIG_SETTINGS_WINDOWS: "setup-args=--vsenv setup-args=-Dpython.allow_limited_api=true"
+          CIBW_ARCHS_LINUX: ${{ matrix.cibw_arch }}
+          CIBW_SKIP: "*-musllinux_*"
+          CIBW_BEFORE_ALL_LINUX: "if [ \"$(uname -m)\" = x86_64 ]; then dnf install -y nasm; fi"
+          # gcc 14 (manylinux_2_28) turns these into errors; the vendored jxrlib
+          # relies on them being warnings.
+          CIBW_ENVIRONMENT_LINUX: CFLAGS="-Wno-error=incompatible-pointer-types -Wno-error=int-conversion -Wno-error=implicit-function-declaration"
+          CIBW_CONFIG_SETTINGS_LINUX: "setup-args=-Dlibjpeg-turbo:simd=enabled setup-args=-Dpython.allow_limited_api=true"
       - name: Upload wheels
         if: steps.gate.outputs.run == 'true'
         uses: actions/upload-artifact@v6
