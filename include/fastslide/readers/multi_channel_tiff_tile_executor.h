@@ -49,8 +49,8 @@ namespace fastslide {
 /// Each pyramid level holds `LevelInfo::pages.size()` TIFF pages (one per
 /// channel). The executor:
 ///   1. Looks up the requested tile in the reader's cache.
-///   2. On miss, decodes the tile via `simpletiff_decode::ReadTileOrStrip`
-///      using thread-local buffers from `TiffBasedTileExecutor`.
+///   2. On miss, decodes the tile via `simpletiff_decode::DecodeTileOrStrip`
+///      into a tile that owns its pixels.
 ///   3. Paints the tile into the output canvas (with optional blend lock).
 ///
 /// `ExecContext` must satisfy:

@@ -43,7 +43,6 @@ struct FakeContext {
 // decodes and can be made to fail.
 class SlowExecutor : public CachedTileExecutor<SlowExecutor> {
  public:
-  using CachedTileExecutor<SlowExecutor>::ReadWithCacheDecoded;
   using CachedTileExecutor<SlowExecutor>::ReadTile;
 
   static inline std::atomic<int> decodes{0};
@@ -54,17 +53,17 @@ class SlowExecutor : public CachedTileExecutor<SlowExecutor> {
     return runtime::TileKey("slow", 0, op.tile_coord.x, 0);
   }
 
-  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
-      const core::TileReadOp& op, const FakeContext&) {
+  static aifocore::Result<CachedTileData> DecodeTile(const core::TileReadOp& op,
+                                                     const FakeContext&) {
     decodes.fetch_add(1);
     // Long enough for every thread to miss while the first one decodes.
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     if (fail.load()) {
       return AIFOCORE_MAKE_STATUS(aifocore::StatusCode::kDataLoss, "broken");
     }
-    auto& buffer = GetBuffers().tile_buffer;
-    buffer.assign(2 * 2 * 3, static_cast<uint8_t>(op.tile_coord.x));
-    return DecodedTileData{buffer, 2, 2, 3};
+    return CachedTileData(
+        std::vector<uint8_t>(2 * 2 * 3, static_cast<uint8_t>(op.tile_coord.x)),
+        {2, 2}, 3);
   }
 };
 
@@ -83,12 +82,12 @@ int ReadConcurrently(const FakeContext& context, uint32_t x, int threads) {
   pool.reserve(threads);
   for (int i = 0; i < threads; ++i) {
     pool.emplace_back([&] {
-      auto tile = SlowExecutor::ReadWithCacheDecoded(OpAt(x), context);
+      auto tile = SlowExecutor::ReadTile(OpAt(x), context);
       if (!tile.ok()) {
         return;
       }
       ok.fetch_add(1);
-      if (tile->data.size() != 12 || tile->data[0] != x) {
+      if ((*tile)->data.size() != 12 || (*tile)->data[0] != x) {
         wrong.fetch_add(1);
       }
     });
@@ -173,11 +172,11 @@ TEST(InflightDecodesTest, ASingleMissSkipsTheTable) {
   SlowExecutor::fail = false;
   const FakeContext context{std::make_shared<runtime::LRUTileCache>(1 << 20)};
 
-  auto tile = SlowExecutor::ReadWithCacheDecoded(OpAt(7), context);
+  auto tile = SlowExecutor::ReadTile(OpAt(7), context);
   ASSERT_TRUE(tile.ok());
   EXPECT_EQ(SlowExecutor::decodes.load(), 1);
   // Cached: no second decode.
-  ASSERT_TRUE(SlowExecutor::ReadWithCacheDecoded(OpAt(7), context).ok());
+  ASSERT_TRUE(SlowExecutor::ReadTile(OpAt(7), context).ok());
   EXPECT_EQ(SlowExecutor::decodes.load(), 1);
   EXPECT_EQ(readers::InflightDecodes::Instance().Size(), 0u);
 }

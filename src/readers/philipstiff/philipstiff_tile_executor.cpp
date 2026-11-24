@@ -18,7 +18,6 @@
 #include "aifocore/utilities/fmt.h"
 #include "fastslide/readers/simpletiff_decode_utils.h"
 #include "fastslide/readers/simpletiff_tile_executor_utils.h"
-#include "fastslide/readers/tiff_based_tile_executor.h"
 #include "fastslide/runtime/tile_writer.h"
 #include "simpletiff/index.h"
 #include "simpletiff/reader.h"
