@@ -124,7 +124,7 @@ runtime::TileKey DicomTileExecutor::MakeCacheKey(
                           op.tile_coord.y);
 }
 
-aifocore::Result<DecodedTileData> DicomTileExecutor::ReadTileFromDisk(
+aifocore::Result<CachedTileData> DicomTileExecutor::DecodeTile(
     const core::TileReadOp& op, const DicomExecContext& context) {
   const auto& level = context.GetLevel(op.level);
 
@@ -162,8 +162,6 @@ aifocore::Result<DecodedTileData> DicomTileExecutor::ReadTileFromDisk(
   const uint32_t actual_h =
       std::min(level.tile_h, level.height - row * level.tile_h);
 
-  auto& tile_buf = GetBuffers().tile_buffer;
-
   // DICOM frames are always full tile_w x tile_h, even for edge tiles
   // (per PS3.3 C.7.6.3). Strip the padding so the buffer stride matches
   // the actual pixel extent at the image boundary.
@@ -173,21 +171,16 @@ aifocore::Result<DecodedTileData> DicomTileExecutor::ReadTileFromDisk(
       std::memcpy(cropped.data() + y * actual_w * 3,
                   rgb.data() + y * level.tile_w * 3, actual_w * 3);
     }
-    tile_buf = std::move(cropped);
-  } else {
-    tile_buf = std::move(rgb);
+    rgb = std::move(cropped);
   }
-
-  return DecodedTileData{
-      std::span<const uint8_t>(tile_buf.data(), tile_buf.size()), actual_w,
-      actual_h, 3};
+  return CachedTileData(std::move(rgb), {actual_w, actual_h}, 3);
 }
 
 aifocore::Status DicomTileExecutor::ExecuteTileOperation(
     const core::TileReadOp& op, const DicomExecContext& context,
     runtime::Canvas& writer, std::mutex& writer_mutex) {
-  auto tile_data_or = ReadWithCache(op, context);
-  if (!tile_data_or.ok()) {
+  auto tile_or = ReadTile(op, context);
+  if (!tile_or.ok()) {
     // Missing frame — leave the background fill (sparse tile grids are valid).
     return aifocore::Status::OkStatus();
   }
@@ -200,8 +193,8 @@ aifocore::Status DicomTileExecutor::ExecuteTileOperation(
   const uint32_t tile_h =
       std::min(level.tile_h, level.height - row * level.tile_h);
 
-  const std::span<const uint8_t> tile_data = *tile_data_or;
-  auto st = writer.PaintTile(op, tile_data, tile_w, tile_h, 3, writer_mutex);
+  const TileHandle& tile = *tile_or;
+  auto st = writer.PaintTile(op, tile->data, tile_w, tile_h, 3, writer_mutex);
   if (!st.ok()) {
     return aifocore::Status::OkStatus();
   }

@@ -42,7 +42,8 @@ class DicomTileExecutor : public CachedTileExecutor<DicomTileExecutor> {
   static runtime::TileKey MakeCacheKey(const core::TileReadOp& op,
                                        const DicomExecContext& context);
 
-  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
+  /// @brief Decode the frame of one tile (edge tiles cropped to the image).
+  static aifocore::Result<CachedTileData> DecodeTile(
       const core::TileReadOp& op, const DicomExecContext& context);
 
  private:
