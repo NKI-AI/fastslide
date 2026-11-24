@@ -31,7 +31,7 @@ namespace fastslide {
 /// Inherits from `CachedTileExecutor` so decoded tiles share the per-reader
 /// LRU tile cache (matching Aperio/MRXS/CZI/iSyntax/DICOM behaviour). The
 /// custom NDPI logic (headerless JPEG template + SOF dimension patching) lives
-/// in `ReadTileFromDisk`, which is invoked only on cache misses.
+/// in `DecodeTile`, which is invoked only on cache misses.
 class NdpiTiffTileExecutor : public CachedTileExecutor<NdpiTiffTileExecutor> {
  public:
   /// @brief Execute a tile plan in parallel with shared LRU caching.
@@ -57,8 +57,8 @@ class NdpiTiffTileExecutor : public CachedTileExecutor<NdpiTiffTileExecutor> {
   static TileKey MakeCacheKey(const core::TileReadOp& op,
                               const NdpiTiffExecContext& context);
 
-  /// @brief Read+decode a single tile/strip on cache miss (CRTP hook).
-  static aifocore::Result<DecodedTileData> ReadTileFromDisk(
+  /// @brief Read and decode one tile or strip into a tile that owns its pixels.
+  static aifocore::Result<CachedTileData> DecodeTile(
       const core::TileReadOp& op, const NdpiTiffExecContext& context);
 };
 
