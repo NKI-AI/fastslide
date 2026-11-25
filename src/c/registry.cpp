@@ -386,5 +386,5 @@ int fastslide_is_supported(const char* file_path) {
 // Version information
 
 const char* fastslide_get_version(void) {
-  return "0.8.5";
+  return "0.8.6";
 }
