@@ -76,6 +76,25 @@ aifocore::Status NdpiTiffTileExecutor::ExecutePlan(
 aifocore::Status NdpiTiffTileExecutor::ExecuteTileOperation(
     const core::TileReadOp& op, const NdpiTiffExecContext& context,
     runtime::Canvas& writer, std::mutex& writer_mutex) {
+  // NDPI JPEG strips are much wider than a typical read (S360 level 0:
+  // 3840 x 8 px restart-interval strips). Without a tile cache, decode only
+  // the columns this op paints; with one, decode the whole strip so it can be
+  // reused by other reads.
+  const auto& src = op.transform.source;
+  const bool cached = !IsCacheBypassEnabled() && context.IsCacheEnabled();
+  if (!cached && !op.transform.NeedsScaling() && src.x >= 0.0 &&
+      src.width > 0 &&
+      src.x == static_cast<double>(static_cast<uint32_t>(src.x))) {
+    ColumnCrop crop{.x = static_cast<uint32_t>(src.x), .width = src.width};
+    AIFOCORE_ASSIGN_OR_RETURN(auto decoded, DecodeTile(op, context, &crop));
+    const TileHandle tile(readers::NewPooledTile(std::move(decoded)));
+    core::TileReadOp cropped_op = op;
+    cropped_op.transform.source.x -= static_cast<double>(crop.decoded_x);
+    return readers::simpletiff_exec::PaintTileMaybeLocked(
+        writer, cropped_op, tile->data, tile->size[0], tile->size[1],
+        tile->channels, writer_mutex);
+  }
+
   AIFOCORE_ASSIGN_OR_RETURN(const TileHandle tile, ReadTile(op, context));
   return readers::simpletiff_exec::PaintTileMaybeLocked(
       writer, op, tile->data, tile->size[0], tile->size[1], tile->channels,
@@ -94,7 +113,8 @@ TileKey NdpiTiffTileExecutor::MakeCacheKey(const core::TileReadOp& op,
 }
 
 aifocore::Result<CachedTileData> NdpiTiffTileExecutor::DecodeTile(
-    const core::TileReadOp& op, const NdpiTiffExecContext& context) {
+    const core::TileReadOp& op, const NdpiTiffExecContext& context,
+    ColumnCrop* crop) {
   const auto& tiff_index = context.GetTiffIndex();
   if (op.source_id >= tiff_index.NumPages()) {
     return AIFOCORE_MAKE_STATUS(
@@ -214,6 +234,9 @@ aifocore::Result<CachedTileData> NdpiTiffTileExecutor::DecodeTile(
   const simpletiff::JpegDecodeOptions jpeg_options = {
       // If Photometric is YCbCr (6), let the JPEG decoder convert to RGB.
       .treat_ycbcr_as_rgb = (page_header.photometric != kPhotometricYCbCr),
+      .crop_x = crop != nullptr ? crop->x : 0,
+      .crop_width = crop != nullptr ? crop->width : 0,
+      .out_crop_x = crop != nullptr ? &crop->decoded_x : nullptr,
   };
 
   int decoded_w = 0;
