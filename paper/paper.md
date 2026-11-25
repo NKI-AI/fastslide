@@ -21,7 +21,7 @@ authors:
 affiliations:
   - name: Netherlands Cancer Institute, Amsterdam, The Netherlands
     index: 1
-date: 15 November 2026
+date: 25 November 2026
 bibliography: paper.bib
 ---
 
@@ -113,10 +113,13 @@ array is a view of the image buffer.
 lock while a region is read, and one slide handle can be shared between
 threads. In our tests, 200 random regions read by 32 threads from one handle
 were bit-identical to the same regions read serially for files in all twelve
-formats.
-The tiles of one region are decoded
-in parallel on a process-wide thread pool, so a single calling thread already
-uses several cores. Decoded tiles are not cached unless the
+formats \textcolor{red}{[iSyntax last checked on 0.8.4; re-run on 0.8.6]}.
+By default the tiles of one region are decoded in parallel on a process-wide
+thread pool, so a single calling thread already uses several cores. An
+application that already runs about as many reads at once as it has cores,
+such as a tile server or a threaded data loader, can instead keep every read
+on its calling thread. The pool size defaults to the number of hardware
+threads of the host and can be changed at run time. Decoded tiles are not cached unless the
 user asks: a least-recently-used cache can be attached to one slide or shared
 by all slides in the process, and it reports hits and misses. The iSyntax
 reader additionally keeps wavelet coefficients in a bounded cache.
@@ -140,42 +143,40 @@ three slides of the SurGen dataset [@myles2025surgen], to tifffile for a QPTIFF
 slide and for all 35 Z/T planes of an OME-TIFF test file, to zarr-python 3.1.5
 for two OME-Zarr images (a five-channel 16-bit image from the Image Data
 Resource and an H&E slide from the SpatialData samples), and to
-`OpenSlide` for a JPEG 2000 SVS slide. For JPEG, `FastSlide` uses the fast
-integer DCT of libjpeg-turbo without smooth chroma upsampling, which trades
-accuracy for speed: regions differed from `OpenSlide` by at most 1 grey level
-on an SVS slide, 5 on NDPI, 26 on MRXS, and 33 on a generic TIFF, with 99% of
-values within 5 on the last two. DICOM tiles were within 1 of an OpenJPEG
-decode, VSI regions within 2 of Bio-Formats 8.1.1, and 99.8% of the pixels of
-a BIF slide within 5 of `OpenSlide`. iSyntax output was compared with the
+`OpenSlide` for 100 regions on each of four JPEG-compressed slides (SVS, NDPI,
+MRXS, and generic TIFF). Regions of a JPEG 2000 SVS slide differed from
+`OpenSlide` by at most 1 grey level, as did JPEG 2000 DICOM tiles from an
+OpenJPEG decode. VSI regions were within 2 of Bio-Formats 8.1.1, and 99.96% of
+the values of a BIF slide within 5 of `OpenSlide`. iSyntax output was compared with the
 Philips SDK during development; we could not repeat that with public tools.
 
-\autoref{tab:bench} compares `FastSlide` 0.8.4 with `OpenSlide` 4.0.1 on five
-public OpenSlide test slides, in a process restricted to six logical CPUs.
-With one calling thread, `FastSlide` read 1.8 to 5.6 times as many regions per
-second, using 3.7 to 5.0 CPU-seconds per second of wall-clock time through its
-thread pool, where `OpenSlide` used one. With the pool limited to one worker,
-`FastSlide` read 2.2 and 2.6 times as many regions as `OpenSlide` on the JPEG
-SVS and generic TIFF slides, as many on MRXS, and 0.9 and 0.7 times as many on
-the JPEG 2000 and NDPI slides. With eight calling threads the throughput of
-`FastSlide` changed little, because callers share the pool, and `OpenSlide`
-was faster on the NDPI and JPEG 2000 slides.
+\autoref{tab:bench} compares `FastSlide` 0.8.6 with `OpenSlide` 4.0.1 on five
+public OpenSlide test slides, in a process restricted to two logical CPUs.
+`FastSlide` ran with every read on its calling thread, so that one Python
+thread used one CPU in both libraries. With one thread, `FastSlide` read 2.9
+and 3.2 times as many regions per second as `OpenSlide` on the JPEG SVS and
+generic TIFF slides, 1.6 times as many on MRXS, 1.3 times as many on NDPI, and
+0.8 times as many on the JPEG 2000 slide. With eight threads on the two CPUs
+the ratios were 3.4, 4.7, 1.7, 1.4, and 0.8. In the default thread-pool mode,
+with the pool set to two threads, one calling thread used both CPUs and
+`FastSlide` read 1.2 to 1.4 times as many regions as on its calling thread.
 
-: Regions read per second when one
-Python thread, or eight Python threads sharing one open slide, read 1,000
-random 512 × 512 level-0 regions and convert each to a NumPy array. Values are
-the median of five runs. Bold marks the faster library for that slide and
-thread count; neither is bold where the ranges of the five runs overlap. Both
-libraries ran with default settings and the files were in the page cache.
-Measured on a shared server with two 64-core AMD
-EPYC 7763 processors, of which six logical CPUs were available to the process. \label{tab:bench}
+: Regions read per second when one Python thread, or eight Python threads
+sharing one open slide, read 1,000 random 512 × 512 level-0 regions and convert
+each to a NumPy array. Values are the median of five runs. Bold marks the
+faster library for that slide and thread count; the ranges of the five runs
+did not overlap. `FastSlide` ran without a tile cache and with reads on the
+calling thread, `OpenSlide` with default settings, and the files were in the
+page cache. Measured on a shared server with two 64-core AMD EPYC 7763
+processors, of which two logical CPUs were available to the process. \label{tab:bench}
 
 | Slide (compression)       | FastSlide, 1 thread | OpenSlide, 1 thread | FastSlide, 8 threads | OpenSlide, 8 threads |
 |:--------------------------|----------:|----------:|----------:|----------:|
-| Aperio SVS (JPEG)         |   **638** |       139 |   **628** |       393 |
-| Aperio SVS (JPEG 2000)    |   **119** |        46 |       143 |   **156** |
-| Hamamatsu NDPI (JPEG)     |   **271** |       148 |       245 |   **456** |
-| 3DHISTECH MRXS (JPEG)     | **2,796** |     1,076 |     2,086 |     1,686 |
-| Generic tiled TIFF (JPEG) |   **826** |       148 |   **866** |       405 |
+| Aperio SVS (JPEG)         |   **505** |       172 |   **631** |       184 |
+| Aperio SVS (JPEG 2000)    |        47 |    **56** |        53 |    **68** |
+| Hamamatsu NDPI (JPEG)     |   **240** |       184 |   **324** |       234 |
+| 3DHISTECH MRXS (JPEG)     | **2,657** |     1,667 | **3,523** |     2,020 |
+| Generic tiled TIFF (JPEG) |   **568** |       178 |   **909** |       192 |
 
 # Example
 
@@ -204,9 +205,9 @@ print(len(tiles), tiles[0].shape, tiles[0].dtype)  # 352 (512, 512, 3) uint8
 slide backend of our `DLUP` library [@dlup] and the default slide reader of
 our [`dlux`](https://github.com/NKI-AI/dlux) pipeline. Through our
 [extension](https://github.com/NKI-AI/qupath-extension-fastslide) it is also
-an image reader for QuPath [@bankhead2017qupath]. On 15 November 2026, pypistats.org
-reported 2,272 downloads from PyPI over the preceding 30 days, and the issue
-tracker held 43 issues opened by ten GitHub accounts. The benchmark and
+an image reader for QuPath [@bankhead2017qupath]. On 25 November 2026, pypistats.org
+reported 3,284 downloads from PyPI over the preceding 30 days, and the issue
+tracker held 45 issues opened by eleven GitHub accounts. The benchmark and
 figure in this paper can be regenerated with the scripts in `paper/scripts`.
 We are not aware of published studies that used `FastSlide` yet.
 
