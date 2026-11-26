@@ -131,7 +131,7 @@ command-line tool.
 
 **Limitations.** Where tiles overlap, as in CZI mosaics, `FastSlide` paints
 them in a fixed order, so a region does not depend on thread timing. The OME-Zarr reader takes version 0.5 images with one Z
-and T plane, and not yet sharded or Blosc-compressed arrays. Signed integer
+and T plane, and not yet sharded or Blosc-compressed arrays. Signed 8-bit
 samples are returned as unsigned, 16-bit JPEG-XR CZI images are not decoded,
 and a region that crosses the slide border is cropped, not padded.
 
@@ -145,40 +145,44 @@ for two OME-Zarr images (a five-channel 16-bit image from the Image Data
 Resource and an H&E slide from the SpatialData samples), and to
 `OpenSlide` for 100 regions on each of four JPEG-compressed slides (SVS, NDPI,
 MRXS, and generic TIFF). Regions of a JPEG 2000 SVS slide differed from
-`OpenSlide` by at most 1 grey level, as did JPEG 2000 DICOM tiles from an
+`OpenSlide` by at most 1 gray level, as did JPEG 2000 DICOM tiles from an
 OpenJPEG decode. VSI regions were within 2 of Bio-Formats 8.1.1, and 99.96% of
 the values of a BIF slide within 5 of `OpenSlide`. iSyntax output was compared with the
 Philips SDK during development; we could not repeat that with public tools.
 
 \autoref{tab:bench} compares `FastSlide` 0.8.6 with `OpenSlide` 4.0.1 on five
-public OpenSlide test slides, in a job with 16 logical CPUs. With every read
-kept on its calling thread, one Python thread used one CPU in both libraries,
-and `FastSlide` read 2.8 and 4.2 times as many regions per second as
-`OpenSlide` on the JPEG SVS and generic TIFF slides, 1.6 times as many on
-MRXS, 1.4 times as many on NDPI, and 0.8 times as many on the JPEG 2000 slide.
-In the default thread-pool mode one Python thread used 4.0 to 11.5 CPUs and
-read 2.0 to 11.6 times as many regions as `OpenSlide`. With eight Python
-threads, `FastSlide` was faster on every slide in the thread-pool mode (1.1 to
-5.0 times) and on all but the JPEG 2000 slide when reads stayed on their
-calling threads.
+public OpenSlide test slides. `FastSlide` was measured in its default mode, in
+which the tiles of a read are decoded on a shared pool, and with every read on
+its calling thread, which uses one CPU per Python thread as `OpenSlide` does.
+On its calling thread, `FastSlide` read 1.4 to 4.2 times as many regions per
+second as `OpenSlide` on the four JPEG slides and 0.8 times as many on the
+JPEG 2000 slide, with one Python thread or eight. In the default mode, one
+Python thread used 4.0 to 11.5 CPUs and read 2.0 to 11.6 times as many regions
+as `OpenSlide`; with eight Python threads the ratio was 1.1 to 5.0.
 
-: Regions read per second when one Python thread, or eight Python threads
-sharing one open slide, read 1,000 random 512 × 512 level-0 regions and convert
-each to a NumPy array. `FastSlide` was measured in its default mode (pool: the
-tiles of a read are decoded on a shared pool of 16 threads) and with reads on
-the calling thread (calling), without a tile cache; `OpenSlide` ran with
-default settings. Values are the median of five runs, bold marks the fastest
-of the three, and the files were in the page cache. Measured on a shared
-server with two 64-core AMD EPYC 7763 processors, of which 16 logical CPUs
-were available to the process. \label{tab:bench}
+: Regions read per second from one open slide by one or eight Python threads,
+which together read 1,000 random 512 × 512 level-0 regions and convert each to
+a NumPy array; median of five runs. Pool: `FastSlide` in its default mode, with
+a shared pool of 16 threads. Calling: every read on its calling thread. Neither
+library used a tile cache beyond its default, and the files were in the page
+cache. Bold marks the fastest per row; the ranges of the five runs did not
+overlap. The process had 16 logical CPUs of a server with two 64-core AMD EPYC
+7763 processors. \label{tab:bench}
 
-| Slide (compression)       | FastSlide pool, 1 thread | FastSlide calling, 1 thread | OpenSlide, 1 thread | FastSlide pool, 8 threads | FastSlide calling, 8 threads | OpenSlide, 8 threads |
-|:--------------------------|----------:|----------:|----------:|-----------:|-----------:|----------:|
-| Aperio SVS (JPEG)         | **1,996** |       478 |       172 |  **3,914** |      3,128 |     1,006 |
-| Aperio SVS (JPEG 2000)    |   **119** |        47 |        56 |    **400** |        293 |       349 |
-| Hamamatsu NDPI (JPEG)     | **1,576** |       246 |       179 |  **2,161** |      1,529 |     1,038 |
-| 3DHISTECH MRXS (JPEG)     | **3,405** |     2,637 |     1,680 | **14,701** |     13,425 |     5,880 |
-| Generic tiled TIFF (JPEG) | **1,032** |       745 |       178 |  **5,145** |      3,934 |     1,036 |
+| Slide (compression)       | FastSlide, pool | FastSlide, calling | OpenSlide |
+|:--------------------------|----------:|----------:|----------:|
+| *One Python thread*       |           |           |           |
+| Aperio SVS (JPEG)         | **1,996** |       478 |       172 |
+| Aperio SVS (JPEG 2000)    |   **119** |        47 |        56 |
+| Hamamatsu NDPI (JPEG)     | **1,576** |       246 |       179 |
+| 3DHISTECH MRXS (JPEG)     | **3,405** |     2,637 |     1,680 |
+| Generic tiled TIFF (JPEG) | **1,032** |       745 |       178 |
+| *Eight Python threads*    |           |           |           |
+| Aperio SVS (JPEG)         | **3,914** |     3,128 |     1,006 |
+| Aperio SVS (JPEG 2000)    |   **400** |       293 |       349 |
+| Hamamatsu NDPI (JPEG)     | **2,161** |     1,529 |     1,038 |
+| 3DHISTECH MRXS (JPEG)     | **14,701** |   13,425 |     5,880 |
+| Generic tiled TIFF (JPEG) | **5,145** |     3,934 |     1,036 |
 
 # Example
 
